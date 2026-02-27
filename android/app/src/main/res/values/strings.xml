@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Find Local Pros</string>
+    <string name="welcome_back">Welcome back</string>
+    <string name="find_local_pros">Find Local Pros</string>
+    <string name="search_hint">Search for a service…</string>
+    <string name="categories">Categories</string>
+    <string name="see_all">See all</string>
+    <string name="top_rated">Top Rated</string>
+    <string name="view_all">View all</string>
+    <string name="plumber">Plumber</string>
+    <string name="carpenter">Carpenter</string>
+    <string name="electrician">Electrician</string>
+    <string name="painter">Painter</string>
+    <string name="cleaner">Cleaner</string>
+    <string name="handyman">Handyman</string>
+    <string name="landscaper">Landscaper</string>
+    <string name="hvac">HVAC</string>
+    <string name="home">Home</string>
+    <string name="search">Search</string>
+    <string name="messages">Messages</string>
+    <string name="profile">Profile</string>
+
+    <string name="search_workers_hint">Search workers, trades…</string>
+    <string name="trade_label">TRADE</string>
+    <string name="location_label">LOCATION</string>
+    <string name="sort_by_label">SORT BY</string>
+    <string name="clear_all">Clear all</string>
+    <string name="workers_found_count">%1$d workers found</string>
+    <string name="no_workers_found">No workers found</string>
+
+    <string name="new_york">New York</string>
+    <string name="los_angeles">Los Angeles</string>
+    <string name="chicago">Chicago</string>
+    <string name="houston">Houston</string>
+    <string name="phoenix">Phoenix</string>
+    <string name="san_diego">San Diego</string>
+    <string name="dallas">Dallas</string>
+    <string name="austin">Austin</string>
+
+    <string name="highest_rated">Highest Rated</string>
+    <string name="lowest_price">Lowest Price</string>
+    <string name="highest_price">Highest Price</string>
+    <string name="most_jobs">Most Jobs</string>
+</resources>
