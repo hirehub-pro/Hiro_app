@@ -1,13 +1,27 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_database/firebase_database.dart';
 import 'package:untitled1/language_provider.dart';
 import 'package:untitled1/pages/home.dart';
 import 'package:untitled1/pages/search.dart';
 import 'package:untitled1/pages/formu.dart';
 import 'package:untitled1/pages/ptofile.dart';
 import 'package:untitled1/pages/sighn_in.dart';
+import 'package:untitled1/pages/settings.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
+  
+  final database = FirebaseDatabase.instanceFor(
+      app: Firebase.app(),
+      databaseURL: 'https://profis-60aaa-default-rtdb.europe-west1.firebasedatabase.app'
+  );
+  
+  // Disable persistence to ensure we don't see stale local data like "gfvdcsxa"
+  database.setPersistenceEnabled(false);
+
   runApp(
     ChangeNotifierProvider(
       create: (context) => LanguageProvider(),
@@ -43,19 +57,18 @@ class _MyHomePageState extends State<MyHomePage> {
     const SearchPage(),
     const BlogPage(),
     const profile(),
+    const SettingsPage(),
   ];
 
   Map<String, String> _getLocalizedLabels(BuildContext context) {
     final locale = Provider.of<LanguageProvider>(context).locale.languageCode;
     switch (locale) {
       case 'he':
-        return {'home': 'בית', 'search': 'חיפוש', 'blog': 'בלוג', 'profile': 'פרופיל'};
+        return {'home': 'בית', 'search': 'חיפוש', 'blog': 'בלוג', 'profile': 'פרופיל', 'settings': 'הגדרות'};
       case 'ar':
-        return {'home': 'الرئيسية', 'search': 'بحث', 'blog': 'مدونة', 'profile': 'الملف الشخصي'};
-      case 'ru':
-        return {'home': 'Главная', 'search': 'Поиск', 'blog': 'Блог', 'profile': 'Профиль'};
+        return {'home': 'الرئيسية', 'search': 'بحث', 'blog': 'مدونة', 'profile': 'الملف الشخصي', 'settings': 'الإعدادات'};
       default:
-        return {'home': 'Home', 'search': 'Search', 'blog': 'Blog', 'profile': 'Profile'};
+        return {'home': 'Home', 'search': 'Search', 'blog': 'Blog', 'profile': 'Profile', 'settings': 'Settings'};
     }
   }
 
@@ -87,6 +100,7 @@ class _MyHomePageState extends State<MyHomePage> {
             BottomNavigationBarItem(icon: const Icon(Icons.search), label: labels['search']),
             BottomNavigationBarItem(icon: const Icon(Icons.article_outlined), label: labels['blog']),
             BottomNavigationBarItem(icon: const Icon(Icons.person_outline), label: labels['profile']),
+            BottomNavigationBarItem(icon: const Icon(Icons.settings_outlined), label: labels['settings']),
           ],
         ),
       ),

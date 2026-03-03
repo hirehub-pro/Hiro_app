@@ -218,6 +218,13 @@ class _BlogPageState extends State<BlogPage> {
     );
   }
 
+  Future<void> _handleRefresh() async {
+    // For now, since it's local data or static, we just simulate a delay.
+    // If you add real Firebase fetching for posts, call it here.
+    await Future.delayed(const Duration(seconds: 1));
+    if (mounted) setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
     final strings = _getLocalizedStrings(context);
@@ -234,38 +241,41 @@ class _BlogPageState extends State<BlogPage> {
           backgroundColor: const Color(0xFF1976D2),
           child: const Icon(Icons.add, color: Colors.white),
         ),
-        body: CustomScrollView(
-          slivers: [
-            SliverAppBar(
-              expandedHeight: 120.0,
-              pinned: true,
-              backgroundColor: Colors.white,
-              elevation: 0,
-              flexibleSpace: FlexibleSpaceBar(
-                title: Text(strings['title'], style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
-                centerTitle: true,
+        body: RefreshIndicator(
+          onRefresh: _handleRefresh,
+          child: CustomScrollView(
+            slivers: [
+              SliverAppBar(
+                expandedHeight: 120.0,
+                pinned: true,
+                backgroundColor: Colors.white,
+                elevation: 0,
+                flexibleSpace: FlexibleSpaceBar(
+                  title: Text(strings['title'], style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+                  centerTitle: true,
+                ),
               ),
-            ),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
-                child: Text(strings['featured'], style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.black87)),
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
+                  child: Text(strings['featured'], style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.black87)),
+                ),
               ),
-            ),
-            SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (context, index) {
-                  final post = allPosts[index];
-                  return _BlogCard(
-                    post: post,
-                    localizedStrings: strings,
-                  );
-                },
-                childCount: allPosts.length,
+              SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) {
+                    final post = allPosts[index];
+                    return _BlogCard(
+                      post: post,
+                      localizedStrings: strings,
+                    );
+                  },
+                  childCount: allPosts.length,
+                ),
               ),
-            ),
-            const SliverToBoxAdapter(child: SizedBox(height: 32)),
-          ],
+              const SliverToBoxAdapter(child: SizedBox(height: 32)),
+            ],
+          ),
         ),
       ),
     );
@@ -276,263 +286,61 @@ class _BlogCard extends StatelessWidget {
   final Map<String, dynamic> post;
   final Map<String, dynamic> localizedStrings;
 
-  const _BlogCard({required this.post, required this.localizedStrings});
+  const _BlogCard({Key? key, required this.post, required this.localizedStrings}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 15, offset: const Offset(0, 5))],
-      ),
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      elevation: 2,
       child: InkWell(
         onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => BlogPostDetail(post: post, localizedStrings: localizedStrings),
+          // Show full post content in a dialog or new page
+          showDialog(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: Text(post['title']),
+              content: SingleChildScrollView(child: Text(post['content'])),
+              actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close'))],
             ),
           );
         },
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Stack(
-              children: [
-                if (post['isUserPost'] != true)
-                  ClipRRect(
-                    borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-                    child: Image.network(
-                      'https://picsum.photos/600/300?sig=${post['title'].hashCode}',
-                      height: 180,
-                      width: double.infinity,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) => Container(height: 180, color: Colors.grey[100], child: const Icon(Icons.image_outlined, color: Colors.grey, size: 40)),
-                    ),
-                  )
-                else
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
                   Container(
-                    height: 80,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFFE3F2FD),
-                      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-                    ),
-                    child: const Center(child: Icon(Icons.article_outlined, color: Color(0xFF1976D2), size: 40)),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(color: Colors.blue.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                    child: Text(post['category'], style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold, fontSize: 12)),
                   ),
-                Positioned(
-                  top: 16,
-                  right: 16,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(color: const Color(0xFF1976D2), borderRadius: BorderRadius.circular(20)),
-                    child: Text(post['category'], style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
-                  ),
-                ),
-              ],
-            ),
-            Padding(
-              padding: const EdgeInsets.all(20.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.calendar_today_outlined, size: 14, color: Colors.grey),
-                      const SizedBox(width: 6),
-                      Text(post['date'], style: const TextStyle(color: Colors.grey, fontSize: 13)),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Text(post['title'], style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, height: 1.2, color: Colors.black87)),
-                  const SizedBox(height: 12),
-                  Text(post['excerpt'], style: TextStyle(color: Colors.grey[600], height: 1.5, fontSize: 15), maxLines: 3, overflow: TextOverflow.ellipsis),
-                  const SizedBox(height: 20),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(localizedStrings['read_more'] ?? 'Read more...', style: const TextStyle(color: Color(0xFF1976D2), fontWeight: FontWeight.bold, fontSize: 15)),
-                      Row(
-                        children: [
-                          const Icon(Icons.thumb_up_alt_outlined, size: 16, color: Colors.grey),
-                          const SizedBox(width: 4),
-                          Text('${post['likes']}', style: const TextStyle(color: Colors.grey, fontSize: 12)),
-                          const SizedBox(width: 12),
-                          const Icon(Icons.thumb_down_alt_outlined, size: 16, color: Colors.grey),
-                          const SizedBox(width: 4),
-                          Text('${post['dislikes']}', style: const TextStyle(color: Colors.grey, fontSize: 12)),
-                        ],
-                      ),
-                    ],
-                  ),
+                  const Spacer(),
+                  Text(post['date'], style: const TextStyle(color: Colors.grey, fontSize: 12)),
                 ],
               ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class BlogPostDetail extends StatefulWidget {
-  final Map<String, dynamic> post;
-  final Map<String, dynamic> localizedStrings;
-
-  const BlogPostDetail({Key? key, required this.post, required this.localizedStrings}) : super(key: key);
-
-  @override
-  State<BlogPostDetail> createState() => _BlogPostDetailState();
-}
-
-class _BlogPostDetailState extends State<BlogPostDetail> {
-  int _likes = 0;
-  int _dislikes = 0;
-  bool _isLiked = false;
-  bool _isDisliked = false;
-  final List<String> _comments = [];
-  final TextEditingController _commentController = TextEditingController();
-
-  @override
-  void initState() {
-    super.initState();
-    _likes = widget.post['likes'];
-    _dislikes = widget.post['dislikes'];
-  }
-
-  void _toggleLike() {
-    setState(() {
-      if (_isLiked) {
-        _likes--;
-        _isLiked = false;
-      } else {
-        _likes++;
-        _isLiked = true;
-        if (_isDisliked) {
-          _dislikes--;
-          _isDisliked = false;
-        }
-      }
-    });
-  }
-
-  void _toggleDislike() {
-    setState(() {
-      if (_isDisliked) {
-        _dislikes--;
-        _isDisliked = false;
-      } else {
-        _dislikes++;
-        _isDisliked = true;
-        if (_isLiked) {
-          _likes--;
-          _isLiked = false;
-        }
-      }
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final isRtl = Directionality.of(context) == TextDirection.rtl;
-
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        iconTheme: const IconThemeData(color: Colors.black),
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (widget.post['isUserPost'] != true)
-              ClipRRect(
-                borderRadius: BorderRadius.circular(16),
-                child: Image.network(
-                  'https://picsum.photos/800/400?sig=${widget.post['title'].hashCode}',
-                  height: 200,
-                  width: double.infinity,
-                  fit: BoxFit.cover,
-                ),
-              ),
-            const SizedBox(height: 20),
-            Text(widget.post['title'], style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 12),
-            GestureDetector(
-              onTap: () {
-                Navigator.push(context, MaterialPageRoute(builder: (context) => const profile()));
-              },
-              child: Row(
+              const SizedBox(height: 12),
+              Text(post['title'], style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87)),
+              const SizedBox(height: 8),
+              Text(post['excerpt'], style: const TextStyle(color: Colors.grey, height: 1.4)),
+              const SizedBox(height: 12),
+              Row(
                 children: [
-                  const CircleAvatar(radius: 16, child: Icon(Icons.person, size: 20)),
-                  const SizedBox(width: 8),
-                  Text('${widget.localizedStrings['author']}: ${widget.post['authorName']}', style: const TextStyle(color: Color(0xFF1976D2), fontWeight: FontWeight.w600)),
+                  const Icon(Icons.person_outline, size: 16, color: Colors.grey),
+                  const SizedBox(width: 4),
+                  Text(post['authorName'], style: const TextStyle(color: Colors.grey, fontSize: 13)),
+                  const Spacer(),
+                  Icon(Icons.thumb_up_outlined, size: 16, color: Colors.blue[700]),
+                  const SizedBox(width: 4),
+                  Text(post['likes'].toString(), style: const TextStyle(color: Colors.grey, fontSize: 13)),
                 ],
               ),
-            ),
-            const SizedBox(height: 8),
-            Text(widget.post['date'], style: const TextStyle(color: Colors.grey)),
-            const SizedBox(height: 20),
-            Text(widget.post['content'], style: const TextStyle(fontSize: 16, height: 1.6)),
-            const SizedBox(height: 30),
-            Row(
-              children: [
-                IconButton(
-                  icon: Icon(_isLiked ? Icons.thumb_up : Icons.thumb_up_alt_outlined, color: _isLiked ? const Color(0xFF1976D2) : Colors.grey),
-                  onPressed: _toggleLike,
-                ),
-                Text('$_likes'),
-                const SizedBox(width: 16),
-                IconButton(
-                  icon: Icon(_isDisliked ? Icons.thumb_down : Icons.thumb_down_alt_outlined, color: _isDisliked ? Colors.red : Colors.grey),
-                  onPressed: _toggleDislike,
-                ),
-                Text('$_dislikes'),
-              ],
-            ),
-            const Divider(height: 40),
-            Text(widget.localizedStrings['comments'], style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 16),
-            ..._comments.map((c) => Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(color: Colors.grey[100], borderRadius: BorderRadius.circular(12)),
-                child: Text(c),
-              ),
-            )),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _commentController,
-                    decoration: InputDecoration(
-                      hintText: widget.localizedStrings['write_comment'],
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                IconButton(
-                  icon: const Icon(Icons.send, color: Color(0xFF1976D2)),
-                  onPressed: () {
-                    if (_commentController.text.isNotEmpty) {
-                      setState(() {
-                        _comments.add(_commentController.text);
-                        _commentController.clear();
-                      });
-                    }
-                  },
-                ),
-              ],
-            ),
-            const SizedBox(height: 40),
-          ],
+            ],
+          ),
         ),
       ),
     );
