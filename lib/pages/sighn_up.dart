@@ -2,6 +2,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:untitled1/pages/subscription.dart';
 import 'package:untitled1/pages/sighn_in.dart';
 
@@ -30,6 +32,8 @@ class _SignUpPageState extends State<SignUpPage> {
   bool _agreedToPolicy = false;
   bool _isSubscribed = false;
   bool _isLoading = false;
+  File? _image;
+  final ImagePicker _picker = ImagePicker();
 
   final List<String> _israeliTowns = [
     'Jerusalem', 'Tel Aviv', 'Haifa', 'Rishon LeZion', 'Petah Tikva', 'Ashdod',
@@ -37,7 +41,9 @@ class _SignUpPageState extends State<SignUpPage> {
   ];
 
   final List<String> _professions = [
-    'Plumber', 'Carpenter', 'Electrician', 'Painter', 'Cleaner', 'Handyman', 'Landscaper', 'HVAC'
+    'Plumber', 'Carpenter', 'Electrician', 'Painter', 'Cleaner', 'Handyman', 
+    'Landscaper', 'HVAC', 'Locksmith', 'Gardener', 'Mechanic', 'Photographer', 
+    'Tutor', 'Tailor', 'Mover', 'Interior Designer', 'Beautician', 'Pet Groomer'
   ];
 
   @override
@@ -50,6 +56,15 @@ class _SignUpPageState extends State<SignUpPage> {
     _phoneController.dispose();
     _optionalPhoneController.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickImage() async {
+    final pickedFile = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
+    if (pickedFile != null) {
+      setState(() {
+        _image = File(pickedFile.path);
+      });
+    }
   }
 
   Future<void> _submitForm() async {
@@ -71,7 +86,6 @@ class _SignUpPageState extends State<SignUpPage> {
 
     setState(() => _isLoading = true);
     try {
-      // 1. Create user in Firebase Auth
       UserCredential userCredential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
         email: _emailController.text.trim(),
         password: _passwordController.text,
@@ -80,10 +94,15 @@ class _SignUpPageState extends State<SignUpPage> {
       final user = userCredential.user;
       if (user == null) throw Exception('User creation failed');
 
-      // 2. Update Display Name in Auth
       await user.updateDisplayName(_nameController.text.trim());
 
-      // 3. Prepare data for database
+      String? imageUrl;
+      if (_image != null) {
+        final storageRef = FirebaseStorage.instance.ref().child('profile_pictures/${user.uid}.jpg');
+        await storageRef.putFile(_image!);
+        imageUrl = await storageRef.getDownloadURL();
+      }
+
       Map<String, dynamic> userData = {
         'uid': user.uid,
         'name': _nameController.text.trim(),
@@ -91,6 +110,7 @@ class _SignUpPageState extends State<SignUpPage> {
         'town': _selectedTown,
         'userType': _userType == UserType.worker ? 'worker' : 'normal',
         'createdAt': ServerValue.timestamp,
+        'profileImageUrl': imageUrl ?? "",
       };
 
       if (_userType == UserType.worker) {
@@ -104,7 +124,6 @@ class _SignUpPageState extends State<SignUpPage> {
         });
       }
 
-      // 4. Save to Realtime Database using the specific Europe URL
       final DatabaseReference dbRef = FirebaseDatabase.instanceFor(
         app: FirebaseAuth.instance.app,
         databaseURL: 'https://hire-hub-fe6c4-default-rtdb.firebaseio.com'
@@ -152,7 +171,7 @@ class _SignUpPageState extends State<SignUpPage> {
                 children: [
                   _buildTypeSelector(),
                   const SizedBox(height: 24),
-                  _buildProfilePicturePlaceholder(),
+                  _buildProfilePicturePicker(),
                   const SizedBox(height: 24),
                   _buildTextField(_nameController, 'Full Name', Icons.person),
                   const SizedBox(height: 16),
@@ -227,13 +246,31 @@ class _SignUpPageState extends State<SignUpPage> {
     );
   }
 
-  Widget _buildProfilePicturePlaceholder() {
+  Widget _buildProfilePicturePicker() {
     return Center(
-      child: Stack(
-        children: [
-          CircleAvatar(radius: 50, backgroundColor: Colors.grey[300], child: const Icon(Icons.person, size: 50, color: Colors.white)),
-          Positioned(bottom: 0, right: 0, child: Container(padding: const EdgeInsets.all(4), decoration: const BoxDecoration(color: Color(0xFF1976D2), shape: BoxShape.circle), child: const Icon(Icons.camera_alt, color: Colors.white, size: 20))),
-        ],
+      child: GestureDetector(
+        onTap: _pickImage,
+        child: Stack(
+          children: [
+            CircleAvatar(
+              radius: 50,
+              backgroundColor: Colors.grey[300],
+              backgroundImage: _image != null ? FileImage(_image!) : null,
+              child: _image == null 
+                ? const Icon(Icons.person, size: 50, color: Colors.white) 
+                : null,
+            ),
+            Positioned(
+              bottom: 0, 
+              right: 0, 
+              child: Container(
+                padding: const EdgeInsets.all(4), 
+                decoration: const BoxDecoration(color: Color(0xFF1976D2), shape: BoxShape.circle), 
+                child: const Icon(Icons.camera_alt, color: Colors.white, size: 20)
+              )
+            ),
+          ],
+        ),
       ),
     );
   }

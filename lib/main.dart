@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:untitled1/language_provider.dart';
 import 'package:untitled1/pages/home.dart';
@@ -20,7 +21,6 @@ void main() async {
       databaseURL: 'https://hire-hub-fe6c4-default-rtdb.firebaseio.com'
   );
   
-  // Disable persistence to ensure we don't see stale local data
   database.setPersistenceEnabled(false);
 
   runApp(
@@ -39,7 +39,18 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       locale: Provider.of<LanguageProvider>(context).locale,
-      home: const SplashScreen(),
+      home: StreamBuilder<User?>(
+        stream: FirebaseAuth.instance.authStateChanges(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Scaffold(body: Center(child: CircularProgressIndicator()));
+          }
+          if (snapshot.hasData) {
+            return const MyHomePage();
+          }
+          return const SplashScreen();
+        },
+      ),
     );
   }
 }

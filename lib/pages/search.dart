@@ -1,9 +1,11 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:untitled1/language_provider.dart';
 import 'package:untitled1/pages/ptofile.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class SearchPage extends StatefulWidget {
   final String? initialTrade;
@@ -21,9 +23,11 @@ class _SearchPageState extends State<SearchPage> {
 
   List<Map<String, dynamic>> _allWorkers = [];
   List<Map<String, dynamic>> _filteredWorkers = [];
+  List<String> _searchHistory = [];
   bool _isLoading = true;
   String? _selectedTrade;
   bool _showFilters = false;
+  String _sortBy = 'rating'; // 'rating' or 'alphabetical'
 
   @override
   void initState() {
@@ -35,6 +39,25 @@ class _SearchPageState extends State<SearchPage> {
     
     _selectedTrade = widget.initialTrade;
     _fetchWorkers();
+    _loadSearchHistory();
+  }
+
+  Future<void> _loadSearchHistory() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _searchHistory = prefs.getStringList('search_history') ?? [];
+    });
+  }
+
+  Future<void> _addToHistory(String query) async {
+    if (query.trim().isEmpty) return;
+    final prefs = await SharedPreferences.getInstance();
+    List<String> history = prefs.getStringList('search_history') ?? [];
+    history.remove(query); // Remove if exists to move to top
+    history.insert(0, query);
+    if (history.length > 5) history = history.sublist(0, 5); // Keep last 5
+    await prefs.setStringList('search_history', history);
+    setState(() => _searchHistory = history);
   }
 
   Future<void> _fetchWorkers() async {
@@ -130,22 +153,27 @@ class _SearchPageState extends State<SearchPage> {
         return matchesTrade && matchesSearch;
       }).toList();
       
-      _filteredWorkers.sort((a, b) => (b['avgRating'] as double).compareTo(a['avgRating'] as double));
+      if (_sortBy == 'rating') {
+        _filteredWorkers.sort((a, b) => (b['avgRating'] as double).compareTo(a['avgRating'] as double));
+      } else {
+        _filteredWorkers.sort((a, b) => (a['name'] ?? '').toString().compareTo(b['name'] ?? ''));
+      }
     });
   }
 
   Map<String, dynamic> _getLocalizedStrings(BuildContext context) {
     final locale = Provider.of<LanguageProvider>(context).locale.languageCode;
-    final tradeNames = {
-      'Plumber': locale == 'he' ? 'אינסטלציה' : (locale == 'ar' ? 'سباكة' : (locale == 'ru' ? 'Сантехник' : (locale == 'am' ? 'ቧንቧ ሰራተኛ' : 'Plumbing'))),
-      'Carpenter': locale == 'he' ? 'נגרות' : (locale == 'ar' ? 'نجارة' : (locale == 'ru' ? 'Плотник' : (locale == 'am' ? 'አናጺ' : 'Carpentry'))),
-      'Electrician': locale == 'he' ? 'חשמל' : (locale == 'ar' ? 'كهرباء' : (locale == 'ru' ? 'Электрик' : (locale == 'am' ? 'ኤሌክትሪሻን' : 'Electrical'))),
-      'Painter': locale == 'he' ? 'צבע' : (locale == 'ar' ? 'دهان' : (locale == 'ru' ? 'Маляр' : (locale == 'am' ? 'ቀለም ቀቢ' : 'Painting'))),
-      'Cleaner': locale == 'he' ? 'ניקיון' : (locale == 'ar' ? 'تنظيف' : (locale == 'ru' ? 'Уборка' : (locale == 'am' ? 'ፅዳት' : 'Cleaning'))),
-      'Handyman': locale == 'he' ? 'תיקונים' : (locale == 'ar' ? 'صيانة' : (locale == 'ru' ? 'Мастер на час' : (locale == 'am' ? 'ጥገና' : 'Handyman'))),
-      'Landscaper': locale == 'he' ? 'גינון' : (locale == 'ar' ? 'حدائق' : (locale == 'ru' ? 'Ландшафт' : (locale == 'am' ? 'አትክልተኛ' : 'Landscaping'))),
-      'HVAC': locale == 'he' ? 'מיזוג' : (locale == 'ar' ? 'تكييف' : (locale == 'ru' ? 'Кондиционеры' : (locale == 'am' ? 'ኤሲ ጥገና' : 'HVAC'))),
-    };
+    
+    Map<String, String> tradeNames = {};
+    final professionsList = [
+      'Plumber', 'Carpenter', 'Electrician', 'Painter', 'Cleaner', 'Handyman', 
+      'Landscaper', 'HVAC', 'Locksmith', 'Gardener', 'Mechanic', 'Photographer', 
+      'Tutor', 'Tailor', 'Mover', 'Interior Designer', 'Beautician', 'Pet Groomer'
+    ];
+
+    for (var prof in professionsList) {
+      tradeNames[prof] = _translateProfession(prof, locale);
+    }
 
     switch (locale) {
       case 'he':
@@ -156,6 +184,10 @@ class _SearchPageState extends State<SearchPage> {
           'found': 'נמצאו ${_filteredWorkers.length} תוצאות',
           'no_results': 'לא נמצאו תוצאות לחיפוש שלך',
           'trades': tradeNames,
+          'recent': 'חיפושים אחרונים',
+          'sort': 'מיין לפי',
+          'rating': 'דירוג',
+          'name': 'שם',
         };
       case 'ar':
         return {
@@ -165,6 +197,10 @@ class _SearchPageState extends State<SearchPage> {
           'found': 'تم العثور على ${_filteredWorkers.length} نتيجة',
           'no_results': 'لم يتم العثور على نتائج لبحثك',
           'trades': tradeNames,
+          'recent': 'عمليات البحث الأخيرة',
+          'sort': 'ترتيب حسب',
+          'rating': 'التقييم',
+          'name': 'الاسم',
         };
       case 'ru':
         return {
@@ -174,6 +210,10 @@ class _SearchPageState extends State<SearchPage> {
           'found': 'Найдено ${_filteredWorkers.length} результатов',
           'no_results': 'Результатов не найдено',
           'trades': tradeNames,
+          'recent': 'Недавние поиски',
+          'sort': 'Сортировать по',
+          'rating': 'Рейтингу',
+          'name': 'Имени',
         };
       case 'am':
         return {
@@ -183,6 +223,10 @@ class _SearchPageState extends State<SearchPage> {
           'found': '${_filteredWorkers.length} ውጤቶች ተገኝተዋል',
           'no_results': 'ምንም ውጤት አልተገኘም',
           'trades': tradeNames,
+          'recent': 'የቅርብ ጊዜ ፍለጋዎች',
+          'sort': 'መደርደሪያ',
+          'rating': 'ደረጃ',
+          'name': 'ስም',
         };
       default:
         return {
@@ -192,8 +236,36 @@ class _SearchPageState extends State<SearchPage> {
           'found': '${_filteredWorkers.length} results found',
           'no_results': 'No results found for your search',
           'trades': tradeNames,
+          'recent': 'Recent Searches',
+          'sort': 'Sort by',
+          'rating': 'Rating',
+          'name': 'Name',
         };
     }
+  }
+
+  String _translateProfession(String prof, String locale) {
+    final Map<String, Map<String, String>> translations = {
+      'Plumber': {'he': 'אינסטלטור', 'ar': 'سباك', 'ru': 'Сантехник', 'am': 'ቧንቧ ሰራተኛ'},
+      'Carpenter': {'he': 'נגר', 'ar': 'نجار', 'ru': 'Плотник', 'am': 'አናጺ'},
+      'Electrician': {'he': 'חשמלאי', 'ar': 'كهربائي', 'ru': 'Электрик', 'am': 'ኤሌክትሪሻን'},
+      'Painter': {'he': 'צבע', 'ar': 'دهان', 'ru': 'Маляр', 'am': 'ቀለም ቀቢ'},
+      'Cleaner': {'he': 'ניקיון', 'ar': 'تنظيف', 'ru': 'Уборка', 'am': 'ፅዳት'},
+      'Handyman': {'he': 'הנדימן', 'ar': 'عامل صيانة', 'ru': 'Мастер на час', 'am': 'ጥገና'},
+      'Landscaper': {'he': 'גנן נוף', 'ar': 'منسق حدائق', 'ru': 'Ландшафтный дизайнер', 'am': 'አትክልተኛ'},
+      'HVAC': {'he': 'טכנאי מיזוג', 'ar': 'فني تكييف', 'ru': 'Кондиционеры', 'am': 'ኤሲ ጥገና'},
+      'Locksmith': {'he': 'מנעולן', 'ar': 'أقفال', 'ru': 'Слесарь', 'am': 'መנעול ሰራተኛ'},
+      'Gardener': {'he': 'גנן', 'ar': 'بستاني', 'ru': 'Садовник', 'am': 'አትክልተኛ'},
+      'Mechanic': {'he': 'מכונאי', 'ar': 'ميكانيكي', 'ru': 'Механик', 'am': 'መካኒክ'},
+      'Photographer': {'he': 'צלם', 'ar': 'مصور', 'ru': 'Фотограф', 'am': 'ፎቶግራፍ አንሺ'},
+      'Tutor': {'he': 'מורה פרטי', 'ar': 'مدرس خصوصي', 'ru': 'Репетитор', 'am': 'የግል መምህር'},
+      'Tailor': {'he': 'חייט', 'ar': 'خياط', 'ru': 'Портной', 'am': 'ልብስ ሰፊ'},
+      'Mover': {'he': 'מוביל', 'ar': 'شركة نقل', 'ru': 'Грузчик', 'am': 'ዕቃ አጓጓዥ'},
+      'Interior Designer': {'he': 'מעצב פנים', 'ar': 'مصمم ديكור', 'ru': 'Дизайнер интерьера', 'am': 'የውስጥ ዲዛይነር'},
+      'Beautician': {'he': 'קוסמטיקאית', 'ar': 'خبير تجميل', 'ru': 'Косметолог', 'am': 'የውበት ባለሙያ'},
+      'Pet Groomer': {'he': 'ספרית כלבים', 'ar': 'حلاقة حيوانات', 'ru': 'Грумер', 'am': 'የቤት እንስሳት ፀጉር አስተካካይ'},
+    };
+    return translations[prof]?[locale] ?? prof;
   }
 
   @override
@@ -217,11 +289,19 @@ class _SearchPageState extends State<SearchPage> {
           foregroundColor: Colors.white,
           elevation: 0,
           title: Text(localized['trade']!),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.sort_rounded),
+              onPressed: () => _showSortOptions(localized),
+            ),
+          ],
         ),
         body: Column(
           children: [
             _buildSearchHeader(localized, isRtl),
             if (_showFilters) _buildFilterPanel(localized),
+            if (_searchController.text.isEmpty && _searchHistory.isNotEmpty)
+              _buildHistoryList(localized),
             Expanded(
               child: _isLoading 
                 ? const Center(child: CircularProgressIndicator())
@@ -231,6 +311,65 @@ class _SearchPageState extends State<SearchPage> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  void _showSortOptions(Map<String, dynamic> strings) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            leading: const Icon(Icons.star_rounded, color: Colors.amber),
+            title: Text(strings['rating']),
+            trailing: _sortBy == 'rating' ? const Icon(Icons.check, color: Color(0xFF1976D2)) : null,
+            onTap: () {
+              setState(() => _sortBy = 'rating');
+              _applyFilters();
+              Navigator.pop(context);
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.sort_by_alpha_rounded, color: Colors.blue),
+            title: Text(strings['name']),
+            trailing: _sortBy == 'name' ? const Icon(Icons.check, color: Color(0xFF1976D2)) : null,
+            onTap: () {
+              setState(() => _sortBy = 'name');
+              _applyFilters();
+              Navigator.pop(context);
+            },
+          ),
+          const SizedBox(height: 16),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHistoryList(Map<String, dynamic> strings) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      color: Colors.white,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(strings['recent'], style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey)),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            children: _searchHistory.map((query) => ActionChip(
+              label: Text(query, style: const TextStyle(fontSize: 12)),
+              onPressed: () {
+                _searchController.text = query;
+                _applyFilters();
+              },
+              backgroundColor: const Color(0xFFF1F5F9),
+            )).toList(),
+          ),
+        ],
       ),
     );
   }
@@ -254,6 +393,7 @@ class _SearchPageState extends State<SearchPage> {
               child: TextField(
                 controller: _searchController,
                 onChanged: (v) => _applyFilters(),
+                onSubmitted: (v) => _addToHistory(v),
                 decoration: InputDecoration(
                   hintText: strings['search'],
                   hintStyle: const TextStyle(color: Color(0xFF94A3B8), fontSize: 14),
@@ -358,7 +498,10 @@ class _SearchPageState extends State<SearchPage> {
         boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 12, offset: const Offset(0, 4))],
       ),
       child: InkWell(
-        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => profile(userId: worker['uid']))),
+        onTap: () {
+          _addToHistory(_searchController.text);
+          Navigator.push(context, MaterialPageRoute(builder: (context) => profile(userId: worker['uid'])));
+        },
         borderRadius: BorderRadius.circular(20),
         child: Padding(
           padding: const EdgeInsets.all(12),

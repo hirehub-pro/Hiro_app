@@ -4,6 +4,8 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:provider/provider.dart';
 import 'package:untitled1/language_provider.dart';
 import 'package:untitled1/pages/sighn_up.dart';
+import 'package:untitled1/auth_service.dart';
+import 'package:untitled1/pages/phone_auth_page.dart';
 import '../main.dart';
 
 class SignInPage extends StatefulWidget {
@@ -25,6 +27,7 @@ class _SignInPageState extends State<SignInPage> {
   bool _loading = false;
   bool _obscure = true;
 
+  final AuthService _authService = AuthService();
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final DatabaseReference _dbRef = FirebaseDatabase.instanceFor(
       app: FirebaseAuth.instance.app,
@@ -61,6 +64,9 @@ class _SignInPageState extends State<SignInPage> {
           'valid_email': 'הכנס אימייל תקין',
           'pass_required': 'סיסמה שדה חובה',
           'success': 'התחברת בהצלחה',
+          'or': 'או התחבר באמצעות',
+          'guest': 'המשך כאורח',
+          'phone': 'התחבר עם טלפון',
         };
       case 'ar':
         return {
@@ -75,34 +81,9 @@ class _SignInPageState extends State<SignInPage> {
           'valid_email': 'أدخل بريداً إلكترونياً صالحاً',
           'pass_required': 'كلمة المرور مطلوبة',
           'success': 'تم تسجيل الدخول بنجاح',
-        };
-      case 'ru':
-        return {
-          'welcome': 'С\nвозвращением',
-          'email': 'Email',
-          'password': 'Пароль',
-          'forgot': 'Забыли пароль?',
-          'signin': 'Войти',
-          'no_account': 'Нет аккаунта? ',
-          'signup': 'Регистрация',
-          'email_required': 'Введите Email',
-          'valid_email': 'Введите корректный Email',
-          'pass_required': 'Введите пароль',
-          'success': 'Успешный вход',
-        };
-      case 'am':
-        return {
-          'welcome': 'እንኳን\nደህና መጡ',
-          'email': 'ኢሜይል',
-          'password': 'የይለፍ ቃል',
-          'forgot': 'የይለፍ ቃል ረስተዋል?',
-          'signin': 'ግባ',
-          'no_account': 'አካውንት የለዎትም? ',
-          'signup': 'ይመዝገቡ',
-          'email_required': 'ኢሜይል ያስፈልጋል',
-          'valid_email': 'ትክክለኛ ኢሜይል ያስገቡ',
-          'pass_required': 'የይለፍ ቃል ያስፈልጋል',
-          'success': 'በተሳካ ሁኔታ ገብተዋል',
+          'or': 'أو سجل الدخول عبر',
+          'guest': 'الدخول كضيف',
+          'phone': 'رقم الهاتف',
         };
       default:
         return {
@@ -117,7 +98,20 @@ class _SignInPageState extends State<SignInPage> {
           'valid_email': 'Enter a valid email',
           'pass_required': 'Password is required',
           'success': 'Signed in successfully',
+          'or': 'Or sign in with',
+          'guest': 'Continue as Guest',
+          'phone': 'Phone Number',
         };
+    }
+  }
+
+  Future<void> _handleSocialSignIn(Future<User?> Function() signInMethod) async {
+    setState(() => _loading = true);
+    final user = await signInMethod();
+    if (user != null && mounted) {
+      Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const MyHomePage()));
+    } else if (mounted) {
+      setState(() => _loading = false);
     }
   }
 
@@ -134,32 +128,12 @@ class _SignInPageState extends State<SignInPage> {
 
       if (userCredential.user != null) {
         if (!mounted) return;
-        
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(strings['success']!)),
-        );
-
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const MyHomePage()),
-        );
-
-        _dbRef.child('users').child(userCredential.user!.uid).get().then((snapshot) {
-           debugPrint('User data loaded in background');
-        }).catchError((e) {
-           debugPrint('Background data fetch error: $e');
-        });
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(strings['success']!)));
+        Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const MyHomePage()));
       }
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message ?? 'Authentication failed')),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: ${e.toString()}')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message ?? 'Authentication failed')));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -168,8 +142,8 @@ class _SignInPageState extends State<SignInPage> {
   @override
   Widget build(BuildContext context) {
     final strings = _getLocalizedStrings(context);
-    final localeCode = Provider.of<LanguageProvider>(context).locale.languageCode;
-    final isRtl = localeCode == 'he' || localeCode == 'ar';
+    final isRtl = Provider.of<LanguageProvider>(context).locale.languageCode == 'he' || 
+                  Provider.of<LanguageProvider>(context).locale.languageCode == 'ar';
     
     return Directionality(
       textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
@@ -178,149 +152,27 @@ class _SignInPageState extends State<SignInPage> {
         body: SingleChildScrollView(
           child: Column(
             children: [
-              Container(
-                height: 300,
-                width: double.infinity,
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [Color(0xFF1E3A8A), Color(0xFF1976D2)],
-                  ),
-                  borderRadius: BorderRadius.only(
-                    bottomLeft: Radius.circular(80),
-                  ),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 40),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: const Icon(Icons.handyman_rounded, size: 40, color: Colors.white),
-                      ),
-                      const SizedBox(height: 24),
-                      Text(
-                        strings['welcome']!,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 40,
-                          fontWeight: FontWeight.bold,
-                          height: 1.1,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              
+              _buildHeader(strings),
               Padding(
-                padding: const EdgeInsets.fromLTRB(24, 40, 24, 24),
+                padding: const EdgeInsets.all(24),
                 child: Form(
                   key: _formKey,
                   child: Column(
                     children: [
-                      TextFormField(
-                        controller: _emailCtrl,
-                        keyboardType: TextInputType.emailAddress,
-                        decoration: InputDecoration(
-                          labelText: strings['email'],
-                          hintText: 'name@example.com',
-                          prefixIcon: const Icon(Icons.email_outlined, color: Color(0xFF1976D2)),
-                          filled: true,
-                          fillColor: const Color(0xFFF8FAFC),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
-                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(16),
-                            borderSide: const BorderSide(color: Color(0xFF1976D2), width: 2),
-                          ),
-                        ),
-                        validator: (v) {
-                          if (v == null || v.trim().isEmpty) return strings['email_required'];
-                          if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(v.trim())) {
-                            return strings['valid_email'];
-                          }
-                          return null;
-                        },
-                      ),
+                      _buildEmailField(strings),
                       const SizedBox(height: 20),
-                      
-                      TextFormField(
-                        controller: _passwordCtrl,
-                        obscureText: _obscure,
-                        decoration: InputDecoration(
-                          labelText: strings['password'],
-                          hintText: '••••••••',
-                          prefixIcon: const Icon(Icons.lock_outline_rounded, color: Color(0xFF1976D2)),
-                          filled: true,
-                          fillColor: const Color(0xFFF8FAFC),
-                          suffixIcon: IconButton(
-                            icon: Icon(_obscure ? Icons.visibility_off_outlined : Icons.visibility_outlined, color: Colors.grey),
-                            onPressed: () => setState(() => _obscure = !_obscure),
-                          ),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
-                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(16),
-                            borderSide: const BorderSide(color: Color(0xFF1976D2), width: 2),
-                          ),
-                        ),
-                        validator: (v) => (v == null || v.isEmpty) ? strings['pass_required'] : null,
-                      ),
-                      
-                      Align(
-                        alignment: isRtl ? Alignment.centerLeft : Alignment.centerRight,
-                        child: TextButton(
-                          onPressed: () {},
-                          child: Text(
-                            strings['forgot']!,
-                            style: const TextStyle(color: Color(0xFF64748B), fontWeight: FontWeight.w600),
-                          ),
-                        ),
-                      ),
-                      
+                      _buildPasswordField(strings),
+                      _buildForgotPassword(strings, isRtl),
                       const SizedBox(height: 32),
-                      
-                      SizedBox(
-                        width: double.infinity,
-                        height: 60,
-                        child: ElevatedButton(
-                          onPressed: _loading ? null : _submit,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF1976D2),
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                            elevation: 2,
-                          ),
-                          child: _loading
-                              ? const SizedBox(height: 24, width: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 3))
-                              : Text(strings['signin']!, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                        ),
-                      ),
-                      
+                      _buildSignInButton(strings),
                       const SizedBox(height: 24),
-                      
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(strings['no_account']!, style: const TextStyle(color: Color(0xFF64748B))),
-                          GestureDetector(
-                            onTap: _loading ? null : () => Navigator.push(context, MaterialPageRoute(builder: (context) => const SignUpPage())),
-                            child: Text(
-                              strings['signup']!,
-                              style: const TextStyle(color: Color(0xFF1976D2), fontWeight: FontWeight.bold),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 40),
+                      _buildSocialDivider(strings),
+                      const SizedBox(height: 24),
+                      _buildSocialButtons(),
+                      const SizedBox(height: 24),
+                      _buildGuestAndPhone(strings),
+                      const SizedBox(height: 24),
+                      _buildSignUpLink(strings),
                     ],
                   ),
                 ),
@@ -329,6 +181,143 @@ class _SignInPageState extends State<SignInPage> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildHeader(Map<String, String> strings) {
+    return Container(
+      height: 250,
+      width: double.infinity,
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF1E3A8A), Color(0xFF1976D2)],
+        ),
+        borderRadius: BorderRadius.only(bottomLeft: Radius.circular(80)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 40),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(Icons.handyman_rounded, size: 40, color: Colors.white),
+            const SizedBox(height: 20),
+            Text(strings['welcome']!, style: const TextStyle(color: Colors.white, fontSize: 36, fontWeight: FontWeight.bold, height: 1.1)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmailField(Map<String, String> strings) {
+    return TextFormField(
+      controller: _emailCtrl,
+      decoration: InputDecoration(
+        labelText: strings['email'],
+        prefixIcon: const Icon(Icons.email_outlined, color: Color(0xFF1976D2)),
+        filled: true,
+        fillColor: const Color(0xFFF8FAFC),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+      ),
+      validator: (v) => (v == null || v.isEmpty) ? strings['email_required'] : null,
+    );
+  }
+
+  Widget _buildPasswordField(Map<String, String> strings) {
+    return TextFormField(
+      controller: _passwordCtrl,
+      obscureText: _obscure,
+      decoration: InputDecoration(
+        labelText: strings['password'],
+        prefixIcon: const Icon(Icons.lock_outline_rounded, color: Color(0xFF1976D2)),
+        suffixIcon: IconButton(icon: Icon(_obscure ? Icons.visibility_off : Icons.visibility), onPressed: () => setState(() => _obscure = !_obscure)),
+        filled: true,
+        fillColor: const Color(0xFFF8FAFC),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+      ),
+      validator: (v) => (v == null || v.isEmpty) ? strings['pass_required'] : null,
+    );
+  }
+
+  Widget _buildForgotPassword(Map<String, String> strings, bool isRtl) {
+    return Align(
+      alignment: isRtl ? Alignment.centerLeft : Alignment.centerRight,
+      child: TextButton(onPressed: () {}, child: Text(strings['forgot']!, style: const TextStyle(color: Color(0xFF64748B)))),
+    );
+  }
+
+  Widget _buildSignInButton(Map<String, String> strings) {
+    return SizedBox(
+      width: double.infinity,
+      height: 60,
+      child: ElevatedButton(
+        onPressed: _loading ? null : _submit,
+        style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1976D2), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
+        child: _loading ? const CircularProgressIndicator(color: Colors.white) : Text(strings['signin']!, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+      ),
+    );
+  }
+
+  Widget _buildSocialDivider(Map<String, String> strings) {
+    return Row(
+      children: [
+        const Expanded(child: Divider()),
+        Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: Text(strings['or']!, style: const TextStyle(color: Colors.grey))),
+        const Expanded(child: Divider()),
+      ],
+    );
+  }
+
+  Widget _buildSocialButtons() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      children: [
+        _buildSocialIcon('assets/icon/google.png', () => _handleSocialSignIn(_authService.signInWithGoogle)),
+        _buildSocialIcon('assets/icon/facebook.png', () => _handleSocialSignIn(_authService.signInWithFacebook)),
+        _buildSocialIcon('assets/icon/apple.png', () => _handleSocialSignIn(_authService.signInWithApple)),
+      ],
+    );
+  }
+
+  Widget _buildSocialIcon(String iconPath, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(border: Border.all(color: Colors.grey.shade300), borderRadius: BorderRadius.circular(12)),
+        child: Image.asset(iconPath, height: 30, width: 30, errorBuilder: (c, e, s) => const Icon(Icons.login)),
+      ),
+    );
+  }
+
+  Widget _buildGuestAndPhone(Map<String, String> strings) {
+    return Column(
+      children: [
+        TextButton.icon(
+          onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PhoneAuthPage())),
+          icon: const Icon(Icons.phone),
+          label: Text(strings['phone']!),
+        ),
+        TextButton(
+          onPressed: () => _handleSocialSignIn(_authService.signInAnonymously),
+          child: Text(strings['guest']!, style: const TextStyle(fontWeight: FontWeight.bold)),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSignUpLink(Map<String, String> strings) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Text(strings['no_account']!),
+        GestureDetector(
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SignUpPage())),
+          child: Text(strings['signup']!, style: const TextStyle(color: Color(0xFF1976D2), fontWeight: FontWeight.bold)),
+        ),
+      ],
     );
   }
 }

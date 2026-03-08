@@ -1,6 +1,9 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:image_picker/image_picker.dart';
 
 class CompleteWorkerProfilePage extends StatefulWidget {
   const CompleteWorkerProfilePage({Key? key}) : super(key: key);
@@ -18,6 +21,8 @@ class _CompleteWorkerProfilePageState extends State<CompleteWorkerProfilePage> {
 
   List<String> _selectedProfessions = [];
   bool _isLoading = false;
+  File? _image;
+  final ImagePicker _picker = ImagePicker();
 
   final List<String> _professions = [
     'Plumber', 'Carpenter', 'Electrician', 'Painter', 'Cleaner', 'Handyman', 'Landscaper', 'HVAC'
@@ -32,6 +37,15 @@ class _CompleteWorkerProfilePageState extends State<CompleteWorkerProfilePage> {
     super.dispose();
   }
 
+  Future<void> _pickImage() async {
+    final pickedFile = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
+    if (pickedFile != null) {
+      setState(() {
+        _image = File(pickedFile.path);
+      });
+    }
+  }
+
   Future<void> _submitForm() async {
     if (!_formKey.currentState!.validate()) return;
     if (_selectedProfessions.isEmpty) {
@@ -44,6 +58,13 @@ class _CompleteWorkerProfilePageState extends State<CompleteWorkerProfilePage> {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) throw Exception('User not logged in');
 
+      String? imageUrl;
+      if (_image != null) {
+        final storageRef = FirebaseStorage.instance.ref().child('profile_pictures/${user.uid}.jpg');
+        await storageRef.putFile(_image!);
+        imageUrl = await storageRef.getDownloadURL();
+      }
+
       Map<String, dynamic> workerData = {
         'userType': 'worker',
         'phone': _phoneController.text.trim(),
@@ -55,6 +76,10 @@ class _CompleteWorkerProfilePageState extends State<CompleteWorkerProfilePage> {
         'professions': _selectedProfessions,
         'upgradedAt': ServerValue.timestamp,
       };
+
+      if (imageUrl != null) {
+        workerData['profileImageUrl'] = imageUrl;
+      }
 
       final DatabaseReference dbRef = FirebaseDatabase.instanceFor(
         app: FirebaseAuth.instance.app,
@@ -90,6 +115,36 @@ class _CompleteWorkerProfilePageState extends State<CompleteWorkerProfilePage> {
               const Text(
                 'Please provide your professional details to complete your worker profile.',
                 style: TextStyle(fontSize: 16, color: Colors.grey),
+              ),
+              const SizedBox(height: 24),
+              Center(
+                child: GestureDetector(
+                  onTap: _pickImage,
+                  child: Stack(
+                    children: [
+                      CircleAvatar(
+                        radius: 60,
+                        backgroundColor: Colors.grey[200],
+                        backgroundImage: _image != null ? FileImage(_image!) : null,
+                        child: _image == null
+                            ? const Icon(Icons.person, size: 60, color: Colors.grey)
+                            : null,
+                      ),
+                      Positioned(
+                        bottom: 0,
+                        right: 0,
+                        child: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: const BoxDecoration(
+                            color: Color(0xFF1976D2),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.camera_alt, color: Colors.white, size: 20),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
               const SizedBox(height: 24),
               _buildMultiProfessionsDropdown(),
