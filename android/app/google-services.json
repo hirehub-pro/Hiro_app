@@ -10,7 +10,7 @@
       "client_info": {
         "mobilesdk_app_id": "1:29257648718:android:c1043847fbe09a43b8111f",
         "android_client_info": {
-          "package_name": "com.example.untitled1"
+          "package_name": "com.hirehub.app"
         }
       },
       "oauth_client": [
@@ -35,7 +35,7 @@
               "client_id": "29257648718-qclvt36de5i6j9p20s8ljklp770suejn.apps.googleusercontent.com",
               "client_type": 2,
               "ios_info": {
-                "bundle_id": "com.example.untitled1"
+                "bundle_id": "com.hirehub.app"
               }
             }
           ]
