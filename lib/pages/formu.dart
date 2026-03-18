@@ -45,8 +45,7 @@ class _BlogPageState extends State<BlogPage> {
   }
 
   void _onScroll() {
-    if (_scrollController.position.pixels >=
-        _scrollController.position.maxScrollExtent - 200) {
+    if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200) {
       if (!_isMoreLoading && !_isLoading && _posts.length >= _postLimit) {
         _loadMorePosts();
       }
@@ -65,17 +64,14 @@ class _BlogPageState extends State<BlogPage> {
     _postsSubscription?.cancel();
 
     Query query = _firestore.collection('blog_posts');
-<<<<<<< HEAD
-=======
     final strings = _getLocalizedStrings(context);
     final categories = strings['categories'] as List;
-    
+
     if (_selectedFilterIndex != 0 && _selectedFilterIndex < categories.length) {
       query = query.where('category', isEqualTo: categories[_selectedFilterIndex]);
     }
 
     query = query.orderBy('isPinned', descending: true);
->>>>>>> 7b713a42c7ae1f5bb5a752aedffb0ab40640f752
 
     if (_sortBy == 'newest') {
       query = query.orderBy('timestamp', descending: true);
@@ -83,38 +79,14 @@ class _BlogPageState extends State<BlogPage> {
       query = query.orderBy('likes', descending: true);
     }
 
-<<<<<<< HEAD
-    _postsSubscription = query
-        .limit(_postLimit)
-        .snapshots()
-        .listen(
-          (snapshot) {
-            List<Map<String, dynamic>> loadedPosts = [];
-            for (var doc in snapshot.docs) {
-              final post = doc.data() as Map<String, dynamic>;
-              post['id'] = doc.id;
-              loadedPosts.add(post);
-            }
+    _postsSubscription = query.limit(_postLimit).snapshots().listen((snapshot) {
+      List<Map<String, dynamic>> loadedPosts = [];
+      for (var doc in snapshot.docs) {
+        final post = doc.data() as Map<String, dynamic>;
+        post['id'] = doc.id;
+        loadedPosts.add(post);
+      }
 
-            if (mounted) {
-              setState(() {
-                _posts = loadedPosts;
-                _isLoading = false;
-                _isMoreLoading = false;
-              });
-            }
-          },
-          onError: (error) {
-            debugPrint("FETCH ERROR: $error");
-            if (mounted) {
-              setState(() {
-                _isLoading = false;
-                _isMoreLoading = false;
-              });
-            }
-          },
-        );
-=======
       if (mounted) {
         setState(() {
           _posts = loadedPosts;
@@ -135,14 +107,13 @@ class _BlogPageState extends State<BlogPage> {
         ));
       }
     });
->>>>>>> 7b713a42c7ae1f5bb5a752aedffb0ab40640f752
   }
 
   Future<void> _onRefresh() async {
     if (mounted) {
       setState(() {
         _isLoading = true;
-        _posts = []; 
+        _posts = [];
         _postLimit = 10;
       });
     }
@@ -160,10 +131,7 @@ class _BlogPageState extends State<BlogPage> {
   }
 
   Map<String, dynamic> _getLocalizedStrings(BuildContext context) {
-    final locale = Provider.of<LanguageProvider>(
-      context,
-      listen: false,
-    ).locale.languageCode;
+    final locale = Provider.of<LanguageProvider>(context, listen: false).locale.languageCode;
     switch (locale) {
       case 'he':
         return {
@@ -245,17 +213,11 @@ class _BlogPageState extends State<BlogPage> {
       builder: (context) => AlertDialog(
         title: Text(strings['guest_msg']),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(strings['cancel']),
-          ),
+          TextButton(onPressed: () => Navigator.pop(context), child: Text(strings['cancel'])),
           TextButton(
             onPressed: () {
               Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const SignInPage()),
-              );
+              Navigator.push(context, MaterialPageRoute(builder: (_) => const SignInPage()));
             },
             child: Text(strings['login']),
           ),
@@ -264,10 +226,7 @@ class _BlogPageState extends State<BlogPage> {
     );
   }
 
-  void _showCreatePostSheet(
-    BuildContext context, {
-    Map<String, dynamic>? existingPost,
-  }) {
+  void _showCreatePostSheet(BuildContext context, {Map<String, dynamic>? existingPost}) {
     final strings = _getLocalizedStrings(context);
     if (_isGuest()) {
       _showGuestDialog(context, strings);
@@ -275,40 +234,23 @@ class _BlogPageState extends State<BlogPage> {
     }
 
     final titleController = TextEditingController(text: existingPost?['title']);
-<<<<<<< HEAD
-    final contentController = TextEditingController(
-      text: existingPost?['content'],
-    );
-    String selectedCategory =
-        existingPost?['category'] ?? (strings['categories'] as List)[0];
-    File? selectedImage;
-    String? existingImageUrl = existingPost?['imageUrl'];
-=======
     final contentController = TextEditingController(text: existingPost?['content']);
     final locationController = TextEditingController(text: existingPost?['location']);
     String selectedCategory = existingPost?['category'] ?? (strings['categories'] as List)[1];
     List<File> selectedImages = [];
-    List<String> existingImageUrls = existingPost?['imageUrls'] != null 
-        ? List<String>.from(existingPost!['imageUrls']) 
+    List<String> existingImageUrls = existingPost?['imageUrls'] != null
+        ? List<String>.from(existingPost!['imageUrls'])
         : (existingPost?['imageUrl'] != null ? [existingPost!['imageUrl']] : []);
->>>>>>> 7b713a42c7ae1f5bb5a752aedffb0ab40640f752
     bool isUploading = false;
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (context) => StatefulBuilder(
         builder: (context, setSheetState) => Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom,
-            left: 24,
-            right: 24,
-            top: 24,
-          ),
+          padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom, left: 24, right: 24, top: 24),
           child: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -317,59 +259,27 @@ class _BlogPageState extends State<BlogPage> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      existingPost == null
-                          ? strings['create_post']
-                          : strings['edit_post'],
-                      style: const TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF1E293B),
-                      ),
-                    ),
-                    IconButton(
-                      onPressed: () => Navigator.pop(context),
-                      icon: const Icon(Icons.close),
-                    ),
+                    Text(existingPost == null ? strings['create_post'] : strings['edit_post'], style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF1E293B))),
+                    IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close)),
                   ],
                 ),
                 const SizedBox(height: 16),
                 DropdownButtonFormField<String>(
-                  initialValue: selectedCategory,
+                  value: selectedCategory,
                   decoration: InputDecoration(
                     labelText: strings['post_category'],
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
-                    ),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   ),
-<<<<<<< HEAD
-                  items: (strings['categories'] as List)
-                      .map(
-                        (cat) => DropdownMenuItem(
-                          value: cat.toString(),
-                          child: Text(cat.toString()),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (val) =>
-                      setSheetState(() => selectedCategory = val!),
-=======
                   items: (strings['categories'] as List).where((cat) => cat != 'All' && cat != 'הכל').map((cat) => DropdownMenuItem(value: cat.toString(), child: Text(cat.toString()))).toList(),
                   onChanged: (val) => setSheetState(() => selectedCategory = val!),
->>>>>>> 7b713a42c7ae1f5bb5a752aedffb0ab40640f752
                 ),
                 const SizedBox(height: 16),
                 TextField(
                   controller: titleController,
                   decoration: InputDecoration(
                     labelText: strings['post_title'],
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -390,75 +300,11 @@ class _BlogPageState extends State<BlogPage> {
                   decoration: InputDecoration(
                     labelText: strings['post_content'],
                     alignLabelWithHint: true,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                   ),
                 ),
                 const SizedBox(height: 16),
-<<<<<<< HEAD
-                if (selectedImage != null || existingImageUrl != null)
-                  Stack(
-                    children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: selectedImage != null
-                            ? Image.file(
-                                selectedImage!,
-                                height: 150,
-                                width: double.infinity,
-                                fit: BoxFit.cover,
-                              )
-                            : Image.network(
-                                existingImageUrl!,
-                                height: 150,
-                                width: double.infinity,
-                                fit: BoxFit.cover,
-                              ),
-                      ),
-                      Positioned(
-                        right: 8,
-                        top: 8,
-                        child: GestureDetector(
-                          onTap: () => setSheetState(() {
-                            selectedImage = null;
-                            existingImageUrl = null;
-                          }),
-                          child: const CircleAvatar(
-                            backgroundColor: Colors.black54,
-                            radius: 14,
-                            child: Icon(
-                              Icons.close,
-                              size: 16,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  )
-                else
-                  OutlinedButton.icon(
-                    onPressed: () async {
-                      final picker = ImagePicker();
-                      final pickedFile = await picker.pickImage(
-                        source: ImageSource.gallery,
-                        imageQuality: 70,
-                      );
-                      if (pickedFile != null)
-                        setSheetState(
-                          () => selectedImage = File(pickedFile.path),
-                        );
-                    },
-                    icon: const Icon(Icons.add_a_photo_outlined),
-                    label: Text(strings['upload_photo']),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-=======
-                
+
                 if (selectedImages.isNotEmpty || existingImageUrls.isNotEmpty)
                   SizedBox(
                     height: 100,
@@ -475,7 +321,7 @@ class _BlogPageState extends State<BlogPage> {
                               decoration: BoxDecoration(
                                 borderRadius: BorderRadius.circular(12),
                                 image: DecorationImage(
-                                  image: isExisting 
+                                  image: isExisting
                                     ? NetworkImage(existingImageUrls[index]) as ImageProvider
                                     : FileImage(selectedImages[index - existingImageUrls.length]),
                                   fit: BoxFit.cover,
@@ -499,10 +345,9 @@ class _BlogPageState extends State<BlogPage> {
                           ],
                         );
                       },
->>>>>>> 7b713a42c7ae1f5bb5a752aedffb0ab40640f752
                     ),
                   ),
-                
+
                 const SizedBox(height: 8),
                 OutlinedButton.icon(
                   onPressed: () async {
@@ -519,96 +364,28 @@ class _BlogPageState extends State<BlogPage> {
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),
                 ),
-                
+
                 const SizedBox(height: 24),
                 ElevatedButton(
-                  onPressed: isUploading
-                      ? null
-                      : () async {
-                          if (titleController.text.trim().isEmpty ||
-                              contentController.text.trim().isEmpty) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text(strings['empty_fields'])),
-                            );
-                            return;
-                          }
+                  onPressed: isUploading ? null : () async {
+                    if (titleController.text.trim().isEmpty || contentController.text.trim().isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(strings['empty_fields'])));
+                      return;
+                    }
 
-                          setSheetState(() => isUploading = true);
-                          try {
-                            final user = FirebaseAuth.instance.currentUser;
-                            if (user == null)
-                              throw Exception("User not signed in");
+                    setSheetState(() => isUploading = true);
+                    try {
+                      final user = FirebaseAuth.instance.currentUser;
+                      if (user == null) throw Exception("User not signed in");
 
-<<<<<<< HEAD
-                            String authorName = user.displayName ?? "User";
-                            if (user.displayName == null ||
-                                user.displayName!.isEmpty) {
-                              try {
-                                final userDoc = await _firestore
-                                    .collection('users')
-                                    .doc(user.uid)
-                                    .get();
-                                if (userDoc.exists)
-                                  authorName =
-                                      userDoc.data()?['name'] ?? "User";
-                              } catch (_) {}
-                            }
+                      String authorName = user.displayName ?? "User";
+                      if (user.displayName == null || user.displayName!.isEmpty) {
+                        try {
+                          final userDoc = await _firestore.collection('users').doc(user.uid).get();
+                          if (userDoc.exists) authorName = userDoc.data()?['name'] ?? "User";
+                        } catch (_) {}
+                      }
 
-                            String? imageUrl = existingImageUrl;
-                            if (selectedImage != null) {
-                              final storageRef = FirebaseStorage.instance
-                                  .ref()
-                                  .child(
-                                    'blog_images/${user.uid}_${DateTime.now().millisecondsSinceEpoch}.jpg',
-                                  );
-                              await storageRef.putFile(selectedImage!);
-                              imageUrl = await storageRef.getDownloadURL();
-                            }
-
-                            final postData = {
-                              'title': titleController.text.trim(),
-                              'content': contentController.text.trim(),
-                              'category': selectedCategory,
-                              'imageUrl': imageUrl,
-                              'authorUid': user.uid,
-                              'authorName': authorName,
-                              'timestamp':
-                                  existingPost?['timestamp'] ??
-                                  FieldValue.serverTimestamp(),
-                              'likes': existingPost?['likes'] ?? 0,
-                              'likedBy': existingPost?['likedBy'] ?? {},
-                            };
-
-                            if (existingPost == null) {
-                              await _firestore
-                                  .collection('blog_posts')
-                                  .add(postData);
-                            } else {
-                              await _firestore
-                                  .collection('blog_posts')
-                                  .doc(existingPost['id'])
-                                  .update(postData);
-                            }
-
-                            if (mounted) Navigator.pop(context);
-                          } catch (e) {
-                            debugPrint("BLOG PUBLISH ERROR: $e");
-                            if (mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    "${strings['error']}. Make sure your rules allow writes.",
-                                  ),
-                                  duration: const Duration(seconds: 5),
-                                ),
-                              );
-                            }
-                          } finally {
-                            if (mounted)
-                              setSheetState(() => isUploading = false);
-                          }
-                        },
-=======
                       List<String> imageUrls = List.from(existingImageUrls);
                       for (var file in selectedImages) {
                         final storageRef = FirebaseStorage.instance.ref().child('blog_images/${user.uid}_${DateTime.now().millisecondsSinceEpoch}_${selectedImages.indexOf(file)}.jpg');
@@ -638,7 +415,7 @@ class _BlogPageState extends State<BlogPage> {
                       } else {
                         await _firestore.collection('blog_posts').doc(existingPost['id']).update(postData);
                       }
-                      
+
                       if (mounted) Navigator.pop(context);
                       setState(() {
                         _selectedFilterIndex = 0;
@@ -658,32 +435,14 @@ class _BlogPageState extends State<BlogPage> {
                       if (mounted) setSheetState(() => isUploading = false);
                     }
                   },
->>>>>>> 7b713a42c7ae1f5bb5a752aedffb0ab40640f752
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF1976D2),
                     padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),
                   child: isUploading
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(
-                            color: Colors.white,
-                            strokeWidth: 2,
-                          ),
-                        )
-                      : Text(
-                          existingPost == null
-                              ? strings['publish']
-                              : strings['update'],
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
+                    ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                    : Text(existingPost == null ? strings['publish'] : strings['update'], style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                 ),
                 const SizedBox(height: 24),
               ],
@@ -701,18 +460,11 @@ class _BlogPageState extends State<BlogPage> {
       });
       await _firestore.collection('blog_posts').doc(postId).delete();
     } catch (e) {
-<<<<<<< HEAD
-      if (mounted)
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text("Error deleting post")));
-=======
       debugPrint("DELETE ERROR: $e");
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Error deleting post")));
         _listenToPosts();
       }
->>>>>>> 7b713a42c7ae1f5bb5a752aedffb0ab40640f752
     }
   }
 
@@ -727,9 +479,7 @@ class _BlogPageState extends State<BlogPage> {
     if (user == null) return;
 
     final postId = post['id'];
-    Map<String, dynamic> likedBy = Map<String, dynamic>.from(
-      post['likedBy'] ?? {},
-    );
+    Map<String, dynamic> likedBy = Map<String, dynamic>.from(post['likedBy'] ?? {});
     int likes = post['likes'] ?? 0;
 
     if (likedBy.containsKey(user.uid)) {
@@ -810,7 +560,7 @@ class _BlogPageState extends State<BlogPage> {
         itemBuilder: (context, index) {
           final category = categories[index];
           final isSelected = _selectedFilterIndex == index;
-          
+
           IconData icon;
           switch (index) {
             case 0: icon = Icons.grid_view_rounded; break;
@@ -868,9 +618,7 @@ class _BlogPageState extends State<BlogPage> {
     final strings = _getLocalizedStrings(context);
     final locale = Provider.of<LanguageProvider>(context).locale.languageCode;
     final isRtl = locale == 'he' || locale == 'ar';
-    final visiblePosts = _posts
-        .where((p) => !_hiddenPostIds.contains(p['id']))
-        .toList();
+    final visiblePosts = _posts.where((p) => !_hiddenPostIds.contains(p['id'])).toList();
 
     return Directionality(
       textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
@@ -879,19 +627,8 @@ class _BlogPageState extends State<BlogPage> {
         appBar: AppBar(
           backgroundColor: Colors.white,
           elevation: 0,
-<<<<<<< HEAD
-          centerTitle: true,
-          title: Text(
-            strings['title'],
-            style: const TextStyle(
-              color: Color(0xFF1E293B),
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-=======
           centerTitle: false,
           title: Text(strings['title'], style: const TextStyle(color: Color(0xFF1E293B), fontWeight: FontWeight.bold, fontSize: 22)),
->>>>>>> 7b713a42c7ae1f5bb5a752aedffb0ab40640f752
           actions: [
             IconButton(
               icon: const Icon(Icons.refresh, color: Color(0xFF1976D2)),
@@ -907,16 +644,8 @@ class _BlogPageState extends State<BlogPage> {
                 });
               },
               itemBuilder: (context) => [
-<<<<<<< HEAD
-                PopupMenuItem(value: 'newest', child: Text(strings['newest'])),
-                PopupMenuItem(
-                  value: 'likes',
-                  child: Text(strings['most_liked']),
-                ),
-=======
                 PopupMenuItem(value: 'newest', child: Row(children: [const Icon(Icons.access_time, size: 20), const SizedBox(width: 10), Text(strings['newest'])])),
                 PopupMenuItem(value: 'likes', child: Row(children: [const Icon(Icons.favorite_outline, size: 20), const SizedBox(width: 10), Text(strings['most_liked'])])),
->>>>>>> 7b713a42c7ae1f5bb5a752aedffb0ab40640f752
               ],
             ),
           ],
@@ -933,28 +662,15 @@ class _BlogPageState extends State<BlogPage> {
         ),
         body: RefreshIndicator(
           onRefresh: _onRefresh,
-<<<<<<< HEAD
           child: _isLoading
-              ? const Center(child: CircularProgressIndicator())
-              : visiblePosts.isEmpty
-              ? Center(
-                  child: ListView(
-                    children: [
-                      SizedBox(height: 200),
-                      Center(child: Text(strings['no_posts'])),
-                    ],
-                  ),
-=======
-          child: _isLoading 
             ? const Center(child: CircularProgressIndicator())
-            : visiblePosts.isEmpty 
+            : visiblePosts.isEmpty
               ? ListView(
                   children: [
                     _buildExplanationCard(strings),
                     const SizedBox(height: 60),
                     Center(child: Text(strings['no_posts'], style: const TextStyle(color: Colors.grey))),
                   ],
->>>>>>> 7b713a42c7ae1f5bb5a752aedffb0ab40640f752
                 )
               : ListView.builder(
                   controller: _scrollController,
@@ -968,18 +684,6 @@ class _BlogPageState extends State<BlogPage> {
                     final postIndex = index - 1;
                     if (postIndex < visiblePosts.length) {
                       return _BlogCard(
-<<<<<<< HEAD
-                        post: visiblePosts[index],
-                        onLike: () => _toggleLike(visiblePosts[index]),
-                        onDelete: () => _deletePost(visiblePosts[index]['id']),
-                        onEdit: () => _showCreatePostSheet(
-                          context,
-                          existingPost: visiblePosts[index],
-                        ),
-                        onHide: () => setState(
-                          () => _hiddenPostIds.add(visiblePosts[index]['id']),
-                        ),
-=======
                         post: visiblePosts[postIndex],
                         onLike: () => _toggleLike(visiblePosts[postIndex]),
                         onDelete: () => _deletePost(visiblePosts[postIndex]['id']),
@@ -998,7 +702,6 @@ class _BlogPageState extends State<BlogPage> {
                             _listenToPosts();
                           }
                         },
->>>>>>> 7b713a42c7ae1f5bb5a752aedffb0ab40640f752
                         localizedStrings: strings,
                         onGuestDialog: () => _showGuestDialog(context, strings),
                       );
@@ -1028,6 +731,7 @@ class _BlogCard extends StatelessWidget {
   final VoidCallback onGuestDialog;
 
   const _BlogCard({
+    super.key,
     required this.post,
     required this.onLike,
     required this.onDelete,
@@ -1042,66 +746,29 @@ class _BlogCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
     final isAuthor = user != null && post['authorUid'] == user.uid;
-<<<<<<< HEAD
-    final isLiked =
-        user != null && (post['likedBy'] ?? {}).containsKey(user.uid);
-=======
     final isLiked = user != null && (post['likedBy'] ?? {}).containsKey(user.uid);
     final isJobRequest = post['isJobRequest'] == true;
     final isPinned = post['isPinned'] == true;
     final imageUrls = post['imageUrls'] != null ? List<String>.from(post['imageUrls']) : (post['imageUrl'] != null ? [post['imageUrl'] as String] : []);
->>>>>>> 7b713a42c7ae1f5bb5a752aedffb0ab40640f752
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
-<<<<<<< HEAD
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
-=======
-        border: isPinned 
-          ? Border.all(color: Colors.blue.shade200, width: 2) 
+        border: isPinned
+          ? Border.all(color: Colors.blue.shade200, width: 2)
           : (isJobRequest ? Border.all(color: Colors.orange.shade200, width: 2) : null),
         boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 12, offset: const Offset(0, 4))],
->>>>>>> 7b713a42c7ae1f5bb5a752aedffb0ab40640f752
       ),
       child: InkWell(
-        onTap: () => Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => PostDetailPage(
-              post: post,
-              onLike: onLike,
-              onEdit: onEdit,
-              onDelete: onDelete,
-              localizedStrings: localizedStrings,
-              onGuestDialog: onGuestDialog,
-            ),
-          ),
-        ),
+        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => PostDetailPage(post: post, onLike: onLike, onEdit: onEdit, onDelete: onDelete, localizedStrings: localizedStrings, onGuestDialog: onGuestDialog))),
         borderRadius: BorderRadius.circular(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (imageUrls.isNotEmpty)
               ClipRRect(
-<<<<<<< HEAD
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(20),
-                ),
-                child: Image.network(
-                  post['imageUrl'],
-                  height: 180,
-                  width: double.infinity,
-                  fit: BoxFit.cover,
-=======
                 borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
                 child: Stack(
                   children: [
@@ -1123,7 +790,6 @@ class _BlogCard extends StatelessWidget {
                         ),
                       ),
                   ],
->>>>>>> 7b713a42c7ae1f5bb5a752aedffb0ab40640f752
                 ),
               ),
             Padding(
@@ -1133,23 +799,6 @@ class _BlogCard extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-<<<<<<< HEAD
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFEEF2FF),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          post['category'] ?? '',
-                          style: const TextStyle(
-                            color: Color(0xFF4F46E5),
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
-=======
                       if (isPinned)
                         const Padding(
                           padding: EdgeInsets.only(left: 8),
@@ -1160,17 +809,16 @@ class _BlogCard extends StatelessWidget {
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                           decoration: BoxDecoration(
-                            color: isJobRequest ? Colors.orange.shade50 : const Color(0xFFEEF2FF), 
+                            color: isJobRequest ? Colors.orange.shade50 : const Color(0xFFEEF2FF),
                             borderRadius: BorderRadius.circular(8)
                           ),
                           child: Text(
-                            post['category'] ?? '', 
+                            post['category'] ?? '',
                             style: TextStyle(
-                              color: isJobRequest ? Colors.orange.shade800 : const Color(0xFF4F46E5), 
-                              fontWeight: FontWeight.bold, 
+                              color: isJobRequest ? Colors.orange.shade800 : const Color(0xFF4F46E5),
+                              fontWeight: FontWeight.bold,
                               fontSize: 12
                             )
->>>>>>> 7b713a42c7ae1f5bb5a752aedffb0ab40640f752
                           ),
                         ),
                       ),
@@ -1187,162 +835,51 @@ class _BlogCard extends StatelessWidget {
                         ),
                       const Spacer(),
                       PopupMenuButton<String>(
-                        icon: const Icon(
-                          Icons.more_vert,
-                          color: Color(0xFF94A3B8),
-                        ),
+                        icon: const Icon(Icons.more_vert, color: Color(0xFF94A3B8)),
                         onSelected: (value) {
                           if (value == 'delete') onDelete();
                           if (value == 'edit') onEdit();
-                          if (value == 'share')
-                            Share.share('${post['title']}\n${post['content']}');
+                          if (value == 'share') Share.share('${post['title']}\n${post['content']}');
                           if (value == 'hide') onHide();
                           if (value == 'report') {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Reported successfully'),
-                              ),
-                            );
+                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Reported successfully')));
                           }
                         },
-                        itemBuilder: (context) => isAuthor
-                            ? [
-                                PopupMenuItem(
-                                  value: 'edit',
-                                  child: Row(
-                                    children: [
-                                      const Icon(Icons.edit),
-                                      const SizedBox(width: 8),
-                                      Text(localizedStrings['edit']),
-                                    ],
-                                  ),
-                                ),
-                                PopupMenuItem(
-                                  value: 'delete',
-                                  child: Row(
-                                    children: [
-                                      const Icon(
-                                        Icons.delete,
-                                        color: Colors.red,
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        localizedStrings['delete'],
-                                        style: const TextStyle(
-                                          color: Colors.red,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                PopupMenuItem(
-                                  value: 'share',
-                                  child: Row(
-                                    children: [
-                                      const Icon(Icons.share),
-                                      const SizedBox(width: 8),
-                                      Text(localizedStrings['share']),
-                                    ],
-                                  ),
-                                ),
-                              ]
-                            : [
-                                PopupMenuItem(
-                                  value: 'hide',
-                                  child: Row(
-                                    children: [
-                                      const Icon(Icons.visibility_off),
-                                      const SizedBox(width: 8),
-                                      Text(localizedStrings['hide']),
-                                    ],
-                                  ),
-                                ),
-                                PopupMenuItem(
-                                  value: 'share',
-                                  child: Row(
-                                    children: [
-                                      const Icon(Icons.share),
-                                      const SizedBox(width: 8),
-                                      Text(localizedStrings['share']),
-                                    ],
-                                  ),
-                                ),
-                                PopupMenuItem(
-                                  value: 'report',
-                                  child: Row(
-                                    children: [
-                                      const Icon(
-                                        Icons.report,
-                                        color: Colors.orange,
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        localizedStrings['report'],
-                                        style: const TextStyle(
-                                          color: Colors.orange,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
+                        itemBuilder: (context) => isAuthor ? [
+                          PopupMenuItem(value: 'edit', child: Row(children: [const Icon(Icons.edit), const SizedBox(width: 8), Text(localizedStrings['edit'])])),
+                          PopupMenuItem(value: 'delete', child: Row(children: [const Icon(Icons.delete, color: Colors.red), const SizedBox(width: 8), Text(localizedStrings['delete'], style: const TextStyle(color: Colors.red))])),
+                          PopupMenuItem(value: 'share', child: Row(children: [const Icon(Icons.share), const SizedBox(width: 8), Text(localizedStrings['share'])])),
+                        ] : [
+                          PopupMenuItem(value: 'hide', child: Row(children: [const Icon(Icons.visibility_off), const SizedBox(width: 8), Text(localizedStrings['hide'])])),
+                          PopupMenuItem(value: 'share', child: Row(children: [const Icon(Icons.share), const SizedBox(width: 8), Text(localizedStrings['share'])])),
+                          PopupMenuItem(value: 'report', child: Row(children: [const Icon(Icons.report, color: Colors.orange), const SizedBox(width: 8), Text(localizedStrings['report'], style: const TextStyle(color: Colors.orange))])),
+                        ],
                       ),
                     ],
                   ),
                   const SizedBox(height: 12),
-                  Text(
-                    post['title'] ?? '',
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF1E293B),
-                    ),
-                  ),
+                  Text(post['title'] ?? '', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1E293B))),
                   const SizedBox(height: 8),
                   Text(
                     post['content'] ?? '',
                     maxLines: 3,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Color(0xFF64748B),
-                      height: 1.5,
-                    ),
+                    style: const TextStyle(color: Color(0xFF64748B), height: 1.5),
                   ),
                   const SizedBox(height: 16),
                   Row(
                     children: [
-                      const Icon(
-                        Icons.person_outline,
-                        size: 16,
-                        color: Color(0xFF94A3B8),
-                      ),
+                      const Icon(Icons.person_outline, size: 16, color: Color(0xFF94A3B8)),
                       const SizedBox(width: 4),
-                      Text(
-                        post['authorName'] ?? 'Anonymous',
-                        style: const TextStyle(
-                          color: Color(0xFF64748B),
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
+                      Text(post['authorName'] ?? 'Anonymous', style: const TextStyle(color: Color(0xFF64748B), fontSize: 13, fontWeight: FontWeight.w500)),
                       const Spacer(),
                       GestureDetector(
                         onTap: onLike,
                         child: Row(
                           children: [
-                            Icon(
-                              isLiked ? Icons.favorite : Icons.favorite_border,
-                              size: 18,
-                              color: const Color(0xFFEF4444),
-                            ),
+                            Icon(isLiked ? Icons.favorite : Icons.favorite_border, size: 18, color: const Color(0xFFEF4444)),
                             const SizedBox(width: 4),
-                            Text(
-                              (post['likes'] ?? 0).toString(),
-                              style: const TextStyle(
-                                color: Color(0xFF64748B),
-                                fontSize: 13,
-                              ),
-                            ),
+                            Text((post['likes'] ?? 0).toString(), style: const TextStyle(color: Color(0xFF64748B), fontSize: 13)),
                           ],
                         ),
                       ),
@@ -1400,21 +937,20 @@ class _PostDetailPageState extends State<PostDetailPage> {
   }
 
   void _listenToComments() {
-    _commentsSubscription = _firestore
-        .collection('blog_posts')
+    _commentsSubscription = _firestore.collection('blog_posts')
         .doc(widget.post['id'])
         .collection('blog_comments')
         .orderBy('timestamp', descending: false)
         .snapshots()
         .listen((snapshot) {
-          List<Map<String, dynamic>> loadedComments = [];
-          for (var doc in snapshot.docs) {
-            final comment = doc.data();
-            comment['id'] = doc.id;
-            loadedComments.add(comment);
-          }
-          if (mounted) setState(() => _comments = loadedComments);
-        });
+      List<Map<String, dynamic>> loadedComments = [];
+      for (var doc in snapshot.docs) {
+        final comment = doc.data();
+        comment['id'] = doc.id;
+        loadedComments.add(comment);
+      }
+      if (mounted) setState(() => _comments = loadedComments);
+    });
   }
 
   void _addComment() async {
@@ -1433,26 +969,19 @@ class _PostDetailPageState extends State<PostDetailPage> {
       'timestamp': FieldValue.serverTimestamp(),
     };
     try {
-      await _firestore
-          .collection('blog_posts')
+      await _firestore.collection('blog_posts')
           .doc(widget.post['id'])
           .collection('blog_comments')
           .add(commentData);
       _commentController.clear();
     } catch (e) {
-      if (mounted)
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("Permission denied: Update your rules."),
-          ),
-        );
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Permission denied: Update your rules.")));
     }
   }
 
   void _deleteComment(String commentId) async {
     try {
-      await _firestore
-          .collection('blog_posts')
+      await _firestore.collection('blog_posts')
           .doc(widget.post['id'])
           .collection('blog_comments')
           .doc(commentId)
@@ -1464,14 +993,9 @@ class _PostDetailPageState extends State<PostDetailPage> {
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
     final isAuthor = user != null && widget.post['authorUid'] == user.uid;
-<<<<<<< HEAD
-    final isLiked =
-        user != null && (widget.post['likedBy'] ?? {}).containsKey(user.uid);
-=======
     final isLiked = user != null && (widget.post['likedBy'] ?? {}).containsKey(user.uid);
     final isJobRequest = widget.post['isJobRequest'] == true;
     final imageUrls = widget.post['imageUrls'] != null ? List<String>.from(widget.post['imageUrls']) : (widget.post['imageUrl'] != null ? [widget.post['imageUrl'] as String] : []);
->>>>>>> 7b713a42c7ae1f5bb5a752aedffb0ab40640f752
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -1491,52 +1015,15 @@ class _PostDetailPageState extends State<PostDetailPage> {
                 Navigator.pop(context);
               }
               if (value == 'report') {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Reported successfully')),
-                );
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Reported successfully')));
               }
             },
-            itemBuilder: (context) => isAuthor
-                ? [
-                    PopupMenuItem(
-                      value: 'edit',
-                      child: Row(
-                        children: [
-                          const Icon(Icons.edit),
-                          const SizedBox(width: 8),
-                          Text(widget.localizedStrings['edit']),
-                        ],
-                      ),
-                    ),
-                    PopupMenuItem(
-                      value: 'delete',
-                      child: Row(
-                        children: [
-                          const Icon(Icons.delete, color: Colors.red),
-                          const SizedBox(width: 8),
-                          Text(
-                            widget.localizedStrings['delete'],
-                            style: const TextStyle(color: Colors.red),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ]
-                : [
-                    PopupMenuItem(
-                      value: 'report',
-                      child: Row(
-                        children: [
-                          const Icon(Icons.report, color: Colors.orange),
-                          const SizedBox(width: 8),
-                          Text(
-                            widget.localizedStrings['report'],
-                            style: const TextStyle(color: Colors.orange),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+            itemBuilder: (context) => isAuthor ? [
+              PopupMenuItem(value: 'edit', child: Row(children: [const Icon(Icons.edit), const SizedBox(width: 8), Text(widget.localizedStrings['edit'])])),
+              PopupMenuItem(value: 'delete', child: Row(children: [const Icon(Icons.delete, color: Colors.red), const SizedBox(width: 8), Text(widget.localizedStrings['delete'], style: const TextStyle(color: Colors.red))])),
+            ] : [
+              PopupMenuItem(value: 'report', child: Row(children: [const Icon(Icons.report, color: Colors.orange), const SizedBox(width: 8), Text(widget.localizedStrings['report'], style: const TextStyle(color: Colors.orange))])),
+            ],
           ),
         ],
       ),
@@ -1547,13 +1034,6 @@ class _PostDetailPageState extends State<PostDetailPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-<<<<<<< HEAD
-                  if (widget.post['imageUrl'] != null)
-                    Image.network(
-                      widget.post['imageUrl'],
-                      width: double.infinity,
-                      fit: BoxFit.cover,
-=======
                   if (imageUrls.isNotEmpty)
                     Stack(
                       alignment: Alignment.bottomCenter,
@@ -1583,7 +1063,6 @@ class _PostDetailPageState extends State<PostDetailPage> {
                             ),
                           ),
                       ],
->>>>>>> 7b713a42c7ae1f5bb5a752aedffb0ab40640f752
                     ),
                   Padding(
                     padding: const EdgeInsets.all(24),
@@ -1593,36 +1072,18 @@ class _PostDetailPageState extends State<PostDetailPage> {
                         Row(
                           children: [
                             Container(
-<<<<<<< HEAD
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 4,
-                              ),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFEEF2FF),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Text(
-                                widget.post['category'] ?? '',
-                                style: const TextStyle(
-                                  color: Color(0xFF4F46E5),
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 12,
-                                ),
-=======
                               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                               decoration: BoxDecoration(
-                                color: isJobRequest ? Colors.orange.shade50 : const Color(0xFFEEF2FF), 
+                                color: isJobRequest ? Colors.orange.shade50 : const Color(0xFFEEF2FF),
                                 borderRadius: BorderRadius.circular(8)
                               ),
                               child: Text(
-                                widget.post['category'] ?? '', 
+                                widget.post['category'] ?? '',
                                 style: TextStyle(
-                                  color: isJobRequest ? Colors.orange.shade800 : const Color(0xFF4F46E5), 
-                                  fontWeight: FontWeight.bold, 
+                                  color: isJobRequest ? Colors.orange.shade800 : const Color(0xFF4F46E5),
+                                  fontWeight: FontWeight.bold,
                                   fontSize: 12
                                 )
->>>>>>> 7b713a42c7ae1f5bb5a752aedffb0ab40640f752
                               ),
                             ),
                             const Spacer(),
@@ -1630,12 +1091,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
                               onTap: widget.onLike,
                               child: Row(
                                 children: [
-                                  Icon(
-                                    isLiked
-                                        ? Icons.favorite
-                                        : Icons.favorite_border,
-                                    color: Colors.red,
-                                  ),
+                                  Icon(isLiked ? Icons.favorite : Icons.favorite_border, color: Colors.red),
                                   const SizedBox(width: 4),
                                   Text(widget.post['likes'].toString()),
                                 ],
@@ -1644,16 +1100,6 @@ class _PostDetailPageState extends State<PostDetailPage> {
                           ],
                         ),
                         const SizedBox(height: 16),
-<<<<<<< HEAD
-                        Text(
-                          widget.post['title'] ?? '',
-                          style: const TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF1E293B),
-                          ),
-                        ),
-=======
                         Text(widget.post['title'] ?? '', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF1E293B))),
                         if (isJobRequest && widget.post['location'] != null && widget.post['location'].toString().isNotEmpty) ...[
                           const SizedBox(height: 8),
@@ -1665,92 +1111,44 @@ class _PostDetailPageState extends State<PostDetailPage> {
                             ],
                           ),
                         ],
->>>>>>> 7b713a42c7ae1f5bb5a752aedffb0ab40640f752
                         const SizedBox(height: 12),
                         Row(
                           children: [
-                            const Icon(
-                              Icons.person_outline,
-                              size: 18,
-                              color: Color(0xFF94A3B8),
-                            ),
+                            const Icon(Icons.person_outline, size: 18, color: Color(0xFF94A3B8)),
                             const SizedBox(width: 6),
-                            Text(
-                              widget.post['authorName'] ?? 'Anonymous',
-                              style: const TextStyle(
-                                color: Color(0xFF64748B),
-                                fontSize: 14,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
+                            Text(widget.post['authorName'] ?? 'Anonymous', style: const TextStyle(color: Color(0xFF64748B), fontSize: 14, fontWeight: FontWeight.w500)),
                           ],
                         ),
-                        const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 20),
-                          child: Divider(),
-                        ),
+                        const Padding(padding: EdgeInsets.symmetric(vertical: 20), child: Divider()),
                         Text(
                           widget.post['content'] ?? '',
-                          style: const TextStyle(
-                            fontSize: 16,
-                            color: Color(0xFF334155),
-                            height: 1.7,
-                          ),
+                          style: const TextStyle(fontSize: 16, color: Color(0xFF334155), height: 1.7),
                         ),
                         const SizedBox(height: 32),
-                        Text(
-                          widget.localizedStrings['comments'],
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
+                        Text(widget.localizedStrings['comments'], style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                         const SizedBox(height: 16),
                         ..._comments.map((comment) {
-                          final isCommentAuthor =
-                              user != null && comment['authorUid'] == user.uid;
+                          final isCommentAuthor = user != null && comment['authorUid'] == user.uid;
                           return Container(
                             margin: const EdgeInsets.only(bottom: 12),
                             padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF1F5F9),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
+                            decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(12)),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Row(
                                   children: [
-                                    Text(
-                                      comment['authorName'] ?? 'Anonymous',
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 13,
-                                      ),
-                                    ),
+                                    Text(comment['authorName'] ?? 'Anonymous', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                                     const Spacer(),
                                     if (isCommentAuthor || isAuthor)
                                       PopupMenuButton<String>(
                                         padding: EdgeInsets.zero,
-                                        icon: const Icon(
-                                          Icons.more_horiz,
-                                          size: 18,
-                                        ),
+                                        icon: const Icon(Icons.more_horiz, size: 18),
                                         onSelected: (val) {
-                                          if (val == 'delete')
-                                            _deleteComment(comment['id']);
+                                          if (val == 'delete') _deleteComment(comment['id']);
                                         },
                                         itemBuilder: (ctx) => [
-                                          PopupMenuItem(
-                                            value: 'delete',
-                                            child: Text(
-                                              widget.localizedStrings['delete'],
-                                              style: const TextStyle(
-                                                color: Colors.red,
-                                                fontSize: 13,
-                                              ),
-                                            ),
-                                          ),
+                                          PopupMenuItem(value: 'delete', child: Text(widget.localizedStrings['delete'], style: const TextStyle(color: Colors.red, fontSize: 13))),
                                         ],
                                       ),
                                   ],
@@ -1777,12 +1175,8 @@ class _PostDetailPageState extends State<PostDetailPage> {
                     controller: _commentController,
                     decoration: InputDecoration(
                       hintText: widget.localizedStrings['add_comment'],
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(24),
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                      ),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(24)),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16),
                     ),
                   ),
                 ),

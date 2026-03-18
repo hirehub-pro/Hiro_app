@@ -158,11 +158,9 @@ class _SearchPageState extends State<SearchPage> {
         }).toList();
 
         if (_sortBy == 'rating') {
-<<<<<<< HEAD
           _filteredWorkers.sort(
             (a, b) => (b['avgRating'] as num).compareTo(a['avgRating'] as num),
           );
-=======
           _filteredWorkers.sort((a, b) => (b['avgRating'] as num).compareTo(a['avgRating'] as num));
         } else if (_sortBy == 'distance' && _currentPosition != null) {
           _filteredWorkers.sort((a, b) {
@@ -178,7 +176,6 @@ class _SearchPageState extends State<SearchPage> {
             double distB = Geolocator.distanceBetween(_currentPosition!.latitude, _currentPosition!.longitude, latB, lngB);
             return distA.compareTo(distB);
           });
->>>>>>> 7b713a42c7ae1f5bb5a752aedffb0ab40640f752
         } else {
           _filteredWorkers.sort(
             (a, b) => (a['name'] ?? '').compareTo(b['name'] ?? ''),
@@ -476,18 +473,16 @@ class _SearchPageState extends State<SearchPage> {
                       color: Colors.grey,
                     ),
                     const SizedBox(width: 4),
-<<<<<<< HEAD
+
                     Text(
                       w['town'] ?? '',
                       style: const TextStyle(color: Colors.grey, fontSize: 13),
                     ),
-=======
                     Text(w['town'] ?? '', style: const TextStyle(color: Colors.grey, fontSize: 13)),
                     if (distanceStr.isNotEmpty) ...[
                       const SizedBox(width: 8),
                       Text(distanceStr, style: TextStyle(color: themeColor, fontSize: 12, fontWeight: FontWeight.bold)),
                     ]
->>>>>>> 7b713a42c7ae1f5bb5a752aedffb0ab40640f752
                   ],
                 ),
               ],
@@ -525,16 +520,12 @@ class _SearchPageState extends State<SearchPage> {
                 ),
               ],
             ),
-<<<<<<< HEAD
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (context) => profile(userId: w['uid']),
+                builder: (context) => Profile(userId: w['uid']),
               ),
             ),
-=======
-            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => Profile(userId: w['uid']))),
->>>>>>> 7b713a42c7ae1f5bb5a752aedffb0ab40640f752
           ),
         );
       },

@@ -651,7 +651,7 @@ class _SchedulePageState extends State<SchedulePage> {
         backgroundColor: const Color(0xFFF8FAFC),
         body: CustomScrollView(
           slivers: [
-<<<<<<< HEAD
+
             SliverAppBar(
               automaticallyImplyLeading: false,
               pinned: true,
@@ -677,8 +677,7 @@ class _SchedulePageState extends State<SchedulePage> {
                 ),
               ),
             ),
-=======
->>>>>>> 7b713a42c7ae1f5bb5a752aedffb0ab40640f752
+
             SliverToBoxAdapter(
               child: Container(
                 margin: const EdgeInsets.all(16),
