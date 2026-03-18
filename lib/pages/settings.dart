@@ -11,7 +11,7 @@ import 'package:untitled1/pages/about.dart';
 import 'package:untitled1/pages/account_settings.dart';
 
 class SettingsPage extends StatefulWidget {
-  const SettingsPage({Key? key}) : super(key: key);
+  const SettingsPage({super.key});
 
   @override
   State<SettingsPage> createState() => _SettingsPageState();
@@ -38,7 +38,10 @@ class _SettingsPageState extends State<SettingsPage> {
     }
 
     try {
-      final doc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
       if (doc.exists) {
         final data = doc.data()!;
         // Check actual system permission status as well
@@ -48,7 +51,9 @@ class _SettingsPageState extends State<SettingsPage> {
           _hideSchedule = data['hideSchedule'] ?? false;
           _disabledDays = List<int>.from(data['disabledDays'] ?? []);
           // Sync with Firestore, but also respect system setting if permanently denied
-          _notificationsEnabled = (data['notificationsEnabled'] ?? true) && !status.isPermanentlyDenied;
+          _notificationsEnabled =
+              (data['notificationsEnabled'] ?? true) &&
+              !status.isPermanentlyDenied;
           _isLoadingSettings = false;
         });
       }
@@ -98,7 +103,10 @@ class _SettingsPageState extends State<SettingsPage> {
         title: Text(strings['notifications']!),
         content: Text(strings['permission_denied']!),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: Text(strings['cancel']!)),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(strings['cancel']!),
+          ),
           TextButton(
             onPressed: () {
               openAppSettings();
@@ -111,8 +119,14 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
-  Map<String, String> _getLocalizedStrings(BuildContext context, {bool listen = true}) {
-    final locale = Provider.of<LanguageProvider>(context, listen: listen).locale.languageCode;
+  Map<String, String> _getLocalizedStrings(
+    BuildContext context, {
+    bool listen = true,
+  }) {
+    final locale = Provider.of<LanguageProvider>(
+      context,
+      listen: listen,
+    ).locale.languageCode;
     switch (locale) {
       case 'he':
         return {
@@ -130,7 +144,8 @@ class _SettingsPageState extends State<SettingsPage> {
           'work_days': 'ימי עבודה',
           'select_off_days': 'בחר ימי חופש קבועים',
           'days': 'א,ב,ג,ד,ה,ו,ש',
-          'permission_denied': 'התראות חסומות בהגדרות המכשיר. האם תרצה לפתוח את ההגדרות?',
+          'permission_denied':
+              'התראות חסומות בהגדרות המכשיר. האם תרצה לפתוח את ההגדרות?',
           'settings': 'הגדרות',
           'cancel': 'ביטול',
         };
@@ -150,7 +165,8 @@ class _SettingsPageState extends State<SettingsPage> {
           'work_days': 'أيام العمل',
           'select_off_days': 'اختر أيام العطلة الثابتة',
           'days': 'ن,ث,ر,خ,ج,س,ح',
-          'permission_denied': 'الإشعارات محظورة في إعدادات الجهاز. هل تريد فتح الإعدادات؟',
+          'permission_denied':
+              'الإشعارات محظورة في إعدادات الجهاز. هل تريد فتح الإعدادات؟',
           'settings': 'الإعدادات',
           'cancel': 'إلغاء',
         };
@@ -170,7 +186,8 @@ class _SettingsPageState extends State<SettingsPage> {
           'work_days': 'Working Days',
           'select_off_days': 'Select fixed days off',
           'days': 'M,T,W,T,F,S,S',
-          'permission_denied': 'Notifications are blocked in system settings. Would you like to open settings?',
+          'permission_denied':
+              'Notifications are blocked in system settings. Would you like to open settings?',
           'settings': 'Settings',
           'cancel': 'Cancel',
         };
@@ -182,13 +199,13 @@ class _SettingsPageState extends State<SettingsPage> {
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(builder: (context) => const SignInPage()),
-          (route) => false,
+      (route) => false,
     );
   }
 
   void _goToAccountSettings() async {
     if (_userData == null) return;
-    
+
     await Navigator.push(
       context,
       MaterialPageRoute(
@@ -203,7 +220,9 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   Widget build(BuildContext context) {
     final strings = _getLocalizedStrings(context);
-    final localeCode = Provider.of<LanguageProvider>(context).locale.languageCode;
+    final localeCode = Provider.of<LanguageProvider>(
+      context,
+    ).locale.languageCode;
     final isRtl = localeCode == 'he' || localeCode == 'ar';
 
     if (Platform.isIOS) {
@@ -216,19 +235,20 @@ class _SettingsPageState extends State<SettingsPage> {
   Widget _buildScheduleSection(Map<String, String> strings) {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null || user.isAnonymous) return const SizedBox.shrink();
-    if (_isLoadingSettings) return const Center(child: CupertinoActivityIndicator());
+    if (_isLoadingSettings)
+      return const Center(child: CupertinoActivityIndicator());
 
     final dayNames = strings['days']!.split(',');
-    
+
     return _buildGalaxySection(strings['schedule']!, [
       _buildGalaxySwitchTile(
-        Icons.calendar_view_day_rounded, 
-        strings['hide_schedule']!, 
-        _hideSchedule, 
+        Icons.calendar_view_day_rounded,
+        strings['hide_schedule']!,
+        _hideSchedule,
         (v) {
           setState(() => _hideSchedule = v);
           _updateSetting('hideSchedule', v);
-        }
+        },
       ),
       const Divider(height: 1, indent: 50),
       Padding(
@@ -236,7 +256,10 @@ class _SettingsPageState extends State<SettingsPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(strings['select_off_days']!, style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14)),
+            Text(
+              strings['select_off_days']!,
+              style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
+            ),
             const SizedBox(height: 12),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -246,8 +269,11 @@ class _SettingsPageState extends State<SettingsPage> {
                 return GestureDetector(
                   onTap: () {
                     setState(() {
-                      if (isOff) _disabledDays.remove(dayNum);
-                      else _disabledDays.add(dayNum);
+                      if (isOff) {
+                        _disabledDays.remove(dayNum);
+                      } else {
+                        _disabledDays.add(dayNum);
+                      }
                     });
                     _updateSetting('disabledDays', _disabledDays);
                   },
@@ -255,9 +281,14 @@ class _SettingsPageState extends State<SettingsPage> {
                     width: 38,
                     height: 38,
                     decoration: BoxDecoration(
-                      color: isOff ? Colors.red.withOpacity(0.1) : const Color(0xFF1976D2).withOpacity(0.1),
+                      color: isOff
+                          ? Colors.red.withOpacity(0.1)
+                          : const Color(0xFF1976D2).withOpacity(0.1),
                       shape: BoxShape.circle,
-                      border: Border.all(color: isOff ? Colors.red : const Color(0xFF1976D2), width: 1.5),
+                      border: Border.all(
+                        color: isOff ? Colors.red : const Color(0xFF1976D2),
+                        width: 1.5,
+                      ),
                     ),
                     child: Center(
                       child: Text(
@@ -275,12 +306,16 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
           ],
         ),
-      )
+      ),
     ]);
   }
 
   // --- ANDROID (Galaxy / One UI) DESIGN ---
-  Widget _buildAndroidSettings(BuildContext context, Map<String, String> strings, bool isRtl) {
+  Widget _buildAndroidSettings(
+    BuildContext context,
+    Map<String, String> strings,
+    bool isRtl,
+  ) {
     return Directionality(
       textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
       child: Scaffold(
@@ -293,10 +328,18 @@ class _SettingsPageState extends State<SettingsPage> {
               elevation: 0,
               pinned: true,
               flexibleSpace: FlexibleSpaceBar(
-                title: Text(strings['title']!,
-                    style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+                title: Text(
+                  strings['title']!,
+                  style: const TextStyle(
+                    color: Colors.black,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
                 centerTitle: false,
-                titlePadding: const EdgeInsetsDirectional.only(start: 24, bottom: 16),
+                titlePadding: const EdgeInsetsDirectional.only(
+                  start: 24,
+                  bottom: 16,
+                ),
               ),
             ),
             SliverList(
@@ -306,35 +349,65 @@ class _SettingsPageState extends State<SettingsPage> {
                   child: Column(
                     children: [
                       _buildGalaxySection(strings['account']!, [
-                        _buildGalaxyTile(Icons.person_outline_rounded, strings['account']!, _goToAccountSettings),
-                        _buildGalaxyTile(Icons.lock_outline_rounded, strings['privacy']!, () {}),
+                        _buildGalaxyTile(
+                          Icons.person_outline_rounded,
+                          strings['account']!,
+                          _goToAccountSettings,
+                        ),
+                        _buildGalaxyTile(
+                          Icons.lock_outline_rounded,
+                          strings['privacy']!,
+                          () {},
+                        ),
                       ]),
                       const SizedBox(height: 16),
                       _buildScheduleSection(strings),
                       const SizedBox(height: 16),
                       _buildGalaxySection(strings['notifications']!, [
                         _buildGalaxySwitchTile(
-                          Icons.notifications_none_rounded, 
-                          strings['notifications']!, 
-                          _notificationsEnabled, 
+                          Icons.notifications_none_rounded,
+                          strings['notifications']!,
+                          _notificationsEnabled,
                           _toggleNotifications,
                         ),
                       ]),
                       const SizedBox(height: 16),
                       _buildGalaxySection(strings['language']!, [
                         ListTile(
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                          leading: const Icon(Icons.language_rounded, color: Color(0xFF1976D2)),
-                          title: Text(strings['language']!, style: const TextStyle(fontWeight: FontWeight.w600)),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 4,
+                          ),
+                          leading: const Icon(
+                            Icons.language_rounded,
+                            color: Color(0xFF1976D2),
+                          ),
+                          title: Text(
+                            strings['language']!,
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
                           trailing: const LanguageDropDown(),
                         ),
                       ]),
                       const SizedBox(height: 16),
                       _buildGalaxySection(strings['help']!, [
-                        _buildGalaxyTile(Icons.help_outline_rounded, strings['help']!, () {}),
-                        _buildGalaxyTile(Icons.info_outline_rounded, strings['about']!, () {
-                          Navigator.push(context, MaterialPageRoute(builder: (_) => const AboutPage()));
-                        }),
+                        _buildGalaxyTile(
+                          Icons.help_outline_rounded,
+                          strings['help']!,
+                          () {},
+                        ),
+                        _buildGalaxyTile(
+                          Icons.info_outline_rounded,
+                          strings['about']!,
+                          () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const AboutPage(),
+                              ),
+                            );
+                          },
+                        ),
                       ]),
                       const SizedBox(height: 32),
                       SizedBox(
@@ -344,10 +417,15 @@ class _SettingsPageState extends State<SettingsPage> {
                           style: TextButton.styleFrom(
                             foregroundColor: Colors.red,
                             padding: const EdgeInsets.symmetric(vertical: 16),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(26),
+                            ),
                             backgroundColor: Colors.white,
                           ),
-                          child: Text(strings['logout']!, style: const TextStyle(fontWeight: FontWeight.bold)),
+                          child: Text(
+                            strings['logout']!,
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
                         ),
                       ),
                       const SizedBox(height: 40),
@@ -368,8 +446,14 @@ class _SettingsPageState extends State<SettingsPage> {
       children: [
         Padding(
           padding: const EdgeInsetsDirectional.only(start: 12, bottom: 8),
-          child: Text(title.toUpperCase(),
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF8E8E93))),
+          child: Text(
+            title.toUpperCase(),
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF8E8E93),
+            ),
+          ),
         ),
         Container(
           decoration: BoxDecoration(
@@ -391,7 +475,12 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
-  Widget _buildGalaxySwitchTile(IconData icon, String title, bool value, Function(bool) onChanged) {
+  Widget _buildGalaxySwitchTile(
+    IconData icon,
+    String title,
+    bool value,
+    Function(bool) onChanged,
+  ) {
     return ListTile(
       leading: Icon(icon, color: const Color(0xFF1976D2)),
       title: Text(title, style: const TextStyle(fontWeight: FontWeight.w500)),
@@ -399,13 +488,17 @@ class _SettingsPageState extends State<SettingsPage> {
         value: value,
         onChanged: onChanged,
         activeTrackColor: const Color(0xFF1976D2).withOpacity(0.5),
-        activeColor: const Color(0xFF1976D2),
+        activeThumbColor: const Color(0xFF1976D2),
       ),
     );
   }
 
   // --- iOS (Cupertino) DESIGN ---
-  Widget _buildIosSettings(BuildContext context, Map<String, String> strings, bool isRtl) {
+  Widget _buildIosSettings(
+    BuildContext context,
+    Map<String, String> strings,
+    bool isRtl,
+  ) {
     return Directionality(
       textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
       child: CupertinoPageScaffold(
@@ -420,13 +513,19 @@ class _SettingsPageState extends State<SettingsPage> {
               header: Text(strings['account']!),
               children: [
                 CupertinoListTile(
-                  leading: const Icon(CupertinoIcons.person, color: CupertinoColors.systemBlue),
+                  leading: const Icon(
+                    CupertinoIcons.person,
+                    color: CupertinoColors.systemBlue,
+                  ),
                   title: Text(strings['account']!),
                   trailing: const CupertinoListTileChevron(),
                   onTap: _goToAccountSettings,
                 ),
                 CupertinoListTile(
-                  leading: const Icon(CupertinoIcons.lock, color: CupertinoColors.systemBlue),
+                  leading: const Icon(
+                    CupertinoIcons.lock,
+                    color: CupertinoColors.systemBlue,
+                  ),
                   title: Text(strings['privacy']!),
                   trailing: const CupertinoListTileChevron(),
                   onTap: () {},
@@ -437,7 +536,10 @@ class _SettingsPageState extends State<SettingsPage> {
               header: Text(strings['schedule']!),
               children: [
                 CupertinoListTile(
-                  leading: const Icon(CupertinoIcons.calendar, color: CupertinoColors.systemIndigo),
+                  leading: const Icon(
+                    CupertinoIcons.calendar,
+                    color: CupertinoColors.systemIndigo,
+                  ),
                   title: Text(strings['hide_schedule']!),
                   trailing: CupertinoSwitch(
                     value: _hideSchedule,
@@ -449,7 +551,10 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
                 // Days off row for iOS
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: List.generate(7, (index) {
@@ -458,8 +563,11 @@ class _SettingsPageState extends State<SettingsPage> {
                       return GestureDetector(
                         onTap: () {
                           setState(() {
-                            if (isOff) _disabledDays.remove(dayNum);
-                            else _disabledDays.add(dayNum);
+                            if (isOff) {
+                              _disabledDays.remove(dayNum);
+                            } else {
+                              _disabledDays.add(dayNum);
+                            }
                           });
                           _updateSetting('disabledDays', _disabledDays);
                         },
@@ -467,28 +575,47 @@ class _SettingsPageState extends State<SettingsPage> {
                           width: 32,
                           height: 32,
                           decoration: BoxDecoration(
-                            color: isOff ? CupertinoColors.systemRed.withOpacity(0.1) : CupertinoColors.systemBlue.withOpacity(0.1),
+                            color: isOff
+                                ? CupertinoColors.systemRed.withValues(
+                                    alpha: 0.1,
+                                  )
+                                : CupertinoColors.systemBlue.withValues(
+                                    alpha: 0.1,
+                                  ),
                             shape: BoxShape.circle,
-                            border: Border.all(color: isOff ? CupertinoColors.systemRed : CupertinoColors.systemBlue),
+                            border: Border.all(
+                              color: isOff
+                                  ? CupertinoColors.systemRed
+                                  : CupertinoColors.systemBlue,
+                            ),
                           ),
                           child: Center(
                             child: Text(
                               strings['days']!.split(',')[index],
-                              style: TextStyle(color: isOff ? CupertinoColors.systemRed : CupertinoColors.systemBlue, fontSize: 10, fontWeight: FontWeight.bold),
+                              style: TextStyle(
+                                color: isOff
+                                    ? CupertinoColors.systemRed
+                                    : CupertinoColors.systemBlue,
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ),
                         ),
                       );
                     }),
                   ),
-                )
+                ),
               ],
             ),
             CupertinoListSection.insetGrouped(
               header: Text(strings['notifications']!),
               children: [
                 CupertinoListTile(
-                  leading: const Icon(CupertinoIcons.bell, color: CupertinoColors.systemRed),
+                  leading: const Icon(
+                    CupertinoIcons.bell,
+                    color: CupertinoColors.systemRed,
+                  ),
                   title: Text(strings['notifications']!),
                   trailing: CupertinoSwitch(
                     value: _notificationsEnabled,
@@ -501,7 +628,10 @@ class _SettingsPageState extends State<SettingsPage> {
               header: Text(strings['language']!),
               children: [
                 CupertinoListTile(
-                  leading: const Icon(CupertinoIcons.globe, color: CupertinoColors.systemGreen),
+                  leading: const Icon(
+                    CupertinoIcons.globe,
+                    color: CupertinoColors.systemGreen,
+                  ),
                   title: Text(strings['language']!),
                   trailing: const LanguageDropDown(),
                 ),
@@ -511,17 +641,26 @@ class _SettingsPageState extends State<SettingsPage> {
               header: Text(strings['help']!),
               children: [
                 CupertinoListTile(
-                  leading: const Icon(CupertinoIcons.question_circle, color: CupertinoColors.systemOrange),
+                  leading: const Icon(
+                    CupertinoIcons.question_circle,
+                    color: CupertinoColors.systemOrange,
+                  ),
                   title: Text(strings['help']!),
                   trailing: const CupertinoListTileChevron(),
                   onTap: () {},
                 ),
                 CupertinoListTile(
-                  leading: const Icon(CupertinoIcons.info, color: CupertinoColors.systemGrey),
+                  leading: const Icon(
+                    CupertinoIcons.info,
+                    color: CupertinoColors.systemGrey,
+                  ),
                   title: Text(strings['about']!),
                   trailing: const CupertinoListTileChevron(),
                   onTap: () {
-                    Navigator.push(context, CupertinoPageRoute(builder: (_) => const AboutPage()));
+                    Navigator.push(
+                      context,
+                      CupertinoPageRoute(builder: (_) => const AboutPage()),
+                    );
                   },
                 ),
               ],
@@ -532,8 +671,13 @@ class _SettingsPageState extends State<SettingsPage> {
                 color: CupertinoColors.white,
                 borderRadius: BorderRadius.circular(10),
                 onPressed: _logout,
-                child: Text(strings['logout']!,
-                    style: const TextStyle(color: CupertinoColors.destructiveRed, fontWeight: FontWeight.bold)),
+                child: Text(
+                  strings['logout']!,
+                  style: const TextStyle(
+                    color: CupertinoColors.destructiveRed,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ),
             ),
           ],
@@ -544,16 +688,20 @@ class _SettingsPageState extends State<SettingsPage> {
 }
 
 class LanguageDropDown extends StatelessWidget {
-  const LanguageDropDown({Key? key}) : super(key: key);
+  const LanguageDropDown({super.key});
 
   @override
   Widget build(BuildContext context) {
     final locale = Provider.of<LanguageProvider>(context).locale;
     String current = 'English';
-    if (locale.languageCode == 'he') current = 'עברית';
-    else if (locale.languageCode == 'ar') current = 'عربي';
-    else if (locale.languageCode == 'ru') current = 'Русский';
-    else if (locale.languageCode == 'am') current = 'አማርኛ';
+    if (locale.languageCode == 'he') {
+      current = 'עברית';
+    } else if (locale.languageCode == 'ar')
+      current = 'عربي';
+    else if (locale.languageCode == 'ru')
+      current = 'Русский';
+    else if (locale.languageCode == 'am')
+      current = 'አማርኛ';
 
     return PopupMenuButton<String>(
       onSelected: (code) {

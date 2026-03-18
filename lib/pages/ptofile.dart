@@ -18,9 +18,15 @@ import 'package:untitled1/pages/invoice_builder.dart';
 import 'package:untitled1/pages/verify_business.dart';
 import 'package:untitled1/pages/chat_page.dart';
 
+<<<<<<< HEAD
+class profile extends StatefulWidget {
+  final String? userId;
+  const profile({super.key, this.userId});
+=======
 class Profile extends StatefulWidget {
   final String? userId; 
   const Profile({super.key, this.userId});
+>>>>>>> 7b713a42c7ae1f5bb5a752aedffb0ab40640f752
 
   @override
   State<Profile> createState() => _ProfileState();
@@ -31,8 +37,12 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final GlobalKey<RefreshIndicatorState> _refreshIndicatorKey = GlobalKey<RefreshIndicatorState>();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+<<<<<<< HEAD
+
+=======
   StreamSubscription<User?>? _authSubscription;
   
+>>>>>>> 7b713a42c7ae1f5bb5a752aedffb0ab40640f752
   String _userName = "";
   String _bio = "";
   String _phoneNumber = "";
@@ -44,8 +54,12 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
   List<String> _userProfessions = [];
   List<Map<String, dynamic>> _userReviews = [];
   List<Map<String, dynamic>> _projects = [];
+<<<<<<< HEAD
+
+=======
   bool _isFavorite = false;
   
+>>>>>>> 7b713a42c7ae1f5bb5a752aedffb0ab40640f752
   bool _isOwnProfile = false;
   bool _isLoading = true;
 
@@ -74,8 +88,15 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
 
     if (mounted) {
       setState(() {
+<<<<<<< HEAD
+        _isOwnProfile =
+            (targetUid == null ||
+            (currentUser != null && targetUid == currentUser.uid));
+        _isLoading = true;
+=======
         _isOwnProfile = (targetUid == null || (currentUser != null && targetUid == currentUser.uid));
         if (_userName.isEmpty) _isLoading = true;
+>>>>>>> 7b713a42c7ae1f5bb5a752aedffb0ab40640f752
       });
     }
 
@@ -98,7 +119,7 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
           _town = data['town']?.toString() ?? "";
           _profileImageUrl = data['profileImageUrl']?.toString() ?? "";
           _userType = data['userType']?.toString() ?? "normal";
-          
+
           if (data['professions'] is List) {
             _userProfessions = List<String>.from(data['professions']);
           } else if (data['profession'] != null) {
@@ -127,6 +148,22 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
     }
   }
 
+<<<<<<< HEAD
+  Future<List<Map<String, dynamic>>> _fetchSubcollection(
+    String uid,
+    String collectionName,
+  ) async {
+    final snapshot = await _firestore
+        .collection('users')
+        .doc(uid)
+        .collection(collectionName)
+        .get();
+    return snapshot.docs.map((doc) {
+      final data = Map<String, dynamic>.from(doc.data());
+      data['id'] = doc.id;
+      return data;
+    }).toList();
+=======
   Future<void> _toggleFavorite() async {
     final currentUser = FirebaseAuth.instance.currentUser;
     final targetUid = widget.userId;
@@ -168,6 +205,7 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
       debugPrint("Subcollection error ($collectionName): $e");
       return [];
     }
+>>>>>>> 7b713a42c7ae1f5bb5a752aedffb0ab40640f752
   }
 
   @override
@@ -178,7 +216,10 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
   }
 
   Map<String, String> _getLocalizedStrings(BuildContext context) {
-    final locale = Provider.of<LanguageProvider>(context, listen: false).locale.languageCode;
+    final locale = Provider.of<LanguageProvider>(
+      context,
+      listen: false,
+    ).locale.languageCode;
     switch (locale) {
       case 'he':
         return {
@@ -273,7 +314,9 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
     }
   }
 
-  bool _isGuest() => FirebaseAuth.instance.currentUser == null || FirebaseAuth.instance.currentUser!.isAnonymous;
+  bool _isGuest() =>
+      FirebaseAuth.instance.currentUser == null ||
+      FirebaseAuth.instance.currentUser!.isAnonymous;
 
   void _showGuestDialog(BuildContext context, Map<String, String> strings) {
     showDialog(
@@ -282,12 +325,23 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text(strings['guest_msg']!, style: const TextStyle(fontWeight: FontWeight.bold)),
         actions: [
+<<<<<<< HEAD
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(strings['cancel']!),
+          ),
+          TextButton(
+=======
           TextButton(onPressed: () => Navigator.pop(context), child: Text(strings['cancel']!)),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1976D2), foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+>>>>>>> 7b713a42c7ae1f5bb5a752aedffb0ab40640f752
             onPressed: () {
               Navigator.pop(context);
-              Navigator.push(context, MaterialPageRoute(builder: (_) => const SignInPage()));
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const SignInPage()),
+              );
             },
             child: Text(strings['login']!),
           ),
@@ -297,7 +351,9 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
   }
 
   void _shareProfile(Map<String, String> strings) {
-    Share.share("${strings['user_name']}: $_userName\n${strings['bio']}: $_bio");
+    Share.share(
+      "${strings['user_name']}: $_userName\n${strings['bio']}: $_bio",
+    );
   }
 
   Future<void> _addProject() async {
@@ -306,6 +362,76 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
       _showGuestDialog(context, strings);
       return;
     }
+<<<<<<< HEAD
+
+    final XFile? pickedFile = await _picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 70,
+    );
+    if (pickedFile == null) return;
+
+    final descriptionController = TextEditingController();
+    final bool? shouldPublish = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(strings['add_project']!),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Image.file(File(pickedFile.path), height: 150, fit: BoxFit.cover),
+            const SizedBox(height: 16),
+            TextField(
+              controller: descriptionController,
+              decoration: InputDecoration(
+                hintText: strings['write_on_image'],
+                border: const OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(strings['cancel']!),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(strings['add']!),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldPublish != true) return;
+
+    setState(() => _isLoading = true);
+    try {
+      final user = FirebaseAuth.instance.currentUser!;
+      final storageRef = FirebaseStorage.instance.ref().child(
+        'projects/${user.uid}/${DateTime.now().millisecondsSinceEpoch}.jpg',
+      );
+
+      await storageRef.putFile(File(pickedFile.path));
+      final downloadUrl = await storageRef.getDownloadURL();
+
+      await _firestore
+          .collection('users')
+          .doc(user.uid)
+          .collection('projects')
+          .add({
+            'imageUrl': downloadUrl,
+            'description': descriptionController.text.trim(),
+            'timestamp': FieldValue.serverTimestamp(),
+          });
+
+      await _fetchUserData();
+    } catch (e) {
+      debugPrint("UPLOAD ERROR: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("${strings['error']}: $e")));
+=======
     
     Navigator.push(
       context,
@@ -317,6 +443,7 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
     ).then((result) {
       if (result == true) {
         _fetchUserData();
+>>>>>>> 7b713a42c7ae1f5bb5a752aedffb0ab40640f752
       }
     });
   }
@@ -330,6 +457,13 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
     await showDialog(
       context: context,
       builder: (context) => AlertDialog(
+<<<<<<< HEAD
+        title: Text(strings['report']!),
+        content: TextField(
+          controller: reasonController,
+          decoration: InputDecoration(hintText: strings['rating_hint']),
+          maxLines: 3,
+=======
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text(strings['report']!, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.red)),
         content: TextField(
@@ -341,9 +475,13 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
           ), 
           maxLines: 3
+>>>>>>> 7b713a42c7ae1f5bb5a752aedffb0ab40640f752
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: Text(strings['cancel']!)),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(strings['cancel']!),
+          ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
             onPressed: () async {
@@ -357,7 +495,9 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
               });
               if (!mounted) return;
               Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(strings['report_success']!)));
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(strings['report_success']!)),
+              );
             },
             child: Text(strings['submit']!),
           ),
@@ -366,19 +506,68 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
     );
   }
 
+<<<<<<< HEAD
+  Future<void> _showReviewDialog(
+    Map<String, String> strings, {
+    Map<String, dynamic>? existingReview,
+  }) async {
+=======
   Future<void> _showReviewDialog(Map<String, String> strings, {Map<String, dynamic>? existingReview}) async {
+>>>>>>> 7b713a42c7ae1f5bb5a752aedffb0ab40640f752
     if (_isGuest()) {
       _showGuestDialog(context, strings);
       return;
     }
+<<<<<<< HEAD
+
+    double selectedStars = existingReview != null
+        ? (existingReview['stars'] as num).toDouble()
+        : 5.0;
+    final commentController = TextEditingController(
+      text: existingReview != null ? existingReview['comment'] : "",
+    );
+
+=======
     
     double selectedStars = existingReview != null ? (existingReview['stars'] as num).toDouble() : 5.0;
     final commentController = TextEditingController(text: existingReview != null ? existingReview['comment'] : "");
     
+>>>>>>> 7b713a42c7ae1f5bb5a752aedffb0ab40640f752
     await showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
+<<<<<<< HEAD
+          title: Text(
+            existingReview != null
+                ? strings['edit_review']!
+                : strings['rating_title']!,
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(
+                  5,
+                  (i) => IconButton(
+                    icon: Icon(
+                      i < selectedStars ? Icons.star : Icons.star_border,
+                      color: Colors.amber,
+                    ),
+                    onPressed: () =>
+                        setDialogState(() => selectedStars = i + 1.0),
+                  ),
+                ),
+              ),
+              TextField(
+                controller: commentController,
+                decoration: InputDecoration(hintText: strings['rating_hint']),
+                maxLines: 3,
+              ),
+            ],
+          ),
+=======
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           title: Text(existingReview != null ? strings['edit_review']! : strings['rating_title']!, style: const TextStyle(fontWeight: FontWeight.bold)),
           content: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -395,19 +584,27 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
               maxLines: 3
             ),
           ]),
+>>>>>>> 7b713a42c7ae1f5bb5a752aedffb0ab40640f752
           actions: [
-            TextButton(onPressed: () => Navigator.pop(context), child: Text(strings['cancel']!)),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text(strings['cancel']!),
+            ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1976D2), foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
               onPressed: () async {
                 final targetUid = widget.userId;
                 if (targetUid == null) return;
-                
+
                 final currentUser = FirebaseAuth.instance.currentUser!;
                 String authorName = currentUser.displayName ?? "User";
                 if (authorName == "User") {
-                   final userDoc = await _firestore.collection('users').doc(currentUser.uid).get();
-                   if (userDoc.exists) authorName = userDoc.data()?['name'] ?? "User";
+                  final userDoc = await _firestore
+                      .collection('users')
+                      .doc(currentUser.uid)
+                      .get();
+                  if (userDoc.exists)
+                    authorName = userDoc.data()?['name'] ?? "User";
                 }
 
                 final reviewData = {
@@ -419,13 +616,35 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
                 };
 
                 if (existingReview != null) {
+<<<<<<< HEAD
+                  // Update existing review
+                  await _firestore
+                      .collection('users')
+                      .doc(targetUid)
+                      .collection('reviews')
+                      .doc(existingReview['id'])
+                      .update(reviewData);
+                } else {
+                  // Check again if review exists to prevent duplicates
+                  final existing = await _firestore
+                      .collection('users')
+                      .doc(targetUid)
+                      .collection('reviews')
+                      .where('userId', isEqualTo: currentUser.uid)
+                      .get();
+=======
                   await _firestore.collection('users').doc(targetUid).collection('reviews').doc(existingReview['id']).update(reviewData);
                 } else {
                   final existing = await _firestore.collection('users').doc(targetUid).collection('reviews').where('userId', isEqualTo: currentUser.uid).get();
+>>>>>>> 7b713a42c7ae1f5bb5a752aedffb0ab40640f752
                   if (existing.docs.isNotEmpty) {
                     await existing.docs.first.reference.update(reviewData);
                   } else {
-                    await _firestore.collection('users').doc(targetUid).collection('reviews').add(reviewData);
+                    await _firestore
+                        .collection('users')
+                        .doc(targetUid)
+                        .collection('reviews')
+                        .add(reviewData);
                   }
                 }
 
@@ -453,10 +672,17 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
           project: project,
           userId: targetUid,
           localizedStrings: strings,
-          onDelete: _isOwnProfile ? () async {
-            await _firestore.collection('users').doc(targetUid).collection('projects').doc(project['id']).delete();
-            _fetchUserData();
-          } : null,
+          onDelete: _isOwnProfile
+              ? () async {
+                  await _firestore
+                      .collection('users')
+                      .doc(targetUid)
+                      .collection('projects')
+                      .doc(project['id'])
+                      .delete();
+                  _fetchUserData();
+                }
+              : null,
         ),
       ),
     ).then((_) => _fetchUserData());
@@ -465,7 +691,7 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
   Future<void> _confirmDeleteProject(Map<String, dynamic> project) async {
     if (!_isOwnProfile) return;
     final strings = _getLocalizedStrings(context);
-    
+
     final bool? confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -473,10 +699,18 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
         title: Text(strings['delete_project']!, style: const TextStyle(fontWeight: FontWeight.bold)),
         content: Text(strings['confirm_delete']!),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: Text(strings['cancel']!)),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(strings['cancel']!),
+          ),
           ElevatedButton(
+<<<<<<< HEAD
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(context, true),
+=======
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
             onPressed: () => Navigator.pop(context, true), 
+>>>>>>> 7b713a42c7ae1f5bb5a752aedffb0ab40640f752
             child: Text(strings['delete']!),
           ),
         ],
@@ -487,7 +721,12 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
       setState(() => _isLoading = true);
       try {
         final targetUid = FirebaseAuth.instance.currentUser!.uid;
-        await _firestore.collection('users').doc(targetUid).collection('projects').doc(project['id']).delete();
+        await _firestore
+            .collection('users')
+            .doc(targetUid)
+            .collection('projects')
+            .doc(project['id'])
+            .delete();
         await _fetchUserData();
       } catch (e) {
         debugPrint("DELETE ERROR: $e");
@@ -500,12 +739,42 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
   @override
   Widget build(BuildContext context) {
     final strings = _getLocalizedStrings(context);
-    final isRtl = Provider.of<LanguageProvider>(context).locale.languageCode == 'he' || Provider.of<LanguageProvider>(context).locale.languageCode == 'ar';
+    final isRtl =
+        Provider.of<LanguageProvider>(context).locale.languageCode == 'he' ||
+        Provider.of<LanguageProvider>(context).locale.languageCode == 'ar';
 
-    if (_isLoading) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    if (_isLoading)
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
 
     if (_isOwnProfile && _isGuest() && widget.userId == null) {
       return Scaffold(
+<<<<<<< HEAD
+        appBar: AppBar(
+          title: Text(strings['title']!),
+          backgroundColor: const Color(0xFF1976D2),
+          foregroundColor: Colors.white,
+        ),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.person_outline, size: 80, color: Colors.grey[400]),
+              Text(
+                strings['please_login']!,
+                style: const TextStyle(color: Colors.grey),
+              ),
+              const SizedBox(height: 24),
+              ElevatedButton(
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const SignInPage()),
+                ),
+                child: Text(strings['login']!),
+              ),
+            ],
+          ),
+        ),
+=======
         appBar: AppBar(elevation: 0, title: Text(strings['title']!), backgroundColor: const Color(0xFF1976D2), foregroundColor: Colors.white),
         body: Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
           Container(padding: const EdgeInsets.all(24), decoration: BoxDecoration(color: Colors.grey[100], shape: BoxShape.circle), child: Icon(Icons.person_outline, size: 80, color: Colors.grey[400])),
@@ -518,14 +787,17 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
             child: Text(strings['login']!),
           ),
         ])),
+>>>>>>> 7b713a42c7ae1f5bb5a752aedffb0ab40640f752
       );
     }
 
     final currentUser = FirebaseAuth.instance.currentUser;
-    final existingReview = _userReviews.cast<Map<String, dynamic>?>().firstWhere(
-      (r) => r != null && r['userId'] == currentUser?.uid,
-      orElse: () => null,
-    );
+    final existingReview = _userReviews
+        .cast<Map<String, dynamic>?>()
+        .firstWhere(
+          (r) => r != null && r['userId'] == currentUser?.uid,
+          orElse: () => null,
+        );
 
     return Directionality(
       textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
@@ -539,6 +811,117 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
           child: NestedScrollView(
             headerSliverBuilder: (context, innerBoxIsScrolled) => [
               SliverAppBar(
+<<<<<<< HEAD
+                expandedHeight: 400,
+                pinned: true,
+                stretch: true,
+                backgroundColor: const Color(0xFF1976D2),
+                actions: [
+                  IconButton(
+                    icon: const Icon(Icons.share_outlined),
+                    onPressed: () => _shareProfile(strings),
+                  ),
+                  if (!_isOwnProfile)
+                    IconButton(
+                      icon: const Icon(
+                        Icons.report_problem_outlined,
+                        color: Colors.white70,
+                      ),
+                      onPressed: () => _reportUser(strings),
+                    ),
+                  if (_isOwnProfile && !_isGuest())
+                    IconButton(
+                      icon: const Icon(Icons.settings_outlined),
+                      onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const SettingsPage()),
+                      ),
+                    ),
+                ],
+                flexibleSpace: FlexibleSpaceBar(
+                  background: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      _profileImageUrl.isNotEmpty
+                          ? Image.network(_profileImageUrl, fit: BoxFit.cover)
+                          : Container(
+                              color: const Color(0xFF1E3A8A),
+                              child: const Icon(
+                                Icons.person,
+                                size: 100,
+                                color: Colors.white24,
+                              ),
+                            ),
+                      Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Colors.transparent,
+                              Colors.black.withValues(alpha: 0.8),
+                            ],
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        bottom: 60,
+                        left: 20,
+                        right: 20,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Text(
+                                  _userName,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 28,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                if (_userType == 'worker')
+                                  const Padding(
+                                    padding: EdgeInsets.only(left: 8),
+                                    child: Icon(
+                                      Icons.verified,
+                                      color: Colors.blue,
+                                      size: 20,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            if (_userProfessions.isNotEmpty)
+                              Text(
+                                _userProfessions.join(', '),
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.9),
+                                  fontSize: 16,
+                                ),
+                              ),
+                            Row(
+                              children: [
+                                const Icon(
+                                  Icons.location_on,
+                                  color: Colors.white70,
+                                  size: 16,
+                                ),
+                                Text(
+                                  _town,
+                                  style: const TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+=======
                 expandedHeight: 450, pinned: true, stretch: true, backgroundColor: const Color(0xFF1976D2),
                 actions: [
                   IconButton(icon: const Icon(Icons.share_outlined), onPressed: () => _shareProfile(strings)),
@@ -580,6 +963,7 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
                     ])),
                     Positioned(bottom: -1, left: 0, right: 0, child: Container(height: 30, decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(30))))),
                   ]),
+>>>>>>> 7b713a42c7ae1f5bb5a752aedffb0ab40640f752
                 ),
               ),
               SliverToBoxAdapter(
@@ -596,8 +980,39 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
                 ),
               ),
               SliverPersistentHeader(
-                pinned: true, 
+                pinned: true,
                 delegate: _SliverAppBarDelegate(
+<<<<<<< HEAD
+                  TabBar(
+                    controller: _tabController,
+                    labelColor: const Color(0xFF1976D2),
+                    unselectedLabelColor: Colors.grey,
+                    indicatorColor: const Color(0xFF1976D2),
+                    tabs: [
+                      Tab(text: strings['projects']),
+                      Tab(text: strings['schedule']),
+                      Tab(text: strings['reviews']),
+                      Tab(text: strings['about']),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+            body: TabBarView(
+              controller: _tabController,
+              children: [
+                _buildProjectsGrid(strings),
+                SchedulePage(
+                  workerId:
+                      widget.userId ??
+                      FirebaseAuth.instance.currentUser?.uid ??
+                      "",
+                  workerName: _userName,
+                ),
+                _buildReviewsTab(strings, existingReview),
+                _buildAboutTab(strings),
+              ],
+=======
                   Container(
                     color: Colors.white,
                     child: TabBar(
@@ -624,10 +1039,15 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
                   _buildAboutTab(strings)
                 ]
               ),
+>>>>>>> 7b713a42c7ae1f5bb5a752aedffb0ab40640f752
             ),
           ),
         ),
-        bottomNavigationBar: (_tabController.index == 1 || (_isOwnProfile && _userType != 'normal')) ? null : _buildBottomAction(strings, existingReview),
+        bottomNavigationBar:
+            (_tabController.index == 1 ||
+                (_isOwnProfile && _userType != 'normal'))
+            ? null
+            : _buildBottomAction(strings, existingReview),
       ),
     );
   }
@@ -647,6 +1067,31 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
   Widget _buildProjectsGrid(Map<String, String> strings) {
     bool canAdd = _isOwnProfile && !_isGuest();
     return GridView.builder(
+<<<<<<< HEAD
+      padding: const EdgeInsets.all(16),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 12,
+      ),
+      itemCount: _projects.length + (canAdd ? 1 : 0),
+      itemBuilder: (context, index) {
+        if (canAdd && index == 0)
+          return InkWell(
+            onTap: _addProject,
+            child: Container(
+              decoration: BoxDecoration(
+                color: const Color(0xFFF1F5F9),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: const Icon(
+                Icons.add_a_photo_outlined,
+                color: Color(0xFF1976D2),
+                size: 32,
+              ),
+            ),
+          );
+=======
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.all(20),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, crossAxisSpacing: 16, mainAxisSpacing: 16, childAspectRatio: 0.85),
@@ -665,10 +1110,16 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
             )
           );
         }
+>>>>>>> 7b713a42c7ae1f5bb5a752aedffb0ab40640f752
         final project = _projects[canAdd ? index - 1 : index];
         return GestureDetector(
           onTap: () => _showProjectDetail(project),
           onLongPress: () => _confirmDeleteProject(project),
+<<<<<<< HEAD
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: Image.network(project['imageUrl'], fit: BoxFit.cover),
+=======
           child: Column(
             children: [
               Expanded(
@@ -691,12 +1142,47 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
                   ),
                 ),
             ],
+>>>>>>> 7b713a42c7ae1f5bb5a752aedffb0ab40640f752
           ),
         );
       },
     );
   }
 
+<<<<<<< HEAD
+  Widget _buildReviewsTab(
+    Map<String, String> strings,
+    Map<String, dynamic>? existingReview,
+  ) {
+    if (_userReviews.isEmpty)
+      return Center(child: Text(strings['no_reviews']!));
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: _userReviews.length,
+      itemBuilder: (context, index) {
+        final r = _userReviews[index];
+        final bool isMyReview =
+            r['userId'] == FirebaseAuth.instance.currentUser?.uid;
+
+        return GestureDetector(
+          onTap: isMyReview
+              ? () => _showReviewDialog(strings, existingReview: existingReview)
+              : null,
+          child: Card(
+            margin: const EdgeInsets.only(bottom: 12),
+            child: ListTile(
+              title: Text(r['userName'] ?? "User"),
+              subtitle: Text(r['comment'] ?? ""),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.star, color: Colors.amber, size: 16),
+                  Text("${r['stars']}"),
+                ],
+              ),
+            ),
+          ),
+=======
   Widget _buildReviewsTab(Map<String, String> strings, Map<String, dynamic>? existingReview) {
     if (_userReviews.isEmpty) {
       return ListView(physics: const AlwaysScrollableScrollPhysics(), children: [
@@ -731,13 +1217,44 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
                 child: TextButton(onPressed: () => _showReviewDialog(strings, existingReview: existingReview), child: Text(strings['edit_review']!, style: const TextStyle(fontSize: 12)))
               ),
           ]),
+>>>>>>> 7b713a42c7ae1f5bb5a752aedffb0ab40640f752
         );
-      }
+      },
     );
   }
 
   Widget _buildAboutTab(Map<String, String> strings) {
     return SingleChildScrollView(
+<<<<<<< HEAD
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            strings['bio']!,
+            style: const TextStyle(fontSize: 16, height: 1.5),
+          ),
+          const SizedBox(height: 32),
+          Text(
+            strings['contact_info']!,
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          ListTile(leading: const Icon(Icons.phone), title: Text(_phoneNumber)),
+          ListTile(leading: const Icon(Icons.email), title: Text(_email)),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const AveragePricesPage()),
+              ),
+              icon: const Icon(Icons.price_change),
+              label: Text(strings['price_guide']!),
+            ),
+          ),
+        ],
+      ),
+=======
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.all(24), 
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -802,16 +1319,28 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
         const SizedBox(width: 16),
         Text(value, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500)),
       ]),
+>>>>>>> 7b713a42c7ae1f5bb5a752aedffb0ab40640f752
     );
   }
 
-  Widget _buildBottomAction(Map<String, String> strings, Map<String, dynamic>? existingReview) {
+  Widget _buildBottomAction(
+    Map<String, String> strings,
+    Map<String, dynamic>? existingReview,
+  ) {
     if (_isOwnProfile && _userType == 'normal' && !_isGuest()) {
       return Container(
         padding: const EdgeInsets.fromLTRB(24, 10, 24, 30),
         decoration: BoxDecoration(color: Colors.white, boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 20, offset: const Offset(0, -5))]),
         child: InkWell(
+<<<<<<< HEAD
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => SubscriptionPage(email: _email)),
+          ),
+          borderRadius: BorderRadius.circular(16),
+=======
           onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => SubscriptionPage(email: _email))).then((_) => _fetchUserData()),
+>>>>>>> 7b713a42c7ae1f5bb5a752aedffb0ab40640f752
           child: Container(
             height: 60,
             decoration: BoxDecoration(gradient: const LinearGradient(colors: [Color(0xFFF59E0B), Color(0xFFD97706)]), borderRadius: BorderRadius.circular(18), boxShadow: [BoxShadow(color: const Color(0xFFF59E0B).withValues(alpha: 0.3), blurRadius: 15, offset: const Offset(0, 5))]),
@@ -846,6 +1375,60 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
               color: const Color(0xFF10B981)
             )
           ),
+<<<<<<< HEAD
+        ],
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: _buildActionBtn(
+                  onTap: () {
+                    if (_isGuest()) {
+                      _showGuestDialog(context, strings);
+                    } else {
+                      launchUrl(Uri.parse("tel:$_phoneNumber"));
+                    }
+                  },
+                  icon: Icons.phone_rounded,
+                  label: strings['call']!,
+                  color: const Color(0xFF16A34A),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildActionBtn(
+                  onTap: () {
+                    if (_isGuest()) {
+                      _showGuestDialog(context, strings);
+                    } else {
+                      launchUrl(Uri.parse("sms:$_phoneNumber"));
+                    }
+                  },
+                  icon: Icons.chat_bubble_rounded,
+                  label: strings['message']!,
+                  color: const Color(0xFF1976D2),
+                ),
+              ),
+            ],
+          ),
+          if (_userType == 'worker') ...[
+            const SizedBox(height: 12),
+            _buildActionBtn(
+              onTap: () =>
+                  _showReviewDialog(strings, existingReview: existingReview),
+              icon: existingReview != null
+                  ? Icons.edit_note_rounded
+                  : Icons.star_rate_rounded,
+              label: existingReview != null
+                  ? strings['edit_review']!
+                  : strings['add_review']!,
+              color: const Color(0xFFF59E0B),
+              isFullWidth: true,
+=======
           const SizedBox(width: 16),
           Expanded(
             child: _buildActionBtn(
@@ -876,6 +1459,7 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
                 const SizedBox(width: 10),
                 Text(existingReview != null ? strings['edit_review']! : strings['add_review']!, style: const TextStyle(color: Color(0xFFD97706), fontWeight: FontWeight.bold, fontSize: 16)),
               ]),
+>>>>>>> 7b713a42c7ae1f5bb5a752aedffb0ab40640f752
             ),
           ),
         ],
@@ -883,6 +1467,41 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
     );
   }
 
+<<<<<<< HEAD
+  Widget _buildActionBtn({
+    required VoidCallback onTap,
+    required IconData icon,
+    required String label,
+    required Color color,
+    bool isFullWidth = false,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        height: 52,
+        width: isFullWidth ? double.infinity : null,
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: color.withOpacity(0.3), width: 1.5),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, color: color, size: 20),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: TextStyle(
+                color: color,
+                fontWeight: FontWeight.bold,
+                fontSize: 15,
+              ),
+            ),
+          ],
+        ),
+=======
   Widget _buildActionBtn({required VoidCallback onTap, required IconData icon, required String label, required Color color}) {
     return ElevatedButton.icon(
       onPressed: onTap,
@@ -965,6 +1584,7 @@ class _AddProjectPageState extends State<AddProjectPage> {
         foregroundColor: Colors.white,
         title: Text(widget.localizedStrings['add_project']!),
         elevation: 0,
+>>>>>>> 7b713a42c7ae1f5bb5a752aedffb0ab40640f752
       ),
       body: _isUploading 
         ? const Center(child: CircularProgressIndicator())
@@ -1093,7 +1713,8 @@ class _ProjectDetailPageState extends State<ProjectDetailPage> {
   }
 
   void _listenToComments() {
-    _commentsSubscription = _firestore.collection('users')
+    _commentsSubscription = _firestore
+        .collection('users')
         .doc(widget.userId)
         .collection('projects')
         .doc(widget.project['id'])
@@ -1101,13 +1722,13 @@ class _ProjectDetailPageState extends State<ProjectDetailPage> {
         .orderBy('timestamp', descending: true)
         .snapshots()
         .listen((snapshot) {
-      final loaded = snapshot.docs.map((doc) {
-        final data = Map<String, dynamic>.from(doc.data());
-        data['id'] = doc.id;
-        return data;
-      }).toList();
-      if (mounted) setState(() => _comments = loaded);
-    });
+          final loaded = snapshot.docs.map((doc) {
+            final data = Map<String, dynamic>.from(doc.data());
+            data['id'] = doc.id;
+            return data;
+          }).toList();
+          if (mounted) setState(() => _comments = loaded);
+        });
   }
 
   Future<void> _addComment() async {
@@ -1121,17 +1742,18 @@ class _ProjectDetailPageState extends State<ProjectDetailPage> {
       if (userDoc.exists) authorName = userDoc.data()?['name'] ?? "User";
     }
 
-    await _firestore.collection('users')
+    await _firestore
+        .collection('users')
         .doc(widget.userId)
         .collection('projects')
         .doc(widget.project['id'])
         .collection('comments')
         .add({
-      'userId': user.uid,
-      'userName': authorName,
-      'text': _commentController.text.trim(),
-      'timestamp': FieldValue.serverTimestamp(),
-    });
+          'userId': user.uid,
+          'userName': authorName,
+          'text': _commentController.text.trim(),
+          'timestamp': FieldValue.serverTimestamp(),
+        });
     _commentController.clear();
   }
 
@@ -1139,6 +1761,54 @@ class _ProjectDetailPageState extends State<ProjectDetailPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
+<<<<<<< HEAD
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        actions: [
+          if (widget.onDelete != null)
+            IconButton(
+              icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+              onPressed: () {
+                widget.onDelete!();
+                Navigator.pop(context);
+              },
+            ),
+        ],
+      ),
+      body: Column(
+        children: [
+          Expanded(
+            child: InteractiveViewer(
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Image.network(
+                      widget.project['imageUrl'],
+                      fit: BoxFit.contain,
+                    ),
+                    if (widget.project['description'] != null &&
+                        widget.project['description'].toString().isNotEmpty)
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        color: Colors.black54,
+                        width: double.infinity,
+                        child: Text(
+                          widget.project['description'],
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+=======
       body: CustomScrollView(
         slivers: [
           SliverAppBar(
@@ -1149,6 +1819,7 @@ class _ProjectDetailPageState extends State<ProjectDetailPage> {
               if (widget.onDelete != null)
                 IconButton(icon: const Icon(Icons.delete_outline, color: Colors.redAccent), onPressed: () { widget.onDelete!(); Navigator.pop(context); }),
             ],
+>>>>>>> 7b713a42c7ae1f5bb5a752aedffb0ab40640f752
           ),
           SliverToBoxAdapter(
             child: InteractiveViewer(child: Image.network(widget.project['imageUrl'], fit: BoxFit.contain, width: double.infinity)),
@@ -1157,6 +1828,20 @@ class _ProjectDetailPageState extends State<ProjectDetailPage> {
             SliverToBoxAdapter(
               child: Container(padding: const EdgeInsets.all(24), color: Colors.black54, child: Text(widget.project['description'], style: const TextStyle(color: Colors.white, fontSize: 18), textAlign: TextAlign.center)),
             ),
+<<<<<<< HEAD
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Text(
+                    widget.localizedStrings['comments']!,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+=======
           SliverFillRemaining(
             hasScrollBody: true,
             child: Container(
@@ -1164,12 +1849,25 @@ class _ProjectDetailPageState extends State<ProjectDetailPage> {
               decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(30))),
               child: Column(children: [
                 Padding(padding: const EdgeInsets.all(20), child: Text(widget.localizedStrings['comments']!, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold))),
+>>>>>>> 7b713a42c7ae1f5bb5a752aedffb0ab40640f752
                 Expanded(
                   child: ListView.builder(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
                     itemCount: _comments.length,
                     itemBuilder: (context, index) {
                       final c = _comments[index];
+<<<<<<< HEAD
+                      return ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(
+                          c['userName'] ?? "User",
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                        ),
+                        subtitle: Text(c['text'] ?? ""),
+=======
                       return Container(
                         margin: const EdgeInsets.only(bottom: 12),
                         padding: const EdgeInsets.all(16),
@@ -1185,12 +1883,43 @@ class _ProjectDetailPageState extends State<ProjectDetailPage> {
                           const SizedBox(height: 6),
                           Text(c['text'] ?? "", style: const TextStyle(fontSize: 15, color: Color(0xFF334155))),
                         ]),
+>>>>>>> 7b713a42c7ae1f5bb5a752aedffb0ab40640f752
                       );
                     },
                   ),
                 ),
-                if (FirebaseAuth.instance.currentUser != null && !FirebaseAuth.instance.currentUser!.isAnonymous)
+                if (FirebaseAuth.instance.currentUser != null &&
+                    !FirebaseAuth.instance.currentUser!.isAnonymous)
                   Padding(
+<<<<<<< HEAD
+                    padding: const EdgeInsets.all(16.0),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _commentController,
+                            decoration: InputDecoration(
+                              hintText: widget.localizedStrings['add_comment'],
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(24),
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          onPressed: _addComment,
+                          icon: const Icon(
+                            Icons.send,
+                            color: Color(0xFF1976D2),
+                          ),
+                        ),
+                      ],
+                    ),
+=======
                     padding: const EdgeInsets.fromLTRB(20, 10, 20, 30),
                     child: Row(children: [
                       Expanded(
@@ -1202,6 +1931,7 @@ class _ProjectDetailPageState extends State<ProjectDetailPage> {
                       const SizedBox(width: 12),
                       CircleAvatar(backgroundColor: const Color(0xFF1976D2), child: IconButton(onPressed: _addComment, icon: const Icon(Icons.send_rounded, color: Colors.white, size: 20))),
                     ]),
+>>>>>>> 7b713a42c7ae1f5bb5a752aedffb0ab40640f752
                   ),
               ]),
             ),
@@ -1221,10 +1951,27 @@ class _ProjectDetailPageState extends State<ProjectDetailPage> {
 }
 
 class _SliverAppBarDelegate extends SliverPersistentHeaderDelegate {
+<<<<<<< HEAD
+  _SliverAppBarDelegate(this._tabBar);
+  final TabBar _tabBar;
+  @override
+  double get minExtent => _tabBar.preferredSize.height;
+  @override
+  double get maxExtent => _tabBar.preferredSize.height;
+  @override
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) => Container(color: Colors.white, child: _tabBar);
+  @override
+  bool shouldRebuild(_SliverAppBarDelegate oldDelegate) => false;
+=======
   _SliverAppBarDelegate(this._child);
   final Widget _child;
   @override double get minExtent => 48;
   @override double get maxExtent => 48;
   @override Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) => _child;
   @override bool shouldRebuild(_SliverAppBarDelegate oldDelegate) => false;
+>>>>>>> 7b713a42c7ae1f5bb5a752aedffb0ab40640f752
 }

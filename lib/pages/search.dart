@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:untitled1/language_provider.dart';
@@ -27,7 +26,7 @@ class _SearchPageState extends State<SearchPage> {
   List<Map<String, dynamic>> _filteredProfessions = [];
   bool _isLoadingWorkers = true;
   bool _isLoadingProfessions = true;
-  
+
   Map<String, dynamic>? _selectedProfession;
   bool _showWorkerList = false;
   String _sortBy = 'rating';
@@ -42,16 +41,20 @@ class _SearchPageState extends State<SearchPage> {
 
   Future<void> _loadProfessions() async {
     try {
-      final String response = await rootBundle.loadString('assets/profeissions.json');
+      final String response = await rootBundle.loadString(
+        'assets/profeissions.json',
+      );
       final List<dynamic> data = json.decode(response);
       setState(() {
         _professions = data.cast<Map<String, dynamic>>();
         _filteredProfessions = _professions;
         _isLoadingProfessions = false;
-        
+
         if (widget.initialTrade != null) {
           final initial = _professions.firstWhere(
-            (p) => p['en'].toString().toLowerCase() == widget.initialTrade!.toLowerCase(),
+            (p) =>
+                p['en'].toString().toLowerCase() ==
+                widget.initialTrade!.toLowerCase(),
             orElse: () => {},
           );
           if (initial.isNotEmpty) {
@@ -70,19 +73,20 @@ class _SearchPageState extends State<SearchPage> {
     if (!mounted) return;
     setState(() => _isLoadingWorkers = true);
     try {
-      final snapshot = await _firestore.collection('users')
+      final snapshot = await _firestore
+          .collection('users')
           .where('userType', isEqualTo: 'worker')
           .get();
-      
+
       final workers = snapshot.docs.map((doc) {
         final data = doc.data();
         data['uid'] = doc.id;
-        
+
         if (data['avgRating'] == null) {
-           data['avgRating'] = 0.0;
-           data['reviewCount'] = 0;
+          data['avgRating'] = 0.0;
+          data['reviewCount'] = 0;
         }
-        
+
         return data;
       }).toList();
 
@@ -131,20 +135,34 @@ class _SearchPageState extends State<SearchPage> {
 
   void _applyFilters() {
     final query = _searchController.text.toLowerCase();
-    final locale = Provider.of<LanguageProvider>(context, listen: false).locale.languageCode;
+    final locale = Provider.of<LanguageProvider>(
+      context,
+      listen: false,
+    ).locale.languageCode;
 
     setState(() {
       if (_showWorkerList) {
         _filteredWorkers = _allWorkers.where((w) {
-          final matchesTrade = _selectedProfession == null || 
-              _getProfessionsList(w).map((e) => e.toLowerCase()).contains(_selectedProfession!['en'].toString().toLowerCase());
-          final matchesSearch = query.isEmpty || 
-              (w['name'] ?? '').toLowerCase().contains(query) || 
+          final matchesTrade =
+              _selectedProfession == null ||
+              _getProfessionsList(w)
+                  .map((e) => e.toLowerCase())
+                  .contains(
+                    _selectedProfession!['en'].toString().toLowerCase(),
+                  );
+          final matchesSearch =
+              query.isEmpty ||
+              (w['name'] ?? '').toLowerCase().contains(query) ||
               (w['town'] ?? '').toLowerCase().contains(query);
           return matchesTrade && matchesSearch;
         }).toList();
 
         if (_sortBy == 'rating') {
+<<<<<<< HEAD
+          _filteredWorkers.sort(
+            (a, b) => (b['avgRating'] as num).compareTo(a['avgRating'] as num),
+          );
+=======
           _filteredWorkers.sort((a, b) => (b['avgRating'] as num).compareTo(a['avgRating'] as num));
         } else if (_sortBy == 'distance' && _currentPosition != null) {
           _filteredWorkers.sort((a, b) {
@@ -160,8 +178,11 @@ class _SearchPageState extends State<SearchPage> {
             double distB = Geolocator.distanceBetween(_currentPosition!.latitude, _currentPosition!.longitude, latB, lngB);
             return distA.compareTo(distB);
           });
+>>>>>>> 7b713a42c7ae1f5bb5a752aedffb0ab40640f752
         } else {
-          _filteredWorkers.sort((a, b) => (a['name'] ?? '').compareTo(b['name'] ?? ''));
+          _filteredWorkers.sort(
+            (a, b) => (a['name'] ?? '').compareTo(b['name'] ?? ''),
+          );
         }
       } else {
         _filteredProfessions = _professions.where((p) {
@@ -177,7 +198,7 @@ class _SearchPageState extends State<SearchPage> {
     if (_showWorkerList && _selectedProfession != null) {
       return _getColorFromHex(_selectedProfession!['color']);
     }
-    return const Color(0xFF1E3A8A); 
+    return const Color(0xFF1E3A8A);
   }
 
   Color _getColorFromHex(String? hexColor) {
@@ -203,21 +224,23 @@ class _SearchPageState extends State<SearchPage> {
           backgroundColor: themeColor,
           foregroundColor: Colors.white,
           elevation: 0,
-          leading: _showWorkerList 
-            ? IconButton(
-                icon: const Icon(Icons.arrow_back_ios_new_rounded), 
-                onPressed: () {
-                  setState(() { 
-                    _showWorkerList = false; 
-                    _selectedProfession = null; 
-                    _searchController.clear(); 
-                    _applyFilters(); 
-                  });
-                }
-              )
-            : null,
+          leading: _showWorkerList
+              ? IconButton(
+                  icon: const Icon(Icons.arrow_back_ios_new_rounded),
+                  onPressed: () {
+                    setState(() {
+                      _showWorkerList = false;
+                      _selectedProfession = null;
+                      _searchController.clear();
+                      _applyFilters();
+                    });
+                  },
+                )
+              : null,
           title: Text(
-            _showWorkerList ? (_selectedProfession![locale] ?? _selectedProfession!['en']) : (locale == 'he' ? 'בחר מקצוע' : 'Choose Profession'),
+            _showWorkerList
+                ? (_selectedProfession![locale] ?? _selectedProfession!['en'])
+                : (locale == 'he' ? 'בחר מקצוע' : 'Choose Profession'),
             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
           ),
           actions: [
@@ -225,7 +248,14 @@ class _SearchPageState extends State<SearchPage> {
               IconButton(
                 icon: const Icon(Icons.price_change_outlined),
                 tooltip: locale == 'he' ? 'מחירון' : 'Price Guide',
-                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => AveragePricesPage(initialProfession: _selectedProfession!['en']))),
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => AveragePricesPage(
+                      initialProfession: _selectedProfession!['en'],
+                    ),
+                  ),
+                ),
               ),
             if (_showWorkerList)
               IconButton(
@@ -238,9 +268,13 @@ class _SearchPageState extends State<SearchPage> {
           children: [
             _buildSearchHeader(locale, themeColor),
             Expanded(
-              child: _showWorkerList 
-                ? (_isLoadingWorkers ? const Center(child: CircularProgressIndicator()) : _buildWorkerList(locale, themeColor))
-                : (_isLoadingProfessions ? const Center(child: CircularProgressIndicator()) : _buildProfessionGrid(locale)),
+              child: _showWorkerList
+                  ? (_isLoadingWorkers
+                        ? const Center(child: CircularProgressIndicator())
+                        : _buildWorkerList(locale, themeColor))
+                  : (_isLoadingProfessions
+                        ? const Center(child: CircularProgressIndicator())
+                        : _buildProfessionGrid(locale)),
             ),
           ],
         ),
@@ -260,13 +294,18 @@ class _SearchPageState extends State<SearchPage> {
         controller: _searchController,
         onChanged: (v) => _applyFilters(),
         decoration: InputDecoration(
-          hintText: _showWorkerList 
-            ? (locale == 'he' ? 'חפש לפי שם או עיר...' : 'Search by name or city...') 
-            : (locale == 'he' ? 'חפש מקצוע...' : 'Search profession...'),
+          hintText: _showWorkerList
+              ? (locale == 'he'
+                    ? 'חפש לפי שם או עיר...'
+                    : 'Search by name or city...')
+              : (locale == 'he' ? 'חפש מקצוע...' : 'Search profession...'),
           prefixIcon: Icon(Icons.search_rounded, color: themeColor),
           filled: true,
           fillColor: Colors.white,
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: BorderSide.none,
+          ),
           contentPadding: const EdgeInsets.symmetric(vertical: 16),
         ),
       ),
@@ -275,29 +314,33 @@ class _SearchPageState extends State<SearchPage> {
 
   Widget _buildProfessionGrid(String locale) {
     if (_filteredProfessions.isEmpty) {
-      return Center(child: Text(locale == 'he' ? 'לא נמצאו מקצועות' : 'No professions found'));
+      return Center(
+        child: Text(
+          locale == 'he' ? 'לא נמצאו מקצועות' : 'No professions found',
+        ),
+      );
     }
 
     return GridView.builder(
       padding: const EdgeInsets.all(20),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2, 
-        crossAxisSpacing: 16, 
-        mainAxisSpacing: 16, 
-        childAspectRatio: 1.0
+        crossAxisCount: 2,
+        crossAxisSpacing: 16,
+        mainAxisSpacing: 16,
+        childAspectRatio: 1.0,
       ),
       itemCount: _filteredProfessions.length,
       itemBuilder: (context, index) {
         final p = _filteredProfessions[index];
         final color = _getColorFromHex(p['color']);
-        
+
         return InkWell(
           onTap: () {
-            setState(() { 
-              _selectedProfession = p; 
-              _showWorkerList = true; 
-              _searchController.clear(); 
-              _applyFilters(); 
+            setState(() {
+              _selectedProfession = p;
+              _showWorkerList = true;
+              _searchController.clear();
+              _applyFilters();
             });
           },
           borderRadius: BorderRadius.circular(24),
@@ -306,7 +349,11 @@ class _SearchPageState extends State<SearchPage> {
               color: Colors.white,
               borderRadius: BorderRadius.circular(24),
               boxShadow: [
-                BoxShadow(color: color.withOpacity(0.15), blurRadius: 10, offset: const Offset(0, 4))
+                BoxShadow(
+                  color: color.withOpacity(0.15),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
               ],
             ),
             child: Column(
@@ -324,8 +371,12 @@ class _SearchPageState extends State<SearchPage> {
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 8),
                   child: Text(
-                    p[locale] ?? p['en'], 
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.black87),
+                    p[locale] ?? p['en'],
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                      color: Colors.black87,
+                    ),
                     textAlign: TextAlign.center,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
@@ -341,14 +392,25 @@ class _SearchPageState extends State<SearchPage> {
 
   Widget _buildWorkerList(String locale, Color themeColor) {
     if (_filteredWorkers.isEmpty) {
-      return Center(child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.person_search_rounded, size: 80, color: Colors.grey[300]),
-          const SizedBox(height: 16),
-          Text(locale == 'he' ? 'אין עובדים זמינים כרגע' : 'No available workers at the moment', style: const TextStyle(color: Colors.grey)),
-        ],
-      ));
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.person_search_rounded,
+              size: 80,
+              color: Colors.grey[300],
+            ),
+            const SizedBox(height: 16),
+            Text(
+              locale == 'he'
+                  ? 'אין עובדים זמינים כרגע'
+                  : 'No available workers at the moment',
+              style: const TextStyle(color: Colors.grey),
+            ),
+          ],
+        ),
+      );
     }
     return ListView.builder(
       padding: const EdgeInsets.all(16),
@@ -372,7 +434,11 @@ class _SearchPageState extends State<SearchPage> {
             color: Colors.white,
             borderRadius: BorderRadius.circular(20),
             boxShadow: [
-              BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4))
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
             ],
           ),
           child: ListTile(
@@ -381,29 +447,47 @@ class _SearchPageState extends State<SearchPage> {
               tag: w['uid'],
               child: CircleAvatar(
                 radius: 30,
-                backgroundImage: w['profileImageUrl'] != null && w['profileImageUrl'].toString().isNotEmpty
-                  ? NetworkImage(w['profileImageUrl'])
-                  : null,
+                backgroundImage:
+                    w['profileImageUrl'] != null &&
+                        w['profileImageUrl'].toString().isNotEmpty
+                    ? NetworkImage(w['profileImageUrl'])
+                    : null,
                 backgroundColor: const Color(0xFFF1F5F9),
-                child: w['profileImageUrl'] == null || w['profileImageUrl'].toString().isEmpty
-                  ? Icon(Icons.person, color: themeColor)
-                  : null,
+                child:
+                    w['profileImageUrl'] == null ||
+                        w['profileImageUrl'].toString().isEmpty
+                    ? Icon(Icons.person, color: themeColor)
+                    : null,
               ),
             ),
-            title: Text(w['name'] ?? 'Worker', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
+            title: Text(
+              w['name'] ?? 'Worker',
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+            ),
             subtitle: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const SizedBox(height: 4),
                 Row(
                   children: [
-                    const Icon(Icons.location_on_rounded, size: 14, color: Colors.grey),
+                    const Icon(
+                      Icons.location_on_rounded,
+                      size: 14,
+                      color: Colors.grey,
+                    ),
                     const SizedBox(width: 4),
+<<<<<<< HEAD
+                    Text(
+                      w['town'] ?? '',
+                      style: const TextStyle(color: Colors.grey, fontSize: 13),
+                    ),
+=======
                     Text(w['town'] ?? '', style: const TextStyle(color: Colors.grey, fontSize: 13)),
                     if (distanceStr.isNotEmpty) ...[
                       const SizedBox(width: 8),
                       Text(distanceStr, style: TextStyle(color: themeColor, fontSize: 12, fontWeight: FontWeight.bold)),
                     ]
+>>>>>>> 7b713a42c7ae1f5bb5a752aedffb0ab40640f752
                   ],
                 ),
               ],
@@ -412,7 +496,10 @@ class _SearchPageState extends State<SearchPage> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.amber.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(8),
@@ -420,15 +507,34 @@ class _SearchPageState extends State<SearchPage> {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.star_rounded, color: Colors.amber, size: 16),
+                      const Icon(
+                        Icons.star_rounded,
+                        color: Colors.amber,
+                        size: 16,
+                      ),
                       const SizedBox(width: 4),
-                      Text(w['avgRating'].toStringAsFixed(1), style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.amber)),
+                      Text(
+                        w['avgRating'].toStringAsFixed(1),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.amber,
+                        ),
+                      ),
                     ],
                   ),
                 ),
               ],
             ),
+<<<<<<< HEAD
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => profile(userId: w['uid']),
+              ),
+            ),
+=======
             onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => Profile(userId: w['uid']))),
+>>>>>>> 7b713a42c7ae1f5bb5a752aedffb0ab40640f752
           ),
         );
       },
@@ -438,7 +544,9 @@ class _SearchPageState extends State<SearchPage> {
   void _showSortOptions(String locale, Color themeColor) {
     showModalBottomSheet(
       context: context,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
       builder: (context) => Padding(
         padding: const EdgeInsets.symmetric(vertical: 20),
         child: Column(
@@ -447,7 +555,9 @@ class _SearchPageState extends State<SearchPage> {
             ListTile(
               leading: const Icon(Icons.star_rounded, color: Colors.amber),
               title: Text(locale == 'he' ? 'דירוג' : 'Rating'),
-              trailing: _sortBy == 'rating' ? Icon(Icons.check_circle, color: themeColor) : null,
+              trailing: _sortBy == 'rating'
+                  ? Icon(Icons.check_circle, color: themeColor)
+                  : null,
               onTap: () {
                 setState(() => _sortBy = 'rating');
                 _applyFilters();
@@ -466,7 +576,9 @@ class _SearchPageState extends State<SearchPage> {
             ListTile(
               leading: Icon(Icons.sort_by_alpha_rounded, color: themeColor),
               title: Text(locale == 'he' ? 'שם' : 'Name'),
-              trailing: _sortBy == 'name' ? Icon(Icons.check_circle, color: themeColor) : null,
+              trailing: _sortBy == 'name'
+                  ? Icon(Icons.check_circle, color: themeColor)
+                  : null,
               onTap: () {
                 setState(() => _sortBy = 'name');
                 _applyFilters();
@@ -480,80 +592,148 @@ class _SearchPageState extends State<SearchPage> {
   }
 
   List<String> _getProfessionsList(Map<String, dynamic> worker) {
-    if (worker['professions'] is List) return (worker['professions'] as List).cast<String>();
+    if (worker['professions'] is List)
+      return (worker['professions'] as List).cast<String>();
     if (worker['profession'] != null) return [worker['profession'].toString()];
     return [];
   }
 
   IconData _getIcon(String? name) {
     switch (name) {
-      case 'plumbing': return Icons.plumbing;
-      case 'electrical_services': return Icons.electrical_services;
-      case 'carpenter': return Icons.carpenter;
-      case 'format_paint': return Icons.format_paint;
-      case 'vpn_key': return Icons.vpn_key;
-      case 'park': return Icons.park;
-      case 'ac_unit': return Icons.ac_unit;
-      case 'cleaning_services': return Icons.cleaning_services;
-      case 'build': return Icons.build;
-      case 'handyman': return Icons.handyman;
-      case 'foundation': return Icons.foundation;
-      case 'grid_view': return Icons.grid_view;
-      case 'settings': return Icons.settings;
-      case 'home_repair_service': return Icons.home_repair_service;
-      case 'computer': return Icons.computer;
-      case 'content_cut': return Icons.content_cut;
-      case 'checkroom': return Icons.checkroom;
-      case 'local_shipping': return Icons.local_shipping;
-      case 'pest_control': return Icons.pest_control;
-      case 'solar_power': return Icons.solar_power;
-      case 'chair': return Icons.chair;
-      case 'format_shapes': return Icons.format_shapes;
-      case 'architecture': return Icons.architecture;
-      case 'school': return Icons.school;
-      case 'child_care': return Icons.child_care;
-      case 'photo_camera': return Icons.photo_camera;
-      case 'music_note': return Icons.music_note;
-      case 'face': return Icons.face;
-      case 'medical_services': return Icons.medical_services;
-      case 'self_improvement': return Icons.self_improvement;
-      case 'window': return Icons.window;
-      case 'pool': return Icons.pool;
-      case 'fitness_center': return Icons.fitness_center;
-      case 'pets': return Icons.pets;
-      case 'home': return Icons.home;
-      case 'waves': return Icons.waves;
-      case 'dry_cleaning': return Icons.dry_cleaning;
-      case 'event': return Icons.event;
-      case 'restaurant': return Icons.restaurant;
-      case 'security': return Icons.security;
-      case 'delivery_dining': return Icons.delivery_dining;
-      case 'local_car_wash': return Icons.local_car_wash;
-      case 'spa': return Icons.spa;
-      case 'restaurant_menu': return Icons.restaurant_menu;
-      case 'flight': return Icons.flight;
-      case 'real_estate_agent': return Icons.real_estate_agent;
-      case 'gavel': return Icons.gavel;
-      case 'calculate': return Icons.calculate;
-      case 'translate': return Icons.translate;
-      case 'format_color_fill': return Icons.format_color_fill;
-      case 'square_foot': return Icons.square_foot;
-      case 'videocam': return Icons.videocam;
-      case 'public': return Icons.public;
-      case 'psychology': return Icons.psychology;
-      case 'add_a_photo': return Icons.add_a_photo;
-      case 'flight_takeoff': return Icons.flight_takeoff;
-      case 'piano': return Icons.piano;
-      case 'language': return Icons.language;
-      case 'functions': return Icons.functions;
-      case 'science': return Icons.science;
-      case 'biotech': return Icons.biotech;
-      case 'eco': return Icons.eco;
-      case 'history_edu': return Icons.history_edu;
-      case 'palette': return Icons.palette;
-      case 'pedal_bike': return Icons.pedal_bike;
-      case 'engineering': return Icons.engineering;
-      default: return Icons.work_rounded;
+      case 'plumbing':
+        return Icons.plumbing;
+      case 'electrical_services':
+        return Icons.electrical_services;
+      case 'carpenter':
+        return Icons.carpenter;
+      case 'format_paint':
+        return Icons.format_paint;
+      case 'vpn_key':
+        return Icons.vpn_key;
+      case 'park':
+        return Icons.park;
+      case 'ac_unit':
+        return Icons.ac_unit;
+      case 'cleaning_services':
+        return Icons.cleaning_services;
+      case 'build':
+        return Icons.build;
+      case 'handyman':
+        return Icons.handyman;
+      case 'foundation':
+        return Icons.foundation;
+      case 'grid_view':
+        return Icons.grid_view;
+      case 'settings':
+        return Icons.settings;
+      case 'home_repair_service':
+        return Icons.home_repair_service;
+      case 'computer':
+        return Icons.computer;
+      case 'content_cut':
+        return Icons.content_cut;
+      case 'checkroom':
+        return Icons.checkroom;
+      case 'local_shipping':
+        return Icons.local_shipping;
+      case 'pest_control':
+        return Icons.pest_control;
+      case 'solar_power':
+        return Icons.solar_power;
+      case 'chair':
+        return Icons.chair;
+      case 'format_shapes':
+        return Icons.format_shapes;
+      case 'architecture':
+        return Icons.architecture;
+      case 'school':
+        return Icons.school;
+      case 'child_care':
+        return Icons.child_care;
+      case 'photo_camera':
+        return Icons.photo_camera;
+      case 'music_note':
+        return Icons.music_note;
+      case 'face':
+        return Icons.face;
+      case 'medical_services':
+        return Icons.medical_services;
+      case 'self_improvement':
+        return Icons.self_improvement;
+      case 'window':
+        return Icons.window;
+      case 'pool':
+        return Icons.pool;
+      case 'fitness_center':
+        return Icons.fitness_center;
+      case 'pets':
+        return Icons.pets;
+      case 'home':
+        return Icons.home;
+      case 'waves':
+        return Icons.waves;
+      case 'dry_cleaning':
+        return Icons.dry_cleaning;
+      case 'event':
+        return Icons.event;
+      case 'restaurant':
+        return Icons.restaurant;
+      case 'security':
+        return Icons.security;
+      case 'delivery_dining':
+        return Icons.delivery_dining;
+      case 'local_car_wash':
+        return Icons.local_car_wash;
+      case 'spa':
+        return Icons.spa;
+      case 'restaurant_menu':
+        return Icons.restaurant_menu;
+      case 'flight':
+        return Icons.flight;
+      case 'real_estate_agent':
+        return Icons.real_estate_agent;
+      case 'gavel':
+        return Icons.gavel;
+      case 'calculate':
+        return Icons.calculate;
+      case 'translate':
+        return Icons.translate;
+      case 'format_color_fill':
+        return Icons.format_color_fill;
+      case 'square_foot':
+        return Icons.square_foot;
+      case 'videocam':
+        return Icons.videocam;
+      case 'public':
+        return Icons.public;
+      case 'psychology':
+        return Icons.psychology;
+      case 'add_a_photo':
+        return Icons.add_a_photo;
+      case 'flight_takeoff':
+        return Icons.flight_takeoff;
+      case 'piano':
+        return Icons.piano;
+      case 'language':
+        return Icons.language;
+      case 'functions':
+        return Icons.functions;
+      case 'science':
+        return Icons.science;
+      case 'biotech':
+        return Icons.biotech;
+      case 'eco':
+        return Icons.eco;
+      case 'history_edu':
+        return Icons.history_edu;
+      case 'palette':
+        return Icons.palette;
+      case 'pedal_bike':
+        return Icons.pedal_bike;
+      case 'engineering':
+        return Icons.engineering;
+      default:
+        return Icons.work_rounded;
     }
   }
 }

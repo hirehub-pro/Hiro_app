@@ -8,7 +8,7 @@ class AuthService {
   // Ensure user exists in Firestore (Only for non-anonymous users)
   Future<void> ensureUserInDatabase(User? user) async {
     if (user == null || user.isAnonymous) return; // Don't save if guest
-    
+
     final userDoc = await _firestore.collection('users').doc(user.uid).get();
     if (!userDoc.exists) {
       await _firestore.collection('users').doc(user.uid).set({

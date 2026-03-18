@@ -18,7 +18,7 @@ class LanguageProvider extends ChangeNotifier {
       notifyListeners();
     }
   }
-
+  
   /// Sets the locale using a language code (e.g., 'en', 'he', 'ar')
   Future<void> setLocale(String languageCode) async {
     final prefs = await SharedPreferences.getInstance();

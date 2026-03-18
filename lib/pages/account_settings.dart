@@ -10,7 +10,7 @@ import 'package:untitled1/pages/phone_auth_page.dart';
 
 class AccountSettingsPage extends StatefulWidget {
   final Map<String, dynamic> userData;
-  const AccountSettingsPage({Key? key, required this.userData}) : super(key: key);
+  const AccountSettingsPage({super.key, required this.userData});
 
   @override
   State<AccountSettingsPage> createState() => _AccountSettingsPageState();
@@ -25,8 +25,14 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
     _currentPhone = widget.userData['phone'] ?? 'N/A';
   }
 
-  Map<String, String> _getLocalizedStrings(BuildContext context, {bool listen = true}) {
-    final locale = Provider.of<LanguageProvider>(context, listen: listen).locale.languageCode;
+  Map<String, String> _getLocalizedStrings(
+    BuildContext context, {
+    bool listen = true,
+  }) {
+    final locale = Provider.of<LanguageProvider>(
+      context,
+      listen: listen,
+    ).locale.languageCode;
     switch (locale) {
       case 'he':
         return {
@@ -91,24 +97,25 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user != null) {
-        await FirebaseFirestore.instance.collection('users').doc(user.uid).update({
-          'phone': newPhone,
-        });
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .update({'phone': newPhone});
         setState(() {
           _currentPhone = newPhone;
         });
         if (mounted) {
           final strings = _getLocalizedStrings(context, listen: false);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(strings['phone_updated']!)),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(strings['phone_updated']!)));
         }
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Error updating Firestore: $e")),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("Error updating Firestore: $e")));
       }
     }
   }
@@ -121,7 +128,9 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
           isReauth: true,
           onVerified: (newPhone) {
             _updatePhoneInFirestore(newPhone);
-            Navigator.pop(context); // Go back to account settings from PhoneAuthPage
+            Navigator.pop(
+              context,
+            ); // Go back to account settings from PhoneAuthPage
           },
         ),
       ),
@@ -131,12 +140,15 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
   @override
   Widget build(BuildContext context) {
     final strings = _getLocalizedStrings(context);
-    final isRtl = Provider.of<LanguageProvider>(context).locale.languageCode == 'he' || 
-                  Provider.of<LanguageProvider>(context).locale.languageCode == 'ar';
+    final isRtl =
+        Provider.of<LanguageProvider>(context).locale.languageCode == 'he' ||
+        Provider.of<LanguageProvider>(context).locale.languageCode == 'ar';
 
     final email = widget.userData['email'] ?? 'N/A';
     final town = widget.userData['town'] ?? 'N/A';
-    final userType = widget.userData['userType'] == 'worker' ? strings['worker'] : strings['client'];
+    final userType = widget.userData['userType'] == 'worker'
+        ? strings['worker']
+        : strings['client'];
 
     if (Platform.isIOS) {
       return Directionality(
@@ -151,16 +163,29 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
               CupertinoListSection.insetGrouped(
                 children: [
                   CupertinoListTile(
-                    leading: const Icon(CupertinoIcons.person, color: CupertinoColors.systemBlue),
+                    leading: const Icon(
+                      CupertinoIcons.person,
+                      color: CupertinoColors.systemBlue,
+                    ),
                     title: Text(strings['edit_profile']!),
                     trailing: const CupertinoListTileChevron(),
-                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => EditProfilePage(userData: {
-                      ...widget.userData,
-                      'phone': _currentPhone,
-                    }))),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => EditProfilePage(
+                          userData: {
+                            ...widget.userData,
+                            'phone': _currentPhone,
+                          },
+                        ),
+                      ),
+                    ),
                   ),
                   CupertinoListTile(
-                    leading: const Icon(CupertinoIcons.phone, color: CupertinoColors.systemGreen),
+                    leading: const Icon(
+                      CupertinoIcons.phone,
+                      color: CupertinoColors.systemGreen,
+                    ),
                     title: Text(strings['change_phone']!),
                     trailing: const CupertinoListTileChevron(),
                     onTap: _onChangePhone,
@@ -209,28 +234,54 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
           children: [
             _buildSection([
               _buildTile(Icons.person_outline, strings['edit_profile']!, () {
-                Navigator.push(context, MaterialPageRoute(builder: (_) => EditProfilePage(userData: {
-                  ...widget.userData,
-                  'phone': _currentPhone,
-                })));
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => EditProfilePage(
+                      userData: {...widget.userData, 'phone': _currentPhone},
+                    ),
+                  ),
+                );
               }),
               const Divider(height: 1, indent: 50),
-              _buildTile(Icons.phone_android_outlined, strings['change_phone']!, _onChangePhone),
+              _buildTile(
+                Icons.phone_android_outlined,
+                strings['change_phone']!,
+                _onChangePhone,
+              ),
             ]),
             const SizedBox(height: 24),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              child: Text(strings['personal_info']!.toUpperCase(), 
-                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF8E8E93))),
+              child: Text(
+                strings['personal_info']!.toUpperCase(),
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF8E8E93),
+                ),
+              ),
             ),
             _buildSection([
               _buildInfoTile(Icons.email_outlined, strings['email']!, email),
               const Divider(height: 1, indent: 50),
-              _buildInfoTile(Icons.phone_outlined, strings['phone']!, _currentPhone),
+              _buildInfoTile(
+                Icons.phone_outlined,
+                strings['phone']!,
+                _currentPhone,
+              ),
               const Divider(height: 1, indent: 50),
-              _buildInfoTile(Icons.location_on_outlined, strings['town']!, town),
+              _buildInfoTile(
+                Icons.location_on_outlined,
+                strings['town']!,
+                town,
+              ),
               const Divider(height: 1, indent: 50),
-              _buildInfoTile(Icons.badge_outlined, strings['user_type']!, userType!),
+              _buildInfoTile(
+                Icons.badge_outlined,
+                strings['user_type']!,
+                userType!,
+              ),
             ]),
           ],
         ),
@@ -260,8 +311,22 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
   Widget _buildInfoTile(IconData icon, String title, String value) {
     return ListTile(
       leading: Icon(icon, color: const Color(0xFF1976D2)),
-      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14, color: Colors.grey)),
-      subtitle: Text(value, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black, fontSize: 16)),
+      title: Text(
+        title,
+        style: const TextStyle(
+          fontWeight: FontWeight.w500,
+          fontSize: 14,
+          color: Colors.grey,
+        ),
+      ),
+      subtitle: Text(
+        value,
+        style: const TextStyle(
+          fontWeight: FontWeight.bold,
+          color: Colors.black,
+          fontSize: 16,
+        ),
+      ),
     );
   }
 }
