@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 import 'package:untitled1/language_provider.dart';
 import 'package:intl/intl.dart' as intl;
+import 'package:untitled1/pages/request_details.dart';
 
 class ChatPage extends StatefulWidget {
   final String receiverId;
@@ -143,7 +144,12 @@ class _ChatPageState extends State<ChatPage> {
                     itemBuilder: (context, index) {
                       final data = docs[index].data() as Map<String, dynamic>;
                       final bool isMe = data['senderId'] == _auth.currentUser!.uid;
+                      final bool isSystem = data['isSystem'] ?? false;
                       final timestamp = data['timestamp'] as Timestamp?;
+
+                      if (isSystem) {
+                        return _buildSystemMessage(data, timestamp);
+                      }
 
                       return _buildMessageBubble(data['message'], isMe, timestamp);
                     },
@@ -152,6 +158,59 @@ class _ChatPageState extends State<ChatPage> {
               ),
             ),
             _buildMessageInput(isRtl),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSystemMessage(Map<String, dynamic> data, Timestamp? timestamp) {
+    return GestureDetector(
+      onTap: () {
+        if (data['requestId'] != null) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => RequestDetailsPage(
+                notificationId: data['requestId'],
+                data: data['requestData'] ?? {},
+              ),
+            ),
+          );
+        }
+      },
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 16),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+        decoration: BoxDecoration(
+          color: Colors.blue[50],
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.blue[100]!),
+        ),
+        child: Column(
+          children: [
+            const Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.calendar_today_rounded, size: 16, color: Color(0xFF1976D2)),
+                SizedBox(width: 8),
+                Text(
+                  "Work Request",
+                  style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1976D2), fontSize: 13),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              data['message'],
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.blue[900], fontSize: 14),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              "Click to view details",
+              style: TextStyle(fontSize: 11, color: Color(0xFF1976D2), fontWeight: FontWeight.bold, decoration: TextDecoration.underline),
+            ),
           ],
         ),
       ),

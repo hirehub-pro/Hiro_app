@@ -7,6 +7,7 @@ import 'package:untitled1/pages/search.dart';
 import 'package:untitled1/pages/ptofile.dart';
 import 'package:untitled1/pages/notifications.dart';
 import 'package:untitled1/widgets/skeleton.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -47,46 +48,69 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _fetchTopRatedWorkers() async {
+    if (!mounted) return;
+    setState(() => _isTopRatedLoading = true);
+    
     try {
+      // 1. Try Optimized Query (Requires Index)
+      // Note: This excludes anyone without the 'avgRating' field.
       final snapshot = await _firestore.collection('users')
           .where('userType', isEqualTo: 'worker')
+          .orderBy('avgRating', descending: true)
+          .limit(10)
           .get();
       
-      List<Map<String, dynamic>> workers = [];
-
-      for (var doc in snapshot.docs) {
-        var userData = doc.data();
-        userData['uid'] = doc.id;
-        
-        double totalStars = 0;
-        int reviewCount = 0;
-        
-        if (userData['reviews'] != null && userData['reviews'] is Map) {
-          final Map<String, dynamic> reviews = Map<String, dynamic>.from(userData['reviews']);
-          reviewCount = reviews.length;
-          reviews.forEach((k, v) {
-            if (v is Map) {
-              final reviewData = Map<String, dynamic>.from(v);
-              totalStars += (reviewData['stars'] as num).toDouble();
-            }
-          });
-        }
-        
-        userData['avgRating'] = reviewCount > 0 ? totalStars / reviewCount : 0.0;
-        userData['reviewCount'] = reviewCount;
-        workers.add(userData);
+      if (snapshot.docs.isEmpty) {
+        // 2. Fallback: If no rated workers found, just get any workers
+        // This ensures the app isn't empty while you're getting your first reviews.
+        await _fetchAnyWorkers();
+        return;
       }
 
-      workers.sort((a, b) => (b['avgRating'] as double).compareTo(a['avgRating'] as double));
-      
+      final workers = snapshot.docs.map((doc) {
+        var userData = doc.data();
+        userData['uid'] = doc.id;
+        userData['avgRating'] = (userData['avgRating'] ?? 0.0).toDouble();
+        userData['reviewCount'] = userData['reviewCount'] ?? 0;
+        return userData;
+      }).toList();
+
       if (mounted) {
         setState(() {
-          _topRatedWorkers = workers.take(10).toList();
+          _topRatedWorkers = workers;
           _isTopRatedLoading = false;
         });
       }
     } catch (e) {
-      debugPrint("HOME FETCH ERROR: $e");
+      debugPrint("HOME OPTIMIZED FETCH ERROR (Likely missing index): $e");
+      // 3. Fallback on Error: Get any workers if sorting fails
+      await _fetchAnyWorkers();
+    }
+  }
+
+  Future<void> _fetchAnyWorkers() async {
+    try {
+      final snapshot = await _firestore.collection('users')
+          .where('userType', isEqualTo: 'worker')
+          .limit(10)
+          .get();
+      
+      final workers = snapshot.docs.map((doc) {
+        var userData = doc.data();
+        userData['uid'] = doc.id;
+        userData['avgRating'] = (userData['avgRating'] ?? 0.0).toDouble();
+        userData['reviewCount'] = userData['reviewCount'] ?? 0;
+        return userData;
+      }).toList();
+
+      if (mounted) {
+        setState(() {
+          _topRatedWorkers = workers;
+          _isTopRatedLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint("HOME FALLBACK FETCH ERROR: $e");
       if (mounted) setState(() => _isTopRatedLoading = false);
     }
   }
@@ -431,7 +455,14 @@ class _HomePageState extends State<HomePage> {
                             ClipRRect(
                               borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
                               child: (worker['profileImageUrl'] != null && worker['profileImageUrl'].toString().isNotEmpty)
-                                ? Image.network(worker['profileImageUrl'], height: 110, width: 160, fit: BoxFit.cover)
+                                ? CachedNetworkImage(
+                                    imageUrl: worker['profileImageUrl'],
+                                    height: 110,
+                                    width: 160,
+                                    fit: BoxFit.cover,
+                                    placeholder: (context, url) => Container(color: const Color(0xFFE2E8F0)),
+                                    errorWidget: (context, url, error) => const Icon(Icons.error),
+                                  )
                                 : Container(height: 110, width: 160, color: const Color(0xFFE2E8F0), child: const Icon(Icons.person, size: 40, color: Colors.white)),
                             ),
                             Padding(

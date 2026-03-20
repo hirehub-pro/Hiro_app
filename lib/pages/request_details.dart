@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:untitled1/language_provider.dart';
+import 'package:untitled1/services/notification_service.dart';
 
 class RequestDetailsPage extends StatefulWidget {
   final String notificationId;
@@ -50,7 +51,6 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
   }
 
   Map<String, String> _getLocalizedStrings(BuildContext context) {
-    // FIX: Passing listen: false to Provider.of to avoid "Tried to listen to a value exposed with provider, from outside of the widget tree" error.
     final locale = Provider.of<LanguageProvider>(context, listen: false).locale.languageCode;
     switch (locale) {
       case 'he':
@@ -139,48 +139,68 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
     final String date = widget.data['date'];
 
     try {
+      // 1. Get Client's FCM Token for push notification
+      final clientDoc = await firestore.collection('users').doc(clientId).get();
+      final String? clientFcmToken = clientDoc.data()?['fcmToken'];
+
       final batch = firestore.batch();
+      String? notifTitle;
+      String? notifBody;
 
       if (accept) {
         final fStr = "${_availableFrom.hour.toString().padLeft(2, '0')}:${_availableFrom.minute.toString().padLeft(2, '0')}";
         final tStr = "${_availableTo.hour.toString().padLeft(2, '0')}:${_availableTo.minute.toString().padLeft(2, '0')}";
 
-        // 1. Update Pro's Schedule
+        // 2. Update Pro's Schedule
         batch.update(firestore.collection('users').doc(user.uid), {
           'availableDates': FieldValue.arrayUnion([date]),
           'partialWorkDays.$date': {'from': fStr, 'to': tStr},
         });
 
-        // 2. Notify Client
+        notifTitle = strings['accept'];
+        notifBody = "${user.displayName ?? 'The professional'} accepted your request for $date. Arrival: $fStr - $tStr";
+
+        // 3. Notify Client in Firestore
         final clientNotifRef = firestore.collection('users').doc(clientId).collection('notifications').doc();
         batch.set(clientNotifRef, {
           'type': 'request_accepted',
           'fromId': user.uid,
           'fromName': user.displayName ?? 'Professional',
-          'title': strings['accept'],
-          'body': "${user.displayName ?? 'The professional'} accepted your request for $date. Arrival: $fStr - $tStr",
+          'title': notifTitle,
+          'body': notifBody,
           'timestamp': FieldValue.serverTimestamp(),
         });
       } else {
-        // Notify Client about Decline
+        notifTitle = strings['declined'];
+        notifBody = "${user.displayName ?? 'The professional'} cannot make it on $date";
+
+        // Notify Client about Decline in Firestore
         final clientNotifRef = firestore.collection('users').doc(clientId).collection('notifications').doc();
         batch.set(clientNotifRef, {
           'type': 'request_declined',
           'fromId': user.uid,
           'fromName': user.displayName ?? 'Professional',
-          'title': strings['declined'],
-          'body': "${user.displayName ?? 'The professional'} cannot make it on $date",
+          'title': notifTitle,
+          'body': notifBody,
           'timestamp': FieldValue.serverTimestamp(),
         });
       }
 
-      // 3. Update current notification status in Pro's list
+      // 4. Update current notification status in Pro's list
       batch.update(firestore.collection('users').doc(user.uid).collection('notifications').doc(widget.notificationId), {
         'status': accept ? 'accepted' : 'declined',
       });
 
-      // Commit all writes at once
       await batch.commit();
+
+      // 5. Send FCM Push Notification to Client
+      if (clientFcmToken != null) {
+        await NotificationService.sendPushNotification(
+          targetToken: clientFcmToken,
+          title: notifTitle!,
+          body: notifBody!,
+        );
+      }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(accept ? strings['success']! : strings['declined']!)));

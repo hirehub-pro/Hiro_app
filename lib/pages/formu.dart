@@ -9,6 +9,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:untitled1/language_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:untitled1/pages/sighn_in.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 class BlogPage extends StatefulWidget {
   const BlogPage({super.key});
@@ -322,7 +323,7 @@ class _BlogPageState extends State<BlogPage> {
                                 borderRadius: BorderRadius.circular(12),
                                 image: DecorationImage(
                                   image: isExisting
-                                    ? NetworkImage(existingImageUrls[index]) as ImageProvider
+                                    ? CachedNetworkImageProvider(existingImageUrls[index]) as ImageProvider
                                     : FileImage(selectedImages[index - existingImageUrls.length]),
                                   fit: BoxFit.cover,
                                 ),
@@ -772,7 +773,14 @@ class _BlogCard extends StatelessWidget {
                 borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
                 child: Stack(
                   children: [
-                    Image.network(imageUrls[0], height: 180, width: double.infinity, fit: BoxFit.cover),
+                    CachedNetworkImage(
+                      imageUrl: imageUrls[0], 
+                      height: 180, 
+                      width: double.infinity, 
+                      fit: BoxFit.cover,
+                      placeholder: (context, url) => Container(color: Colors.grey[200]),
+                      errorWidget: (context, url, error) => const Icon(Icons.error),
+                    ),
                     if (imageUrls.length > 1)
                       Positioned(
                         right: 12,
@@ -1043,7 +1051,13 @@ class _PostDetailPageState extends State<PostDetailPage> {
                           child: PageView.builder(
                             itemCount: imageUrls.length,
                             onPageChanged: (index) => setState(() => _currentImageIndex = index),
-                            itemBuilder: (context, index) => Image.network(imageUrls[index], width: double.infinity, fit: BoxFit.cover),
+                            itemBuilder: (context, index) => CachedNetworkImage(
+                              imageUrl: imageUrls[index], 
+                              width: double.infinity, 
+                              fit: BoxFit.cover,
+                              placeholder: (context, url) => Container(color: Colors.grey[200]),
+                              errorWidget: (context, url, error) => const Icon(Icons.error),
+                            ),
                           ),
                         ),
                         if (imageUrls.length > 1)

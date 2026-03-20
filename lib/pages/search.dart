@@ -31,12 +31,14 @@ class _SearchPageState extends State<SearchPage> {
   bool _showWorkerList = false;
   String _sortBy = 'rating';
   Position? _currentPosition;
+  bool _filterByRadius = false;
 
   @override
   void initState() {
     super.initState();
     _loadProfessions();
     _fetchWorkers();
+    _getCurrentLocation(silent: true);
   }
 
   Future<void> _loadProfessions() async {
@@ -102,30 +104,26 @@ class _SearchPageState extends State<SearchPage> {
     }
   }
 
-  Future<void> _getCurrentLocation() async {
+  Future<void> _getCurrentLocation({bool silent = false}) async {
     try {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) {
-        // Location services are not enabled.
-        return;
-      }
+      if (!serviceEnabled) return;
 
       LocationPermission permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
+        if (silent) return;
         permission = await Geolocator.requestPermission();
-        if (permission == LocationPermission.denied) {
-          return;
-        }
+        if (permission == LocationPermission.denied) return;
       }
       
-      if (permission == LocationPermission.deniedForever) {
-        return;
-      } 
+      if (permission == LocationPermission.deniedForever) return;
 
       Position position = await Geolocator.getCurrentPosition();
       setState(() {
         _currentPosition = position;
-        _sortBy = 'distance';
+        if (!silent) {
+           _sortBy = 'distance';
+        }
         _applyFilters();
       });
     } catch (e) {
@@ -150,25 +148,46 @@ class _SearchPageState extends State<SearchPage> {
                   .contains(
                     _selectedProfession!['en'].toString().toLowerCase(),
                   );
+
           final matchesSearch =
               query.isEmpty ||
               (w['name'] ?? '').toLowerCase().contains(query) ||
               (w['town'] ?? '').toLowerCase().contains(query);
-          return matchesTrade && matchesSearch;
+
+          bool matchesRadius = true;
+          if (_filterByRadius && _currentPosition != null) {
+            double? workerLat = w['workCenterLat']?.toDouble() ?? w['lat']?.toDouble();
+            double? workerLng = w['workCenterLng']?.toDouble() ?? w['lng']?.toDouble();
+            double? radius = w['workRadius']?.toDouble();
+
+            if (workerLat != null && workerLng != null && radius != null) {
+              double distance = Geolocator.distanceBetween(
+                _currentPosition!.latitude,
+                _currentPosition!.longitude,
+                workerLat,
+                workerLng,
+              );
+              matchesRadius = distance <= radius;
+            } else if (workerLat != null && workerLng != null) {
+               // If no radius set, maybe default to 20km or just allow
+               // matchesRadius = true;
+            }
+          }
+
+          return matchesTrade && matchesSearch && matchesRadius;
         }).toList();
 
         if (_sortBy == 'rating') {
           _filteredWorkers.sort(
             (a, b) => (b['avgRating'] as num).compareTo(a['avgRating'] as num),
           );
-          _filteredWorkers.sort((a, b) => (b['avgRating'] as num).compareTo(a['avgRating'] as num));
         } else if (_sortBy == 'distance' && _currentPosition != null) {
           _filteredWorkers.sort((a, b) {
             double latA = a['lat'] ?? 0.0;
             double lngA = a['lng'] ?? 0.0;
             double latB = b['lat'] ?? 0.0;
             double lngB = b['lng'] ?? 0.0;
-            
+
             if (latA == 0 && lngA == 0) return 1;
             if (latB == 0 && lngB == 0) return -1;
 
@@ -416,7 +435,7 @@ class _SearchPageState extends State<SearchPage> {
         final w = _filteredWorkers[index];
         
         String distanceStr = "";
-        if (_sortBy == 'distance' && _currentPosition != null && w['lat'] != null && w['lng'] != null) {
+        if (_currentPosition != null && w['lat'] != null && w['lng'] != null) {
           double distance = Geolocator.distanceBetween(_currentPosition!.latitude, _currentPosition!.longitude, w['lat'], w['lng']);
           if (distance < 1000) {
             distanceStr = "${distance.toStringAsFixed(0)}m";
@@ -424,6 +443,10 @@ class _SearchPageState extends State<SearchPage> {
             distanceStr = "${(distance / 1000).toStringAsFixed(1)}km";
           }
         }
+
+        final bool isIdVerified = w['isIdVerified'] ?? false;
+        final bool isBusinessVerified = w['isBusinessVerified'] ?? false;
+        final bool isInsured = w['isInsured'] ?? false;
 
         return Container(
           margin: const EdgeInsets.only(bottom: 16),
@@ -457,9 +480,19 @@ class _SearchPageState extends State<SearchPage> {
                     : null,
               ),
             ),
-            title: Text(
-              w['name'] ?? 'Worker',
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+            title: Row(
+              children: [
+                Flexible(
+                  child: Text(
+                    w['name'] ?? 'Worker',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (isIdVerified) const Padding(padding: EdgeInsets.only(left: 4), child: Icon(Icons.assignment_ind, color: Colors.green, size: 14)),
+                if (isBusinessVerified) const Padding(padding: EdgeInsets.only(left: 4), child: Icon(Icons.business_center, color: Colors.orange, size: 14)),
+                if (isInsured) const Padding(padding: EdgeInsets.only(left: 4), child: Icon(Icons.shield, color: Colors.blue, size: 14)),
+              ],
             ),
             subtitle: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -473,12 +506,10 @@ class _SearchPageState extends State<SearchPage> {
                       color: Colors.grey,
                     ),
                     const SizedBox(width: 4),
-
                     Text(
                       w['town'] ?? '',
                       style: const TextStyle(color: Colors.grey, fontSize: 13),
                     ),
-                    Text(w['town'] ?? '', style: const TextStyle(color: Colors.grey, fontSize: 13)),
                     if (distanceStr.isNotEmpty) ...[
                       const SizedBox(width: 8),
                       Text(distanceStr, style: TextStyle(color: themeColor, fontSize: 12, fontWeight: FontWeight.bold)),
@@ -509,7 +540,7 @@ class _SearchPageState extends State<SearchPage> {
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        w['avgRating'].toStringAsFixed(1),
+                        (w['avgRating'] as num).toStringAsFixed(1),
                         style: const TextStyle(
                           fontWeight: FontWeight.bold,
                           color: Colors.amber,
@@ -543,6 +574,22 @@ class _SearchPageState extends State<SearchPage> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            SwitchListTile(
+              title: Text(locale == 'he' ? 'סנן לפי רדיוס עבודה' : 'Filter by Work Radius'),
+              subtitle: Text(locale == 'he' ? 'הצג רק עובדים שמגיעים אליך' : 'Show only workers who serve your area'),
+              value: _filterByRadius,
+              onChanged: (val) {
+                setState(() => _filterByRadius = val);
+                if (val && _currentPosition == null) {
+                   _getCurrentLocation();
+                } else {
+                  _applyFilters();
+                }
+                Navigator.pop(context);
+              },
+              secondary: Icon(Icons.radar, color: themeColor),
+            ),
+            const Divider(),
             ListTile(
               leading: const Icon(Icons.star_rounded, color: Colors.amber),
               title: Text(locale == 'he' ? 'דירוג' : 'Rating'),

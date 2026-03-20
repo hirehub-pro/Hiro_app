@@ -11,12 +11,15 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:untitled1/pages/sighn_in.dart';
 import 'package:untitled1/pages/schedule.dart';
-import 'package:untitled1/pages/average_prices.dart';
 import 'package:untitled1/pages/settings.dart';
 import 'package:untitled1/pages/subscription.dart';
 import 'package:untitled1/pages/invoice_builder.dart';
 import 'package:untitled1/pages/verify_business.dart';
 import 'package:untitled1/pages/chat_page.dart';
+import 'package:untitled1/pages/analytics_page.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
+import 'package:path_provider/path_provider.dart';
 
 class Profile extends StatefulWidget {
   final String? userId;
@@ -49,15 +52,15 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
   bool _isOwnProfile = false;
   bool _isLoading = true;
 
+  bool _isIdVerified = false;
+  bool _isBusinessVerified = false;
+  bool _isInsured = false;
+
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
-    _tabController.addListener(() {
-      if (!_tabController.indexIsChanging) {
-        setState(() {});
-      }
-    });
+    _checkInitialOwnership();
+    _initTabController();
 
     _authSubscription = FirebaseAuth.instance.authStateChanges().listen((user) {
       if (user != null && widget.userId == null) {
@@ -66,6 +69,22 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
     });
 
     _fetchUserData();
+  }
+
+  void _checkInitialOwnership() {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    final targetUid = widget.userId ?? currentUser?.uid;
+    _isOwnProfile = (targetUid == null || (currentUser != null && targetUid == currentUser.uid));
+  }
+
+  void _initTabController() {
+    int tabCount = (_userType == 'worker' && _isOwnProfile) ? 5 : 4;
+    _tabController = TabController(length: tabCount, vsync: this);
+    _tabController.addListener(() {
+      if (!_tabController.indexIsChanging) {
+        setState(() {});
+      }
+    });
   }
 
   Future<void> _fetchUserData() async {
@@ -89,6 +108,7 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
 
       if (userDoc.exists && mounted) {
         final data = userDoc.data()!;
+        final oldUserType = _userType;
         setState(() {
           _userName = data['name']?.toString() ?? "";
           _bio = data['description']?.toString() ?? "";
@@ -106,15 +126,35 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
           } else {
             _userProfessions = [];
           }
+
+          _isIdVerified = data['isIdVerified'] ?? false;
+          _isBusinessVerified = data['isBusinessVerified'] ?? false;
+          _isInsured = data['isInsured'] ?? false;
         });
 
-        _userReviews = await _fetchSubcollection(targetUid, 'reviews');
-        _projects = await _fetchSubcollection(targetUid, 'projects');
+        if (oldUserType != _userType) {
+          _initTabController();
+        }
 
-        // Check if this profile is in the current user's favorites
+        final reviews = await _fetchSubcollection(targetUid, 'reviews');
+        final projects = await _fetchSubcollection(targetUid, 'projects');
+
+        if (mounted) {
+          setState(() {
+            _userReviews = reviews;
+            _projects = projects;
+          });
+        }
+
         if (currentUser != null && !_isOwnProfile) {
           final favDoc = await _firestore.collection('users').doc(currentUser.uid).collection('favorites').doc(targetUid).get();
           if (mounted) setState(() => _isFavorite = favDoc.exists);
+        }
+
+        if (!_isOwnProfile && targetUid != null) {
+          _firestore.collection('users').doc(targetUid).update({
+            'profileViews': FieldValue.increment(1)
+          });
         }
 
         if (mounted) setState(() => _isLoading = false);
@@ -187,8 +227,8 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
           'edit_profile': 'ערוך פרופיל',
           'share_profile': 'שתף פרופיל',
           'bio': _bio.isNotEmpty ? _bio : 'כאן יופיע התיאור האישי שלך...',
-          'projects': 'פרויקטים',
-          'reviews': 'חוות דעת',
+          'projects': 'פרויקט',
+          'reviews': 'ביקורות',
           'about': 'אודות',
           'add_project': 'הוסף פרויקט',
           'call': 'התקשר',
@@ -223,6 +263,14 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
           'settings': 'הגדרות',
           'create_invoice': 'הפק הצעת מחיר / קבלה',
           'verify_business': 'אימות תיק עוסק',
+          'analytics_title': 'לוח בקרה למקצוען',
+          'total_jobs': 'עבודות שהושלמו',
+          'monthly_views': 'צפיות החודש',
+          'total_earnings': 'סה"כ הכנסות',
+          'id_verified': 'זהות אומתה',
+          'business_verified': 'עוסק מאומת',
+          'insured': 'מבוטח',
+          'analytics': 'ניתוח מקצועי',
         };
       default:
         return {
@@ -231,7 +279,7 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
           'edit_profile': 'Edit profile',
           'share_profile': 'Share profile',
           'bio': _bio.isNotEmpty ? _bio : 'Professional service provider.',
-          'projects': 'Projects',
+          'projects': 'Project',
           'reviews': 'Reviews',
           'about': 'About',
           'add_project': 'Add Project',
@@ -269,6 +317,14 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
           'settings': 'Settings',
           'create_invoice': 'Create Invoice / Quote',
           'verify_business': 'Verify Business (Dealer)',
+          'analytics_title': 'Professional Analytics',
+          'total_jobs': 'Jobs Completed',
+          'monthly_views': 'Views this Month',
+          'total_earnings': 'Total Earnings',
+          'id_verified': 'ID Verified',
+          'business_verified': 'Business Verified',
+          'insured': 'Insured',
+          'analytics': 'Professional Analyzation',
         };
     }
   }
@@ -418,16 +474,39 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
                   'timestamp': FieldValue.serverTimestamp(),
                 };
 
-                if (existingReview != null) {
-                  await _firestore.collection('users').doc(targetUid).collection('reviews').doc(existingReview['id']).update(reviewData);
-                } else {
-                  final existing = await _firestore.collection('users').doc(targetUid).collection('reviews').where('userId', isEqualTo: currentUser.uid).get();
-                  if (existing.docs.isNotEmpty) {
-                    await existing.docs.first.reference.update(reviewData);
+                await _firestore.runTransaction((transaction) async {
+                  final userRef = _firestore.collection('users').doc(targetUid);
+                  final userSnap = await transaction.get(userRef);
+                  
+                  if (!userSnap.exists) return;
+
+                  final data = userSnap.data()!;
+                  double currentAvg = (data['avgRating'] ?? 0.0).toDouble();
+                  int currentCount = (data['reviewCount'] ?? 0);
+
+                  final reviewsRef = userRef.collection('reviews');
+                  
+                  if (existingReview != null) {
+                    double oldStars = (existingReview['stars'] as num).toDouble();
+                    double totalStars = (currentAvg * currentCount) - oldStars + selectedStars;
+                    double newAvg = totalStars / currentCount;
+
+                    transaction.update(reviewsRef.doc(existingReview['id']), reviewData);
+                    transaction.update(userRef, {
+                      'avgRating': newAvg,
+                    });
                   } else {
-                    await _firestore.collection('users').doc(targetUid).collection('reviews').add(reviewData);
+                    double totalStars = (currentAvg * currentCount) + selectedStars;
+                    int newCount = currentCount + 1;
+                    double newAvg = totalStars / newCount;
+
+                    transaction.set(reviewsRef.doc(), reviewData);
+                    transaction.update(userRef, {
+                      'avgRating': newAvg,
+                      'reviewCount': newCount,
+                    });
                   }
-                }
+                });
 
                 if (!mounted) return;
                 Navigator.pop(context);
@@ -527,6 +606,8 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
       orElse: () => null,
     );
 
+    final bool showAnalyticsTab = _userType == 'worker' && _isOwnProfile;
+
     return Directionality(
       textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
       child: Scaffold(
@@ -557,18 +638,28 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
                 flexibleSpace: FlexibleSpaceBar(
                   stretchModes: const [StretchMode.zoomBackground, StretchMode.blurBackground],
                   background: Stack(fit: StackFit.expand, children: [
-                    _profileImageUrl.isNotEmpty ? Image.network(_profileImageUrl, fit: BoxFit.cover) : Container(color: const Color(0xFF1E3A8A), child: const Icon(Icons.person, size: 100, color: Colors.white24)),
-                    Container(decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.transparent, Colors.black.withValues(alpha: 0.4), Colors.black.withValues(alpha: 0.9)]))),
+                    _profileImageUrl.isNotEmpty 
+                      ? CachedNetworkImage(
+                          imageUrl: _profileImageUrl, 
+                          fit: BoxFit.cover,
+                          placeholder: (context, url) => Container(color: const Color(0xFF1E3A8A)),
+                          errorWidget: (context, url, error) => const Icon(Icons.error),
+                        )
+                      : Container(color: const Color(0xFF1E3A8A), child: const Icon(Icons.person, size: 100, color: Colors.white24)),
+                    Container(decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.transparent, Colors.black.withOpacity(0.4), Colors.black.withOpacity(0.9)]))),
                     Positioned(bottom: 80, left: 24, right: 24, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Row(children: [
                         Flexible(child: Text(_userName, style: const TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold, letterSpacing: -0.5))),
-                        if (_userType == 'worker') const Padding(padding: EdgeInsets.symmetric(horizontal: 8), child: Icon(Icons.verified, color: Color(0xFF60A5FA), size: 24))
+                        if (_userType == 'worker') const Padding(padding: EdgeInsets.symmetric(horizontal: 8), child: Icon(Icons.verified, color: Color(0xFF60A5FA), size: 24)),
+                        if (_isIdVerified) const Padding(padding: EdgeInsets.symmetric(horizontal: 4), child: Icon(Icons.assignment_ind, color: Colors.greenAccent, size: 20)),
+                        if (_isBusinessVerified) const Padding(padding: EdgeInsets.symmetric(horizontal: 4), child: Icon(Icons.business_center, color: Colors.orangeAccent, size: 20)),
+                        if (_isInsured) const Padding(padding: EdgeInsets.symmetric(horizontal: 4), child: Icon(Icons.shield, color: Colors.blueAccent, size: 20)),
                       ]),
                       const SizedBox(height: 8),
                       if (_userProfessions.isNotEmpty)
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(20)),
+                          decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(20)),
                           child: Text(_userProfessions.join(' • '), style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w500)),
                         ),
                       const SizedBox(height: 12),
@@ -602,12 +693,19 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
                     color: Colors.white,
                     child: TabBar(
                       controller: _tabController,
+                      isScrollable: true,
                       labelColor: const Color(0xFF1976D2),
                       unselectedLabelColor: Colors.grey[400],
                       indicatorColor: const Color(0xFF1976D2),
                       indicatorSize: TabBarIndicatorSize.label,
                       labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                      tabs: [Tab(text: strings['projects']), Tab(text: strings['schedule']), Tab(text: strings['reviews']), Tab(text: strings['about'])]
+                      tabs: [
+                        Tab(text: strings['about']),
+                        Tab(text: strings['reviews']),
+                        Tab(text: strings['schedule']),
+                        if (showAnalyticsTab) Tab(text: strings['analytics']),
+                        Tab(text: strings['projects']),
+                      ]
                     ),
                   )
                 )
@@ -618,16 +716,17 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
               child: TabBarView(
                 controller: _tabController,
                 children: [
-                  _buildProjectsGrid(strings),
-                  SchedulePage(workerId: widget.userId ?? FirebaseAuth.instance.currentUser?.uid ?? "", workerName: _userName),
+                  _buildAboutTab(strings),
                   _buildReviewsTab(strings, existingReview),
-                  _buildAboutTab(strings)
+                  SchedulePage(workerId: widget.userId ?? FirebaseAuth.instance.currentUser?.uid ?? "", workerName: _userName),
+                  if (showAnalyticsTab) AnalyticsPage(userId: widget.userId ?? FirebaseAuth.instance.currentUser?.uid ?? "", strings: strings),
+                  _buildProjectsGrid(strings),
                 ]
               ),
             ),
           ),
         ),
-        bottomNavigationBar: (_tabController.index == 1 || (_isOwnProfile && _userType != 'normal')) ? null : _buildBottomAction(strings, existingReview),
+        bottomNavigationBar: (_tabController.index == (showAnalyticsTab ? 3 : 2) || (_isOwnProfile && _userType != 'normal')) ? null : _buildBottomAction(strings, existingReview),
       ),
     );
   }
@@ -675,8 +774,16 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
                 child: Hero(
                   tag: 'project_${project['id']}',
                   child: Container(
-                    decoration: BoxDecoration(borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 4))]),
-                    child: ClipRRect(borderRadius: BorderRadius.circular(20), child: Image.network(project['imageUrl'], fit: BoxFit.cover)),
+                    decoration: BoxDecoration(borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4))]),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(20),
+                      child: CachedNetworkImage(
+                        imageUrl: project['imageUrl'] ?? project['image'] ?? "",
+                        fit: BoxFit.cover,
+                        placeholder: (context, url) => Container(color: Colors.grey[200]),
+                        errorWidget: (context, url, error) => const Icon(Icons.broken_image, color: Colors.grey),
+                      )
+                    ),
                   ),
                 ),
               ),
@@ -744,6 +851,18 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
         Text(strings['bio']!, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1E293B))),
         const SizedBox(height: 12),
         Text(_bio.isNotEmpty ? _bio : strings['bio']!, style: TextStyle(fontSize: 15, color: Colors.grey[600], height: 1.6)),
+        if (_userType == 'worker' && (_isIdVerified || _isBusinessVerified || _isInsured)) ...[
+          const SizedBox(height: 20),
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              if (_isIdVerified) _buildBadge(Icons.assignment_ind, strings['id_verified']!, Colors.green),
+              if (_isBusinessVerified) _buildBadge(Icons.business_center, strings['business_verified']!, Colors.orange),
+              if (_isInsured) _buildBadge(Icons.shield, strings['insured']!, Colors.blue),
+            ],
+          ),
+        ],
         const SizedBox(height: 24),
         const Divider(),
         const SizedBox(height: 24),
@@ -775,16 +894,26 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
           ),
           const SizedBox(height: 12),
         ],
-        SizedBox(
-          width: double.infinity,
-          child: ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.white, foregroundColor: const Color(0xFF1976D2), side: const BorderSide(color: Color(0xFF1976D2)), padding: const EdgeInsets.all(16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
-            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AveragePricesPage())),
-            icon: const Icon(Icons.price_change_outlined),
-            label: Text(strings['price_guide']!, style: const TextStyle(fontWeight: FontWeight.bold))
-          )
-        ),
       ])
+    );
+  }
+
+  Widget _buildBadge(IconData icon, String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: color, size: 16),
+          const SizedBox(width: 6),
+          Text(label, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.bold)),
+        ],
+      ),
     );
   }
 
@@ -809,12 +938,12 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
     if (_isOwnProfile && _userType == 'normal' && !_isGuest()) {
       return Container(
         padding: const EdgeInsets.fromLTRB(24, 10, 24, 30),
-        decoration: BoxDecoration(color: Colors.white, boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 20, offset: const Offset(0, -5))]),
+        decoration: BoxDecoration(color: Colors.white, boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 20, offset: const Offset(0, -5))]),
         child: InkWell(
           onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => SubscriptionPage(email: _email))).then((_) => _fetchUserData()),
           child: Container(
             height: 60,
-            decoration: BoxDecoration(gradient: const LinearGradient(colors: [Color(0xFFF59E0B), Color(0xFFD97706)]), borderRadius: BorderRadius.circular(18), boxShadow: [BoxShadow(color: const Color(0xFFF59E0B).withValues(alpha: 0.3), blurRadius: 15, offset: const Offset(0, 5))]),
+            decoration: BoxDecoration(gradient: const LinearGradient(colors: [Color(0xFFF59E0B), Color(0xFFD97706)]), borderRadius: BorderRadius.circular(18), boxShadow: [BoxShadow(color: const Color(0xFFF59E0B).withOpacity(0.3), blurRadius: 15, offset: const Offset(0, 5))]),
             child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
               const Icon(Icons.stars_rounded, color: Colors.white, size: 26),
               const SizedBox(width: 12),
@@ -829,7 +958,7 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
 
     return Container(
       padding: const EdgeInsets.fromLTRB(24, 16, 24, 34),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: const BorderRadius.vertical(top: Radius.circular(30)), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 20, offset: const Offset(0, -10))]),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: const BorderRadius.vertical(top: Radius.circular(30)), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 20, offset: const Offset(0, -10))]),
       child: Column(mainAxisSize: MainAxisSize.min, children: [
         Row(children: [
           Expanded(
@@ -870,7 +999,7 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
             onTap: () => _showReviewDialog(strings, existingReview: existingReview),
             child: Container(
               height: 56, width: double.infinity,
-              decoration: BoxDecoration(color: const Color(0xFFF59E0B).withValues(alpha: 0.1), borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFFF59E0B).withValues(alpha: 0.3), width: 1.5)),
+              decoration: BoxDecoration(color: const Color(0xFFF59E0B).withOpacity(0.1), borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFFF59E0B).withOpacity(0.3), width: 1.5)),
               child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                 Icon(existingReview != null ? Icons.edit_note_rounded : Icons.star_rounded, color: const Color(0xFFD97706), size: 24),
                 const SizedBox(width: 10),
@@ -925,17 +1054,34 @@ class _AddProjectPageState extends State<AddProjectPage> {
     }
   }
 
+  Future<File> _compressImage(File file) async {
+    final tempDir = await getTemporaryDirectory();
+    final path = "${tempDir.path}/img_${DateTime.now().millisecondsSinceEpoch}.jpg";
+    
+    var result = await FlutterImageCompress.compressAndGetFile(
+      file.absolute.path, 
+      path,
+      quality: 85,
+      minWidth: 1024,
+      minHeight: 1024,
+    );
+
+    return File(result!.path);
+  }
+
   Future<void> _uploadProject() async {
     if (_pickedFile == null) return;
 
     setState(() => _isUploading = true);
     try {
       final user = FirebaseAuth.instance.currentUser!;
+      File compressedFile = await _compressImage(File(_pickedFile!.path));
+
       final storageRef = FirebaseStorage.instance
           .ref()
           .child('projects/${user.uid}/${DateTime.now().millisecondsSinceEpoch}.jpg');
 
-      await storageRef.putFile(File(_pickedFile!.path));
+      await storageRef.putFile(compressedFile);
       final downloadUrl = await storageRef.getDownloadURL();
 
       await _firestore.collection('users').doc(user.uid).collection('projects').add({
@@ -1151,7 +1297,19 @@ class _ProjectDetailPageState extends State<ProjectDetailPage> {
             ],
           ),
           SliverToBoxAdapter(
-            child: InteractiveViewer(child: Image.network(widget.project['imageUrl'], fit: BoxFit.contain, width: double.infinity)),
+            child: InteractiveViewer(
+              child: CachedNetworkImage(
+                imageUrl: widget.project['imageUrl'] ?? widget.project['image'] ?? "",
+                fit: BoxFit.contain,
+                width: double.infinity,
+                placeholder: (context, url) => Container(height: 300, color: Colors.grey[900]),
+                errorWidget: (context, url, error) => Container(
+                  height: 300,
+                  color: Colors.grey[900],
+                  child: const Icon(Icons.broken_image, color: Colors.white54, size: 50),
+                ),
+              )
+            ),
           ),
           if (widget.project['description'] != null && widget.project['description'].toString().isNotEmpty)
             SliverToBoxAdapter(

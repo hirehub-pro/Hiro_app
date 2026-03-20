@@ -284,6 +284,8 @@ class _SchedulePageState extends State<SchedulePage> {
           'vacation_conflict': 'לא ניתן לסמן יום עבודה בזמן חופשה.',
           'work_conflict':
               'לא ניתן לקבוע חופשה ביום עבודה קיים. בטל את יום העבודה קודם.',
+          'working_day': 'יום עבודה',
+          'has_reminders': 'תזכורות',
         };
       default:
         return {
@@ -318,6 +320,8 @@ class _SchedulePageState extends State<SchedulePage> {
           'vacation_conflict': 'Cannot set working day during vacation.',
           'work_conflict':
               'Cannot set vacation on an existing working day. Cancel working day first.',
+          'working_day': 'Working Day',
+          'has_reminders': 'Reminders',
         };
     }
   }
@@ -665,59 +669,76 @@ class _SchedulePageState extends State<SchedulePage> {
                     ),
                   ],
                 ),
-                child: TableCalendar(
-                  firstDay: DateTime.now().subtract(const Duration(days: 365)),
-                  lastDay: DateTime.now().add(const Duration(days: 365)),
-                  focusedDay: _focusedDay,
-                  selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
-                  onDaySelected: (selectedDay, focusedDay) {
-                    setState(() {
-                      _selectedDay = selectedDay;
-                      _focusedDay = focusedDay;
-                    });
-                    _fetchReminders();
-                  },
-                  calendarStyle: CalendarStyle(
-                    todayDecoration: BoxDecoration(
-                      color: const Color(0xFF1976D2).withOpacity(0.2),
-                      shape: BoxShape.circle,
+                child: Column(
+                  children: [
+                    TableCalendar(
+                      firstDay: DateTime.now().subtract(const Duration(days: 365)),
+                      lastDay: DateTime.now().add(const Duration(days: 365)),
+                      focusedDay: _focusedDay,
+                      selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
+                      onDaySelected: (selectedDay, focusedDay) {
+                        setState(() {
+                          _selectedDay = selectedDay;
+                          _focusedDay = focusedDay;
+                        });
+                        _fetchReminders();
+                      },
+                      calendarStyle: CalendarStyle(
+                        todayDecoration: BoxDecoration(
+                          color: const Color(0xFF1976D2).withOpacity(0.2),
+                          shape: BoxShape.circle,
+                        ),
+                        todayTextStyle: const TextStyle(
+                          color: Color(0xFF1976D2),
+                          fontWeight: FontWeight.bold,
+                        ),
+                        selectedDecoration: const BoxDecoration(
+                          color: Color(0xFF1976D2),
+                          shape: BoxShape.circle,
+                        ),
+                        markerDecoration: const BoxDecoration(
+                          color: Colors.orange,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      headerStyle: const HeaderStyle(
+                        formatButtonVisible: false,
+                        titleCentered: true,
+                      ),
+                      eventLoader: (day) {
+                        final dStr = "${day.year}-${day.month}-${day.day}";
+                        return _reminderDates.contains(dStr) ? ['reminder'] : [];
+                      },
+                      calendarBuilders: CalendarBuilders(
+                        defaultBuilder: (context, day, focusedDay) {
+                          final dStr = "${day.year}-${day.month}-${day.day}";
+                          if (_isVacation(day)) return _dayCircle(day, Colors.red);
+                          if (_availableDates.contains(dStr))
+                            return _dayCircle(day, Colors.green);
+                          if (_permanentlyDisabledDays.contains(day.weekday))
+                            return _dayCircle(
+                              day,
+                              Colors.grey.shade300,
+                              isTextGrey: true,
+                            );
+                          return null;
+                        },
+                      ),
                     ),
-                    todayTextStyle: const TextStyle(
-                      color: Color(0xFF1976D2),
-                      fontWeight: FontWeight.bold,
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 16, left: 16, right: 16),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          _legendItem(Colors.green, strings['working_day']!),
+                          const SizedBox(width: 16),
+                          _legendItem(Colors.red, strings['on_vacation']!),
+                          const SizedBox(width: 16),
+                          _legendItem(Colors.orange, strings['has_reminders']!),
+                        ],
+                      ),
                     ),
-                    selectedDecoration: const BoxDecoration(
-                      color: Color(0xFF1976D2),
-                      shape: BoxShape.circle,
-                    ),
-                    markerDecoration: const BoxDecoration(
-                      color: Colors.orange,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  headerStyle: const HeaderStyle(
-                    formatButtonVisible: false,
-                    titleCentered: true,
-                  ),
-                  eventLoader: (day) {
-                    final dStr = "${day.year}-${day.month}-${day.day}";
-                    return _reminderDates.contains(dStr) ? ['reminder'] : [];
-                  },
-                  calendarBuilders: CalendarBuilders(
-                    defaultBuilder: (context, day, focusedDay) {
-                      final dStr = "${day.year}-${day.month}-${day.day}";
-                      if (_isVacation(day)) return _dayCircle(day, Colors.red);
-                      if (_availableDates.contains(dStr))
-                        return _dayCircle(day, Colors.green);
-                      if (_permanentlyDisabledDays.contains(day.weekday))
-                        return _dayCircle(
-                          day,
-                          Colors.grey.shade300,
-                          isTextGrey: true,
-                        );
-                      return null;
-                    },
-                  ),
+                  ],
                 ),
               ),
             ),
@@ -746,6 +767,20 @@ class _SchedulePageState extends State<SchedulePage> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _legendItem(Color color, String label) {
+    return Row(
+      children: [
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 6),
+        Text(label, style: const TextStyle(fontSize: 10, color: Colors.grey)),
+      ],
     );
   }
 

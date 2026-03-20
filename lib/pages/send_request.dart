@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -6,6 +7,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
+import 'package:http/http.dart' as http;
 import 'package:untitled1/language_provider.dart';
 
 class SendRequestPage extends StatefulWidget {
@@ -59,6 +61,9 @@ class _SendRequestPageState extends State<SendRequestPage> {
       } else {
         _toTime = const TimeOfDay(hour: 16, minute: 0);
       }
+    } else {
+       _fromTime = const TimeOfDay(hour: 8, minute: 0);
+       _toTime = const TimeOfDay(hour: 16, minute: 0);
     }
     _fetchLocation();
   }
@@ -127,6 +132,8 @@ class _SendRequestPageState extends State<SendRequestPage> {
           'sending': 'שולח...',
           'success': 'הבקשה נשלחה בהצלחה',
           'error': 'שליחת הבקשה נכשלה',
+          'not_pro_warning': 'זהו עובד שאינו בסטטוס PRO. ייתכן שזמן התגובה יהיה איטי יותר.',
+          'chat_request_msg': 'שלחתי לך בקשת עבודה לתאריך: ',
         };
       case 'ar':
         return {
@@ -146,6 +153,8 @@ class _SendRequestPageState extends State<SendRequestPage> {
           'sending': 'جاري الإرسال...',
           'success': 'تم إرسال الطلب بنجاح',
           'error': 'فشل إرسال الطلب',
+          'not_pro_warning': 'هذا العامل ليس في حالة PRO. قد يكون وقت الاستجابة أبطأ.',
+          'chat_request_msg': 'لقד أرسلت لك طلب عمل بتاريخ: ',
         };
       default:
         return {
@@ -165,8 +174,45 @@ class _SendRequestPageState extends State<SendRequestPage> {
           'sending': 'Sending...',
           'success': 'Request sent successfully',
           'error': 'Failed to send request',
+          'not_pro_warning': 'This worker is not in PRO status. Response time might be slower.',
+          'chat_request_msg': 'I sent you a work request for: ',
         };
     }
+  }
+
+  /// Sends a push notification via FCM directly from the app (Workaround for Cloud Functions)
+  /// Note: In production, this should be done via Firebase Cloud Functions for security.
+  Future<void> _sendFCMNotification(String targetToken, String title, String body) async {
+    // You will need to set up a Service Account or use the legacy FCM API with a Server Key.
+    // For the modern FCM v1 API, you usually need a bearer token from a server.
+    // I am including the structure here so you can see where the logic goes.
+    try {
+      // THIS IS A PLACEHOLDER. You should replace this with a call to your backend or Cloud Function.
+      // Example of a Direct Post (Requires Server Key - Legacy):
+      /*
+      await http.post(
+        Uri.parse('https://fcm.googleapis.com/fcm/send'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'key=YOUR_SERVER_KEY',
+        },
+        body: jsonEncode({
+          'to': targetToken,
+          'notification': {'title': title, 'body': body},
+          'data': {'click_action': 'FLUTTER_NOTIFICATION_CLICK'},
+        }),
+      );
+      */
+      debugPrint("FCM trigger would happen here for token: $targetToken");
+    } catch (e) {
+      debugPrint("FCM error: $e");
+    }
+  }
+
+  String _getChatRoomId(String user1, String user2) {
+    List<String> ids = [user1, user2];
+    ids.sort();
+    return ids.join('_');
   }
 
   Future<void> _submit() async {
@@ -188,16 +234,27 @@ class _SendRequestPageState extends State<SendRequestPage> {
         imageUrls.add(await ref.getDownloadURL());
       }
 
-      // 2. Get User Info
+      // 2. Get User Info (Client)
       final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
       final userData = userDoc.data();
       final userName = userData?['name'] ?? 'Client';
       final userTown = userData?['town'];
 
+      // 3. Get Worker's FCM Token
+      final workerDoc = await FirebaseFirestore.instance.collection('users').doc(widget.workerId).get();
+      final workerData = workerDoc.data();
+      final String? workerFcmToken = workerData?['fcmToken'];
+      final bool isWorkerPro = workerData?['isPro'] ?? false;
+
       final fStr = _fromTime != null ? "${_fromTime!.hour.toString().padLeft(2, '0')}:${_fromTime!.minute.toString().padLeft(2, '0')}" : null;
       final tStr = _toTime != null ? "${_toTime!.hour.toString().padLeft(2, '0')}:${_toTime!.minute.toString().padLeft(2, '0')}" : null;
 
-      // 3. Create Notification
+      final String notifTitle = widget.isExtraHours ? 'Extra Hours Request' : 'Work Request';
+      final String notifBody = !widget.isExtraHours 
+            ? "$userName ($userTown) requested you to work on $dStr."
+            : "$userName ($userTown) requested you to work on $dStr from $fStr to $tStr.";
+
+      // 4. Create Notification in Firestore (for the in-app list)
       await FirebaseFirestore.instance.collection('users').doc(widget.workerId).collection('notifications').add({
         'type': 'work_request',
         'fromId': user.uid,
@@ -212,11 +269,36 @@ class _SendRequestPageState extends State<SendRequestPage> {
         'requestedTo': tStr,
         'timestamp': FieldValue.serverTimestamp(),
         'status': 'pending',
-        'title': fStr == null ? 'Work Request' : 'Extra Hours Request',
-        'body': fStr == null 
-            ? "$userName ($userTown) requested you to work on $dStr."
-            : "$userName ($userTown) requested you to work on $dStr from $fStr to $tStr.",
+        'title': notifTitle,
+        'body': notifBody,
       });
+
+      // 5. Add message to chat room
+      final chatRoomId = _getChatRoomId(user.uid, widget.workerId);
+      final chatMsg = "${strings['chat_request_msg']}$dStr\n${_descriptionController.text.trim()}";
+      
+      await FirebaseFirestore.instance.collection('chat_rooms').doc(chatRoomId).collection('messages').add({
+        'senderId': user.uid,
+        'receiverId': widget.workerId,
+        'message': chatMsg,
+        'timestamp': FieldValue.serverTimestamp(),
+        'isSystem': true, // Optional: flag to style differently
+      });
+
+      await FirebaseFirestore.instance.collection('chat_rooms').doc(chatRoomId).set({
+        'lastMessage': chatMsg,
+        'lastTimestamp': FieldValue.serverTimestamp(),
+        'users': [user.uid, widget.workerId],
+        'userNames': {
+          user.uid: userName,
+          widget.workerId: widget.workerName,
+        }
+      }, SetOptions(merge: true));
+
+      // 6. Send FCM Push Notification
+      if (workerFcmToken != null) {
+        await _sendFCMNotification(workerFcmToken, notifTitle, notifBody);
+      }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(strings['success']!)));
@@ -246,71 +328,93 @@ class _SendRequestPageState extends State<SendRequestPage> {
           backgroundColor: const Color(0xFF1976D2),
           foregroundColor: Colors.white,
         ),
-        body: _isLoading 
-          ? Center(child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const CircularProgressIndicator(),
-                const SizedBox(height: 16),
-                Text(strings['sending']!),
-              ],
-            ))
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+        body: FutureBuilder<DocumentSnapshot>(
+          future: FirebaseFirestore.instance.collection('users').doc(widget.workerId).get(),
+          builder: (context, snapshot) {
+            bool isPro = true;
+            if (snapshot.hasData) {
+              isPro = (snapshot.data!.data() as Map<String, dynamic>?)?['isPro'] ?? false;
+            }
+
+            return _isLoading 
+              ? Center(child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    _buildInfoSection(strings),
-                    const SizedBox(height: 24),
-                    
-                    Text(strings['desc_label']!, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                    const SizedBox(height: 8),
-                    TextFormField(
-                      controller: _descriptionController,
-                      maxLines: 5,
-                      decoration: InputDecoration(
-                        hintText: strings['desc_hint'],
-                        filled: true,
-                        fillColor: Colors.grey[50],
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                      ),
-                      validator: (v) => v!.isEmpty ? strings['req'] : null,
-                    ),
-                    const SizedBox(height: 24),
-
-                    if (widget.isExtraHours) ...[
-                      _buildTimeSection(strings),
-                      const SizedBox(height: 24),
-                    ],
-
-                    Text(strings['images']!, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                    const SizedBox(height: 12),
-                    _buildImagePicker(),
-                    const SizedBox(height: 24),
-
-                    _buildLocationCard(strings),
-                    const SizedBox(height: 40),
-
-                    SizedBox(
-                      width: double.infinity,
-                      height: 55,
-                      child: ElevatedButton(
-                        onPressed: _submit,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF1976D2),
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          elevation: 0,
-                        ),
-                        child: Text(strings['send']!, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                      ),
-                    ),
+                    const CircularProgressIndicator(),
+                    const SizedBox(height: 16),
+                    Text(strings['sending']!),
                   ],
-                ),
-              ),
-            ),
+                ))
+              : SingleChildScrollView(
+                  padding: const EdgeInsets.all(24),
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (!isPro) ...[
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(color: Colors.amber[50], borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.amber[200]!)),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.warning_amber_rounded, color: Colors.amber),
+                                const SizedBox(width: 12),
+                                Expanded(child: Text(strings['not_pro_warning']!, style: const TextStyle(fontSize: 13, color: Colors.brown))),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+                        ],
+                        _buildInfoSection(strings),
+                        const SizedBox(height: 24),
+                        
+                        Text(strings['desc_label']!, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                        const SizedBox(height: 8),
+                        TextFormField(
+                          controller: _descriptionController,
+                          maxLines: 5,
+                          decoration: InputDecoration(
+                            hintText: strings['desc_hint'],
+                            filled: true,
+                            fillColor: Colors.grey[50],
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                          ),
+                          validator: (v) => v!.isEmpty ? strings['req'] : null,
+                        ),
+                        const SizedBox(height: 24),
+
+                        _buildTimeSection(strings),
+                        const SizedBox(height: 24),
+
+                        Text(strings['images']!, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                        const SizedBox(height: 12),
+                        _buildImagePicker(),
+                        const SizedBox(height: 24),
+
+                        _buildLocationCard(strings),
+                        const SizedBox(height: 40),
+
+                        SizedBox(
+                          width: double.infinity,
+                          height: 55,
+                          child: ElevatedButton(
+                            onPressed: _submit,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF1976D2),
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              elevation: 0,
+                            ),
+                            child: Text(strings['send']!, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+          }
+        ),
       ),
     );
   }

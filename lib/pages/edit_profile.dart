@@ -8,7 +8,9 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:geocoding/geocoding.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:untitled1/language_provider.dart';
+import 'package:untitled1/pages/map_radius_picker.dart';
 
 class EditProfilePage extends StatefulWidget {
   final Map<String, dynamic> userData;
@@ -34,6 +36,9 @@ class _EditProfilePageState extends State<EditProfilePage> {
   final ImagePicker _picker = ImagePicker();
   List<String> _israeliTowns = [];
   
+  double _workRadius = 5000.0;
+  LatLng? _workCenter;
+
   final List<String> _allProfessions = [
     'Plumber', 'Carpenter', 'Electrician', 'Painter', 'Cleaner', 'Handyman',
     'Landscaper', 'HVAC', 'Locksmith', 'Gardener', 'Mechanic', 'Photographer',
@@ -51,6 +56,14 @@ class _EditProfilePageState extends State<EditProfilePage> {
     _descriptionController = TextEditingController(text: widget.userData['description'] ?? widget.userData['bio']);
     _selectedTown = widget.userData['town'];
     _selectedProfessions = List<String>.from(widget.userData['professions'] ?? []);
+    
+    _workRadius = (widget.userData['workRadius'] ?? 5000.0).toDouble();
+    if (widget.userData['workCenterLat'] != null && widget.userData['workCenterLng'] != null) {
+      _workCenter = LatLng(widget.userData['workCenterLat'], widget.userData['workCenterLng']);
+    } else if (widget.userData['lat'] != null && widget.userData['lng'] != null) {
+      _workCenter = LatLng(widget.userData['lat'], widget.userData['lng']);
+    }
+
     _loadCities();
   }
 
@@ -112,9 +125,11 @@ class _EditProfilePageState extends State<EditProfilePage> {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) return;
 
-      // Get Lat/Lng from town name
-      double? lat, lng;
-      if (_selectedTown != null && _selectedTown!.isNotEmpty) {
+      // Get Lat/Lng from town name if center not manually set
+      double? lat = _workCenter?.latitude;
+      double? lng = _workCenter?.longitude;
+      
+      if (lat == null && _selectedTown != null && _selectedTown!.isNotEmpty) {
         try {
           List<Location> locations = await locationFromAddress("$_selectedTown, Israel");
           if (locations.isNotEmpty) {
@@ -139,6 +154,9 @@ class _EditProfilePageState extends State<EditProfilePage> {
         'town': _selectedTown,
         'lat': lat,
         'lng': lng,
+        'workRadius': _workRadius,
+        'workCenterLat': _workCenter?.latitude,
+        'workCenterLng': _workCenter?.longitude,
         'optionalPhone': _altPhoneController.text.trim(),
         'description': _descriptionController.text.trim(),
         'professions': _selectedProfessions,
@@ -177,6 +195,9 @@ class _EditProfilePageState extends State<EditProfilePage> {
           'save': 'שמור שינויים',
           'req': 'שדה חובה',
           'search': 'חפש...',
+          'work_radius': 'רדיוס עבודה',
+          'select_radius': 'בחר רדיוס על המפה',
+          'radius_val': 'רדיוס: {val} ק"מ',
         };
       default:
         return {
@@ -191,6 +212,9 @@ class _EditProfilePageState extends State<EditProfilePage> {
           'save': 'Save Changes',
           'req': 'Required',
           'search': 'Search...',
+          'work_radius': 'Work Radius',
+          'select_radius': 'Select radius on Map',
+          'radius_val': 'Radius: {val} km',
         };
     }
   }
@@ -242,15 +266,9 @@ class _EditProfilePageState extends State<EditProfilePage> {
                               strings: strings,
                             ),
                             const SizedBox(height: 16),
-                            _buildStyledTextField(
-                              controller: _phoneController,
-                              labelText: strings['phone']!,
-                              icon: Icons.phone_android_outlined,
-                              keyboardType: TextInputType.phone,
-                              enabled: false, // Remove changing number
-                            ),
-                            const SizedBox(height: 16),
                             if (widget.userData['userType'] == 'worker') ...[
+                              _buildWorkRadiusSelector(strings),
+                              const SizedBox(height: 16),
                               _buildMultiSelectProfessions(strings),
                               const SizedBox(height: 16),
                               _buildStyledTextField(
@@ -261,6 +279,14 @@ class _EditProfilePageState extends State<EditProfilePage> {
                               ),
                               const SizedBox(height: 16),
                             ],
+                            _buildStyledTextField(
+                              controller: _phoneController,
+                              labelText: strings['phone']!,
+                              icon: Icons.phone_android_outlined,
+                              keyboardType: TextInputType.phone,
+                              enabled: false,
+                            ),
+                            const SizedBox(height: 16),
                             _buildStyledTextField(
                               controller: _descriptionController,
                               labelText: strings['desc']!,
@@ -277,6 +303,67 @@ class _EditProfilePageState extends State<EditProfilePage> {
                   ],
                 ),
               ),
+      ),
+    );
+  }
+
+  Widget _buildWorkRadiusSelector(Map<String, String> strings) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.map_outlined, color: Color(0xFF1976D2)),
+              const SizedBox(width: 12),
+              Text(
+                strings['work_radius']!,
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: Color(0xFF64748B)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                strings['radius_val']!.replaceFirst('{val}', (_workRadius / 1000).toStringAsFixed(1)),
+                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+              ),
+              ElevatedButton.icon(
+                onPressed: () async {
+                  final result = await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => MapRadiusPicker(
+                        initialCenter: _workCenter,
+                        initialRadius: _workRadius,
+                      ),
+                    ),
+                  );
+                  if (result != null) {
+                    setState(() {
+                      _workCenter = result['center'];
+                      _workRadius = result['radius'];
+                    });
+                  }
+                },
+                icon: const Icon(Icons.my_location, size: 18),
+                label: Text(strings['select_radius']!),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF1976D2),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
