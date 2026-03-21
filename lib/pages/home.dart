@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -19,7 +21,9 @@ class _HomePageState extends State<HomePage> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   List<Map<String, dynamic>> _topRatedWorkers = [];
+  List<Map<String, dynamic>> _popularCategories = [];
   bool _isTopRatedLoading = true;
+  bool _isPopularLoading = true;
   String? _cachedName;
 
   @override
@@ -27,6 +31,7 @@ class _HomePageState extends State<HomePage> {
     super.initState();
     _fetchTopRatedWorkers();
     _fetchCurrentUserName();
+    _fetchPopularCategories();
   }
 
   Future<void> _fetchCurrentUserName() async {
@@ -47,13 +52,80 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  Future<void> _fetchPopularCategories() async {
+    if (!mounted) return;
+    setState(() => _isPopularLoading = true);
+
+    try {
+      // 1. Load full profession details from local JSON
+      final String response = await rootBundle.loadString('assets/profeissions.json');
+      final List<dynamic> allProfsJson = json.decode(response);
+      final List<Map<String, dynamic>> allProfs = allProfsJson.map((e) => Map<String, dynamic>.from(e)).toList();
+
+      List<Map<String, dynamic>> popular = [];
+
+      try {
+        // 2. Try to fetch search analytics from Firestore
+        final snapshot = await _firestore
+            .collection('metadata')
+            .doc('analytics')
+            .collection('professions')
+            .orderBy('searchCount', descending: true)
+            .limit(8)
+            .get();
+
+        if (snapshot.docs.isNotEmpty) {
+          for (var doc in snapshot.docs) {
+            final enName = doc.id;
+            final profDetails = allProfs.cast<Map<String, dynamic>?>().firstWhere(
+              (p) => p?['en'].toString().toLowerCase() == enName.toLowerCase(),
+              orElse: () => null,
+            );
+            if (profDetails != null) {
+              popular.add(profDetails);
+            }
+          }
+        }
+      } catch (firestoreError) {
+        // This is where your PERMISSION_DENIED error was caught.
+        // We catch it and move on to defaults.
+        debugPrint("Firestore analytics fetch failed (using defaults): $firestoreError");
+      }
+
+      // 3. Fallback to default categories if no analytics data exists or fetch failed
+      if (popular.isEmpty) {
+        final defaults = ['Plumber', 'Electrician', 'Carpenter', 'Painter', 'AC Technician', 'Handyman', 'Gardener', 'Cleaner'];
+        for (var name in defaults) {
+          final prof = allProfs.cast<Map<String, dynamic>?>().firstWhere(
+            (p) => p?['en'] == name, 
+            orElse: () => null
+          );
+          if (prof != null) popular.add(prof);
+        }
+      }
+
+      // 4. Final safety check: if still empty, just take the first 8
+      if (popular.isEmpty && allProfs.isNotEmpty) {
+        popular = allProfs.take(8).toList();
+      }
+
+      if (mounted) {
+        setState(() {
+          _popularCategories = popular;
+          _isPopularLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint("Popular categories critical error: $e");
+      if (mounted) setState(() => _isPopularLoading = false);
+    }
+  }
+
   Future<void> _fetchTopRatedWorkers() async {
     if (!mounted) return;
     setState(() => _isTopRatedLoading = true);
     
     try {
-      // 1. Try Optimized Query (Requires Index)
-      // Note: This excludes anyone without the 'avgRating' field.
       final snapshot = await _firestore.collection('users')
           .where('userType', isEqualTo: 'worker')
           .orderBy('avgRating', descending: true)
@@ -61,8 +133,6 @@ class _HomePageState extends State<HomePage> {
           .get();
       
       if (snapshot.docs.isEmpty) {
-        // 2. Fallback: If no rated workers found, just get any workers
-        // This ensures the app isn't empty while you're getting your first reviews.
         await _fetchAnyWorkers();
         return;
       }
@@ -82,8 +152,7 @@ class _HomePageState extends State<HomePage> {
         });
       }
     } catch (e) {
-      debugPrint("HOME OPTIMIZED FETCH ERROR (Likely missing index): $e");
-      // 3. Fallback on Error: Get any workers if sorting fails
+      debugPrint("HOME OPTIMIZED FETCH ERROR: $e");
       await _fetchAnyWorkers();
     }
   }
@@ -128,16 +197,6 @@ class _HomePageState extends State<HomePage> {
           'see_all': 'הכל',
           'top_rated': 'מקצוענים מובילים בשבילך',
           'view_all': 'ראה עוד',
-          'cat_names': {
-            'plumber': 'אינסטלציה',
-            'Carpenter': 'נגרות',
-            'Electrician': 'חשמל',
-            'Painter': 'צבע',
-            'Cleaner': 'ניקיון',
-            'Handyman': 'תיקונים',
-            'Landscaper': 'גינון',
-            'HVAC': 'מיזוג'
-          }
         };
       default:
         return {
@@ -149,16 +208,6 @@ class _HomePageState extends State<HomePage> {
           'see_all': 'See all',
           'top_rated': 'Top Rated Professionals',
           'view_all': 'View all',
-          'cat_names': {
-            'plumber': 'Plumbing',
-            'Carpenter': 'Carpentry',
-            'Electrician': 'Electrical',
-            'Painter': 'Painting',
-            'Cleaner': 'Cleaning',
-            'Handyman': 'Handyman',
-            'Landscaper': 'Landscaping',
-            'HVAC': 'HVAC'
-          }
         };
     }
   }
@@ -179,6 +228,7 @@ class _HomePageState extends State<HomePage> {
           onRefresh: () async {
             await _fetchTopRatedWorkers();
             await _fetchCurrentUserName();
+            await _fetchPopularCategories();
           },
           child: CustomScrollView(
             slivers: [
@@ -328,17 +378,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildCategories(BuildContext context, Map<String, dynamic> strings, ThemeData theme) {
-    final catNames = strings['cat_names'] as Map<String, String>;
-    final List<Map<String, dynamic>> categories = [
-      {'key': 'plumber', 'icon': Icons.plumbing_rounded, 'color': const Color(0xFFDBEAFE), 'iconColor': const Color(0xFF2563EB)},
-      {'key': 'Carpenter', 'icon': Icons.handyman_rounded, 'color': const Color(0xFFFFEDD5), 'iconColor': const Color(0xFFEA580C)},
-      {'key': 'Electrician', 'icon': Icons.bolt_rounded, 'color': const Color(0xFFFEF9C3), 'iconColor': const Color(0xFFCA8A04)},
-      {'key': 'Painter', 'icon': Icons.format_paint_rounded, 'color': const Color(0xFFFCE7F3), 'iconColor': const Color(0xFFDB2777)},
-      {'key': 'Cleaner', 'icon': Icons.auto_awesome_rounded, 'color': const Color(0xFFDCFCE7), 'iconColor': const Color(0xFF16A34A)},
-      {'key': 'Handyman', 'icon': Icons.architecture_rounded, 'color': const Color(0xFFF3E8FF), 'iconColor': const Color(0xFF9333EA)},
-      {'key': 'Landscaper', 'icon': Icons.park_rounded, 'color': const Color(0xFFD1FAE5), 'iconColor': const Color(0xFF059669)},
-      {'key': 'HVAC', 'icon': Icons.air_rounded, 'color': const Color(0xFFCFFAFE), 'iconColor': const Color(0xFF0891B2)},
-    ];
+    final locale = Provider.of<LanguageProvider>(context).locale.languageCode;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -361,42 +401,53 @@ class _HomePageState extends State<HomePage> {
         ),
         SizedBox(
           height: 110,
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: categories.length,
-            itemBuilder: (context, index) {
-              final cat = categories[index];
-              final categoryName = catNames[cat['key']] ?? cat['key'];
-              return GestureDetector(
-                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => SearchPage(initialTrade: categoryName))),
-                child: Container(
-                  width: 80,
-                  margin: const EdgeInsets.symmetric(horizontal: 8),
-                  child: Column(
-                    children: [
-                      Container(
-                        height: 64,
-                        width: 64,
-                        decoration: BoxDecoration(
-                          color: cat['color'],
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Icon(cat['icon'], color: cat['iconColor'], size: 28),
+          child: _isPopularLoading
+            ? ListView.builder(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                itemCount: 5,
+                itemBuilder: (context, index) => _buildCategorySkeleton(),
+              )
+            : ListView.builder(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                itemCount: _popularCategories.length,
+                itemBuilder: (context, index) {
+                  final cat = _popularCategories[index];
+                  final displayName = cat[locale] ?? cat['en'];
+                  final colorHex = cat['color'] ?? "#1E3A8A";
+                  final color = _getColorFromHex(colorHex);
+
+                  return GestureDetector(
+                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => SearchPage(initialTrade: cat['en']))),
+                    child: Container(
+                      width: 85,
+                      margin: const EdgeInsets.symmetric(horizontal: 8),
+                      child: Column(
+                        children: [
+                          Container(
+                            height: 64,
+                            width: 64,
+                            decoration: BoxDecoration(
+                              color: color.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Icon(_getIcon(cat['logo']), color: color, size: 28),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            displayName,
+                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF475569)),
+                            textAlign: TextAlign.center,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 8),
-                      Text(
-                        categoryName,
-                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF475569)),
-                        textAlign: TextAlign.center,
-                        maxLines: 1,
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
-          ),
+                    ),
+                  );
+                },
+              ),
         ),
       ],
     );
@@ -547,5 +598,100 @@ class _HomePageState extends State<HomePage> {
         ],
       ),
     );
+  }
+
+  Widget _buildCategorySkeleton() {
+    return Container(
+      width: 85,
+      margin: const EdgeInsets.symmetric(horizontal: 8),
+      child: Column(
+        children: const [
+          Skeleton(height: 64, width: 64, borderRadius: 20),
+          SizedBox(height: 8),
+          Skeleton(height: 12, width: 60),
+        ],
+      ),
+    );
+  }
+
+  Color _getColorFromHex(String? hexColor) {
+    if (hexColor == null || hexColor.isEmpty) return const Color(0xFF1E3A8A);
+    hexColor = hexColor.toUpperCase().replaceAll("#", "");
+    if (hexColor.length == 6) {
+      hexColor = "FF$hexColor";
+    }
+    return Color(int.parse(hexColor, radix: 16));
+  }
+
+  IconData _getIcon(String? name) {
+    switch (name) {
+      case 'plumbing': return Icons.plumbing;
+      case 'electrical_services': return Icons.electrical_services;
+      case 'carpenter': return Icons.carpenter;
+      case 'format_paint': return Icons.format_paint;
+      case 'vpn_key': return Icons.vpn_key;
+      case 'park': return Icons.park;
+      case 'ac_unit': return Icons.ac_unit;
+      case 'cleaning_services': return Icons.cleaning_services;
+      case 'build': return Icons.build;
+      case 'handyman': return Icons.handyman;
+      case 'foundation': return Icons.foundation;
+      case 'grid_view': return Icons.grid_view;
+      case 'settings': return Icons.settings;
+      case 'home_repair_service': return Icons.home_repair_service;
+      case 'computer': return Icons.computer;
+      case 'content_cut': return Icons.content_cut;
+      case 'checkroom': return Icons.checkroom;
+      case 'local_shipping': return Icons.local_shipping;
+      case 'pest_control': return Icons.pest_control;
+      case 'solar_power': return Icons.solar_power;
+      case 'chair': return Icons.chair;
+      case 'format_shapes': return Icons.format_shapes;
+      case 'architecture': return Icons.architecture;
+      case 'school': return Icons.school;
+      case 'child_care': return Icons.child_care;
+      case 'photo_camera': return Icons.photo_camera;
+      case 'music_note': return Icons.music_note;
+      case 'face': return Icons.face;
+      case 'medical_services': return Icons.medical_services;
+      case 'self_improvement': return Icons.self_improvement;
+      case 'window': return Icons.window;
+      case 'pool': return Icons.pool;
+      case 'fitness_center': return Icons.fitness_center;
+      case 'pets': return Icons.pets;
+      case 'home': return Icons.home;
+      case 'waves': return Icons.waves;
+      case 'dry_cleaning': return Icons.dry_cleaning;
+      case 'event': return Icons.event;
+      case 'restaurant': return Icons.restaurant;
+      case 'security': return Icons.security;
+      case 'delivery_dining': return Icons.delivery_dining;
+      case 'local_car_wash': return Icons.local_car_wash;
+      case 'spa': return Icons.spa;
+      case 'restaurant_menu': return Icons.restaurant_menu;
+      case 'flight': return Icons.flight;
+      case 'real_estate_agent': return Icons.real_estate_agent;
+      case 'gavel': return Icons.gavel;
+      case 'calculate': return Icons.calculate;
+      case 'translate': return Icons.translate;
+      case 'format_color_fill': return Icons.format_color_fill;
+      case 'square_foot': return Icons.square_foot;
+      case 'videocam': return Icons.videocam;
+      case 'public': return Icons.public;
+      case 'psychology': return Icons.psychology;
+      case 'add_a_photo': return Icons.add_a_photo;
+      case 'flight_takeoff': return Icons.flight_takeoff;
+      case 'piano': return Icons.piano;
+      case 'language': return Icons.language;
+      case 'functions': return Icons.functions;
+      case 'science': return Icons.science;
+      case 'biotech': return Icons.biotech;
+      case 'eco': return Icons.eco;
+      case 'history_edu': return Icons.history_edu;
+      case 'palette': return Icons.palette;
+      case 'pedal_bike': return Icons.pedal_bike;
+      case 'engineering': return Icons.engineering;
+      default: return Icons.work_rounded;
+    }
   }
 }

@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:untitled1/language_provider.dart';
 import 'package:untitled1/pages/home.dart';
 import 'package:untitled1/pages/search.dart';
@@ -13,7 +14,6 @@ import 'package:untitled1/pages/splash_screen.dart';
 import 'package:untitled1/pages/inbox_page.dart';
 import 'package:untitled1/services/notification_service.dart';
 
-/// The entry point of the application.
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
@@ -21,7 +21,7 @@ void main() async {
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
 
   await Firebase.initializeApp();
-  
+
   // Enable Firestore persistence to keep user info available offline/between restarts.
   FirebaseFirestore.instance.settings = const Settings(persistenceEnabled: true);
 
@@ -36,7 +36,6 @@ void main() async {
   );
 }
 
-/// The root widget of the application.
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
@@ -45,6 +44,11 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       locale: Provider.of<LanguageProvider>(context).locale,
+      theme: ThemeData(
+        useMaterial3: true,
+        primaryColor: const Color(0xFF1976D2),
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1976D2)),
+      ),
       home: StreamBuilder<User?>(
         stream: FirebaseAuth.instance.authStateChanges(),
         builder: (context, snapshot) {
@@ -65,7 +69,6 @@ class MyApp extends StatelessWidget {
   }
 }
 
-/// The main dashboard of the application containing the bottom navigation bar.
 class MyHomePage extends StatefulWidget {
   const MyHomePage({super.key});
   @override

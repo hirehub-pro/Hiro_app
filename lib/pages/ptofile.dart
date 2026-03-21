@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:untitled1/language_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:share_plus/share_plus.dart';
@@ -46,15 +47,20 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
   String _userType = "";
   List<String> _userProfessions = [];
   List<Map<String, dynamic>> _userReviews = [];
-  List<Map<String, dynamic>> _projects = [];
-  bool _isFavorite = false;
 
+  List<Map<String, dynamic>> _projects = [];
+
+  bool _isFavorite = false;
   bool _isOwnProfile = false;
   bool _isLoading = true;
 
   bool _isIdVerified = false;
   bool _isBusinessVerified = false;
   bool _isInsured = false;
+  
+  String _distanceStr = "";
+  double? _proLat;
+  double? _proLng;
 
   @override
   void initState() {
@@ -77,7 +83,7 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
     _isOwnProfile = (targetUid == null || (currentUser != null && targetUid == currentUser.uid));
   }
 
-  void _initTabController() {
+  void _initTabController({bool initial = false}) {
     int tabCount = (_userType == 'worker' && _isOwnProfile) ? 5 : 4;
     _tabController = TabController(length: tabCount, vsync: this);
     _tabController.addListener(() {
@@ -108,7 +114,7 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
 
       if (userDoc.exists && mounted) {
         final data = userDoc.data()!;
-        final oldUserType = _userType;
+        
         setState(() {
           _userName = data['name']?.toString() ?? "";
           _bio = data['description']?.toString() ?? "";
@@ -130,10 +136,18 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
           _isIdVerified = data['isIdVerified'] ?? false;
           _isBusinessVerified = data['isBusinessVerified'] ?? false;
           _isInsured = data['isInsured'] ?? false;
+          
+          _proLat = data['lat']?.toDouble();
+          _proLng = data['lng']?.toDouble();
         });
 
-        if (oldUserType != _userType) {
+        int expectedTabCount = (_userType == 'worker' && _isOwnProfile) ? 5 : 4;
+        if (_tabController.length != expectedTabCount) {
           _initTabController();
+        }
+
+        if (!_isOwnProfile) {
+          _calculateDistance();
         }
 
         final reviews = await _fetchSubcollection(targetUid, 'reviews');
@@ -164,6 +178,39 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
     } catch (e) {
       debugPrint("FETCH ERROR: $e");
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _calculateDistance() async {
+    if (_proLat == null || _proLng == null) return;
+    
+    try {
+      Position? userPos;
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (serviceEnabled) {
+        LocationPermission permission = await Geolocator.checkPermission();
+        if (permission == LocationPermission.always || permission == LocationPermission.whileInUse) {
+          userPos = await Geolocator.getCurrentPosition();
+        }
+      }
+
+      if (userPos != null) {
+        double distance = Geolocator.distanceBetween(
+          userPos.latitude, userPos.longitude, _proLat!, _proLng!
+        );
+
+        if (mounted) {
+          setState(() {
+            if (distance < 1000) {
+              _distanceStr = "${distance.toStringAsFixed(0)}m";
+            } else {
+              _distanceStr = "${(distance / 1000).toStringAsFixed(1)}km";
+            }
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint("Distance calc error: $e");
     }
   }
 
@@ -271,6 +318,7 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
           'business_verified': 'עוסק מאומת',
           'insured': 'מבוטח',
           'analytics': 'ניתוח מקצועי',
+          'distance': 'מרחק ממך',
         };
       default:
         return {
@@ -325,6 +373,7 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
           'business_verified': 'Business Verified',
           'insured': 'Insured',
           'analytics': 'Professional Analyzation',
+          'distance': 'Distance from you',
         };
     }
   }
@@ -667,6 +716,12 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
                         const Icon(Icons.location_on_rounded, color: Colors.white70, size: 18),
                         const SizedBox(width: 4),
                         Text(_town, style: const TextStyle(color: Colors.white70, fontSize: 15)),
+                        if (_distanceStr.isNotEmpty) ...[
+                           const SizedBox(width: 12),
+                           const Icon(Icons.straighten_rounded, color: Colors.white70, size: 18),
+                           const SizedBox(width: 4),
+                           Text(_distanceStr, style: const TextStyle(color: Colors.white70, fontSize: 15, fontWeight: FontWeight.bold)),
+                        ]
                       ]),
                     ])),
                     Positioned(bottom: -1, left: 0, right: 0, child: Container(height: 30, decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(30))))),
@@ -726,7 +781,7 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
             ),
           ),
         ),
-        bottomNavigationBar: (_tabController.index == (showAnalyticsTab ? 3 : 2) || (_isOwnProfile && _userType != 'normal')) ? null : _buildBottomAction(strings, existingReview),
+        bottomNavigationBar: (_isOwnProfile && _userType == 'worker') ? null : _buildBottomAction(strings, existingReview),
       ),
     );
   }
@@ -810,7 +865,7 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
         const SizedBox(height: 100),
         Icon(Icons.rate_review_outlined, size: 64, color: Colors.grey[300]),
         const SizedBox(height: 16),
-        Center(child: Text(strings['no_reviews']!, style: TextStyle(color: Colors.grey[500], fontSize: 16))),
+        Center(child: Text(strings['no_reviews']!, style: TextStyle(color: Colors.grey[50], fontSize: 16))),
       ]);
     }
     return ListView.builder(
@@ -850,27 +905,30 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text(strings['bio']!, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1E293B))),
         const SizedBox(height: 12),
-        Text(_bio.isNotEmpty ? _bio : strings['bio']!, style: TextStyle(fontSize: 15, color: Colors.grey[600], height: 1.6)),
+        Text(_bio.isNotEmpty ? _bio : (strings['bio'] ?? ""), style: TextStyle(fontSize: 15, color: Colors.grey[600], height: 1.6)),
         if (_userType == 'worker' && (_isIdVerified || _isBusinessVerified || _isInsured)) ...[
           const SizedBox(height: 20),
           Wrap(
             spacing: 12,
             runSpacing: 12,
             children: [
-              if (_isIdVerified) _buildBadge(Icons.assignment_ind, strings['id_verified']!, Colors.green),
-              if (_isBusinessVerified) _buildBadge(Icons.business_center, strings['business_verified']!, Colors.orange),
-              if (_isInsured) _buildBadge(Icons.shield, strings['insured']!, Colors.blue),
+              if (_isIdVerified) _buildBadge(Icons.assignment_ind, strings['id_verified'] ?? 'ID Verified', Colors.green),
+              if (_isBusinessVerified) _buildBadge(Icons.business_center, strings['business_verified'] ?? 'Business Verified', Colors.orange),
+              if (_isInsured) _buildBadge(Icons.shield, strings['insured'] ?? 'Insured', Colors.blue),
             ],
           ),
         ],
         const SizedBox(height: 24),
         const Divider(),
         const SizedBox(height: 24),
-        Text(strings['contact_info']!, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1E293B))),
+        Text(strings['contact_info'] ?? 'Contact Info', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1E293B))),
         const SizedBox(height: 16),
         _buildContactTile(Icons.phone_rounded, _phoneNumber, Colors.green),
         if (_altPhoneNumber.isNotEmpty) _buildContactTile(Icons.phone_iphone_rounded, _altPhoneNumber, Colors.green),
         _buildContactTile(Icons.email_rounded, _email, Colors.blue),
+        if (_distanceStr.isNotEmpty) ...[
+           _buildContactTile(Icons.straighten_rounded, "${strings['distance'] ?? 'Distance'}: $_distanceStr", Colors.purple),
+        ],
         const SizedBox(height: 32),
         if (_isOwnProfile && _userType == 'worker') ...[
           SizedBox(
@@ -879,7 +937,7 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
               style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1976D2), foregroundColor: Colors.white, padding: const EdgeInsets.all(16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
               onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => InvoiceBuilderPage(workerName: _userName, workerPhone: _phoneNumber, workerEmail: _email))),
               icon: const Icon(Icons.description_outlined),
-              label: Text(strings['create_invoice']!, style: const TextStyle(fontWeight: FontWeight.bold))
+              label: Text(strings['create_invoice'] ?? 'Create Invoice', style: const TextStyle(fontWeight: FontWeight.bold))
             )
           ),
           const SizedBox(height: 12),
@@ -889,7 +947,7 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
               style: ElevatedButton.styleFrom(backgroundColor: Colors.white, foregroundColor: Colors.teal, side: const BorderSide(color: Colors.teal), padding: const EdgeInsets.all(16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
               onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const VerifyBusinessPage())),
               icon: const Icon(Icons.verified_user_outlined),
-              label: Text(strings['verify_business']!, style: const TextStyle(fontWeight: FontWeight.bold))
+              label: Text(strings['verify_business'] ?? 'Verify Business', style: const TextStyle(fontWeight: FontWeight.bold))
             )
           ),
           const SizedBox(height: 12),
@@ -947,7 +1005,7 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
             child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
               const Icon(Icons.stars_rounded, color: Colors.white, size: 26),
               const SizedBox(width: 12),
-              Text(strings['upgrade_pro']!, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
+              Text(strings['upgrade_pro'] ?? 'Upgrade to Pro', style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
             ]),
           ),
         ),
@@ -971,7 +1029,7 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
                 }
               },
               icon: Icons.phone_forwarded_rounded,
-              label: strings['call']!,
+              label: strings['call'] ?? 'Call',
               color: const Color(0xFF10B981)
             )
           ),
@@ -988,7 +1046,7 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
                 }
               },
               icon: Icons.chat_bubble_rounded,
-              label: strings['message']!,
+              label: strings['message'] ?? 'Message',
               color: const Color(0xFF3B82F6)
             )
           ),
@@ -1003,7 +1061,7 @@ class _ProfileState extends State<Profile> with SingleTickerProviderStateMixin {
               child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                 Icon(existingReview != null ? Icons.edit_note_rounded : Icons.star_rounded, color: const Color(0xFFD97706), size: 24),
                 const SizedBox(width: 10),
-                Text(existingReview != null ? strings['edit_review']! : strings['add_review']!, style: const TextStyle(color: Color(0xFFD97706), fontWeight: FontWeight.bold, fontSize: 16)),
+                Text(existingReview != null ? (strings['edit_review'] ?? 'Edit Review') : (strings['add_review'] ?? 'Add Review'), style: const TextStyle(color: Color(0xFFD97706), fontWeight: FontWeight.bold, fontSize: 16)),
               ]),
             ),
           ),
@@ -1109,7 +1167,7 @@ class _AddProjectPageState extends State<AddProjectPage> {
       appBar: AppBar(
         backgroundColor: const Color(0xFF1976D2),
         foregroundColor: Colors.white,
-        title: Text(widget.localizedStrings['add_project']!),
+        title: Text(widget.localizedStrings['add_project'] ?? 'Add Project'),
         elevation: 0,
       ),
       body: _isUploading
@@ -1145,7 +1203,7 @@ class _AddProjectPageState extends State<AddProjectPage> {
                               const Icon(Icons.add_a_photo_outlined, size: 50, color: Colors.grey),
                               const SizedBox(height: 12),
                               Text(
-                                widget.localizedStrings['pick_gallery']!,
+                                widget.localizedStrings['pick_gallery'] ?? 'Pick from Gallery',
                               ),
                             ],
                           ),
@@ -1153,7 +1211,7 @@ class _AddProjectPageState extends State<AddProjectPage> {
                 ),
                 const SizedBox(height: 24),
                 Text(
-                  widget.localizedStrings['description']!,
+                  widget.localizedStrings['description'] ?? 'Description',
                   style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 12),
@@ -1161,7 +1219,7 @@ class _AddProjectPageState extends State<AddProjectPage> {
                   controller: _descriptionController,
                   maxLines: 4,
                   decoration: InputDecoration(
-                    hintText: widget.localizedStrings['write_on_image'],
+                    hintText: widget.localizedStrings['write_on_image'] ?? 'Write on image (Optional)',
                     filled: true,
                     fillColor: Colors.grey[50],
                     border: OutlineInputBorder(
@@ -1189,7 +1247,7 @@ class _AddProjectPageState extends State<AddProjectPage> {
                     ),
                     onPressed: _pickedFile == null ? null : _uploadProject,
                     child: Text(
-                      widget.localizedStrings['add']!,
+                      widget.localizedStrings['add'] ?? 'Add',
                       style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                     ),
                   ),
@@ -1321,7 +1379,7 @@ class _ProjectDetailPageState extends State<ProjectDetailPage> {
               margin: const EdgeInsets.only(top: 20),
               decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(30))),
               child: Column(children: [
-                Padding(padding: const EdgeInsets.all(20), child: Text(widget.localizedStrings['comments']!, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold))),
+                Padding(padding: const EdgeInsets.all(20), child: Text(widget.localizedStrings['comments'] ?? 'Comments', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold))),
                 Expanded(
                   child: ListView.builder(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -1354,7 +1412,7 @@ class _ProjectDetailPageState extends State<ProjectDetailPage> {
                       Expanded(
                         child: TextField(
                           controller: _commentController,
-                          decoration: InputDecoration(hintText: widget.localizedStrings['add_comment'], filled: true, fillColor: Colors.grey[100], border: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: BorderSide.none), contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12)),
+                          decoration: InputDecoration(hintText: widget.localizedStrings['add_comment'] ?? 'Add a comment...', filled: true, fillColor: Colors.grey[100], border: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: BorderSide.none), contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12)),
                         ),
                       ),
                       const SizedBox(width: 12),

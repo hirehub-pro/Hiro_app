@@ -8,8 +8,13 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
+import 'package:geocoding/geocoding.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:untitled1/language_provider.dart';
 import 'package:untitled1/pages/subscription.dart';
+import 'package:untitled1/pages/map_radius_picker.dart';
+import 'package:untitled1/pages/location_picker.dart';
 import '../main.dart';
 
 class SignUpPage extends StatefulWidget {
@@ -55,8 +60,9 @@ class _SignUpPageState extends State<SignUpPage> {
   String _verificationId = "";
   File? _image;
   final ImagePicker _picker = ImagePicker();
-
-  List<String> _israeliTowns = [];
+  
+  LatLng? _workCenter;
+  double _workRadius = 5000.0;
 
   final List<String> _allProfessions = [
     'Plumber', 'Carpenter', 'Electrician', 'Painter', 'Cleaner', 'Handyman',
@@ -82,43 +88,6 @@ class _SignUpPageState extends State<SignUpPage> {
       _agreedToPolicy = true; 
     } else {
       _userType = UserType.normal;
-    }
-
-    _loadCities();
-  }
-
-  Future<void> _loadCities() async {
-    try {
-      final String response = await rootBundle.loadString('assets/cities.json');
-      final Map<String, dynamic> data = json.decode(response);
-      final List citiesList = data['cities']['city'];
-      
-      final locale = Provider.of<LanguageProvider>(context, listen: false).locale.languageCode;
-      
-      setState(() {
-        _israeliTowns = citiesList.map((c) {
-          try {
-            final englishList = c['english_name'] as List?;
-            final hebrewList = c['hebrew_name'] as List?;
-            
-            final english = (englishList != null && englishList.isNotEmpty) 
-                ? englishList.first.toString().trim() : "";
-            final hebrew = (hebrewList != null && hebrewList.isNotEmpty) 
-                ? hebrewList.first.toString().trim() : "";
-            
-            if (locale == 'he') {
-              return hebrew.isNotEmpty ? hebrew : english;
-            }
-            return english.isNotEmpty ? english : hebrew;
-          } catch (e) {
-            return null;
-          }
-        }).whereType<String>().where((s) => s.isNotEmpty).toSet().toList();
-        
-        _israeliTowns.sort();
-      });
-    } catch (e) {
-      debugPrint("Error loading cities: $e");
     }
   }
 
@@ -146,7 +115,7 @@ class _SignUpPageState extends State<SignUpPage> {
           'enter_code': 'הכנס קוד שקיבלת ב-SMS',
           'name_label': 'שם מלא',
           'email_label': 'אימייל (אופציונלי)',
-          'town_label': 'בחר עיר',
+          'town_label': 'עיר',
           'user_type': 'סוג חשבון',
           'normal': 'משתמש רגיל',
           'pro': 'בעל מקצוע',
@@ -169,6 +138,11 @@ class _SignUpPageState extends State<SignUpPage> {
           'privacy_title': 'מדיניות פרטיות',
           'privacy_content': 'מדיניות פרטיות:\n\n1. איסוף מידע: אנו אוספים פרטי זיהוי (שם, טלפון, אימייל) ונתוני מיקום לצורך תפעול ושיפור השירות.\n2. שימוש במידע: המידע משמש לחיבור בין משתמשים, ניהול חשבונות ושליחת עדכונים רלוונטיים.\n3. שיתוף מידע: פרטי הקשר של בעלי מקצוע מוצגים למשתמשים לצורך התקשרות עסקית בלבד. איננו מוכרים מידע לצד ג\'.\n4. אבטחה: המידע נשמר בטכנולוגיות ענן מאובטחות בתקנים מחמירים.\n5. זכויותיך: הנך רשאי לבקש לעיין במידע, לתקנו או למחוק את חשבונך בכל עת דרך הגדרות האפליקציה.',
           'close': 'סגור',
+          'current_loc': 'השתמש במיקום נוכחי',
+          'pick_map': 'בחר מהמפה',
+          'work_radius': 'רדיוס עבודה',
+          'radius_val': 'רדיוס: {val} ק"מ',
+          'select_radius': 'בחר רדיוס על המפה',
         };
       default:
         return {
@@ -180,7 +154,7 @@ class _SignUpPageState extends State<SignUpPage> {
           'enter_code': 'Enter SMS Code',
           'name_label': 'Full Name',
           'email_label': 'Email (Optional)',
-          'town_label': 'Select City',
+          'town_label': 'City',
           'user_type': 'User Type',
           'normal': 'Normal User',
           'pro': 'Professional',
@@ -203,6 +177,11 @@ class _SignUpPageState extends State<SignUpPage> {
           'privacy_title': 'Privacy Policy',
           'privacy_content': 'Privacy Policy:\n\n1. Data Collection: We collect name, phone number, email, and location data to facilitate our services.\n2. Data Usage: Your information is used to enable connections, manage accounts, and improve user experience.\n3. Data Sharing: Professional contact details are visible to users to enable business transactions. We do not sell your data.\n4. Security: We employ industry-standard security measures to protect your personal information.\n5. Your Rights: You can access, update, or request the deletion of your account and personal data at any time via the app settings.',
           'close': 'Close',
+          'current_loc': 'Use Current Location',
+          'pick_map': 'Select on Map',
+          'work_radius': 'Work Radius',
+          'radius_val': 'Radius: {val} km',
+          'select_radius': 'Select radius on Map',
         };
     }
   }
@@ -286,6 +265,45 @@ class _SignUpPageState extends State<SignUpPage> {
     }
   }
 
+  Future<void> _getCurrentLocation() async {
+    setState(() => _loading = true);
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) throw 'Location services are disabled.';
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) throw 'Location permissions are denied';
+      }
+      
+      if (permission == LocationPermission.deniedForever) throw 'Location permissions are permanently denied.';
+
+      Position position = await Geolocator.getCurrentPosition();
+      LatLng loc = LatLng(position.latitude, position.longitude);
+      setState(() => _workCenter = loc);
+      await _updateTownFromLocation(loc);
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _updateTownFromLocation(LatLng loc) async {
+    try {
+      List<Placemark> placemarks = await placemarkFromCoordinates(loc.latitude, loc.longitude);
+      if (placemarks.isNotEmpty) {
+        String? town = placemarks.first.locality ?? placemarks.first.subLocality;
+        if (town != null && town.isNotEmpty) {
+          setState(() => _selectedTown = town);
+        }
+      }
+    } catch (e) {
+      debugPrint("Reverse geocoding error: $e");
+    }
+  }
+
   Future<void> _commitUserDataToDatabase() async {
     try {
       final user = FirebaseAuth.instance.currentUser;
@@ -308,12 +326,27 @@ class _SignUpPageState extends State<SignUpPage> {
         }
       }
 
+      // Geocode town if center not set
+      double? lat = _workCenter?.latitude;
+      double? lng = _workCenter?.longitude;
+      if (lat == null && _selectedTown != null) {
+        try {
+          List<Location> locations = await locationFromAddress("$_selectedTown, Israel");
+          if (locations.isNotEmpty) {
+            lat = locations.first.latitude;
+            lng = locations.first.longitude;
+          }
+        } catch (_) {}
+      }
+
       final userData = {
         'uid': user.uid,
         'name': finalName,
         'email': _emailController.text.trim(),
         'phone': _normalizePhone(_phoneController.text.trim()),
         'town': _selectedTown,
+        'lat': lat,
+        'lng': lng,
         'userType': _userType == UserType.worker ? 'worker' : 'normal',
         'profileImageUrl': imageUrl,
         'createdAt': FieldValue.serverTimestamp(),
@@ -327,6 +360,9 @@ class _SignUpPageState extends State<SignUpPage> {
           'description': _descriptionController.text.trim(),
           'isSubscribed': true,
           'isPro': true,
+          'workRadius': _workRadius,
+          'workCenterLat': _workCenter?.latitude,
+          'workCenterLng': _workCenter?.longitude,
           'subscriptionDate': FieldValue.serverTimestamp(),
         });
       }
@@ -415,6 +451,9 @@ class _SignUpPageState extends State<SignUpPage> {
         'professions': _selectedProfessions,
         'optionalPhone': _altPhoneController.text.trim(),
         'description': _descriptionController.text.trim(),
+        'workRadius': _workRadius,
+        'workCenterLat': _workCenter?.latitude,
+        'workCenterLng': _workCenter?.longitude,
       };
 
       Navigator.push(
@@ -604,19 +643,14 @@ class _SignUpPageState extends State<SignUpPage> {
                 ),
                 const SizedBox(height: 16),
                 
-                _buildSearchableAutocomplete(
-                  options: _israeliTowns,
-                  labelText: strings['town_label']!,
-                  icon: Icons.location_on_outlined,
-                  onSelected: (val) => setState(() => _selectedTown = val),
-                  initialValue: _selectedTown,
-                  strings: strings,
-                ),
+                _buildLocationSelectionSection(strings),
 
                 const SizedBox(height: 24),
                 _buildTypeSelector(strings),
 
                 if (_userType == UserType.worker) ...[
+                  const SizedBox(height: 24),
+                  _buildWorkRadiusSelector(strings),
                   const SizedBox(height: 24),
                   _buildMultiSelectProfessions(strings),
                   const SizedBox(height: 16),
@@ -685,60 +719,123 @@ class _SignUpPageState extends State<SignUpPage> {
     );
   }
 
-  Widget _buildSearchableAutocomplete({
-    required List<String> options,
-    required String labelText,
-    required IconData icon,
-    required Function(String) onSelected,
-    String? initialValue,
-    required Map<String, String> strings,
-  }) {
-    return LayoutBuilder(
-      builder: (context, constraints) => Autocomplete<String>(
-        initialValue: TextEditingValue(text: initialValue ?? ''),
-        optionsBuilder: (TextEditingValue textEditingValue) {
-          if (textEditingValue.text.isEmpty) {
-            // Show all options when focused and empty
-            return options;
-          }
-          return options.where((String option) {
-            return option.toLowerCase().contains(textEditingValue.text.toLowerCase());
-          });
-        },
-        onSelected: onSelected,
-        optionsViewBuilder: (context, onSelected, options) {
-          return Align(
-            alignment: Alignment.topLeft,
-            child: Material(
-              elevation: 4,
-              borderRadius: BorderRadius.circular(12),
-              child: SizedBox(
-                width: constraints.maxWidth,
-                height: 250,
-                child: ListView.builder(
-                  padding: const EdgeInsets.all(8.0),
-                  itemCount: options.length,
-                  itemBuilder: (BuildContext context, int index) {
-                    final String option = options.elementAt(index);
-                    return ListTile(
-                      title: Text(option),
-                      onTap: () => onSelected(option),
-                    );
-                  },
+  Widget _buildLocationSelectionSection(Map<String, String> strings) {
+    final townController = TextEditingController(text: _selectedTown ?? '');
+    return Column(
+      children: [
+        _buildStyledTextField(
+          controller: townController,
+          labelText: strings['town_label']!,
+          icon: Icons.location_on_outlined,
+          readOnly: true,
+          onTap: _openMapPicker,
+          validator: (v) => (v == null || v.isEmpty) ? strings['req'] : null,
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _getCurrentLocation,
+                icon: const Icon(Icons.my_location, size: 18),
+                label: Text(strings['current_loc']!, style: const TextStyle(fontSize: 12)),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF1976D2),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  side: const BorderSide(color: Color(0xFF1976D2)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
               ),
             ),
-          );
-        },
-        fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
-          return _buildStyledTextField(
-            controller: controller,
-            labelText: labelText,
-            icon: icon,
-            focusNode: focusNode,
-            validator: (v) => v!.isEmpty ? strings['req'] : null,
-          );
-        },
+            const SizedBox(width: 12),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _openMapPicker,
+                icon: const Icon(Icons.map_outlined, size: 18),
+                label: Text(strings['pick_map']!, style: const TextStyle(fontSize: 12)),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF1976D2),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  side: const BorderSide(color: Color(0xFF1976D2)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Future<void> _openMapPicker() async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => LocationPicker(
+          initialCenter: _workCenter,
+        ),
+      ),
+    );
+    if (result != null && result is LatLng) {
+      setState(() {
+        _workCenter = result;
+      });
+      _updateTownFromLocation(result);
+    }
+  }
+
+  Widget _buildWorkRadiusSelector(Map<String, String> strings) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(color: const Color(0xFFF8FAFC), borderRadius: BorderRadius.circular(16)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.map_outlined, color: Color(0xFF1976D2)),
+              const SizedBox(width: 12),
+              Text(strings['work_radius']!, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: Color(0xFF64748B))),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                strings['radius_val']!.replaceFirst('{val}', (_workRadius / 1000).toStringAsFixed(1)),
+                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+              ),
+              ElevatedButton.icon(
+                onPressed: () async {
+                  final result = await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => MapRadiusPicker(
+                        initialCenter: _workCenter,
+                        initialRadius: _workRadius,
+                      ),
+                    ),
+                  );
+                  if (result != null) {
+                    setState(() {
+                      _workCenter = result['center'];
+                      _workRadius = result['radius'];
+                    });
+                    if (_workCenter != null) _updateTownFromLocation(_workCenter!);
+                  }
+                },
+                icon: const Icon(Icons.my_location, size: 18),
+                label: Text(strings['select_radius']!),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF1976D2),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -763,7 +860,6 @@ class _SignUpPageState extends State<SignUpPage> {
                   _selectedProfessions.add(selection);
                 }
               });
-              // Clear the typing bar after selection
               _professionsSearchController?.clear();
             },
             optionsViewBuilder: (context, onSelected, options) {
@@ -791,7 +887,6 @@ class _SignUpPageState extends State<SignUpPage> {
               );
             },
             fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
-              // Store a reference to the controller used by Autocomplete
               _professionsSearchController = controller;
               return _buildStyledTextField(
                 controller: controller,
@@ -858,6 +953,8 @@ class _SignUpPageState extends State<SignUpPage> {
     String? Function(String?)? validator,
     String? hintText,
     bool enabled = true,
+    bool readOnly = false,
+    VoidCallback? onTap,
     FocusNode? focusNode,
   }) {
     return TextFormField(
@@ -865,6 +962,8 @@ class _SignUpPageState extends State<SignUpPage> {
       keyboardType: keyboardType,
       maxLines: maxLines,
       enabled: enabled,
+      readOnly: readOnly,
+      onTap: onTap,
       focusNode: focusNode,
       decoration: InputDecoration(
         labelText: labelText,

@@ -1,16 +1,16 @@
-import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:geocoding/geocoding.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:untitled1/language_provider.dart';
 import 'package:untitled1/pages/map_radius_picker.dart';
+import 'package:untitled1/pages/location_picker.dart';
 
 class EditProfilePage extends StatefulWidget {
   final Map<String, dynamic> userData;
@@ -27,6 +27,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
   late TextEditingController _phoneController;
   late TextEditingController _altPhoneController;
   late TextEditingController _descriptionController;
+  late TextEditingController _townController;
   TextEditingController? _professionsSearchController;
   
   String? _selectedTown;
@@ -34,7 +35,6 @@ class _EditProfilePageState extends State<EditProfilePage> {
   File? _image;
   bool _isLoading = false;
   final ImagePicker _picker = ImagePicker();
-  List<String> _israeliTowns = [];
   
   double _workRadius = 5000.0;
   LatLng? _workCenter;
@@ -55,6 +55,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
     _altPhoneController = TextEditingController(text: widget.userData['optionalPhone']);
     _descriptionController = TextEditingController(text: widget.userData['description'] ?? widget.userData['bio']);
     _selectedTown = widget.userData['town'];
+    _townController = TextEditingController(text: _selectedTown);
     _selectedProfessions = List<String>.from(widget.userData['professions'] ?? []);
     
     _workRadius = (widget.userData['workRadius'] ?? 5000.0).toDouble();
@@ -62,43 +63,6 @@ class _EditProfilePageState extends State<EditProfilePage> {
       _workCenter = LatLng(widget.userData['workCenterLat'], widget.userData['workCenterLng']);
     } else if (widget.userData['lat'] != null && widget.userData['lng'] != null) {
       _workCenter = LatLng(widget.userData['lat'], widget.userData['lng']);
-    }
-
-    _loadCities();
-  }
-
-  Future<void> _loadCities() async {
-    try {
-      final String response = await rootBundle.loadString('assets/cities.json');
-      final Map<String, dynamic> data = json.decode(response);
-      final List citiesList = data['cities']['city'];
-      
-      final locale = Provider.of<LanguageProvider>(context, listen: false).locale.languageCode;
-      
-      setState(() {
-        _israeliTowns = citiesList.map((c) {
-          try {
-            final englishList = c['english_name'] as List?;
-            final hebrewList = c['hebrew_name'] as List?;
-            
-            final english = (englishList != null && englishList.isNotEmpty) 
-                ? englishList.first.toString().trim() : "";
-            final hebrew = (hebrewList != null && hebrewList.isNotEmpty) 
-                ? hebrewList.first.toString().trim() : "";
-            
-            if (locale == 'he') {
-              return hebrew.isNotEmpty ? hebrew : english;
-            }
-            return english.isNotEmpty ? english : hebrew;
-          } catch (e) {
-            return null;
-          }
-        }).whereType<String>().where((s) => s.isNotEmpty).toSet().toList();
-        
-        _israeliTowns.sort();
-      });
-    } catch (e) {
-      debugPrint("Error loading cities: $e");
     }
   }
 
@@ -109,12 +73,65 @@ class _EditProfilePageState extends State<EditProfilePage> {
     _phoneController.dispose();
     _altPhoneController.dispose();
     _descriptionController.dispose();
+    _townController.dispose();
     super.dispose();
   }
 
   Future<void> _pickImage() async {
     final picked = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
     if (picked != null) setState(() => _image = File(picked.path));
+  }
+
+  Future<void> _getCurrentLocation() async {
+    setState(() => _isLoading = true);
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        throw 'Location services are disabled.';
+      }
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          throw 'Location permissions are denied';
+        }
+      }
+      
+      if (permission == LocationPermission.deniedForever) {
+        throw 'Location permissions are permanently denied.';
+      } 
+
+      Position position = await Geolocator.getCurrentPosition();
+      LatLng loc = LatLng(position.latitude, position.longitude);
+      setState(() {
+        _workCenter = loc;
+      });
+      await _updateTownFromLocation(loc);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _updateTownFromLocation(LatLng loc) async {
+    try {
+      List<Placemark> placemarks = await placemarkFromCoordinates(loc.latitude, loc.longitude);
+      if (placemarks.isNotEmpty) {
+        String? town = placemarks.first.locality ?? placemarks.first.subLocality;
+        if (town != null && town.isNotEmpty) {
+          setState(() {
+            _selectedTown = town;
+            _townController.text = town;
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint("Reverse geocoding error: $e");
+    }
   }
 
   Future<void> _saveProfile() async {
@@ -125,7 +142,6 @@ class _EditProfilePageState extends State<EditProfilePage> {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) return;
 
-      // Get Lat/Lng from town name if center not manually set
       double? lat = _workCenter?.latitude;
       double? lng = _workCenter?.longitude;
       
@@ -188,7 +204,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
           'name': 'שם מלא',
           'email': 'אימייל',
           'phone': 'מספר טלפון',
-          'town': 'בחר עיר',
+          'town': 'עיר',
           'professions': 'בחר מקצועות',
           'alt_phone': 'טלפון נוסף (אופציונלי)',
           'desc': 'ספר על עצמך (אופציונלי)',
@@ -198,6 +214,9 @@ class _EditProfilePageState extends State<EditProfilePage> {
           'work_radius': 'רדיוס עבודה',
           'select_radius': 'בחר רדיוס על המפה',
           'radius_val': 'רדיוס: {val} ק"מ',
+          'current_loc': 'השתמש במיקום נוכחי',
+          'pick_map': 'בחר מהמפה',
+          'location_info': 'מיקום מדויק עוזר למצוא אותך בקלות',
         };
       default:
         return {
@@ -205,7 +224,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
           'name': 'Full Name',
           'email': 'Email',
           'phone': 'Phone Number',
-          'town': 'Select City',
+          'town': 'City',
           'professions': 'Select Professions',
           'alt_phone': 'Alt Phone (Optional)',
           'desc': 'Description (Optional)',
@@ -215,6 +234,9 @@ class _EditProfilePageState extends State<EditProfilePage> {
           'work_radius': 'Work Radius',
           'select_radius': 'Select radius on Map',
           'radius_val': 'Radius: {val} km',
+          'current_loc': 'Use Current Location',
+          'pick_map': 'Select on Map',
+          'location_info': 'Precise location helps others find you easily',
         };
     }
   }
@@ -257,14 +279,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
                               keyboardType: TextInputType.emailAddress,
                             ),
                             const SizedBox(height: 16),
-                            _buildSearchableAutocomplete(
-                              options: _israeliTowns,
-                              labelText: strings['town']!,
-                              icon: Icons.location_on_outlined,
-                              onSelected: (val) => setState(() => _selectedTown = val),
-                              initialValue: _selectedTown,
-                              strings: strings,
-                            ),
+                            _buildLocationSection(strings),
                             const SizedBox(height: 16),
                             if (widget.userData['userType'] == 'worker') ...[
                               _buildWorkRadiusSelector(strings),
@@ -305,6 +320,71 @@ class _EditProfilePageState extends State<EditProfilePage> {
               ),
       ),
     );
+  }
+
+  Widget _buildLocationSection(Map<String, String> strings) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildStyledTextField(
+          controller: _townController,
+          labelText: strings['town']!,
+          icon: Icons.location_on_outlined,
+          readOnly: true,
+          onTap: _openMapPicker,
+          validator: (v) => (v == null || v.isEmpty) ? strings['req'] : null,
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _getCurrentLocation,
+                icon: const Icon(Icons.my_location, size: 18),
+                label: Text(strings['current_loc']!, style: const TextStyle(fontSize: 12)),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF1976D2),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  side: const BorderSide(color: Color(0xFF1976D2)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _openMapPicker,
+                icon: const Icon(Icons.map_outlined, size: 18),
+                label: Text(strings['pick_map']!, style: const TextStyle(fontSize: 12)),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF1976D2),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  side: const BorderSide(color: Color(0xFF1976D2)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Future<void> _openMapPicker() async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => LocationPicker(
+          initialCenter: _workCenter,
+        ),
+      ),
+    );
+    if (result != null && result is LatLng) {
+      setState(() {
+        _workCenter = result;
+      });
+      _updateTownFromLocation(result);
+    }
   }
 
   Widget _buildWorkRadiusSelector(Map<String, String> strings) {
@@ -351,6 +431,9 @@ class _EditProfilePageState extends State<EditProfilePage> {
                       _workCenter = result['center'];
                       _workRadius = result['radius'];
                     });
+                    if (_workCenter != null) {
+                      _updateTownFromLocation(_workCenter!);
+                    }
                   }
                 },
                 icon: const Icon(Icons.my_location, size: 18),
@@ -438,12 +521,16 @@ class _EditProfilePageState extends State<EditProfilePage> {
     FocusNode? focusNode,
     String? hintText,
     bool enabled = true,
+    bool readOnly = false,
+    VoidCallback? onTap,
   }) {
     return TextFormField(
       controller: controller,
       keyboardType: keyboardType,
       maxLines: maxLines,
       enabled: enabled,
+      readOnly: readOnly,
+      onTap: onTap,
       focusNode: focusNode,
       decoration: InputDecoration(
         labelText: labelText,
@@ -455,63 +542,6 @@ class _EditProfilePageState extends State<EditProfilePage> {
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       ),
       validator: validator,
-    );
-  }
-
-  Widget _buildSearchableAutocomplete({
-    required List<String> options,
-    required String labelText,
-    required IconData icon,
-    required Function(String) onSelected,
-    String? initialValue,
-    required Map<String, String> strings,
-  }) {
-    return LayoutBuilder(
-      builder: (context, constraints) => Autocomplete<String>(
-        initialValue: TextEditingValue(text: initialValue ?? ''),
-        optionsBuilder: (TextEditingValue textEditingValue) {
-          if (textEditingValue.text.isEmpty) {
-            return options;
-          }
-          return options.where((String option) {
-            return option.toLowerCase().contains(textEditingValue.text.toLowerCase());
-          });
-        },
-        onSelected: onSelected,
-        optionsViewBuilder: (context, onSelected, options) {
-          return Align(
-            alignment: Alignment.topLeft,
-            child: Material(
-              elevation: 4,
-              borderRadius: BorderRadius.circular(12),
-              child: SizedBox(
-                width: constraints.maxWidth,
-                height: 250,
-                child: ListView.builder(
-                  padding: const EdgeInsets.all(8.0),
-                  itemCount: options.length,
-                  itemBuilder: (BuildContext context, int index) {
-                    final String option = options.elementAt(index);
-                    return ListTile(
-                      title: Text(option),
-                      onTap: () => onSelected(option),
-                    );
-                  },
-                ),
-              ),
-            ),
-          );
-        },
-        fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
-          return _buildStyledTextField(
-            controller: controller,
-            labelText: labelText,
-            icon: icon,
-            focusNode: focusNode,
-            validator: (v) => v!.isEmpty ? strings['req'] : null,
-          );
-        },
-      ),
     );
   }
 

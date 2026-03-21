@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:http/http.dart' as http;
 import 'package:untitled1/language_provider.dart';
 import 'package:untitled1/pages/ptofile.dart';
 import 'package:untitled1/pages/average_prices.dart';
@@ -32,6 +33,9 @@ class _SearchPageState extends State<SearchPage> {
   String _sortBy = 'rating';
   Position? _currentPosition;
   bool _filterByRadius = false;
+
+  final String _googleMapsApiKey = "AIzaSyCL9zie59-f_Hiyqj_dYtaMziReezcd6fU";
+  Map<String, Map<String, dynamic>> _matrixDistances = {}; // UID -> { 'text': '1.2 km', 'value': 1200 }
 
   @override
   void initState() {
@@ -62,12 +66,24 @@ class _SearchPageState extends State<SearchPage> {
           if (initial.isNotEmpty) {
             _selectedProfession = initial;
             _showWorkerList = true;
+            _trackSearch(initial['en']);
           }
         }
       });
     } catch (e) {
       debugPrint("Error loading professions: $e");
       setState(() => _isLoadingProfessions = false);
+    }
+  }
+
+  Future<void> _trackSearch(String professionEn) async {
+    try {
+      await _firestore.collection('metadata').doc('analytics').collection('professions').doc(professionEn).set({
+        'searchCount': FieldValue.increment(1),
+        'lastSearched': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    } catch (e) {
+      debugPrint("Analytics error: $e");
     }
   }
 
@@ -98,6 +114,10 @@ class _SearchPageState extends State<SearchPage> {
           _applyFilters();
           _isLoadingWorkers = false;
         });
+        
+        if (_currentPosition != null) {
+          _fetchMatrixDistances();
+        }
       }
     } catch (e) {
       if (mounted) setState(() => _isLoadingWorkers = false);
@@ -124,10 +144,67 @@ class _SearchPageState extends State<SearchPage> {
         if (!silent) {
            _sortBy = 'distance';
         }
-        _applyFilters();
       });
+      
+      if (_allWorkers.isNotEmpty) {
+        await _fetchMatrixDistances();
+      }
+      
+      _applyFilters();
     } catch (e) {
       debugPrint("Error getting location: $e");
+    }
+  }
+
+  Future<void> _fetchMatrixDistances() async {
+    if (_currentPosition == null || _allWorkers.isEmpty) return;
+
+    List<Map<String, dynamic>> targets = _showWorkerList && _selectedProfession != null
+        ? _allWorkers.where((w) => _getProfessionsList(w).map((e) => e.toLowerCase()).contains(_selectedProfession!['en'].toString().toLowerCase())).toList()
+        : _allWorkers;
+
+    if (targets.isEmpty) return;
+
+    for (var i = 0; i < targets.length; i += 25) {
+      final chunk = targets.skip(i).take(25).toList();
+      final destinations = chunk.map((w) {
+        double? lat = w['lat']?.toDouble();
+        double? lng = w['lng']?.toDouble();
+        if (lat != null && lng != null) return '$lat,$lng';
+        return null;
+      }).whereType<String>().join('|');
+
+      if (destinations.isEmpty) continue;
+
+      try {
+        final url = Uri.parse(
+          'https://maps.googleapis.com/maps/api/distancematrix/json'
+          '?origins=${_currentPosition!.latitude},${_currentPosition!.longitude}'
+          '&destinations=$destinations'
+          '&key=$_googleMapsApiKey'
+        );
+
+        final response = await http.get(url);
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body);
+          if (data['status'] == 'OK') {
+            final elements = data['rows'][0]['elements'];
+            setState(() {
+              for (var j = 0; j < chunk.length; j++) {
+                if (elements[j]['status'] == 'OK') {
+                  _matrixDistances[chunk[j]['uid']] = {
+                    'text': elements[j]['distance']['text'],
+                    'value': elements[j]['distance']['value'],
+                  };
+                }
+              }
+            });
+            _applyFilters();
+          }
+        }
+      } catch (e) {
+        debugPrint("Matrix API Error: $e");
+      }
     }
   }
 
@@ -156,21 +233,26 @@ class _SearchPageState extends State<SearchPage> {
 
           bool matchesRadius = true;
           if (_filterByRadius && _currentPosition != null) {
-            double? workerLat = w['workCenterLat']?.toDouble() ?? w['lat']?.toDouble();
-            double? workerLng = w['workCenterLng']?.toDouble() ?? w['lng']?.toDouble();
             double? radius = w['workRadius']?.toDouble();
+            
+            if (_matrixDistances.containsKey(w['uid'])) {
+              int distanceMeters = _matrixDistances[w['uid']]!['value'];
+              if (radius != null) {
+                matchesRadius = distanceMeters <= radius;
+              }
+            } else {
+              double? workerLat = w['workCenterLat']?.toDouble() ?? w['lat']?.toDouble();
+              double? workerLng = w['workCenterLng']?.toDouble() ?? w['lng']?.toDouble();
 
-            if (workerLat != null && workerLng != null && radius != null) {
-              double distance = Geolocator.distanceBetween(
-                _currentPosition!.latitude,
-                _currentPosition!.longitude,
-                workerLat,
-                workerLng,
-              );
-              matchesRadius = distance <= radius;
-            } else if (workerLat != null && workerLng != null) {
-               // If no radius set, maybe default to 20km or just allow
-               // matchesRadius = true;
+              if (workerLat != null && workerLng != null && radius != null) {
+                double distance = Geolocator.distanceBetween(
+                  _currentPosition!.latitude,
+                  _currentPosition!.longitude,
+                  workerLat,
+                  workerLng,
+                );
+                matchesRadius = distance <= radius;
+              }
             }
           }
 
@@ -183,6 +265,11 @@ class _SearchPageState extends State<SearchPage> {
           );
         } else if (_sortBy == 'distance' && _currentPosition != null) {
           _filteredWorkers.sort((a, b) {
+            if (_matrixDistances.containsKey(a['uid']) && _matrixDistances.containsKey(b['uid'])) {
+               return (_matrixDistances[a['uid']]!['value'] as int)
+                   .compareTo(_matrixDistances[b['uid']]!['value'] as int);
+            }
+            
             double latA = a['lat'] ?? 0.0;
             double lngA = a['lng'] ?? 0.0;
             double latB = b['lat'] ?? 0.0;
@@ -358,6 +445,8 @@ class _SearchPageState extends State<SearchPage> {
               _searchController.clear();
               _applyFilters();
             });
+            _trackSearch(p['en']);
+            _fetchMatrixDistances();
           },
           borderRadius: BorderRadius.circular(24),
           child: Container(
@@ -435,7 +524,9 @@ class _SearchPageState extends State<SearchPage> {
         final w = _filteredWorkers[index];
         
         String distanceStr = "";
-        if (_currentPosition != null && w['lat'] != null && w['lng'] != null) {
+        if (_matrixDistances.containsKey(w['uid'])) {
+          distanceStr = _matrixDistances[w['uid']]!['text'];
+        } else if (_currentPosition != null && w['lat'] != null && w['lng'] != null) {
           double distance = Geolocator.distanceBetween(_currentPosition!.latitude, _currentPosition!.longitude, w['lat'], w['lng']);
           if (distance < 1000) {
             distanceStr = "${distance.toStringAsFixed(0)}m";
