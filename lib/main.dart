@@ -19,16 +19,18 @@ void main() async {
   // Hide the navigation bar and status bar for a full-screen experience
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
 
-  await Firebase.initializeApp();
-
-  // Enable Firestore persistence to keep user info available offline/between restarts.
-  FirebaseFirestore.instance.settings = const Settings(
-    persistenceEnabled: true,
-    cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
-  );
-
-  // Initialize notifications asynchronously to avoid blocking main
-  NotificationService.init();
+  try {
+    await Firebase.initializeApp();
+    // Enable Firestore persistence
+    FirebaseFirestore.instance.settings = const Settings(
+      persistenceEnabled: true,
+      cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
+    );
+    // Initialize notifications
+    NotificationService.init();
+  } catch (e) {
+    debugPrint("Firebase initialization error: $e");
+  }
 
   runApp(
     ChangeNotifierProvider(
