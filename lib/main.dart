@@ -4,7 +4,6 @@ import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:untitled1/language_provider.dart';
 import 'package:untitled1/pages/home.dart';
 import 'package:untitled1/pages/search.dart';
@@ -23,10 +22,13 @@ void main() async {
   await Firebase.initializeApp();
 
   // Enable Firestore persistence to keep user info available offline/between restarts.
-  FirebaseFirestore.instance.settings = const Settings(persistenceEnabled: true);
+  FirebaseFirestore.instance.settings = const Settings(
+    persistenceEnabled: true,
+    cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
+  );
 
-  // Initialize notifications
-  await NotificationService.init();
+  // Initialize notifications asynchronously to avoid blocking main
+  NotificationService.init();
 
   runApp(
     ChangeNotifierProvider(
@@ -49,22 +51,36 @@ class MyApp extends StatelessWidget {
         primaryColor: const Color(0xFF1976D2),
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1976D2)),
       ),
-      home: StreamBuilder<User?>(
-        stream: FirebaseAuth.instance.authStateChanges(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Scaffold(body: Center(child: CircularProgressIndicator()));
-          }
-          if (snapshot.hasData) {
-            // Start listening for notifications when user is logged in
-            NotificationService.startListening();
-            return const MyHomePage();
-          }
-          // Stop listening when logged out
-          NotificationService.stopListening();
-          return const SplashScreen();
-        },
-      ),
+      home: const AuthWrapper(),
+    );
+  }
+}
+
+class AuthWrapper extends StatelessWidget {
+  const AuthWrapper({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<User?>(
+      stream: FirebaseAuth.instance.authStateChanges(),
+      builder: (context, snapshot) {
+        // If auth state is still loading, show the splash screen without auto-navigation
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const SplashScreen(navigateToSignIn: false);
+        }
+
+        final user = snapshot.data;
+        if (user != null) {
+          // Start listening for notifications when user is logged in
+          NotificationService.startListening();
+          return const MyHomePage();
+        }
+
+        // Stop listening when logged out
+        NotificationService.stopListening();
+        // Return SplashScreen which handles the navigation to SignInPage if needed
+        return const SplashScreen();
+      },
     );
   }
 }

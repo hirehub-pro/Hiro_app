@@ -2,8 +2,6 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
@@ -19,6 +17,8 @@ class NotificationService {
   static final FirebaseMessaging _messaging = FirebaseMessaging.instance;
   static StreamSubscription? _notificationSubscription;
   static bool _isInitialized = false;
+  static bool _isListening = false;
+  static String? _activeUserId;
 
   static Future<void> init() async {
     if (_isInitialized) return;
@@ -115,7 +115,8 @@ class NotificationService {
         }),
       );
       */
-      debugPrint("FCM notification sent to: $targetToken");
+      debugPrint("FCM notification request for token: $targetToken");
+      debugPrint("Title: $title, Body: $body");
     } catch (e) {
       debugPrint("Error sending push notification: $e");
     }
@@ -123,7 +124,16 @@ class NotificationService {
 
   static void startListening() {
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null || user.isAnonymous) return;
+    if (user == null || user.isAnonymous) {
+      stopListening();
+      return;
+    }
+
+    // Prevent multiple listeners for the same user
+    if (_isListening && _activeUserId == user.uid) return;
+    
+    _isListening = true;
+    _activeUserId = user.uid;
 
     saveDeviceToken(); 
     _notificationSubscription?.cancel();
@@ -156,12 +166,14 @@ class NotificationService {
           );
         }
       }
-    });
+    }, onError: (e) => debugPrint("Notification Stream Error: $e"));
   }
 
   static void stopListening() {
     _notificationSubscription?.cancel();
     _notificationSubscription = null;
+    _isListening = false;
+    _activeUserId = null;
   }
 
   static Future<void> _showNotification({
