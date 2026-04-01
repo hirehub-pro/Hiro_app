@@ -16,16 +16,17 @@ import 'package:untitled1/pages/admin_profile.dart';
 import 'package:untitled1/widgets/splash_screen.dart';
 import 'package:untitled1/pages/inbox_page.dart';
 import 'package:untitled1/pages/chat_page.dart';
+import 'package:untitled1/services/analytics_service.dart';
 import 'package:untitled1/services/notification_service.dart';
 import 'package:untitled1/sign_in.dart';
 import 'services/firebase_options.dart';
 
 void main() async {
   WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
-  
+
   // Preserve native splash while initializing Firebase and other services.
   FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
-  
+
   if (!kIsWeb) {
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   }
@@ -37,16 +38,23 @@ void main() async {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
-    
+
+    if (!kIsWeb &&
+        defaultTargetPlatform == TargetPlatform.android &&
+        kDebugMode) {
+      await FirebaseAuth.instance.setSettings(forceRecaptchaFlow: true);
+    }
+
     FirebaseFirestore.instance.settings = const Settings(
       persistenceEnabled: true,
       cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
     );
-    
+
     await NotificationService.init().timeout(
       const Duration(seconds: 5),
       onTimeout: () => debugPrint("Notification initialization timed out"),
     );
+    await AnalyticsService.logAppOpen();
     firebaseInitialized = true;
   } catch (e, stack) {
     initializationError = e;
@@ -63,7 +71,7 @@ void main() async {
       ),
     ),
   );
-  
+
   // Native splash is removed once the Flutter app is ready to take over.
   FlutterNativeSplash.remove();
 }
@@ -73,7 +81,7 @@ class MyApp extends StatefulWidget {
   final Object? initializationError;
 
   const MyApp({
-    super.key, 
+    super.key,
     required this.isFirebaseInitialized,
     this.initializationError,
   });
@@ -89,7 +97,9 @@ class _MyAppState extends State<MyApp> {
   void initState() {
     super.initState();
     if (widget.isFirebaseInitialized) {
-      NotificationService.selectNotificationStream.stream.listen((String? payload) {
+      NotificationService.selectNotificationStream.stream.listen((
+        String? payload,
+      ) {
         if (payload != null && payload.isNotEmpty) {
           try {
             final data = jsonDecode(payload);
@@ -119,7 +129,10 @@ class _MyAppState extends State<MyApp> {
 
   void _navigateToBlogPost(String postId) async {
     try {
-      final doc = await FirebaseFirestore.instance.collection('blog_posts').doc(postId).get();
+      final doc = await FirebaseFirestore.instance
+          .collection('blog_posts')
+          .doc(postId)
+          .get();
       if (doc.exists && mounted) {
         // Post details are handled in BlogPage
       }
@@ -139,8 +152,9 @@ class _MyAppState extends State<MyApp> {
         primaryColor: const Color(0xFF1976D2),
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1976D2)),
       ),
-      home: widget.isFirebaseInitialized 
-          ? const AuthWrapper() 
+      navigatorObservers: [AnalyticsService.observer],
+      home: widget.isFirebaseInitialized
+          ? const AuthWrapper()
           : _ErrorScreen(error: widget.initializationError),
     );
   }
@@ -200,7 +214,7 @@ class AuthWrapper extends StatelessWidget {
         }
 
         final user = snapshot.data;
-        
+
         // 2. Authenticated State: Navigate to the Home Page.
         if (user != null) {
           NotificationService.startListening();
@@ -237,7 +251,10 @@ class _MyHomePageState extends State<MyHomePage> {
   void initState() {
     super.initState();
     _checkAdminStatus();
-    NotificationService.selectNotificationStream.stream.listen((String? payload) {
+    _logCurrentTab();
+    NotificationService.selectNotificationStream.stream.listen((
+      String? payload,
+    ) {
       if (payload != null && payload.isNotEmpty) {
         try {
           final data = jsonDecode(payload);
@@ -253,7 +270,10 @@ class _MyHomePageState extends State<MyHomePage> {
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
       try {
-        final doc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+        final doc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .get();
         if (mounted && doc.exists) {
           final data = doc.data() as Map<String, dynamic>;
           if (data['role'] == 'admin') {
@@ -267,6 +287,24 @@ class _MyHomePageState extends State<MyHomePage> {
         debugPrint("Admin check error: $e");
       }
     }
+  }
+
+  Future<void> _logCurrentTab() async {
+    const tabNames = [
+      'home_tab',
+      'search_tab',
+      'blog_tab',
+      'messages_tab',
+      'profile_tab',
+    ];
+    await AnalyticsService.setCurrentScreen(tabNames[pagenumber]);
+  }
+
+  void _onTabSelected(int index) {
+    setState(() {
+      pagenumber = index;
+    });
+    _logCurrentTab();
   }
 
   void _handleDeepLink(Map<String, dynamic> data) {
@@ -287,15 +325,45 @@ class _MyHomePageState extends State<MyHomePage> {
     final locale = Provider.of<LanguageProvider>(context).locale.languageCode;
     switch (locale) {
       case 'he':
-        return {'home': 'בית', 'search': 'חיפוש', 'blog': 'בלוג', 'messages': 'הודעות', 'profile': 'פרופיל'};
+        return {
+          'home': 'בית',
+          'search': 'חיפוש',
+          'blog': 'בלוג',
+          'messages': 'הודעות',
+          'profile': 'פרופיל',
+        };
       case 'ar':
-        return {'home': 'الرئيسية', 'search': 'بحث', 'blog': 'مدونة', 'messages': 'رسائل', 'profile': 'الملف الشخصي'};
+        return {
+          'home': 'الرئيسية',
+          'search': 'بحث',
+          'blog': 'مدونة',
+          'messages': 'رسائل',
+          'profile': 'الملف الشخصي',
+        };
       case 'ru':
-        return {'home': 'Главная', 'search': 'Поиск', 'blog': 'Блог', 'messages': 'Сообщения', 'profile': 'Профиль'};
+        return {
+          'home': 'Главная',
+          'search': 'Поиск',
+          'blog': 'Блог',
+          'messages': 'Сообщения',
+          'profile': 'Профиль',
+        };
       case 'am':
-        return {'home': 'ዋና ገጽ', 'search': 'ፍለጋ', 'blog': 'ብሎግ', 'messages': 'መልእክቶች', 'profile': 'ፕሮፋይል'};
+        return {
+          'home': 'ዋና ገጽ',
+          'search': 'ፍለጋ',
+          'blog': 'ብሎግ',
+          'messages': 'መልእክቶች',
+          'profile': 'ፕሮፋይል',
+        };
       default:
-        return {'home': 'Home', 'search': 'Search', 'blog': 'Blog', 'messages': 'Messages', 'profile': 'Profile'};
+        return {
+          'home': 'Home',
+          'search': 'Search',
+          'blog': 'Blog',
+          'messages': 'Messages',
+          'profile': 'Profile',
+        };
     }
   }
 
@@ -309,45 +377,59 @@ class _MyHomePageState extends State<MyHomePage> {
     return Directionality(
       textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
       child: Scaffold(
-        appBar: isWide ? AppBar(
-          title: const Text("HireHub"),
-          centerTitle: false,
-          actions: [
-            _navButton(0, Icons.home, labels['home']!),
-            _navButton(1, Icons.search, labels['search']!),
-            _navButton(2, Icons.article, labels['blog']!),
-            _navButton(3, Icons.chat, labels['messages']!),
-            _navButton(4, Icons.person, labels['profile']!),
-            const SizedBox(width: 20),
-          ],
-        ) : null,
+        appBar: isWide
+            ? AppBar(
+                title: const Text("HireHub"),
+                centerTitle: false,
+                actions: [
+                  _navButton(0, Icons.home, labels['home'] ?? 'Home'),
+                  _navButton(1, Icons.search, labels['search'] ?? 'Search'),
+                  _navButton(2, Icons.article, labels['blog'] ?? 'Blog'),
+                  _navButton(3, Icons.chat, labels['messages'] ?? 'Messages'),
+                  _navButton(4, Icons.person, labels['profile'] ?? 'Profile'),
+                  const SizedBox(width: 20),
+                ],
+              )
+            : null,
         body: Center(
           child: ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: isWide ? 1000 : double.infinity),
-            child: IndexedStack(
-              index: pagenumber,
-              children: _pages,
+            constraints: BoxConstraints(
+              maxWidth: isWide ? 1000 : double.infinity,
             ),
+            child: IndexedStack(index: pagenumber, children: _pages),
           ),
         ),
-        bottomNavigationBar: isWide ? null : BottomNavigationBar(
-          type: BottomNavigationBarType.fixed,
-          selectedItemColor: const Color(0xFF1976D2),
-          unselectedItemColor: Colors.grey,
-          currentIndex: pagenumber,
-          onTap: (int index) {
-            setState(() {
-              pagenumber = index;
-            });
-          },
-          items: [
-            BottomNavigationBarItem(icon: const Icon(Icons.home_outlined), label: labels['home']),
-            BottomNavigationBarItem(icon: const Icon(Icons.search), label: labels['search']),
-            BottomNavigationBarItem(icon: const Icon(Icons.article_outlined), label: labels['blog']),
-            BottomNavigationBarItem(icon: const Icon(Icons.chat_bubble_outline), label: labels['messages']),
-            BottomNavigationBarItem(icon: const Icon(Icons.person_outline), label: labels['profile']),
-          ],
-        ),
+        bottomNavigationBar: isWide
+            ? null
+            : BottomNavigationBar(
+                type: BottomNavigationBarType.fixed,
+                selectedItemColor: const Color(0xFF1976D2),
+                unselectedItemColor: Colors.grey,
+                currentIndex: pagenumber,
+                onTap: _onTabSelected,
+                items: [
+                  BottomNavigationBarItem(
+                    icon: const Icon(Icons.home_outlined),
+                    label: labels['home'],
+                  ),
+                  BottomNavigationBarItem(
+                    icon: const Icon(Icons.search),
+                    label: labels['search'],
+                  ),
+                  BottomNavigationBarItem(
+                    icon: const Icon(Icons.article_outlined),
+                    label: labels['blog'],
+                  ),
+                  BottomNavigationBarItem(
+                    icon: const Icon(Icons.chat_bubble_outline),
+                    label: labels['messages'],
+                  ),
+                  BottomNavigationBarItem(
+                    icon: const Icon(Icons.person_outline),
+                    label: labels['profile'],
+                  ),
+                ],
+              ),
       ),
     );
   }
@@ -355,11 +437,16 @@ class _MyHomePageState extends State<MyHomePage> {
   Widget _navButton(int index, IconData icon, String label) {
     final isSelected = pagenumber == index;
     return TextButton.icon(
-      onPressed: () => setState(() => pagenumber = index),
-      icon: Icon(icon, color: isSelected ? const Color(0xFF1976D2) : Colors.grey),
+      onPressed: () => _onTabSelected(index),
+      icon: Icon(
+        icon,
+        color: isSelected ? const Color(0xFF1976D2) : Colors.grey,
+      ),
       label: Text(
         label,
-        style: TextStyle(color: isSelected ? const Color(0xFF1976D2) : Colors.grey),
+        style: TextStyle(
+          color: isSelected ? const Color(0xFF1976D2) : Colors.grey,
+        ),
       ),
     );
   }

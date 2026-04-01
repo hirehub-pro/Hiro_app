@@ -21,6 +21,15 @@ subprojects {
 }
 
 subprojects {
+    plugins.withId("com.android.library") {
+        val hasKotlinSources = project.file("src/main/kotlin").exists()
+        if (hasKotlinSources && !project.plugins.hasPlugin("org.jetbrains.kotlin.android")) {
+            project.plugins.apply("org.jetbrains.kotlin.android")
+        }
+    }
+}
+
+subprojects {
     afterEvaluate {
         val android = project.extensions.findByName("android")
         if (android != null) {

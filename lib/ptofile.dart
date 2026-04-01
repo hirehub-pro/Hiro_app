@@ -24,19 +24,31 @@ import 'package:untitled1/pages/post_details_page.dart';
 
 import 'package:untitled1/widgets/cached_video_player.dart';
 
-
 class Profile extends StatefulWidget {
   final String? userId;
-  const Profile({super.key, this.userId});
+  final String? viewedProfession;
+  const Profile({super.key, this.userId, this.viewedProfession});
 
   @override
   State<Profile> createState() => _ProfileState();
 }
 
 class _ProfileState extends State<Profile> with TickerProviderStateMixin {
+  static const String _vpdDocId = 'currentWeek';
+  static const List<String> _weekDayKeys = [
+    'sunday',
+    'monday',
+    'tuesday',
+    'wednesday',
+    'thursday',
+    'friday',
+    'saturday',
+  ];
+
   TabController? _tabController;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
-  final GlobalKey<RefreshIndicatorState> _refreshIndicatorKey = GlobalKey<RefreshIndicatorState>();
+  final GlobalKey<RefreshIndicatorState> _refreshIndicatorKey =
+      GlobalKey<RefreshIndicatorState>();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   StreamSubscription<User?>? _authSubscription;
 
@@ -84,16 +96,121 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
 
   void _checkInitialOwnership() {
     final currentUser = FirebaseAuth.instance.currentUser;
-    final targetUid = widget.userId ?? currentUser?.uid;
-    _isOwnProfile = (targetUid == null || (currentUser != null && targetUid == currentUser.uid));
+    final targetUid = widget.userId;
+    _isOwnProfile = targetUid == null
+        ? currentUser != null
+        : (currentUser != null && targetUid == currentUser.uid);
+  }
+
+  DateTime _startOfWeek(DateTime date) {
+    final dayStart = DateTime(date.year, date.month, date.day);
+    final offsetToSunday = dayStart.weekday % 7;
+    return dayStart.subtract(Duration(days: offsetToSunday));
+  }
+
+  String _dayKeyForDate(DateTime date) {
+    switch (date.weekday) {
+      case DateTime.monday:
+        return 'monday';
+      case DateTime.tuesday:
+        return 'tuesday';
+      case DateTime.wednesday:
+        return 'wednesday';
+      case DateTime.thursday:
+        return 'thursday';
+      case DateTime.friday:
+        return 'friday';
+      case DateTime.saturday:
+        return 'saturday';
+      case DateTime.sunday:
+      default:
+        return 'sunday';
+    }
+  }
+
+  bool _isCurrentWeek(dynamic rawWeekStart) {
+    DateTime? saved;
+    if (rawWeekStart is Timestamp) {
+      saved = rawWeekStart.toDate();
+    } else if (rawWeekStart is String) {
+      saved = DateTime.tryParse(rawWeekStart);
+    }
+
+    if (saved == null) return false;
+    return _startOfWeek(saved).isAtSameMomentAs(_startOfWeek(DateTime.now()));
+  }
+
+  Map<String, int> _emptyWeekMap() {
+    return {
+      'sunday': 0,
+      'monday': 0,
+      'tuesday': 0,
+      'wednesday': 0,
+      'thursday': 0,
+      'friday': 0,
+      'saturday': 0,
+      'TVTW': 0,
+    };
+  }
+
+  String _docIdForProfession(String profession) {
+    return profession.trim().replaceAll('/', '_');
+  }
+
+  Future<void> _incrementProfessionWeeklyViews({
+    required String workerId,
+    required String profession,
+  }) async {
+    final normalizedProfession = profession.trim();
+    if (normalizedProfession.isEmpty) return;
+    final professionDocId = _docIdForProfession(normalizedProfession);
+
+    final workerRef = _firestore.collection('users').doc(workerId);
+    final proRatingRef = workerRef.collection('ProRating').doc(professionDocId);
+    final vpdRef = proRatingRef.collection('VPD').doc(_vpdDocId);
+
+    await proRatingRef.set({
+      'profession': normalizedProfession,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+
+    await _firestore.runTransaction((tx) async {
+      final now = DateTime.now();
+      final dayKey = _dayKeyForDate(now);
+      final weekStart = _startOfWeek(now);
+
+      final snapshot = await tx.get(vpdRef);
+      final current = _emptyWeekMap();
+
+      if (snapshot.exists) {
+        final data = snapshot.data() as Map<String, dynamic>;
+        if (_isCurrentWeek(data['weekStart'])) {
+          for (final day in _weekDayKeys) {
+            final value = data[day];
+            if (value is num) current[day] = value.toInt();
+          }
+          final total = data['TVTW'];
+          if (total is num) current['TVTW'] = total.toInt();
+        }
+      }
+
+      current[dayKey] = (current[dayKey] ?? 0) + 1;
+      current['TVTW'] = (current['TVTW'] ?? 0) + 1;
+
+      tx.set(vpdRef, {
+        ...current,
+        'weekStart': Timestamp.fromDate(weekStart),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    });
   }
 
   void _initTabController() {
     int tabCount = (_userRole == 'worker' || _isOwnProfile) ? 4 : 2;
-    
+
     // Dispose old controller if it exists
     _tabController?.dispose();
-    
+
     _tabController = TabController(length: tabCount, vsync: this);
     _tabController!.addListener(() {
       if (!_tabController!.indexIsChanging) {
@@ -108,7 +225,9 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
 
     if (mounted) {
       setState(() {
-        _isOwnProfile = (targetUid == null || (currentUser != null && targetUid == currentUser.uid));
+        _isOwnProfile = widget.userId == null
+            ? currentUser != null
+            : (currentUser != null && widget.userId == currentUser.uid);
         if (_userName.isEmpty) _isLoading = true;
       });
     }
@@ -171,14 +290,27 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
         }
 
         if (currentUser != null && !_isOwnProfile) {
-          final favDoc = await _firestore.collection('users').doc(currentUser.uid).collection('favorites').doc(targetUid).get();
+          final favDoc = await _firestore
+              .collection('users')
+              .doc(currentUser.uid)
+              .collection('favorites')
+              .doc(targetUid)
+              .get();
           if (mounted) setState(() => _isFavorite = favDoc.exists);
         }
 
         if (!_isOwnProfile) {
           _firestore.collection('users').doc(targetUid).update({
-            'profileViews': FieldValue.increment(1)
+            'profileViews': FieldValue.increment(1),
           });
+
+          final viewedProfession = widget.viewedProfession?.trim() ?? '';
+          if (viewedProfession.isNotEmpty) {
+            await _incrementProfessionWeeklyViews(
+              workerId: targetUid,
+              profession: viewedProfession,
+            );
+          }
         }
 
         if (mounted) setState(() => _isLoading = false);
@@ -199,21 +331,26 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (serviceEnabled) {
         LocationPermission permission = await Geolocator.checkPermission();
-        if (permission == LocationPermission.always || permission == LocationPermission.whileInUse) {
+        if (permission == LocationPermission.always ||
+            permission == LocationPermission.whileInUse) {
           userPos = await Geolocator.getCurrentPosition();
         }
       }
 
       if (userPos != null) {
         double distanceInMeters = Geolocator.distanceBetween(
-          userPos.latitude, userPos.longitude, _proLat!, _proLng!
+          userPos.latitude,
+          userPos.longitude,
+          _proLat!,
+          _proLng!,
         );
         if (mounted) {
           setState(() {
             if (distanceInMeters < 1000) {
               _distanceStr = "${distanceInMeters.toStringAsFixed(0)}m";
             } else {
-              _distanceStr = "${(distanceInMeters / 1000).toStringAsFixed(1)}km";
+              _distanceStr =
+                  "${(distanceInMeters / 1000).toStringAsFixed(1)}km";
             }
           });
         }
@@ -223,8 +360,15 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
     }
   }
 
-  Future<List<Map<String, dynamic>>> _fetchSubcollection(String uid, String sub) async {
-    final snap = await _firestore.collection('users').doc(uid).collection(sub).get();
+  Future<List<Map<String, dynamic>>> _fetchSubcollection(
+    String uid,
+    String sub,
+  ) async {
+    final snap = await _firestore
+        .collection('users')
+        .doc(uid)
+        .collection(sub)
+        .get();
     return snap.docs.map((doc) => {'id': doc.id, ...doc.data()}).toList();
   }
 
@@ -236,7 +380,11 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
     if (targetUid == null) return;
 
     try {
-      final favRef = _firestore.collection('users').doc(currentUser.uid).collection('favorites').doc(targetUid);
+      final favRef = _firestore
+          .collection('users')
+          .doc(currentUser.uid)
+          .collection('favorites')
+          .doc(targetUid);
       if (_isFavorite) {
         await favRef.delete();
       } else {
@@ -263,15 +411,23 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
       context: context,
       builder: (context) => AlertDialog(
         title: Text(strings['guest_title'] ?? "Login Required"),
-        content: Text(strings['guest_msg'] ?? "Please login to use this feature."),
+        content: Text(
+          strings['guest_msg'] ?? "Please login to use this feature.",
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: Text(strings['cancel'] ?? "Cancel")),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(strings['cancel'] ?? "Cancel"),
+          ),
           TextButton(
             onPressed: () {
               Navigator.pop(context);
-              Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const SignInPage()));
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(builder: (_) => const SignInPage()),
+              );
             },
-            child: Text(strings['login'] ?? "Login")
+            child: Text(strings['login'] ?? "Login"),
           ),
         ],
       ),
@@ -284,9 +440,14 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text("Report User"),
-        content: const Text("Are you sure you want to report this user for inappropriate content or behavior?"),
+        content: const Text(
+          "Are you sure you want to report this user for inappropriate content or behavior?",
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel")),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Cancel"),
+          ),
           TextButton(
             onPressed: () async {
               await _firestore.collection('reports').add({
@@ -295,9 +456,11 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
                 'timestamp': FieldValue.serverTimestamp(),
               });
               Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Report submitted successfully.")));
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text("Report submitted successfully.")),
+              );
             },
-            child: const Text("Report", style: TextStyle(color: Colors.red))
+            child: const Text("Report", style: TextStyle(color: Colors.red)),
           ),
         ],
       ),
@@ -324,7 +487,9 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser != null) {
       try {
-        existingReview = _userReviews.firstWhere((r) => r['userId'] == currentUser.uid);
+        existingReview = _userReviews.firstWhere(
+          (r) => r['userId'] == currentUser.uid,
+        );
       } catch (_) {
         existingReview = null;
       }
@@ -355,13 +520,22 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(strings['upgrade_worker']!, style: const TextStyle(fontWeight: FontWeight.bold)),
+        title: Text(
+          strings['upgrade_worker']!,
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
         content: Text(strings['upgrade_msg']!),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: Text(strings['cancel']!)),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(strings['cancel']!),
+          ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1976D2), foregroundColor: Colors.white),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF1976D2),
+              foregroundColor: Colors.white,
+            ),
             child: Text(strings['confirm']!),
           ),
         ],
@@ -374,15 +548,21 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
         await _firestore.collection('users').doc(user.uid).update({
           'role': 'worker',
         });
-        
+
         await _fetchUserData();
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Account upgraded to worker successfully!')));
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Account upgraded to worker successfully!'),
+            ),
+          );
         }
       } catch (e) {
         debugPrint("Upgrade error: $e");
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Upgrade failed: $e')));
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('Upgrade failed: $e')));
         }
       } finally {
         if (mounted) setState(() => _isLoading = false);
@@ -391,18 +571,80 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
   }
 
   Future<void> _shareProfile(Map<String, String> strings) async {
-    final profileUrl = "https://hirehub.app/profile/${widget.userId ?? FirebaseAuth.instance.currentUser?.uid}";
+    final profileUrl =
+        "https://hirehub.app/profile/${widget.userId ?? FirebaseAuth.instance.currentUser?.uid}";
     await Share.share("${strings['share_profile']} - $_userName: $profileUrl");
   }
 
   @override
   Widget build(BuildContext context) {
     final strings = _getLocalizedStrings(context);
-    final isRtl = Provider.of<LanguageProvider>(context).locale.languageCode == 'he' || 
-                 Provider.of<LanguageProvider>(context).locale.languageCode == 'ar';
+    final isRtl =
+        Provider.of<LanguageProvider>(context).locale.languageCode == 'he' ||
+        Provider.of<LanguageProvider>(context).locale.languageCode == 'ar';
 
     if (_isLoading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator(color: Color(0xFF1976D2))));
+      return const Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(color: Color(0xFF1976D2)),
+        ),
+      );
+    }
+
+    if (widget.userId == null && _isGuest()) {
+      return Directionality(
+        textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
+        child: Scaffold(
+          backgroundColor: Colors.white,
+          body: Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.person_outline_rounded,
+                    size: 72,
+                    color: Colors.grey[400],
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    isRtl
+                        ? 'יש להתחבר כדי לצפות בפרופיל'
+                        : 'Please sign in to view your profile',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const SignInPage()),
+                        );
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF1976D2),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: Text(isRtl ? 'להתחברות' : 'Go to Sign In'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
     }
 
     return Directionality(
@@ -417,67 +659,197 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
           child: NestedScrollView(
             headerSliverBuilder: (context, innerBoxIsScrolled) => [
               SliverAppBar(
-                expandedHeight: 450, pinned: true, stretch: true,
+                expandedHeight: 450,
+                pinned: true,
+                stretch: true,
                 backgroundColor: const Color(0xFF1976D2),
                 actions: [
-                  IconButton(icon: const Icon(Icons.share_outlined), onPressed: () => _shareProfile(strings)),
+                  IconButton(
+                    icon: const Icon(Icons.share_outlined),
+                    onPressed: () => _shareProfile(strings),
+                  ),
                   if (!_isOwnProfile)
                     IconButton(
-                      icon: Icon(_isFavorite ? Icons.favorite : Icons.favorite_border, color: _isFavorite ? Colors.redAccent : Colors.white),
-                      onPressed: _toggleFavorite
+                      icon: Icon(
+                        _isFavorite ? Icons.favorite : Icons.favorite_border,
+                        color: _isFavorite ? Colors.redAccent : Colors.white,
+                      ),
+                      onPressed: _toggleFavorite,
                     ),
-                  if (!_isOwnProfile) IconButton(icon: const Icon(Icons.report_problem_outlined, color: Colors.white70), onPressed: () => _reportUser(strings)),
+                  if (!_isOwnProfile)
+                    IconButton(
+                      icon: const Icon(
+                        Icons.report_problem_outlined,
+                        color: Colors.white70,
+                      ),
+                      onPressed: () => _reportUser(strings),
+                    ),
                   if (_isOwnProfile && !_isGuest())
                     IconButton(
                       icon: const Icon(Icons.settings_outlined),
-                      onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsPage())).then((_) => _fetchUserData())
-                    )
+                      onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const SettingsPage()),
+                      ).then((_) => _fetchUserData()),
+                    ),
                 ],
                 flexibleSpace: FlexibleSpaceBar(
-                  stretchModes: const [StretchMode.zoomBackground, StretchMode.blurBackground],
-                  background: Stack(fit: StackFit.expand, children: [
-                    Hero(
-                      tag: widget.userId ?? (FirebaseAuth.instance.currentUser?.uid ?? 'profile'),
-                      child: _profileImageUrl.isNotEmpty
-                        ? CachedNetworkImage(
-                            imageUrl: _profileImageUrl,
-                            fit: BoxFit.cover,
-                            placeholder: (context, url) => Container(color: const Color(0xFF1E3A8A)),
-                            errorWidget: (context, url, error) => const Icon(Icons.error),
-                          )
-                        : Container(color: const Color(0xFF1E3A8A), child: const Icon(Icons.person, size: 100, color: Colors.white24)),
-                    ),
-                    Container(decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.transparent, Colors.black.withOpacity(0.2), Colors.black.withOpacity(0.8)]))),
-                    Positioned(bottom: 60, left: 24, right: 24, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Row(children: [
-                        Flexible(child: Text(_userName, style: const TextStyle(color: Colors.white, fontSize: 30, fontWeight: FontWeight.bold, letterSpacing: -0.5))),
-                        if (_userRole == 'worker') const Padding(padding: EdgeInsets.symmetric(horizontal: 8), child: Icon(Icons.verified, color: Color(0xFF60A5FA), size: 24)),
-                      ]),
-                      const SizedBox(height: 6),
-                      if (_userProfessions.isNotEmpty)
-                        Text(_userProfessions.join(' • '), style: TextStyle(color: Colors.white.withOpacity(0.9), fontSize: 16, fontWeight: FontWeight.w400)),
-                      const SizedBox(height: 16),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          _buildStatItem(_projects.length.toString(), strings['projects']!),
-                          _buildStatItem(_userReviews.length.toString(), strings['reviews']!),
-                          _buildStatItem(_profileViews.toString(), strings['views']!),
-                          if (_userReviews.isNotEmpty) _buildStatItem(_calculateAverageRating().toStringAsFixed(1), strings['rating']!),
-                        ],
+                  stretchModes: const [
+                    StretchMode.zoomBackground,
+                    StretchMode.blurBackground,
+                  ],
+                  background: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      Hero(
+                        tag:
+                            widget.userId ??
+                            (FirebaseAuth.instance.currentUser?.uid ??
+                                'profile'),
+                        child: _profileImageUrl.isNotEmpty
+                            ? CachedNetworkImage(
+                                imageUrl: _profileImageUrl,
+                                fit: BoxFit.cover,
+                                placeholder: (context, url) =>
+                                    Container(color: const Color(0xFF1E3A8A)),
+                                errorWidget: (context, url, error) =>
+                                    const Icon(Icons.error),
+                              )
+                            : Container(
+                                color: const Color(0xFF1E3A8A),
+                                child: const Icon(
+                                  Icons.person,
+                                  size: 100,
+                                  color: Colors.white24,
+                                ),
+                              ),
                       ),
-                      const SizedBox(height: 16),
-                      SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(children: [
-                          if (_isIdVerified) _buildHeaderBadge(Icons.assignment_ind, strings['verified_id']!, Colors.greenAccent),
-                          if (_isBusinessVerified) _buildHeaderBadge(Icons.business_center, strings['verified_biz']!, Colors.orangeAccent),
-                          if (_isInsured) _buildHeaderBadge(Icons.shield, strings['insured']!, Colors.blueAccent),
-                        ]),
+                      Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Colors.transparent,
+                              Colors.black.withOpacity(0.2),
+                              Colors.black.withOpacity(0.8),
+                            ],
+                          ),
+                        ),
                       ),
-                    ])),
-                    Positioned(bottom: -1, left: 0, right: 0, child: Container(height: 30, decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(30))))),
-                  ]),
+                      Positioned(
+                        bottom: 60,
+                        left: 24,
+                        right: 24,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    _userName,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 30,
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: -0.5,
+                                    ),
+                                  ),
+                                ),
+                                if (_userRole == 'worker')
+                                  const Padding(
+                                    padding: EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                    ),
+                                    child: Icon(
+                                      Icons.verified,
+                                      color: Color(0xFF60A5FA),
+                                      size: 24,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            if (_userProfessions.isNotEmpty)
+                              Text(
+                                _userProfessions.join(' • '),
+                                style: TextStyle(
+                                  color: Colors.white.withOpacity(0.9),
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w400,
+                                ),
+                              ),
+                            const SizedBox(height: 16),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                _buildStatItem(
+                                  _projects.length.toString(),
+                                  strings['projects']!,
+                                ),
+                                _buildStatItem(
+                                  _userReviews.length.toString(),
+                                  strings['reviews']!,
+                                ),
+                                _buildStatItem(
+                                  _profileViews.toString(),
+                                  strings['views']!,
+                                ),
+                                if (_userReviews.isNotEmpty)
+                                  _buildStatItem(
+                                    _calculateAverageRating().toStringAsFixed(
+                                      1,
+                                    ),
+                                    strings['rating']!,
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: Row(
+                                children: [
+                                  if (_isIdVerified)
+                                    _buildHeaderBadge(
+                                      Icons.assignment_ind,
+                                      strings['verified_id']!,
+                                      Colors.greenAccent,
+                                    ),
+                                  if (_isBusinessVerified)
+                                    _buildHeaderBadge(
+                                      Icons.business_center,
+                                      strings['verified_biz']!,
+                                      Colors.orangeAccent,
+                                    ),
+                                  if (_isInsured)
+                                    _buildHeaderBadge(
+                                      Icons.shield,
+                                      strings['insured']!,
+                                      Colors.blueAccent,
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Positioned(
+                        bottom: -1,
+                        left: 0,
+                        right: 0,
+                        child: Container(
+                          height: 30,
+                          decoration: const BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.vertical(
+                              top: Radius.circular(30),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
               SliverPersistentHeader(
@@ -491,7 +863,10 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
                     indicatorSize: TabBarIndicatorSize.label,
                     labelColor: const Color(0xFF1976D2),
                     unselectedLabelColor: Colors.grey[400],
-                    labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                    labelStyle: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
                     tabs: _buildTabs(strings),
                   ),
                 ),
@@ -506,14 +881,30 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
             ),
           ),
         ),
-        bottomNavigationBar: (!_isOwnProfile && _userRole == 'worker') ? _buildBottomBar(strings) : null,
-        floatingActionButton: (_isOwnProfile && _tabController != null && _tabController!.index == 0) ? FloatingActionButton.extended(
-          heroTag: 'profile_fab',
-          onPressed: _addProject,
-          backgroundColor: const Color(0xFF1976D2),
-          icon: const Icon(Icons.add_photo_alternate_rounded, color: Colors.white),
-          label: Text(strings['add']!, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-        ) : null,
+        bottomNavigationBar: (!_isOwnProfile && _userRole == 'worker')
+            ? _buildBottomBar(strings)
+            : null,
+        floatingActionButton:
+            (_isOwnProfile &&
+                _tabController != null &&
+                _tabController!.index == 0)
+            ? FloatingActionButton.extended(
+                heroTag: 'profile_fab',
+                onPressed: _addProject,
+                backgroundColor: const Color(0xFF1976D2),
+                icon: const Icon(
+                  Icons.add_photo_alternate_rounded,
+                  color: Colors.white,
+                ),
+                label: Text(
+                  strings['add']!,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              )
+            : null,
       ),
     );
   }
@@ -530,8 +921,18 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
   Widget _buildStatItem(String value, String label) {
     return Column(
       children: [
-        Text(value, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-        Text(label, style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 12)),
+        Text(
+          value,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        Text(
+          label,
+          style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 12),
+        ),
       ],
     );
   }
@@ -540,13 +941,24 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
     return Container(
       margin: const EdgeInsets.only(right: 8),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(color: Colors.white.withOpacity(0.15), borderRadius: BorderRadius.circular(20), border: Border.all(color: color.withOpacity(0.4), width: 0.5)),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.15),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withOpacity(0.4), width: 0.5),
+      ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(icon, color: color, size: 14),
           const SizedBox(width: 6),
-          Text(label, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w500)),
+          Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
         ],
       ),
     );
@@ -559,7 +971,6 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
         Tab(text: strings['reviews']),
         Tab(text: strings['schedule']),
         Tab(text: strings['about']),
-
       ];
     }
     return [Tab(text: strings['about']), Tab(text: "Activity")];
@@ -567,7 +978,14 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
 
   List<Widget> _buildTabViews(Map<String, String> strings) {
     if (_userRole == 'worker' || _isOwnProfile) {
-      final currentUserId = widget.userId ?? FirebaseAuth.instance.currentUser!.uid;
+      final currentUserId =
+          widget.userId ?? FirebaseAuth.instance.currentUser?.uid;
+      if (currentUserId == null) {
+        return [
+          _buildAboutSection(strings),
+          const Center(child: Text("Activity Feed")),
+        ];
+      }
       return [
         _buildProjectsGrid(strings),
         _buildReviewsList(strings),
@@ -583,32 +1001,79 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
 
   bool _isPathVideo(String url) {
     final lowerUrl = url.toLowerCase();
-    return lowerUrl.contains('.mp4') || lowerUrl.contains('.mov') || lowerUrl.contains('.avi') || lowerUrl.contains('.mkv');
+    return lowerUrl.contains('.mp4') ||
+        lowerUrl.contains('.mov') ||
+        lowerUrl.contains('.avi') ||
+        lowerUrl.contains('.mkv');
   }
 
   Widget _buildProjectsGrid(Map<String, String> strings) {
     if (_projects.isEmpty && !_isOwnProfile) {
-      return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.photo_library_outlined, size: 64, color: Colors.grey[200]), const SizedBox(height: 16), Text(strings['no_projects']!, style: TextStyle(color: Colors.grey[400]))]));
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.photo_library_outlined,
+              size: 64,
+              color: Colors.grey[200],
+            ),
+            const SizedBox(height: 16),
+            Text(
+              strings['no_projects']!,
+              style: TextStyle(color: Colors.grey[400]),
+            ),
+          ],
+        ),
+      );
     }
 
     bool canAdd = _isOwnProfile;
 
     return GridView.builder(
       padding: const EdgeInsets.all(20),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, crossAxisSpacing: 16, mainAxisSpacing: 16, childAspectRatio: 0.85),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        crossAxisSpacing: 16,
+        mainAxisSpacing: 16,
+        childAspectRatio: 0.85,
+      ),
       itemCount: _projects.length + (canAdd ? 1 : 0),
       itemBuilder: (context, index) {
         if (canAdd && index == 0) {
           return InkWell(
             onTap: _addProject,
             child: Container(
-              decoration: BoxDecoration(color: Colors.grey[50], borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.blue[100]!, width: 1.5, style: BorderStyle.solid)),
-              child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                Icon(Icons.add_photo_alternate_outlined, color: Colors.blue[300], size: 40),
-                const SizedBox(height: 8),
-                Text(strings['add_project']!, textAlign: TextAlign.center, style: TextStyle(color: Colors.blue[700], fontWeight: FontWeight.w600, fontSize: 13)),
-              ])
-            )
+              decoration: BoxDecoration(
+                color: Colors.grey[50],
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: Colors.blue[100]!,
+                  width: 1.5,
+                  style: BorderStyle.solid,
+                ),
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.add_photo_alternate_outlined,
+                    color: Colors.blue[300],
+                    size: 40,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    strings['add_project']!,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.blue[700],
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           );
         }
         final project = _projects[canAdd ? index - 1 : index];
@@ -619,39 +1084,107 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
           onTap: () => _showProjectDetail(project),
           onLongPress: () => _confirmDeleteProject(project),
           child: Container(
-            decoration: BoxDecoration(borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 4))]),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.04),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(20),
               child: Stack(
                 fit: StackFit.expand,
                 children: [
                   isVideo
-                    ? CachedVideoPlayer(url: firstMedia, play: false) // Use cached player
-                    : CachedNetworkImage(
-                      imageUrl: firstMedia,
-                      fit: BoxFit.cover,
-                      placeholder: (context, url) => Container(color: Colors.grey[100]),
-                      errorWidget: (context, url, error) => const Icon(Icons.error),
-                    ),
+                      ? CachedVideoPlayer(
+                          url: firstMedia,
+                          play: false,
+                        ) // Use cached player
+                      : CachedNetworkImage(
+                          imageUrl: firstMedia,
+                          fit: BoxFit.cover,
+                          placeholder: (context, url) =>
+                              Container(color: Colors.grey[100]),
+                          errorWidget: (context, url, error) =>
+                              const Icon(Icons.error),
+                        ),
                   if (isVideo)
-                    const Center(child: Icon(Icons.play_circle_outline, color: Colors.white, size: 40)),
-                  if ((project['imageUrls'] as List?) != null && (project['imageUrls'] as List).length > 1)
+                    const Center(
+                      child: Icon(
+                        Icons.play_circle_outline,
+                        color: Colors.white,
+                        size: 40,
+                      ),
+                    ),
+                  if ((project['imageUrls'] as List?) != null &&
+                      (project['imageUrls'] as List).length > 1)
                     Positioned(
                       top: 12,
                       right: 12,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(12)),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black54,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                         child: Row(
                           children: [
-                            const Icon(Icons.copy, size: 14, color: Colors.white),
+                            const Icon(
+                              Icons.copy,
+                              size: 14,
+                              color: Colors.white,
+                            ),
                             const SizedBox(width: 4),
-                            Text("${(project['imageUrls'] as List).length}", style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+                            Text(
+                              "${(project['imageUrls'] as List).length}",
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                           ],
                         ),
                       ),
                     ),
-                  Positioned(bottom: 0, left: 0, right: 0, child: Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10), decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.transparent, Colors.black.withOpacity(0.8)])), child: Text(project['description'] ?? "", maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500)))),
+                  Positioned(
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.transparent,
+                            Colors.black.withOpacity(0.8),
+                          ],
+                        ),
+                      ),
+                      child: Text(
+                        project['description'] ?? "",
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -662,11 +1195,14 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
   }
 
   void _showProjectDetail(Map<String, dynamic> project) {
+    final workerId = widget.userId ?? FirebaseAuth.instance.currentUser?.uid;
+    if (workerId == null) return;
+
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => PostDetailsPage(
-          workerId: widget.userId ?? FirebaseAuth.instance.currentUser!.uid,
+          workerId: workerId,
           project: project,
           workerName: _userName,
           workerProfileImage: _profileImageUrl,
@@ -677,15 +1213,23 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
 
   Future<void> _confirmDeleteProject(Map<String, dynamic> project) async {
     if (!_isOwnProfile) return;
-    
+
     bool? confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Delete Project?'),
-        content: const Text('Are you sure you want to remove this project from your profile?'),
+        content: const Text(
+          'Are you sure you want to remove this project from your profile?',
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          TextButton(onPressed: () => Navigator.pop(context, true), child: Text('Delete', style: TextStyle(color: Colors.red))),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
         ],
       ),
     );
@@ -695,7 +1239,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
         // 1. Delete image(s) from Firebase Storage
         final List<dynamic> imageUrls = project['imageUrls'] ?? [];
         final String? singleImageUrl = project['imageUrl'] ?? project['image'];
-        
+
         if (imageUrls.isNotEmpty) {
           for (var url in imageUrls) {
             await FirebaseStorage.instance.refFromURL(url).delete();
@@ -705,13 +1249,22 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
         }
 
         // 2. Delete document from Firestore
-        await _firestore.collection('users').doc(FirebaseAuth.instance.currentUser!.uid).collection('projects').doc(project['id']).delete();
-        
+        final currentUser = FirebaseAuth.instance.currentUser;
+        if (currentUser == null) return;
+        await _firestore
+            .collection('users')
+            .doc(currentUser.uid)
+            .collection('projects')
+            .doc(project['id'])
+            .delete();
+
         _fetchUserData();
       } catch (e) {
         debugPrint("Delete project error: $e");
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error deleting project: $e")));
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text("Error deleting project: $e")));
         }
       }
     }
@@ -732,31 +1285,70 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
             padding: const EdgeInsets.only(bottom: 20),
             child: ElevatedButton.icon(
               onPressed: () => _addReview(strings),
-              icon: Icon(hasReviewed ? Icons.edit_note_outlined : Icons.rate_review_outlined),
-              label: Text(hasReviewed ? strings['edit_review']! : strings['write_review']!),
+              icon: Icon(
+                hasReviewed
+                    ? Icons.edit_note_outlined
+                    : Icons.rate_review_outlined,
+              ),
+              label: Text(
+                hasReviewed
+                    ? strings['edit_review']!
+                    : strings['write_review']!,
+              ),
               style: ElevatedButton.styleFrom(
-                backgroundColor: hasReviewed ? Colors.orange[800] : const Color(0xFF1976D2),
+                backgroundColor: hasReviewed
+                    ? Colors.orange[800]
+                    : const Color(0xFF1976D2),
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 12),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
             ),
           ),
         if (_userReviews.isEmpty)
-          Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [const SizedBox(height: 40), Icon(Icons.rate_review_outlined, size: 64, color: Colors.grey[200]), const SizedBox(height: 16), Text(strings['no_reviews']!, style: TextStyle(color: Colors.grey[400]))]))
+          Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const SizedBox(height: 40),
+                Icon(
+                  Icons.rate_review_outlined,
+                  size: 64,
+                  color: Colors.grey[200],
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  strings['no_reviews']!,
+                  style: TextStyle(color: Colors.grey[400]),
+                ),
+              ],
+            ),
+          )
         else
           ..._userReviews.map((review) {
             final List<dynamic> reviewImages = review['imageUrls'] ?? [];
-            final bool isMyReview = currentUser != null && review['userId'] == currentUser.uid;
+            final bool isMyReview =
+                currentUser != null && review['userId'] == currentUser.uid;
 
             return Container(
               margin: const EdgeInsets.only(bottom: 16),
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: Colors.white, 
-                borderRadius: BorderRadius.circular(20), 
-                border: Border.all(color: isMyReview ? Colors.orange[200]! : Colors.grey[100]!, width: isMyReview ? 2 : 1), 
-                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4))]
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: isMyReview ? Colors.orange[200]! : Colors.grey[100]!,
+                  width: isMyReview ? 2 : 1,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.02),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -767,41 +1359,90 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(review['userName'] ?? 'User', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF1E3A8A))),
+                          Text(
+                            review['userName'] ?? 'User',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                              color: Color(0xFF1E3A8A),
+                            ),
+                          ),
                           if (review['profession'] != null)
-                            Text(review['profession'], style: TextStyle(color: Colors.grey[500], fontSize: 12)),
+                            Text(
+                              review['profession'],
+                              style: TextStyle(
+                                color: Colors.grey[500],
+                                fontSize: 12,
+                              ),
+                            ),
                         ],
                       ),
                       Row(
                         children: [
                           if (isMyReview)
                             IconButton(
-                              icon: const Icon(Icons.edit, size: 20, color: Colors.orange),
+                              icon: const Icon(
+                                Icons.edit,
+                                size: 20,
+                                color: Colors.orange,
+                              ),
                               onPressed: () => _addReview(strings),
                               padding: EdgeInsets.zero,
                               constraints: const BoxConstraints(),
                             ),
                           const SizedBox(width: 8),
-                          Row(children: List.generate(5, (i) => Icon(Icons.star_rounded, size: 18, color: i < (review['rating'] ?? 0) ? Colors.amber : Colors.grey[300]))),
+                          Row(
+                            children: List.generate(
+                              5,
+                              (i) => Icon(
+                                Icons.star_rounded,
+                                size: 18,
+                                color: i < (review['rating'] ?? 0)
+                                    ? Colors.amber
+                                    : Colors.grey[300],
+                              ),
+                            ),
+                          ),
                         ],
                       ),
                     ],
                   ),
                   const SizedBox(height: 8),
-                  if (review['priceRating'] != null || review['workRating'] != null || review['professionalismRating'] != null)
+                  if (review['priceRating'] != null ||
+                      review['workRating'] != null ||
+                      review['professionalismRating'] != null)
                     Padding(
                       padding: const EdgeInsets.only(bottom: 8),
                       child: Wrap(
                         spacing: 12,
                         children: [
-                          if (review['priceRating'] != null) _buildSmallRatingBadge(Icons.attach_money, review['priceRating'].toString()),
-                          if (review['workRating'] != null) _buildSmallRatingBadge(Icons.build_circle_outlined, review['workRating'].toString()),
-                          if (review['professionalismRating'] != null) _buildSmallRatingBadge(Icons.stars_outlined, review['professionalismRating'].toString()),
+                          if (review['priceRating'] != null)
+                            _buildSmallRatingBadge(
+                              Icons.attach_money,
+                              review['priceRating'].toString(),
+                            ),
+                          if (review['workRating'] != null)
+                            _buildSmallRatingBadge(
+                              Icons.build_circle_outlined,
+                              review['workRating'].toString(),
+                            ),
+                          if (review['professionalismRating'] != null)
+                            _buildSmallRatingBadge(
+                              Icons.stars_outlined,
+                              review['professionalismRating'].toString(),
+                            ),
                         ],
                       ),
                     ),
                   const SizedBox(height: 4),
-                  Text(review['comment'] ?? '', style: TextStyle(color: Colors.grey[700], height: 1.5, fontSize: 14)),
+                  Text(
+                    review['comment'] ?? '',
+                    style: TextStyle(
+                      color: Colors.grey[700],
+                      height: 1.5,
+                      fontSize: 14,
+                    ),
+                  ),
                   if (reviewImages.isNotEmpty) ...[
                     const SizedBox(height: 12),
                     SizedBox(
@@ -838,13 +1479,21 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
       children: [
         Icon(icon, size: 14, color: Colors.grey[400]),
         const SizedBox(width: 2),
-        Text(value, style: TextStyle(fontSize: 11, color: Colors.grey[600], fontWeight: FontWeight.bold)),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 11,
+            color: Colors.grey[600],
+            fontWeight: FontWeight.bold,
+          ),
+        ),
       ],
     );
   }
 
   Widget _buildAboutSection(Map<String, String> strings) {
-    final currentUserId = widget.userId ?? FirebaseAuth.instance.currentUser!.uid;
+    final currentUserId =
+        widget.userId ?? FirebaseAuth.instance.currentUser?.uid;
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -854,25 +1503,45 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
           const SizedBox(height: 12),
           Container(
             padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(color: Colors.grey[50], borderRadius: BorderRadius.circular(20)),
-            child: Text(strings['bio']!, style: TextStyle(fontSize: 15, height: 1.6, color: Colors.grey[800])),
+            decoration: BoxDecoration(
+              color: Colors.grey[50],
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              strings['bio']!,
+              style: TextStyle(
+                fontSize: 15,
+                height: 1.6,
+                color: Colors.grey[800],
+              ),
+            ),
           ),
           const SizedBox(height: 32),
           _buildSectionTitle(strings['contact_info']!),
           const SizedBox(height: 16),
           _buildInfoCard([
             _buildInfoRow(Icons.phone_rounded, strings['call']!, _phoneNumber),
-            if (_altPhoneNumber.isNotEmpty) _buildInfoRow(Icons.phone_iphone_rounded, "Secondary", _altPhoneNumber),
+            if (_altPhoneNumber.isNotEmpty)
+              _buildInfoRow(
+                Icons.phone_iphone_rounded,
+                "Secondary",
+                _altPhoneNumber,
+              ),
             _buildInfoRow(Icons.email_rounded, "Email", _email),
             _buildInfoRow(Icons.location_city_rounded, "Town", _town),
-            if (_distanceStr.isNotEmpty) _buildInfoRow(Icons.straighten_rounded, "Distance", _distanceStr),
+            if (_distanceStr.isNotEmpty)
+              _buildInfoRow(Icons.straighten_rounded, "Distance", _distanceStr),
           ]),
 
           if (_isOwnProfile) ...[
             const SizedBox(height: 32),
-            _buildSectionTitle(_userRole == 'worker' ? strings['business_tools']! : strings['upgrade_worker']!),
+            _buildSectionTitle(
+              _userRole == 'worker'
+                  ? strings['business_tools']!
+                  : strings['upgrade_worker']!,
+            ),
             const SizedBox(height: 16),
-            if (_userRole == 'worker')
+            if (_userRole == 'worker' && currentUserId != null)
               GridView.count(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
@@ -881,53 +1550,120 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
                 mainAxisSpacing: 16,
                 childAspectRatio: 1.5,
                 children: [
-                  _buildModernToolCard(Icons.analytics_outlined, strings['analytics']!, Colors.indigo, () => Navigator.push(context, MaterialPageRoute(builder: (_) => AnalyticsPage(userId: currentUserId, strings: strings)))),
-                  _buildModernToolCard(Icons.description_outlined, strings['invoice_builder']!, Colors.teal, () {
-                    Navigator.push(context, MaterialPageRoute(builder: (_) => InvoiceBuilderPage(workerName: _userName, workerPhone: _phoneNumber, workerEmail: _email)));
-                  }),
+                  _buildModernToolCard(
+                    Icons.analytics_outlined,
+                    strings['analytics']!,
+                    Colors.indigo,
+                    () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => AnalyticsPage(
+                          userId: currentUserId,
+                          strings: strings,
+                        ),
+                      ),
+                    ),
+                  ),
+                  _buildModernToolCard(
+                    Icons.description_outlined,
+                    strings['invoice_builder']!,
+                    Colors.teal,
+                    () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => InvoiceBuilderPage(
+                            workerName: _userName,
+                            workerPhone: _phoneNumber,
+                            workerEmail: _email,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
                   if (!_isBusinessVerified)
                     _buildModernToolCard(
-                      Icons.verified_user_outlined, 
-                      strings['verify_business']!, 
-                      Colors.deepOrange, 
-                      () => Navigator.push(context, MaterialPageRoute(builder: (_) => const VerifyBusinessPage()))
+                      Icons.verified_user_outlined,
+                      strings['verify_business']!,
+                      Colors.deepOrange,
+                      () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const VerifyBusinessPage(),
+                        ),
+                      ),
                     ),
                 ],
               )
             else
-              _buildModernToolCard(Icons.upgrade_rounded, strings['upgrade_worker']!, Colors.purple, _upgradeToWorker),
-          ]
+              _buildModernToolCard(
+                Icons.upgrade_rounded,
+                strings['upgrade_worker']!,
+                Colors.purple,
+                _upgradeToWorker,
+              ),
+          ],
         ],
       ),
     );
   }
 
   Widget _buildSectionTitle(String title) {
-    return Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1E3A8A)));
+    return Text(
+      title,
+      style: const TextStyle(
+        fontSize: 18,
+        fontWeight: FontWeight.bold,
+        color: Color(0xFF1E3A8A),
+      ),
+    );
   }
 
   Widget _buildInfoCard(List<Widget> children) {
     return Container(
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24), border: Border.all(color: Colors.grey[100]!), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10)]),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.grey[100]!),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10),
+        ],
+      ),
       child: Column(children: children),
     );
   }
 
-  Widget _buildModernToolCard(IconData icon, String title, Color color, VoidCallback onTap) {
+  Widget _buildModernToolCard(
+    IconData icon,
+    String title,
+    Color color,
+    VoidCallback onTap,
+  ) {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(20),
       child: Container(
         padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(color: color.withOpacity(0.06), borderRadius: BorderRadius.circular(20), border: Border.all(color: color.withOpacity(0.15))),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.06),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: color.withOpacity(0.15)),
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(icon, color: color, size: 28),
             const SizedBox(height: 12),
-            Text(title, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: color.withOpacity(0.9))),
+            Text(
+              title,
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 13,
+                color: color.withOpacity(0.9),
+              ),
+            ),
           ],
         ),
       ),
@@ -939,14 +1675,35 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
       child: Row(
         children: [
-          Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: Colors.grey[50], borderRadius: BorderRadius.circular(12)), child: Icon(icon, color: const Color(0xFF1976D2), size: 18)),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.grey[50],
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: const Color(0xFF1976D2), size: 18),
+          ),
           const SizedBox(width: 16),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(label, style: TextStyle(color: Colors.grey[500], fontSize: 11, fontWeight: FontWeight.w500)),
-                Text(value.isNotEmpty ? value : 'N/A', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF1E3A8A))),
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: Colors.grey[500],
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                Text(
+                  value.isNotEmpty ? value : 'N/A',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                    color: Color(0xFF1E3A8A),
+                  ),
+                ),
               ],
             ),
           ),
@@ -958,7 +1715,17 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
   Widget _buildBottomBar(Map<String, String> strings) {
     return Container(
       padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
-      decoration: BoxDecoration(color: Colors.white, border: Border(top: BorderSide(color: Colors.grey[100]!)), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 20, offset: const Offset(0, -4))]),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(top: BorderSide(color: Colors.grey[100]!)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 20,
+            offset: const Offset(0, -4),
+          ),
+        ],
+      ),
       child: Row(
         children: [
           Expanded(
@@ -966,7 +1733,15 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
               onPressed: () => launchUrl(Uri.parse("tel:$_phoneNumber")),
               icon: const Icon(Icons.call, size: 20),
               label: Text(strings['call']!),
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1976D2), foregroundColor: Colors.white, elevation: 0, padding: const EdgeInsets.symmetric(vertical: 16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF1976D2),
+                foregroundColor: Colors.white,
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
             ),
           ),
           const SizedBox(width: 12),
@@ -977,11 +1752,26 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
                   _showGuestDialog(context, strings);
                   return;
                 }
-                Navigator.push(context, MaterialPageRoute(builder: (_) => ChatPage(receiverId: widget.userId!, receiverName: _userName)));
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => ChatPage(
+                      receiverId: widget.userId!,
+                      receiverName: _userName,
+                    ),
+                  ),
+                );
               },
               icon: const Icon(Icons.chat_bubble_outline, size: 20),
               label: Text(strings['message']!),
-              style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF1976D2), side: const BorderSide(color: Color(0xFF1976D2), width: 1.5), padding: const EdgeInsets.symmetric(vertical: 16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF1976D2),
+                side: const BorderSide(color: Color(0xFF1976D2), width: 1.5),
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
             ),
           ),
         ],
@@ -997,7 +1787,10 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
   }
 
   Map<String, String> _getLocalizedStrings(BuildContext context) {
-    final locale = Provider.of<LanguageProvider>(context, listen: false).locale.languageCode;
+    final locale = Provider.of<LanguageProvider>(
+      context,
+      listen: false,
+    ).locale.languageCode;
     switch (locale) {
       case 'he':
         return {
@@ -1026,7 +1819,8 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
           'views': 'צפיות',
           'rating': 'דירוג',
           'upgrade_worker': 'שדרג לחשבון בעל מקצוע',
-          'upgrade_msg': 'האם ברצונך להפוך לבעל מקצוע? תוכל להציג את העבודות שלך ולקבל פניות מלקוחות.',
+          'upgrade_msg':
+              'האם ברצונך להפוך לבעל מקצוע? תוכל להציג את העבודות שלך ולקבל פניות מלקוחות.',
           'confirm': 'אשר',
           'cancel': 'ביטול',
           'business_tools': 'כלי עבודה',
@@ -1062,7 +1856,8 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
           'views': 'مشاهدات',
           'rating': 'تقييم',
           'upgrade_worker': 'الترقية لحساب عامل',
-          'upgrade_msg': 'هل تريد الترقية إلى حساب عامل؟ ستتمكن من عرض مشاريعك واستقبال طلبات العملاء.',
+          'upgrade_msg':
+              'هل تريد الترقية إلى حساب عامل؟ ستتمكن من عرض مشاريعك واستقبال طلبات العملاء.',
           'confirm': 'تأكيد',
           'cancel': 'إلغاء',
           'business_tools': 'أدوات العمل',
@@ -1098,7 +1893,8 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
           'views': 'Views',
           'rating': 'Rating',
           'upgrade_worker': 'Upgrade to Worker',
-          'upgrade_msg': 'Would you like to become a worker? You will be able to showcase your work and receive inquiries.',
+          'upgrade_msg':
+              'Would you like to become a worker? You will be able to showcase your work and receive inquiries.',
           'confirm': 'Confirm',
           'cancel': 'Cancel',
           'business_tools': 'Business Tools',
@@ -1123,11 +1919,11 @@ class _SliverAppBarDelegate extends SliverPersistentHeaderDelegate {
 
   @override
   Widget build(
-      BuildContext context, double shrinkOffset, bool overlapsContent) {
-    return Container(
-      color: Colors.white,
-      child: _tabBar,
-    );
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
+    return Container(color: Colors.white, child: _tabBar);
   }
 
   @override

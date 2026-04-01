@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 import 'package:untitled1/services/language_provider.dart';
+import 'package:untitled1/services/analytics_service.dart';
 import 'package:untitled1/sign_up.dart';
 import 'main.dart';
 
@@ -22,7 +23,10 @@ class _SignInPageState extends State<SignInPage> {
   bool _loading = false;
 
   Map<String, String> _getLocalizedStrings(BuildContext context) {
-    final locale = Provider.of<LanguageProvider>(context, listen: false).locale.languageCode;
+    final locale = Provider.of<LanguageProvider>(
+      context,
+      listen: false,
+    ).locale.languageCode;
     switch (locale) {
       case 'he':
         return {
@@ -38,7 +42,8 @@ class _SignInPageState extends State<SignInPage> {
           'signup': 'הרשמה',
           'no_account': 'אין לך חשבון? ',
           'not_registered_title': 'משתמש לא רשום',
-          'not_registered_body': 'מספר הטלפון שהוזן אינו רשום. האם תרצה להירשם?',
+          'not_registered_body':
+              'מספר הטלפון שהוזן אינו רשום. האם תרצה להירשם?',
           'ok': 'אישור',
           'invalid_phone': 'אנא הכנס מספר טלפון ישראלי תקין (05XXXXXXXX)',
           'edit_phone': 'ערוך מספר טלפון',
@@ -57,16 +62,18 @@ class _SignInPageState extends State<SignInPage> {
           'signup': 'Sign Up',
           'no_account': "Don't have an account? ",
           'not_registered_title': 'User Not Registered',
-          'not_registered_body': 'The phone number you entered is not registered. Would you like to sign up?',
+          'not_registered_body':
+              'The phone number you entered is not registered. Would you like to sign up?',
           'ok': 'OK',
-          'invalid_phone': 'Please enter a valid Israeli phone number (05XXXXXXXX)',
+          'invalid_phone':
+              'Please enter a valid Israeli phone number (05XXXXXXXX)',
           'edit_phone': 'Edit Phone Number',
         };
     }
   }
 
   String _normalizePhone(String input) {
-    String digits = input.replaceAll(RegExp(r'\D'), ''); 
+    String digits = input.replaceAll(RegExp(r'\D'), '');
     if (digits.startsWith('972')) {
       digits = digits.substring(3);
     }
@@ -83,14 +90,19 @@ class _SignInPageState extends State<SignInPage> {
 
     String phone = _normalizePhone(input);
     final regExp = RegExp(r'^\+9725\d{8}$');
-    
+
     if (!regExp.hasMatch(phone)) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(strings['invalid_phone']!)));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(strings['invalid_phone'] ?? 'Invalid phone number'),
+        ),
+      );
       return;
     }
 
     setState(() => _loading = true);
     try {
+      await AnalyticsService.logSignInCodeRequested();
       await FirebaseAuth.instance.verifyPhoneNumber(
         phoneNumber: phone,
         verificationCompleted: (PhoneAuthCredential credential) async {
@@ -98,7 +110,9 @@ class _SignInPageState extends State<SignInPage> {
         },
         verificationFailed: (e) {
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Verification Failed: ${e.message}")));
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text("Verification Failed: ${e.message}")),
+            );
             setState(() => _loading = false);
           }
         },
@@ -118,7 +132,9 @@ class _SignInPageState extends State<SignInPage> {
     } catch (e) {
       if (mounted) {
         setState(() => _loading = false);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("Error: $e")));
       }
     }
   }
@@ -127,30 +143,47 @@ class _SignInPageState extends State<SignInPage> {
     if (_codeController.text.isEmpty) return;
     setState(() => _loading = true);
     try {
-      final credential = PhoneAuthProvider.credential(verificationId: _verificationId, smsCode: _codeController.text.trim());
+      final credential = PhoneAuthProvider.credential(
+        verificationId: _verificationId,
+        smsCode: _codeController.text.trim(),
+      );
       await _signInAndCheckRegistration(credential);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Invalid code or an error occurred")));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Invalid code or an error occurred")),
+        );
         setState(() => _loading = false);
       }
     }
   }
 
-  Future<void> _signInAndCheckRegistration(PhoneAuthCredential credential) async {
+  Future<void> _signInAndCheckRegistration(
+    PhoneAuthCredential credential,
+  ) async {
     final strings = _getLocalizedStrings(context);
     try {
-      final userCredential = await FirebaseAuth.instance.signInWithCredential(credential);
+      final userCredential = await FirebaseAuth.instance.signInWithCredential(
+        credential,
+      );
       final user = userCredential.user;
-      
+
       if (user != null) {
         final firestore = FirebaseFirestore.instance;
 
         // Check unified 'users' collection
-        DocumentSnapshot userDoc = await firestore.collection('users').doc(user.uid).get();
+        DocumentSnapshot userDoc = await firestore
+            .collection('users')
+            .doc(user.uid)
+            .get();
 
         if (userDoc.exists) {
-          if (mounted) Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const MyHomePage()));
+          await AnalyticsService.logSignInSuccess(method: 'phone');
+          if (mounted)
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (_) => const MyHomePage()),
+            );
         } else {
           // User is authenticated but NOT in our database
           await FirebaseAuth.instance.signOut();
@@ -158,19 +191,27 @@ class _SignInPageState extends State<SignInPage> {
             showDialog(
               context: context,
               builder: (context) => AlertDialog(
-                title: Text(strings['not_registered_title']!),
-                content: Text(strings['not_registered_body']!),
+                title: Text(
+                  strings['not_registered_title'] ?? 'User Not Registered',
+                ),
+                content: Text(
+                  strings['not_registered_body'] ??
+                      'The phone number you entered is not registered.',
+                ),
                 actions: [
                   TextButton(
                     onPressed: () => Navigator.of(context).pop(),
-                    child: Text(strings['ok']!),
+                    child: Text(strings['ok'] ?? 'OK'),
                   ),
                   TextButton(
                     onPressed: () {
                       Navigator.of(context).pop();
-                      Navigator.push(context, MaterialPageRoute(builder: (_) => const SignUpPage()));
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const SignUpPage()),
+                      );
                     },
-                    child: Text(strings['signup']!),
+                    child: Text(strings['signup'] ?? 'Sign Up'),
                   ),
                 ],
               ),
@@ -185,13 +226,16 @@ class _SignInPageState extends State<SignInPage> {
     } catch (e) {
       debugPrint("SIGN IN ERROR: $e");
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Sign in error: $e")));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("Sign in error: $e")));
         setState(() => _loading = false);
       }
     }
   }
 
   Future<void> _handleGuestSignIn() async {
+    await AnalyticsService.logGuestSignIn();
     if (mounted) {
       Navigator.pushReplacement(
         context,
@@ -203,7 +247,8 @@ class _SignInPageState extends State<SignInPage> {
   @override
   Widget build(BuildContext context) {
     final strings = _getLocalizedStrings(context);
-    final isRtl = Provider.of<LanguageProvider>(context).locale.languageCode == 'he' ||
+    final isRtl =
+        Provider.of<LanguageProvider>(context).locale.languageCode == 'he' ||
         Provider.of<LanguageProvider>(context).locale.languageCode == 'ar';
 
     return Directionality(
@@ -246,10 +291,12 @@ class _SignInPageState extends State<SignInPage> {
                           onPressed: _loading ? null : _handleGuestSignIn,
                           style: OutlinedButton.styleFrom(
                             side: BorderSide(color: Colors.grey[300]!),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
                           ),
                           child: Text(
-                            strings['guest']!,
+                            strings['guest'] ?? 'Continue as Guest',
                             style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w600,
@@ -306,11 +353,15 @@ class _SignInPageState extends State<SignInPage> {
                       color: Colors.white.withOpacity(0.2),
                       borderRadius: BorderRadius.circular(16),
                     ),
-                    child: const Icon(Icons.handyman_rounded, size: 40, color: Colors.white),
+                    child: const Icon(
+                      Icons.handyman_rounded,
+                      size: 40,
+                      color: Colors.white,
+                    ),
                   ),
                   const SizedBox(height: 24),
                   Text(
-                    strings['welcome']!,
+                    strings['welcome'] ?? 'Welcome Back',
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 32,
@@ -320,7 +371,7 @@ class _SignInPageState extends State<SignInPage> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    strings['subtitle']!,
+                    strings['subtitle'] ?? 'Sign in to continue',
                     style: TextStyle(
                       color: Colors.white.withOpacity(0.8),
                       fontSize: 16,
@@ -340,8 +391,12 @@ class _SignInPageState extends State<SignInPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          strings['phone_label']!,
-          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.black87),
+          strings['phone_label'] ?? 'Phone Number',
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 14,
+            color: Colors.black87,
+          ),
         ),
         const SizedBox(height: 8),
         TextField(
@@ -370,11 +425,26 @@ class _SignInPageState extends State<SignInPage> {
               backgroundColor: const Color(0xFF1976D2),
               foregroundColor: Colors.white,
               elevation: 0,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
             ),
-            child: _loading 
-              ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) 
-              : Text(strings['get_code']!, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            child: _loading
+                ? const SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(
+                      color: Colors.white,
+                      strokeWidth: 2,
+                    ),
+                  )
+                : Text(
+                    strings['get_code'] ?? 'Get Verification Code',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
           ),
         ),
       ],
@@ -386,15 +456,23 @@ class _SignInPageState extends State<SignInPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          strings['enter_code']!,
-          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.black87),
+          strings['enter_code'] ?? 'Enter SMS Code',
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 14,
+            color: Colors.black87,
+          ),
         ),
         const SizedBox(height: 8),
         TextField(
           controller: _codeController,
           keyboardType: TextInputType.number,
           textAlign: TextAlign.center,
-          style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, letterSpacing: 8),
+          style: const TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 8,
+          ),
           decoration: InputDecoration(
             filled: true,
             fillColor: Colors.grey[100],
@@ -415,18 +493,39 @@ class _SignInPageState extends State<SignInPage> {
               backgroundColor: const Color(0xFF1976D2),
               foregroundColor: Colors.white,
               elevation: 0,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
             ),
-            child: _loading 
-              ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) 
-              : Text(strings['verify']!, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            child: _loading
+                ? const SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(
+                      color: Colors.white,
+                      strokeWidth: 2,
+                    ),
+                  )
+                : Text(
+                    strings['verify'] ?? 'Verify & Sign In',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
           ),
         ),
         const SizedBox(height: 8),
         Center(
           child: TextButton(
             onPressed: () => setState(() => _codeSent = false),
-            child: Text(strings['edit_phone']!, style: const TextStyle(color: Color(0xFF1976D2), fontWeight: FontWeight.w600)),
+            child: Text(
+              strings['edit_phone'] ?? 'Edit Phone Number',
+              style: const TextStyle(
+                color: Color(0xFF1976D2),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
         ),
       ],
@@ -440,8 +539,12 @@ class _SignInPageState extends State<SignInPage> {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Text(
-            strings['or']!,
-            style: TextStyle(color: Colors.grey[500], fontSize: 13, fontWeight: FontWeight.w500),
+            strings['or'] ?? 'OR',
+            style: TextStyle(
+              color: Colors.grey[500],
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+            ),
           ),
         ),
         Expanded(child: Divider(color: Colors.grey[300])),
@@ -453,12 +556,21 @@ class _SignInPageState extends State<SignInPage> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Text(strings['no_account']!, style: TextStyle(color: Colors.grey[600])),
+        Text(
+          strings['no_account'] ?? "Don't have an account? ",
+          style: TextStyle(color: Colors.grey[600]),
+        ),
         GestureDetector(
-          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SignUpPage())),
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const SignUpPage()),
+          ),
           child: Text(
-            strings['signup']!,
-            style: const TextStyle(color: Color(0xFF1976D2), fontWeight: FontWeight.bold),
+            strings['signup'] ?? 'Sign Up',
+            style: const TextStyle(
+              color: Color(0xFF1976D2),
+              fontWeight: FontWeight.bold,
+            ),
           ),
         ),
       ],

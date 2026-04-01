@@ -11,6 +11,7 @@ import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:untitled1/services/language_provider.dart';
+import 'package:untitled1/services/analytics_service.dart';
 import 'package:untitled1/pages/subscription.dart';
 import 'package:untitled1/map/map_radius_picker.dart';
 import 'package:untitled1/map/location_picker.dart';
@@ -35,6 +36,7 @@ class SignUpPage extends StatefulWidget {
 }
 
 enum SignUpStep { profile, phone }
+
 enum UserType { normal, worker }
 
 class _SignUpPageState extends State<SignUpPage> {
@@ -45,47 +47,72 @@ class _SignUpPageState extends State<SignUpPage> {
   final _emailController = TextEditingController();
   final _altPhoneController = TextEditingController();
   final _descriptionController = TextEditingController();
-  
+
   TextEditingController? _professionsSearchController;
 
   late SignUpStep _currentStep;
   late UserType _userType;
-  
+
   String? _selectedTown;
   List<String> _selectedProfessions = [];
-  
+
   bool _loading = false;
   bool _agreedToPolicy = false;
   bool _codeSent = false;
   String _verificationId = "";
   File? _image;
   final ImagePicker _picker = ImagePicker();
-  
+
   LatLng? _workCenter;
   double _workRadius = 5000.0;
 
   final List<String> _allProfessions = [
-    'Plumber', 'Carpenter', 'Electrician', 'Painter', 'Cleaner', 'Handyman',
-    'Landscaper', 'HVAC', 'Locksmith', 'Gardener', 'Mechanic', 'Photographer',
-    'Tutor', 'Tailor', 'Mover', 'Interior Designer', 'Beautician', 'Pet Groomer',
-    'Welder', 'Roofer', 'Flooring Expert', 'AC Technician', 'Pest Control'
+    'Plumber',
+    'Carpenter',
+    'Electrician',
+    'Painter',
+    'Cleaner',
+    'Handyman',
+    'Landscaper',
+    'HVAC',
+    'Locksmith',
+    'Gardener',
+    'Mechanic',
+    'Photographer',
+    'Tutor',
+    'Tailor',
+    'Mover',
+    'Interior Designer',
+    'Beautician',
+    'Pet Groomer',
+    'Welder',
+    'Roofer',
+    'Flooring Expert',
+    'AC Technician',
+    'Pest Control',
   ];
 
   @override
   void initState() {
     super.initState();
-    _currentStep = widget.startAtStep == 1 ? SignUpStep.phone : SignUpStep.profile;
+    _currentStep = widget.startAtStep == 1
+        ? SignUpStep.phone
+        : SignUpStep.profile;
     _image = widget.pendingWorkerImage;
-    
+
     if (widget.pendingWorkerData != null) {
       _userType = UserType.worker;
       _nameController.text = widget.pendingWorkerData!['name'] ?? "";
       _emailController.text = widget.pendingWorkerData!['email'] ?? "";
       _selectedTown = widget.pendingWorkerData!['town'];
-      _selectedProfessions = List<String>.from(widget.pendingWorkerData!['professions'] ?? []);
-      _altPhoneController.text = widget.pendingWorkerData!['optionalPhone'] ?? "";
-      _descriptionController.text = widget.pendingWorkerData!['description'] ?? "";
-      _agreedToPolicy = true; 
+      _selectedProfessions = List<String>.from(
+        widget.pendingWorkerData!['professions'] ?? [],
+      );
+      _altPhoneController.text =
+          widget.pendingWorkerData!['optionalPhone'] ?? "";
+      _descriptionController.text =
+          widget.pendingWorkerData!['description'] ?? "";
+      _agreedToPolicy = true;
     } else {
       _userType = UserType.normal;
     }
@@ -103,7 +130,10 @@ class _SignUpPageState extends State<SignUpPage> {
   }
 
   Map<String, String> _getLocalizedStrings(BuildContext context) {
-    final locale = Provider.of<LanguageProvider>(context, listen: false).locale.languageCode;
+    final locale = Provider.of<LanguageProvider>(
+      context,
+      listen: false,
+    ).locale.languageCode;
     switch (locale) {
       case 'he':
         return {
@@ -172,7 +202,8 @@ class _SignUpPageState extends State<SignUpPage> {
           'pay': 'Proceed to Subscription',
           'req': 'Required',
           'policy_err': 'You must agree to the terms',
-          'invalid_phone': 'Please enter a valid Israeli phone number (05XXXXXXXX)',
+          'invalid_phone':
+              'Please enter a valid Israeli phone number (05XXXXXXXX)',
           'error_verify': 'Error verifying code',
           'search_hint': 'Search...',
           'terms_title': 'Terms of Use',
@@ -191,7 +222,7 @@ class _SignUpPageState extends State<SignUpPage> {
   }
 
   String _normalizePhone(String input) {
-    String digits = input.replaceAll(RegExp(r'\D'), ''); 
+    String digits = input.replaceAll(RegExp(r'\D'), '');
     if (digits.startsWith('972')) {
       digits = digits.substring(3);
     }
@@ -208,9 +239,11 @@ class _SignUpPageState extends State<SignUpPage> {
 
     String phone = _normalizePhone(input);
     final regExp = RegExp(r'^\+9725\d{8}$');
-    
+
     if (!regExp.hasMatch(phone)) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(strings['invalid_phone']!)));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(strings['invalid_phone']!)));
       return;
     }
 
@@ -225,7 +258,9 @@ class _SignUpPageState extends State<SignUpPage> {
         verificationFailed: (e) {
           if (mounted) {
             setState(() => _loading = false);
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("SMS failed: ${e.message}")));
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(SnackBar(content: Text("SMS failed: ${e.message}")));
           }
         },
         codeSent: (verificationId, resendToken) {
@@ -236,6 +271,9 @@ class _SignUpPageState extends State<SignUpPage> {
               _loading = false;
             });
           }
+          AnalyticsService.logSignUpCodeRequested(
+            userType: _userType == UserType.worker ? 'worker' : 'customer',
+          );
         },
         codeAutoRetrievalTimeout: (verificationId) {
           _verificationId = verificationId;
@@ -244,7 +282,9 @@ class _SignUpPageState extends State<SignUpPage> {
     } catch (e) {
       if (mounted) {
         setState(() => _loading = false);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Auth Error: $e")));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("Auth Error: $e")));
       }
     }
   }
@@ -264,7 +304,9 @@ class _SignUpPageState extends State<SignUpPage> {
     } catch (e) {
       if (mounted) {
         setState(() => _loading = false);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(strings['error_verify']!)));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(strings['error_verify']!)));
       }
     }
   }
@@ -278,17 +320,22 @@ class _SignUpPageState extends State<SignUpPage> {
       LocationPermission permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
-        if (permission == LocationPermission.denied) throw 'Location permissions are denied';
+        if (permission == LocationPermission.denied)
+          throw 'Location permissions are denied';
       }
-      
-      if (permission == LocationPermission.deniedForever) throw 'Location permissions are permanently denied.';
+
+      if (permission == LocationPermission.deniedForever)
+        throw 'Location permissions are permanently denied.';
 
       Position position = await Geolocator.getCurrentPosition();
       LatLng loc = LatLng(position.latitude, position.longitude);
       setState(() => _workCenter = loc);
       await _updateTownFromLocation(loc);
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+      if (mounted)
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.toString())));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -296,9 +343,13 @@ class _SignUpPageState extends State<SignUpPage> {
 
   Future<void> _updateTownFromLocation(LatLng loc) async {
     try {
-      List<Placemark> placemarks = await placemarkFromCoordinates(loc.latitude, loc.longitude);
+      List<Placemark> placemarks = await placemarkFromCoordinates(
+        loc.latitude,
+        loc.longitude,
+      );
       if (placemarks.isNotEmpty) {
-        String? town = placemarks.first.locality ?? placemarks.first.subLocality;
+        String? town =
+            placemarks.first.locality ?? placemarks.first.subLocality;
         if (town != null && town.isNotEmpty) {
           setState(() => _selectedTown = town);
         }
@@ -322,7 +373,9 @@ class _SignUpPageState extends State<SignUpPage> {
 
       if (_image != null) {
         try {
-          final ref = FirebaseStorage.instance.ref().child('profile_pictures/${user.uid}.jpg');
+          final ref = FirebaseStorage.instance.ref().child(
+            'profile_pictures/${user.uid}.jpg',
+          );
           await ref.putFile(_image!).timeout(const Duration(seconds: 15));
           imageUrl = await ref.getDownloadURL();
         } catch (e) {
@@ -334,7 +387,9 @@ class _SignUpPageState extends State<SignUpPage> {
       double? lng = _workCenter?.longitude;
       if (lat == null && _selectedTown != null) {
         try {
-          List<Location> locations = await locationFromAddress("$_selectedTown, Israel");
+          List<Location> locations = await locationFromAddress(
+            "$_selectedTown, Israel",
+          );
           if (locations.isNotEmpty) {
             lat = locations.first.latitude;
             lng = locations.first.longitude;
@@ -373,10 +428,15 @@ class _SignUpPageState extends State<SignUpPage> {
       await firestore.collection('users').doc(user.uid).set(userData);
       await user.updateDisplayName(finalName);
 
+      await AnalyticsService.logSignUpCompleted(
+        userType: _userType == UserType.worker ? 'worker' : 'customer',
+        hasEmail: _emailController.text.trim().isNotEmpty,
+      );
+
       if (_userType == UserType.worker) {
         try {
           await firestore.collection('metadata').doc('stats').set({
-            'totalWorkers': FieldValue.increment(1)
+            'totalWorkers': FieldValue.increment(1),
           }, SetOptions(merge: true));
         } catch (_) {}
       }
@@ -391,34 +451,43 @@ class _SignUpPageState extends State<SignUpPage> {
     } catch (e) {
       if (mounted) {
         setState(() => _loading = false);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text("Database Error: $e"),
-        ));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("Database Error: $e")));
       }
     }
   }
 
   Future<void> _pickImage() async {
-    final picked = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
+    final picked = await _picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 70,
+    );
     if (picked != null) setState(() => _image = File(picked.path));
   }
 
   void _submitProfile() {
     if (!_formKey.currentState!.validate()) return;
     final strings = _getLocalizedStrings(context);
-    
+
     if (_selectedTown == null) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(strings['town_label']!)));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(strings['town_label']!)));
       return;
     }
 
     if (_userType == UserType.worker && _selectedProfessions.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(strings['professions']!)));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(strings['professions']!)));
       return;
     }
 
     if (!_agreedToPolicy) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(strings['policy_err']!)));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(strings['policy_err']!)));
       return;
     }
 
@@ -486,7 +555,12 @@ class _SignUpPageState extends State<SignUpPage> {
     return Column(
       key: const ValueKey('phone'),
       children: [
-        _buildHeader(strings['phone_label']!, strings['phone_subtitle']!, isRtl, showBack: widget.pendingWorkerData == null),
+        _buildHeader(
+          strings['phone_label']!,
+          strings['phone_subtitle']!,
+          isRtl,
+          showBack: widget.pendingWorkerData == null,
+        ),
         Transform.translate(
           offset: const Offset(0, -40),
           child: Container(
@@ -495,7 +569,13 @@ class _SignUpPageState extends State<SignUpPage> {
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(24),
-              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 20, offset: const Offset(0, 10))],
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 20,
+                  offset: const Offset(0, 10),
+                ),
+              ],
             ),
             child: Column(
               children: [
@@ -522,21 +602,39 @@ class _SignUpPageState extends State<SignUpPage> {
                   width: double.infinity,
                   height: 55,
                   child: ElevatedButton(
-                    onPressed: _loading ? null : (_codeSent ? _handleVerifyCode : _handleSendCode),
+                    onPressed: _loading
+                        ? null
+                        : (_codeSent ? _handleVerifyCode : _handleSendCode),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF1976D2),
                       foregroundColor: Colors.white,
                       elevation: 0,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
                     ),
-                    child: Text(_codeSent ? strings['verify_code']! : strings['send_code']!, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                    child: Text(
+                      _codeSent
+                          ? strings['verify_code']!
+                          : strings['send_code']!,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
                 ),
                 if (_codeSent)
                   Center(
                     child: TextButton(
                       onPressed: () => setState(() => _codeSent = false),
-                      child: Text(strings['edit_phone']!, style: const TextStyle(color: Color(0xFF1976D2), fontWeight: FontWeight.w600)),
+                      child: Text(
+                        strings['edit_phone']!,
+                        style: const TextStyle(
+                          color: Color(0xFF1976D2),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                     ),
                   ),
               ],
@@ -547,7 +645,12 @@ class _SignUpPageState extends State<SignUpPage> {
     );
   }
 
-  Widget _buildHeader(String title, String subtitle, bool isRtl, {bool showBack = false}) {
+  Widget _buildHeader(
+    String title,
+    String subtitle,
+    bool isRtl, {
+    bool showBack = false,
+  }) {
     return Container(
       height: 300,
       width: double.infinity,
@@ -564,7 +667,10 @@ class _SignUpPageState extends State<SignUpPage> {
             top: -50,
             right: isRtl ? null : -50,
             left: isRtl ? -50 : null,
-            child: CircleAvatar(radius: 100, backgroundColor: Colors.white.withOpacity(0.1)),
+            child: CircleAvatar(
+              radius: 100,
+              backgroundColor: Colors.white.withOpacity(0.1),
+            ),
           ),
           SafeArea(
             child: Padding(
@@ -574,19 +680,46 @@ class _SignUpPageState extends State<SignUpPage> {
                 children: [
                   if (showBack)
                     IconButton(
-                      icon: const Icon(Icons.arrow_back_ios, color: Colors.white, size: 20),
-                      onPressed: () => setState(() => _currentStep = SignUpStep.profile),
+                      icon: const Icon(
+                        Icons.arrow_back_ios,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                      onPressed: () =>
+                          setState(() => _currentStep = SignUpStep.profile),
                     ),
                   const SizedBox(height: 10),
                   Container(
                     padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(16)),
-                    child: Icon(showBack ? Icons.phone_android_rounded : Icons.person_add_rounded, size: 36, color: Colors.white),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Icon(
+                      showBack
+                          ? Icons.phone_android_rounded
+                          : Icons.person_add_rounded,
+                      size: 36,
+                      color: Colors.white,
+                    ),
                   ),
                   const SizedBox(height: 20),
-                  Text(title, style: const TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold)),
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 32,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                   const SizedBox(height: 8),
-                  Text(subtitle, style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 16)),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.8),
+                      fontSize: 16,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -609,7 +742,13 @@ class _SignUpPageState extends State<SignUpPage> {
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(24),
-              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 20, offset: const Offset(0, 10))],
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 20,
+                  offset: const Offset(0, 10),
+                ),
+              ],
             ),
             child: Form(
               key: _formKey,
@@ -666,9 +805,19 @@ class _SignUpPageState extends State<SignUpPage> {
                         backgroundColor: const Color(0xFF1976D2),
                         foregroundColor: Colors.white,
                         elevation: 0,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
                       ),
-                      child: Text(_userType == UserType.worker ? strings['pay']! : strings['finish']!, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                      child: Text(
+                        _userType == UserType.worker
+                            ? strings['pay']!
+                            : strings['finish']!,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ),
                   ),
                 ],
@@ -688,12 +837,24 @@ class _SignUpPageState extends State<SignUpPage> {
         children: [
           Container(
             padding: const EdgeInsets.all(4),
-            decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: const Color(0xFF1976D2).withOpacity(0.2), width: 2)),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: const Color(0xFF1976D2).withOpacity(0.2),
+                width: 2,
+              ),
+            ),
             child: CircleAvatar(
               radius: 55,
               backgroundColor: Colors.grey[100],
               backgroundImage: _image != null ? FileImage(_image!) : null,
-              child: _image == null ? Icon(Icons.person_rounded, size: 50, color: Colors.grey[400]) : null,
+              child: _image == null
+                  ? Icon(
+                      Icons.person_rounded,
+                      size: 50,
+                      color: Colors.grey[400],
+                    )
+                  : null,
             ),
           ),
           Positioned(
@@ -701,8 +862,15 @@ class _SignUpPageState extends State<SignUpPage> {
             right: 0,
             child: Container(
               padding: const EdgeInsets.all(8),
-              decoration: const BoxDecoration(color: Color(0xFF1976D2), shape: BoxShape.circle),
-              child: const Icon(Icons.camera_alt, size: 18, color: Colors.white),
+              decoration: const BoxDecoration(
+                color: Color(0xFF1976D2),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.camera_alt,
+                size: 18,
+                color: Colors.white,
+              ),
             ),
           ),
         ],
@@ -720,7 +888,9 @@ class _SignUpPageState extends State<SignUpPage> {
             value: _agreedToPolicy,
             onChanged: (v) => setState(() => _agreedToPolicy = v!),
             activeColor: const Color(0xFF1976D2),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(4),
+            ),
           ),
         ),
         const SizedBox(width: 12),
@@ -732,18 +902,36 @@ class _SignUpPageState extends State<SignUpPage> {
                 TextSpan(text: strings['agree_prefix']!),
                 TextSpan(
                   text: strings['terms_link']!,
-                  style: const TextStyle(color: Color(0xFF1976D2), fontWeight: FontWeight.bold),
-                  recognizer: TapGestureRecognizer()..onTap = () {
-                    Navigator.push(context, MaterialPageRoute(builder: (_) => const TermsOfServicePage()));
-                  },
+                  style: const TextStyle(
+                    color: Color(0xFF1976D2),
+                    fontWeight: FontWeight.bold,
+                  ),
+                  recognizer: TapGestureRecognizer()
+                    ..onTap = () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const TermsOfServicePage(),
+                        ),
+                      );
+                    },
                 ),
                 TextSpan(text: strings['and']!),
                 TextSpan(
                   text: strings['privacy_link']!,
-                  style: const TextStyle(color: Color(0xFF1976D2), fontWeight: FontWeight.bold),
-                  recognizer: TapGestureRecognizer()..onTap = () {
-                    Navigator.push(context, MaterialPageRoute(builder: (_) => const PrivacyPolicyPage()));
-                  },
+                  style: const TextStyle(
+                    color: Color(0xFF1976D2),
+                    fontWeight: FontWeight.bold,
+                  ),
+                  recognizer: TapGestureRecognizer()
+                    ..onTap = () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const PrivacyPolicyPage(),
+                        ),
+                      );
+                    },
                 ),
               ],
             ),
@@ -772,12 +960,22 @@ class _SignUpPageState extends State<SignUpPage> {
               child: OutlinedButton.icon(
                 onPressed: _getCurrentLocation,
                 icon: const Icon(Icons.my_location, size: 16),
-                label: Text(strings['current_loc']!, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                label: Text(
+                  strings['current_loc']!,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: const Color(0xFF1976D2),
                   padding: const EdgeInsets.symmetric(vertical: 12),
-                  side: BorderSide(color: const Color(0xFF1976D2).withOpacity(0.5)),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  side: BorderSide(
+                    color: const Color(0xFF1976D2).withOpacity(0.5),
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
               ),
             ),
@@ -786,12 +984,22 @@ class _SignUpPageState extends State<SignUpPage> {
               child: OutlinedButton.icon(
                 onPressed: _openMapPicker,
                 icon: const Icon(Icons.map_outlined, size: 16),
-                label: Text(strings['pick_map']!, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                label: Text(
+                  strings['pick_map']!,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: const Color(0xFF1976D2),
                   padding: const EdgeInsets.symmetric(vertical: 12),
-                  side: BorderSide(color: const Color(0xFF1976D2).withOpacity(0.5)),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  side: BorderSide(
+                    color: const Color(0xFF1976D2).withOpacity(0.5),
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
               ),
             ),
@@ -805,9 +1013,7 @@ class _SignUpPageState extends State<SignUpPage> {
     final result = await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => LocationPicker(
-          initialCenter: _workCenter,
-        ),
+        builder: (context) => LocationPicker(initialCenter: _workCenter),
       ),
     );
     if (result != null && result is LatLng) {
@@ -821,15 +1027,30 @@ class _SignUpPageState extends State<SignUpPage> {
   Widget _buildWorkRadiusSelector(Map<String, String> strings) {
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(color: Colors.grey[50], borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.grey[200]!)),
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey[200]!),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const Icon(Icons.radar_rounded, color: Color(0xFF1976D2), size: 20),
+              const Icon(
+                Icons.radar_rounded,
+                color: Color(0xFF1976D2),
+                size: 20,
+              ),
               const SizedBox(width: 10),
-              Text(strings['work_radius']!, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.black87)),
+              Text(
+                strings['work_radius']!,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 12),
@@ -837,8 +1058,15 @@ class _SignUpPageState extends State<SignUpPage> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                strings['radius_val']!.replaceFirst('{val}', (_workRadius / 1000).toStringAsFixed(1)),
-                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1976D2)),
+                strings['radius_val']!.replaceFirst(
+                  '{val}',
+                  (_workRadius / 1000).toStringAsFixed(1),
+                ),
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF1976D2),
+                ),
               ),
               TextButton.icon(
                 onPressed: () async {
@@ -856,12 +1084,16 @@ class _SignUpPageState extends State<SignUpPage> {
                       _workCenter = result['center'];
                       _workRadius = result['radius'];
                     });
-                    if (_workCenter != null) _updateTownFromLocation(_workCenter!);
+                    if (_workCenter != null)
+                      _updateTownFromLocation(_workCenter!);
                   }
                 },
                 icon: const Icon(Icons.edit_location_alt_rounded, size: 18),
                 label: Text(strings['select_radius']!),
-                style: TextButton.styleFrom(foregroundColor: const Color(0xFF1976D2), padding: EdgeInsets.zero),
+                style: TextButton.styleFrom(
+                  foregroundColor: const Color(0xFF1976D2),
+                  padding: EdgeInsets.zero,
+                ),
               ),
             ],
           ),
@@ -878,11 +1110,16 @@ class _SignUpPageState extends State<SignUpPage> {
           builder: (context, constraints) => Autocomplete<String>(
             optionsBuilder: (TextEditingValue textEditingValue) {
               if (textEditingValue.text.isEmpty) return _allProfessions;
-              return _allProfessions.where((option) => option.toLowerCase().contains(textEditingValue.text.toLowerCase()));
+              return _allProfessions.where(
+                (option) => option.toLowerCase().contains(
+                  textEditingValue.text.toLowerCase(),
+                ),
+              );
             },
             onSelected: (selection) {
               setState(() {
-                if (!_selectedProfessions.contains(selection)) _selectedProfessions.add(selection);
+                if (!_selectedProfessions.contains(selection))
+                  _selectedProfessions.add(selection);
               });
               _professionsSearchController?.clear();
             },
@@ -896,7 +1133,10 @@ class _SignUpPageState extends State<SignUpPage> {
                   child: Container(
                     width: constraints.maxWidth,
                     constraints: const BoxConstraints(maxHeight: 250),
-                    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
                     child: ListView.separated(
                       padding: EdgeInsets.zero,
                       shrinkWrap: true,
@@ -905,7 +1145,10 @@ class _SignUpPageState extends State<SignUpPage> {
                       itemBuilder: (context, index) {
                         final option = options.elementAt(index);
                         return ListTile(
-                          title: Text(option, style: const TextStyle(fontSize: 14)),
+                          title: Text(
+                            option,
+                            style: const TextStyle(fontSize: 14),
+                          ),
                           onTap: () => onSelected(option),
                         );
                       },
@@ -914,16 +1157,17 @@ class _SignUpPageState extends State<SignUpPage> {
                 ),
               );
             },
-            fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
-              _professionsSearchController = controller;
-              return _buildStyledTextField(
-                controller: controller,
-                labelText: strings['professions']!,
-                icon: Icons.work_outline,
-                focusNode: focusNode,
-                hintText: strings['search_hint'],
-              );
-            },
+            fieldViewBuilder:
+                (context, controller, focusNode, onFieldSubmitted) {
+                  _professionsSearchController = controller;
+                  return _buildStyledTextField(
+                    controller: controller,
+                    labelText: strings['professions']!,
+                    icon: Icons.work_outline,
+                    focusNode: focusNode,
+                    hintText: strings['search_hint'],
+                  );
+                },
           ),
         ),
         if (_selectedProfessions.isNotEmpty) ...[
@@ -931,14 +1175,27 @@ class _SignUpPageState extends State<SignUpPage> {
           Wrap(
             spacing: 8,
             runSpacing: 8,
-            children: _selectedProfessions.map((prof) => Chip(
-              label: Text(prof, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
-              backgroundColor: const Color(0xFF1976D2).withOpacity(0.1),
-              side: BorderSide.none,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-              deleteIcon: const Icon(Icons.close, size: 14),
-              onDeleted: () => setState(() => _selectedProfessions.remove(prof)),
-            )).toList(),
+            children: _selectedProfessions
+                .map(
+                  (prof) => Chip(
+                    label: Text(
+                      prof,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    backgroundColor: const Color(0xFF1976D2).withOpacity(0.1),
+                    side: BorderSide.none,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    deleteIcon: const Icon(Icons.close, size: 14),
+                    onDeleted: () =>
+                        setState(() => _selectedProfessions.remove(prof)),
+                  ),
+                )
+                .toList(),
           ),
         ],
       ],
@@ -949,15 +1206,29 @@ class _SignUpPageState extends State<SignUpPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(strings['user_type']!, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.black87)),
+        Text(
+          strings['user_type']!,
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 14,
+            color: Colors.black87,
+          ),
+        ),
         const SizedBox(height: 10),
         Container(
           padding: const EdgeInsets.all(4),
-          decoration: BoxDecoration(color: Colors.grey[100], borderRadius: BorderRadius.circular(16)),
+          decoration: BoxDecoration(
+            color: Colors.grey[100],
+            borderRadius: BorderRadius.circular(16),
+          ),
           child: Row(
             children: [
-              Expanded(child: _buildTypeButton(strings['normal']!, UserType.normal)),
-              Expanded(child: _buildTypeButton(strings['pro']!, UserType.worker)),
+              Expanded(
+                child: _buildTypeButton(strings['normal']!, UserType.normal),
+              ),
+              Expanded(
+                child: _buildTypeButton(strings['pro']!, UserType.worker),
+              ),
             ],
           ),
         ),
@@ -975,12 +1246,23 @@ class _SignUpPageState extends State<SignUpPage> {
         decoration: BoxDecoration(
           color: isSelected ? Colors.white : Colors.transparent,
           borderRadius: BorderRadius.circular(12),
-          boxShadow: isSelected ? [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 4, offset: const Offset(0, 2))] : null,
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ]
+              : null,
         ),
         child: Text(
           label,
           textAlign: TextAlign.center,
-          style: TextStyle(color: isSelected ? const Color(0xFF1976D2) : Colors.grey[600], fontWeight: FontWeight.bold),
+          style: TextStyle(
+            color: isSelected ? const Color(0xFF1976D2) : Colors.grey[600],
+            fontWeight: FontWeight.bold,
+          ),
         ),
       ),
     );
@@ -1003,7 +1285,14 @@ class _SignUpPageState extends State<SignUpPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(labelText, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.black87)),
+        Text(
+          labelText,
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 14,
+            color: Colors.black87,
+          ),
+        ),
         const SizedBox(height: 8),
         TextFormField(
           controller: controller,
@@ -1020,8 +1309,14 @@ class _SignUpPageState extends State<SignUpPage> {
             prefixIcon: Icon(icon, color: const Color(0xFF1976D2), size: 20),
             filled: true,
             fillColor: enabled ? Colors.grey[100] : Colors.grey[200],
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide.none,
+            ),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 16,
+            ),
           ),
           validator: validator,
         ),

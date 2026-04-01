@@ -6,6 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:untitled1/services/language_provider.dart';
+import 'package:untitled1/services/analytics_service.dart';
 import 'package:untitled1/ptofile.dart';
 import 'package:untitled1/pages/average_prices.dart';
 
@@ -44,7 +45,8 @@ class _SearchPageState extends State<SearchPage> {
   int _fetchSessionId = 0;
 
   final String _googleMapsApiKey = "AIzaSyCL9zie59-f_Hiyqj_dYtaMziReezcd6fU";
-  Map<String, Map<String, dynamic>> _matrixDistances = {}; // UID -> { 'text': '1.2 km', 'value': 1200 }
+  Map<String, Map<String, dynamic>> _matrixDistances =
+      {}; // UID -> { 'text': '1.2 km', 'value': 1200 }
 
   @override
   void initState() {
@@ -53,7 +55,8 @@ class _SearchPageState extends State<SearchPage> {
     _getCurrentLocation(silent: true);
 
     _scrollController.addListener(() {
-      if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent + 50) {
+      if (_scrollController.position.pixels >=
+          _scrollController.position.maxScrollExtent + 50) {
         if (_hasMore && !_isFetchingMore && _showWorkerList) {
           _fetchWorkers();
         }
@@ -101,10 +104,7 @@ class _SearchPageState extends State<SearchPage> {
 
   Future<void> _trackSearch(String professionEn) async {
     try {
-      await _firestore.collection('metadata').doc('analytics').collection('professions').doc(professionEn).set({
-        'searchCount': FieldValue.increment(1),
-        'lastSearched': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      await AnalyticsService.logSearchProfession(professionEn);
     } catch (e) {
       debugPrint("Analytics error: $e");
     }
@@ -133,10 +133,15 @@ class _SearchPageState extends State<SearchPage> {
 
     try {
       // Query 'users' collection with 'worker' role
-      Query query = _firestore.collection('users').where('role', isEqualTo: 'worker');
+      Query query = _firestore
+          .collection('users')
+          .where('role', isEqualTo: 'worker');
 
       if (_selectedProfession != null) {
-        query = query.where('professions', arrayContains: _selectedProfession!['en']);
+        query = query.where(
+          'professions',
+          arrayContains: _selectedProfession!['en'],
+        );
       }
 
       if (_sortBy == 'rating') {
@@ -160,7 +165,7 @@ class _SearchPageState extends State<SearchPage> {
 
       if (snapshot.docs.isNotEmpty) {
         _lastDocument = snapshot.docs.last;
-        
+
         final newWorkers = snapshot.docs.map((doc) {
           final data = doc.data() as Map<String, dynamic>;
           data['uid'] = doc.id;
@@ -223,8 +228,8 @@ class _SearchPageState extends State<SearchPage> {
       setState(() {
         _currentPosition = position;
         if (!silent) {
-           _sortBy = 'distance';
-           _fetchWorkers(isRefresh: true);
+          _sortBy = 'distance';
+          _fetchWorkers(isRefresh: true);
         }
       });
 
@@ -241,18 +246,23 @@ class _SearchPageState extends State<SearchPage> {
   Future<void> _fetchMatrixDistances() async {
     if (_currentPosition == null || _allWorkers.isEmpty) return;
 
-    List<Map<String, dynamic>> targets = _allWorkers.where((w) => !_matrixDistances.containsKey(w['uid'])).toList();
+    List<Map<String, dynamic>> targets = _allWorkers
+        .where((w) => !_matrixDistances.containsKey(w['uid']))
+        .toList();
 
     if (targets.isEmpty) return;
 
     for (var i = 0; i < targets.length; i += 25) {
       final chunk = targets.skip(i).take(25).toList();
-      final destinations = chunk.map((w) {
-        double? lat = w['lat']?.toDouble();
-        double? lng = w['lng']?.toDouble();
-        if (lat != null && lng != null) return '$lat,$lng';
-        return null;
-      }).whereType<String>().join('|');
+      final destinations = chunk
+          .map((w) {
+            double? lat = w['lat']?.toDouble();
+            double? lng = w['lng']?.toDouble();
+            if (lat != null && lng != null) return '$lat,$lng';
+            return null;
+          })
+          .whereType<String>()
+          .join('|');
 
       if (destinations.isEmpty) continue;
 
@@ -261,7 +271,7 @@ class _SearchPageState extends State<SearchPage> {
           'https://maps.googleapis.com/maps/api/distancematrix/json'
           '?origins=${_currentPosition!.latitude},${_currentPosition!.longitude}'
           '&destinations=$destinations'
-          '&key=$_googleMapsApiKey'
+          '&key=$_googleMapsApiKey',
         );
 
         final response = await http.get(url);
@@ -298,9 +308,19 @@ class _SearchPageState extends State<SearchPage> {
       try {
         final startParts = v['start']!.split('-');
         final endParts = v['end']!.split('-');
-        final start = DateTime(int.parse(startParts[0]), int.parse(startParts[1]), int.parse(startParts[2]));
-        final end = DateTime(int.parse(endParts[0]), int.parse(endParts[1]), int.parse(endParts[2]));
-        if (d.isAtSameMomentAs(start) || d.isAtSameMomentAs(end) || (d.isAfter(start) && d.isBefore(end))) {
+        final start = DateTime(
+          int.parse(startParts[0]),
+          int.parse(startParts[1]),
+          int.parse(startParts[2]),
+        );
+        final end = DateTime(
+          int.parse(endParts[0]),
+          int.parse(endParts[1]),
+          int.parse(endParts[2]),
+        );
+        if (d.isAtSameMomentAs(start) ||
+            d.isAtSameMomentAs(end) ||
+            (d.isAfter(start) && d.isBefore(end))) {
           return false;
         }
       } catch (_) {}
@@ -319,7 +339,11 @@ class _SearchPageState extends State<SearchPage> {
     setState(() {
       if (_showWorkerList) {
         _filteredWorkers = _allWorkers.where((w) {
-          final workerProfs = (w['professions'] as List?)?.map((e) => e.toString().toLowerCase().trim()).toList() ?? [];
+          final workerProfs =
+              (w['professions'] as List?)
+                  ?.map((e) => e.toString().toLowerCase().trim())
+                  .toList() ??
+              [];
 
           final matchesSearch =
               query.isEmpty ||
@@ -337,8 +361,10 @@ class _SearchPageState extends State<SearchPage> {
                 matchesRadius = distanceMeters <= radius;
               }
             } else {
-              double? workerLat = w['workCenterLat']?.toDouble() ?? w['lat']?.toDouble();
-              double? workerLng = w['workCenterLng']?.toDouble() ?? w['lng']?.toDouble();
+              double? workerLat =
+                  w['workCenterLat']?.toDouble() ?? w['lat']?.toDouble();
+              double? workerLng =
+                  w['workCenterLng']?.toDouble() ?? w['lng']?.toDouble();
 
               if (workerLat != null && workerLng != null && radius != null) {
                 double distance = Geolocator.distanceBetween(
@@ -354,7 +380,9 @@ class _SearchPageState extends State<SearchPage> {
 
           bool matchesVerified = true;
           if (_filterByVerified) {
-            matchesVerified = (w['isIdVerified'] == true) || (w['isBusinessVerified'] == true);
+            matchesVerified =
+                (w['isIdVerified'] == true) ||
+                (w['isBusinessVerified'] == true);
           }
 
           bool matchesDate = true;
@@ -364,18 +392,27 @@ class _SearchPageState extends State<SearchPage> {
 
           bool matchesSelectedProf = true;
           if (_selectedProfession != null) {
-            final targetProf = _selectedProfession!['en'].toString().toLowerCase().trim();
+            final targetProf = _selectedProfession!['en']
+                .toString()
+                .toLowerCase()
+                .trim();
             matchesSelectedProf = workerProfs.any((p) => p == targetProf);
           }
 
-          return matchesSearch && matchesRadius && matchesVerified && matchesDate && matchesSelectedProf;
+          return matchesSearch &&
+              matchesRadius &&
+              matchesVerified &&
+              matchesDate &&
+              matchesSelectedProf;
         }).toList();
 
         if (_sortBy == 'distance' && _currentPosition != null) {
           _filteredWorkers.sort((a, b) {
-            if (_matrixDistances.containsKey(a['uid']) && _matrixDistances.containsKey(b['uid'])) {
-               return (_matrixDistances[a['uid']]!['value'] as int)
-                   .compareTo(_matrixDistances[b['uid']]!['value'] as int);
+            if (_matrixDistances.containsKey(a['uid']) &&
+                _matrixDistances.containsKey(b['uid'])) {
+              return (_matrixDistances[a['uid']]!['value'] as int).compareTo(
+                _matrixDistances[b['uid']]!['value'] as int,
+              );
             }
             return 0;
           });
@@ -581,11 +618,11 @@ class _SearchPageState extends State<SearchPage> {
       ),
       body: _showWorkerList
           ? (_isLoadingWorkers
-              ? const Center(child: CircularProgressIndicator())
-              : _buildWorkerList(locale, themeColor))
+                ? const Center(child: CircularProgressIndicator())
+                : _buildWorkerList(locale, themeColor))
           : (_isLoadingProfessions
-              ? const Center(child: CircularProgressIndicator())
-              : _buildProfessionGrid(locale)),
+                ? const Center(child: CircularProgressIndicator())
+                : _buildProfessionGrid(locale)),
     );
   }
 
@@ -601,7 +638,10 @@ class _SearchPageState extends State<SearchPage> {
         onChanged: (_) => _applyFilters(),
         style: const TextStyle(color: Colors.white),
         decoration: InputDecoration(
-          hintStyle: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 14),
+          hintStyle: TextStyle(
+            color: Colors.white.withOpacity(0.7),
+            fontSize: 14,
+          ),
           hintText: _showWorkerList
               ? (locale == 'he'
                     ? 'חפש לפי שם או עיר...'
@@ -721,7 +761,9 @@ class _SearchPageState extends State<SearchPage> {
     }
     return ListView.builder(
       controller: _scrollController,
-      physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+      physics: const BouncingScrollPhysics(
+        parent: AlwaysScrollableScrollPhysics(),
+      ),
       padding: const EdgeInsets.all(16),
       itemCount: _filteredWorkers.length + (_hasMore ? 1 : 0),
       itemBuilder: (context, index) {
@@ -730,16 +772,25 @@ class _SearchPageState extends State<SearchPage> {
             child: Padding(
               padding: const EdgeInsets.all(16.0),
               child: _isFetchingMore
-                ? const CircularProgressIndicator()
-                : Column(
-                    children: [
-                      const Icon(Icons.arrow_upward, color: Colors.grey, size: 20),
-                      Text(
-                        locale == 'he' ? 'משוך למעלה לעוד' : 'Pull up to load more',
-                        style: const TextStyle(color: Colors.grey, fontSize: 12),
-                      ),
-                    ],
-                  ),
+                  ? const CircularProgressIndicator()
+                  : Column(
+                      children: [
+                        const Icon(
+                          Icons.arrow_upward,
+                          color: Colors.grey,
+                          size: 20,
+                        ),
+                        Text(
+                          locale == 'he'
+                              ? 'משוך למעלה לעוד'
+                              : 'Pull up to load more',
+                          style: const TextStyle(
+                            color: Colors.grey,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
             ),
           );
         }
@@ -749,8 +800,15 @@ class _SearchPageState extends State<SearchPage> {
         String distanceStr = "";
         if (_matrixDistances.containsKey(w['uid'])) {
           distanceStr = _matrixDistances[w['uid']]!['text'];
-        } else if (_currentPosition != null && w['lat'] != null && w['lng'] != null) {
-          double distance = Geolocator.distanceBetween(_currentPosition!.latitude, _currentPosition!.longitude, w['lat'], w['lng']);
+        } else if (_currentPosition != null &&
+            w['lat'] != null &&
+            w['lng'] != null) {
+          double distance = Geolocator.distanceBetween(
+            _currentPosition!.latitude,
+            _currentPosition!.longitude,
+            w['lat'],
+            w['lng'],
+          );
           if (distance < 1000) {
             distanceStr = "${distance.toStringAsFixed(0)}m";
           } else {
@@ -769,7 +827,8 @@ class _SearchPageState extends State<SearchPage> {
         if (_selectedProfession != null) {
           String profKey = _selectedProfession!['en'];
           if (w['professionStats']?[profKey] != null) {
-            displayRating = (w['professionStats'][profKey]['avg'] ?? 0.0).toDouble();
+            displayRating = (w['professionStats'][profKey]['avg'] ?? 0.0)
+                .toDouble();
             displayReviewCount = w['professionStats'][profKey]['count'] ?? 0;
             isServiceSpecific = true;
           } else {
@@ -828,14 +887,34 @@ class _SearchPageState extends State<SearchPage> {
                     Flexible(
                       child: Text(
                         w['name'] ?? 'Worker',
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 17,
+                        ),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
                     const SizedBox(width: 4),
-                    if (isIdVerified) const Icon(Icons.assignment_ind, color: Colors.green, size: 14),
-                    if (isBusinessVerified) const Padding(padding: EdgeInsets.only(left: 2), child: Icon(Icons.business_center, color: Colors.orange, size: 14)),
-                    if (isInsured) const Padding(padding: EdgeInsets.only(left: 2), child: Icon(Icons.shield, color: Colors.blue, size: 14)),
+                    if (isIdVerified)
+                      const Icon(
+                        Icons.assignment_ind,
+                        color: Colors.green,
+                        size: 14,
+                      ),
+                    if (isBusinessVerified)
+                      const Padding(
+                        padding: EdgeInsets.only(left: 2),
+                        child: Icon(
+                          Icons.business_center,
+                          color: Colors.orange,
+                          size: 14,
+                        ),
+                      ),
+                    if (isInsured)
+                      const Padding(
+                        padding: EdgeInsets.only(left: 2),
+                        child: Icon(Icons.shield, color: Colors.blue, size: 14),
+                      ),
                   ],
                 ),
                 subtitle: Column(
@@ -853,7 +932,10 @@ class _SearchPageState extends State<SearchPage> {
                         Flexible(
                           child: Text(
                             w['town'] ?? '',
-                            style: const TextStyle(color: Colors.grey, fontSize: 13),
+                            style: const TextStyle(
+                              color: Colors.grey,
+                              fontSize: 13,
+                            ),
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
@@ -861,16 +943,24 @@ class _SearchPageState extends State<SearchPage> {
                           const SizedBox(width: 8),
                           Text(
                             distanceStr,
-                            style: TextStyle(color: themeColor, fontSize: 12, fontWeight: FontWeight.bold),
+                            style: TextStyle(
+                              color: themeColor,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
-                        ]
+                        ],
                       ],
                     ),
-                    if (w['professions'] != null && (w['professions'] as List).isNotEmpty) ...[
+                    if (w['professions'] != null &&
+                        (w['professions'] as List).isNotEmpty) ...[
                       const SizedBox(height: 4),
                       Text(
                         (w['professions'] as List).join(', '),
-                        style: const TextStyle(color: Colors.grey, fontSize: 12),
+                        style: const TextStyle(
+                          color: Colors.grey,
+                          fontSize: 12,
+                        ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -888,8 +978,14 @@ class _SearchPageState extends State<SearchPage> {
                         FittedBox(
                           fit: BoxFit.scaleDown,
                           child: Text(
-                            locale == 'he' ? 'דירוג לשירות זה' : 'Rating for service',
-                            style: TextStyle(fontSize: 8, color: themeColor, fontWeight: FontWeight.bold),
+                            locale == 'he'
+                                ? 'דירוג לשירות זה'
+                                : 'Rating for service',
+                            style: TextStyle(
+                              fontSize: 8,
+                              color: themeColor,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
                       const SizedBox(height: 1),
@@ -926,18 +1022,32 @@ class _SearchPageState extends State<SearchPage> {
                         padding: const EdgeInsets.only(top: 1, right: 4),
                         child: Text(
                           "($displayReviewCount)",
-                          style: const TextStyle(fontSize: 10, color: Colors.grey, fontWeight: FontWeight.w500),
+                          style: const TextStyle(
+                            fontSize: 10,
+                            color: Colors.grey,
+                            fontWeight: FontWeight.w500,
+                          ),
                         ),
                       ),
                     ],
                   ),
                 ),
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => Profile(userId: w['uid']),
-                  ),
-                ),
+                onTap: () {
+                  AnalyticsService.logWorkerProfileOpened(
+                    source: 'search_results',
+                    profession: _selectedProfession?['en']?.toString(),
+                  );
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => Profile(
+                        userId: w['uid'],
+                        viewedProfession: _selectedProfession?['en']
+                            ?.toString(),
+                      ),
+                    ),
+                  );
+                },
               ),
               if (isNew)
                 Positioned(
@@ -945,14 +1055,21 @@ class _SearchPageState extends State<SearchPage> {
                   left: locale == 'he' ? null : 8,
                   right: locale == 'he' ? 8 : null,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.red,
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
                       locale == 'he' ? 'חדש' : 'NEW',
-                      style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 9,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
                 ),
@@ -975,13 +1092,21 @@ class _SearchPageState extends State<SearchPage> {
           mainAxisSize: MainAxisSize.min,
           children: [
             SwitchListTile(
-              title: Text(locale == 'he' ? 'סנן לפי רדיוס עבודה' : 'Filter by Work Radius'),
-              subtitle: Text(locale == 'he' ? 'הצג רק עובדים שמגיעים אליך' : 'Show only workers who serve your area'),
+              title: Text(
+                locale == 'he'
+                    ? 'סנן לפי רדיוס עבודה'
+                    : 'Filter by Work Radius',
+              ),
+              subtitle: Text(
+                locale == 'he'
+                    ? 'הצג רק עובדים שמגיעים אליך'
+                    : 'Show only workers who serve your area',
+              ),
               value: _filterByRadius,
               onChanged: (val) {
                 setState(() => _filterByRadius = val);
                 if (val && _currentPosition == null) {
-                   _getCurrentLocation();
+                  _getCurrentLocation();
                 } else {
                   _applyFilters();
                 }
@@ -1005,7 +1130,9 @@ class _SearchPageState extends State<SearchPage> {
             ListTile(
               leading: Icon(Icons.my_location, color: themeColor),
               title: Text(locale == 'he' ? 'הכי קרוב אלי' : 'Nearest to Me'),
-              trailing: _sortBy == 'distance' ? Icon(Icons.check_circle, color: themeColor) : null,
+              trailing: _sortBy == 'distance'
+                  ? Icon(Icons.check_circle, color: themeColor)
+                  : null,
               onTap: () {
                 Navigator.pop(context);
                 _getCurrentLocation();

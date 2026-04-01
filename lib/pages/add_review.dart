@@ -29,7 +29,7 @@ class _AddReviewPageState extends State<AddReviewPage> {
   double _priceRating = 5.0;
   double _workRating = 5.0;
   double _professionalismRating = 5.0;
-  
+
   final List<File> _newImages = [];
   List<String> _existingImageUrls = [];
   bool _isUploading = false;
@@ -42,9 +42,12 @@ class _AddReviewPageState extends State<AddReviewPage> {
       _commentController.text = widget.existingReview!['comment'] ?? '';
       _priceRating = (widget.existingReview!['priceRating'] ?? 5.0).toDouble();
       _workRating = (widget.existingReview!['workRating'] ?? 5.0).toDouble();
-      _professionalismRating = (widget.existingReview!['professionalismRating'] ?? 5.0).toDouble();
+      _professionalismRating =
+          (widget.existingReview!['professionalismRating'] ?? 5.0).toDouble();
       _selectedProfession = widget.existingReview!['profession'];
-      _existingImageUrls = List<String>.from(widget.existingReview!['imageUrls'] ?? []);
+      _existingImageUrls = List<String>.from(
+        widget.existingReview!['imageUrls'] ?? [],
+      );
     } else if (widget.professions.isNotEmpty) {
       _selectedProfession = widget.professions.first;
     }
@@ -71,10 +74,115 @@ class _AddReviewPageState extends State<AddReviewPage> {
     });
   }
 
+  String _docIdForProfession(String profession) {
+    return profession.trim().replaceAll('/', '_');
+  }
+
+  double _toDouble(dynamic value, {double fallback = 0.0}) {
+    if (value is num) return value.toDouble();
+    return fallback;
+  }
+
+  Future<void> _recalculateProRatingsForWorker() async {
+    final firestore = FirebaseFirestore.instance;
+    final workerRef = firestore.collection('users').doc(widget.targetUserId);
+    final reviewsSnap = await workerRef.collection('reviews').get();
+
+    final Map<String, List<Map<String, dynamic>>> grouped = {};
+    for (final doc in reviewsSnap.docs) {
+      final data = doc.data();
+      final profession = (data['profession'] ?? '').toString().trim();
+      if (profession.isEmpty) continue;
+      grouped.putIfAbsent(profession, () => []).add(data);
+    }
+
+    final batch = firestore.batch();
+    final proRatingCol = workerRef.collection('ProRating');
+
+    final existingDocs = await proRatingCol.get();
+    for (final oldDoc in existingDocs.docs) {
+      if (!grouped.containsKey(oldDoc.id)) {
+        batch.delete(oldDoc.reference);
+      }
+    }
+
+    final Map<String, dynamic> professionStats = {};
+    int totalReviews = 0;
+    double totalOverallSum = 0.0;
+
+    grouped.forEach((profession, reviews) {
+      final count = reviews.length;
+      if (count == 0) return;
+
+      double overallSum = 0.0;
+      double priceSum = 0.0;
+      double serviceSum = 0.0;
+      double timingSum = 0.0;
+      double workQualitySum = 0.0;
+
+      for (final review in reviews) {
+        final overall = _toDouble(review['rating'], fallback: 0.0);
+        final price = _toDouble(review['priceRating'], fallback: overall);
+        final service = _toDouble(
+          review['serviceRating'],
+          fallback: _toDouble(
+            review['professionalismRating'],
+            fallback: overall,
+          ),
+        );
+        final timing = _toDouble(review['timingRating'], fallback: overall);
+        final workQuality = _toDouble(
+          review['workQualityRating'],
+          fallback: _toDouble(review['workRating'], fallback: overall),
+        );
+
+        overallSum += overall;
+        priceSum += price;
+        serviceSum += service;
+        timingSum += timing;
+        workQualitySum += workQuality;
+      }
+
+      final avgOverall = overallSum / count;
+      final avgPrice = priceSum / count;
+      final avgService = serviceSum / count;
+      final avgTiming = timingSum / count;
+      final avgWorkQuality = workQualitySum / count;
+
+      final docId = _docIdForProfession(profession);
+      batch.set(proRatingCol.doc(docId), {
+        'profession': profession,
+        'reviewCount': count,
+        'avgOverallRating': avgOverall,
+        'avgPriceRating': avgPrice,
+        'avgServiceRating': avgService,
+        'avgTimingRating': avgTiming,
+        'avgWorkQualityRating': avgWorkQuality,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      professionStats[profession] = {'avg': avgOverall, 'count': count};
+
+      totalReviews += count;
+      totalOverallSum += overallSum;
+    });
+
+    batch.set(workerRef, {
+      'professionStats': professionStats,
+      'avgRating': totalReviews == 0 ? 0.0 : totalOverallSum / totalReviews,
+      'reviewCount': totalReviews,
+      'ratingsUpdatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+
+    await batch.commit();
+  }
+
   Future<void> _submitReview() async {
     if (_commentController.text.trim().isEmpty) {
-       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('אנא כתוב תגובה')));
-       return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('אנא כתוב תגובה')));
+      return;
     }
 
     setState(() => _isUploading = true);
@@ -86,19 +194,21 @@ class _AddReviewPageState extends State<AddReviewPage> {
       List<String> finalImageUrls = List.from(_existingImageUrls);
 
       for (var i = 0; i < _newImages.length; i++) {
-        final fileName = 'review_${DateTime.now().millisecondsSinceEpoch}_$i.jpg';
+        final fileName =
+            'review_${DateTime.now().millisecondsSinceEpoch}_$i.jpg';
         final storageRef = FirebaseStorage.instance
             .ref()
             .child('reviews')
             .child(widget.targetUserId)
             .child(fileName);
-        
+
         await storageRef.putFile(_newImages[i]);
         final imageUrl = await storageRef.getDownloadURL();
         finalImageUrls.add(imageUrl);
       }
 
-      double overallRating = (_priceRating + _workRating + _professionalismRating) / 3;
+      double overallRating =
+          (_priceRating + _workRating + _professionalismRating) / 3;
 
       final reviewData = {
         'userId': user.uid,
@@ -116,26 +226,29 @@ class _AddReviewPageState extends State<AddReviewPage> {
 
       // Unified collection name 'users'
       final reviewCollection = FirebaseFirestore.instance
-            .collection('users')
-            .doc(widget.targetUserId)
-            .collection('reviews');
+          .collection('users')
+          .doc(widget.targetUserId)
+          .collection('reviews');
 
       if (widget.existingReview != null) {
-        await reviewCollection.doc(widget.existingReview!['id']).update(reviewData);
+        await reviewCollection
+            .doc(widget.existingReview!['id'])
+            .update(reviewData);
       } else {
         await reviewCollection.doc(user.uid).set(reviewData);
       }
 
+      await _recalculateProRatingsForWorker();
+
       if (mounted) {
         Navigator.pop(context, true);
       }
-
     } catch (e) {
       debugPrint("Review upload error: $e");
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('הגשת הביקורת נכשלה: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('הגשת הביקורת נכשלה: $e')));
       }
     } finally {
       if (mounted) setState(() => _isUploading = false);
@@ -143,7 +256,10 @@ class _AddReviewPageState extends State<AddReviewPage> {
   }
 
   Map<String, String> _getLocalizedStrings() {
-    final locale = Provider.of<LanguageProvider>(context, listen: false).locale.languageCode;
+    final locale = Provider.of<LanguageProvider>(
+      context,
+      listen: false,
+    ).locale.languageCode;
     if (locale == 'he') {
       return {
         'title': widget.existingReview != null ? 'ערוך ביקורת' : 'כתוב ביקורת',
@@ -166,19 +282,32 @@ class _AddReviewPageState extends State<AddReviewPage> {
       'professionalism': 'Professionalism',
       'comment_hint': 'Tell us about your experience...',
       'add_images': 'Add Images',
-      'submit': widget.existingReview != null ? 'Update Review' : 'Submit Review',
+      'submit': widget.existingReview != null
+          ? 'Update Review'
+          : 'Submit Review',
       'uploading': 'Submitting review...',
       'rating_summary': 'How was your experience?',
     };
   }
 
-  Widget _buildRatingStars(String label, double rating, Function(double) onRatingChanged) {
+  Widget _buildRatingStars(
+    String label,
+    double rating,
+    Function(double) onRatingChanged,
+  ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 4.0),
-          child: Text(label, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15, color: Colors.black87)),
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontWeight: FontWeight.w600,
+              fontSize: 15,
+              color: Colors.black87,
+            ),
+          ),
         ),
         Row(
           mainAxisAlignment: MainAxisAlignment.start,
@@ -187,7 +316,9 @@ class _AddReviewPageState extends State<AddReviewPage> {
               iconSize: 32,
               visualDensity: VisualDensity.compact,
               icon: Icon(
-                index < rating ? Icons.star_rounded : Icons.star_outline_rounded,
+                index < rating
+                    ? Icons.star_rounded
+                    : Icons.star_outline_rounded,
                 color: Colors.amber,
               ),
               onPressed: () => onRatingChanged(index + 1.0),
@@ -202,14 +333,21 @@ class _AddReviewPageState extends State<AddReviewPage> {
   @override
   Widget build(BuildContext context) {
     final strings = _getLocalizedStrings();
-    final isRtl = Provider.of<LanguageProvider>(context).locale.languageCode == 'he';
+    final isRtl =
+        Provider.of<LanguageProvider>(context).locale.languageCode == 'he';
 
     return Directionality(
       textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
       child: Scaffold(
         backgroundColor: Colors.white,
         appBar: AppBar(
-          title: Text(strings['title']!, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black)),
+          title: Text(
+            strings['title']!,
+            style: const TextStyle(
+              fontWeight: FontWeight.bold,
+              color: Colors.black,
+            ),
+          ),
           centerTitle: true,
           elevation: 0,
           backgroundColor: Colors.white,
@@ -226,23 +364,41 @@ class _AddReviewPageState extends State<AddReviewPage> {
             children: [
               Text(
                 strings['rating_summary']!,
-                style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.black),
+                style: const TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black,
+                ),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 32),
-              
+
               if (widget.professions.length > 1) ...[
-                Text(strings['profession_label']!, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                Text(
+                  strings['profession_label']!,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
                   value: _selectedProfession,
-                  items: widget.professions.map((p) => DropdownMenuItem(value: p, child: Text(p))).toList(),
+                  items: widget.professions
+                      .map((p) => DropdownMenuItem(value: p, child: Text(p)))
+                      .toList(),
                   onChanged: (val) => setState(() => _selectedProfession = val),
                   decoration: InputDecoration(
                     filled: true,
                     fillColor: Colors.grey[50],
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: BorderSide.none,
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 32),
@@ -256,13 +412,25 @@ class _AddReviewPageState extends State<AddReviewPage> {
                 ),
                 child: Column(
                   children: [
-                    _buildRatingStars(strings['price_rating']!, _priceRating, (val) => setState(() => _priceRating = val)),
-                    _buildRatingStars(strings['work_rating']!, _workRating, (val) => setState(() => _workRating = val)),
-                    _buildRatingStars(strings['professionalism']!, _professionalismRating, (val) => setState(() => _professionalismRating = val)),
+                    _buildRatingStars(
+                      strings['price_rating']!,
+                      _priceRating,
+                      (val) => setState(() => _priceRating = val),
+                    ),
+                    _buildRatingStars(
+                      strings['work_rating']!,
+                      _workRating,
+                      (val) => setState(() => _workRating = val),
+                    ),
+                    _buildRatingStars(
+                      strings['professionalism']!,
+                      _professionalismRating,
+                      (val) => setState(() => _professionalismRating = val),
+                    ),
                   ],
                 ),
               ),
-              
+
               const SizedBox(height: 32),
               TextField(
                 controller: _commentController,
@@ -280,12 +448,18 @@ class _AddReviewPageState extends State<AddReviewPage> {
                   contentPadding: const EdgeInsets.all(16),
                 ),
               ),
-              
+
               const SizedBox(height: 32),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(strings['add_images']!, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  Text(
+                    strings['add_images']!,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
                   Text(
                     "${_existingImageUrls.length + _newImages.length}/5",
                     style: TextStyle(color: Colors.grey[600], fontSize: 12),
@@ -297,13 +471,22 @@ class _AddReviewPageState extends State<AddReviewPage> {
                 height: 100,
                 child: ListView.builder(
                   scrollDirection: Axis.horizontal,
-                  itemCount: _existingImageUrls.length + _newImages.length < 5 ? _existingImageUrls.length + _newImages.length + 1 : 5,
+                  itemCount: _existingImageUrls.length + _newImages.length < 5
+                      ? _existingImageUrls.length + _newImages.length + 1
+                      : 5,
                   itemBuilder: (context, index) {
                     if (index < _existingImageUrls.length) {
-                      return _buildImageThumb(NetworkImage(_existingImageUrls[index]), () => _removeExistingImage(index));
-                    } else if (index < _existingImageUrls.length + _newImages.length) {
+                      return _buildImageThumb(
+                        NetworkImage(_existingImageUrls[index]),
+                        () => _removeExistingImage(index),
+                      );
+                    } else if (index <
+                        _existingImageUrls.length + _newImages.length) {
                       int newIdx = index - _existingImageUrls.length;
-                      return _buildImageThumb(FileImage(_newImages[newIdx]), () => _removeNewImage(newIdx));
+                      return _buildImageThumb(
+                        FileImage(_newImages[newIdx]),
+                        () => _removeNewImage(newIdx),
+                      );
                     } else {
                       return GestureDetector(
                         onTap: _pickImages,
@@ -314,14 +497,18 @@ class _AddReviewPageState extends State<AddReviewPage> {
                             borderRadius: BorderRadius.circular(16),
                             border: Border.all(color: Colors.grey[200]!),
                           ),
-                          child: Icon(Icons.add_a_photo_outlined, color: Colors.grey[400], size: 30),
+                          child: Icon(
+                            Icons.add_a_photo_outlined,
+                            color: Colors.grey[400],
+                            size: 30,
+                          ),
                         ),
                       );
                     }
                   },
                 ),
               ),
-              
+
               const SizedBox(height: 48),
               ElevatedButton(
                 onPressed: _isUploading ? null : _submitReview,
@@ -329,12 +516,27 @@ class _AddReviewPageState extends State<AddReviewPage> {
                   backgroundColor: const Color(0xFF1976D2),
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 18),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
                   elevation: 2,
                 ),
                 child: _isUploading
-                    ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                    : Text(strings['submit']!, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    ? const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
+                      )
+                    : Text(
+                        strings['submit']!,
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
               ),
               const SizedBox(height: 24),
             ],
@@ -363,7 +565,10 @@ class _AddReviewPageState extends State<AddReviewPage> {
               onTap: onRemove,
               child: Container(
                 padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(color: Colors.black.withOpacity(0.5), shape: BoxShape.circle),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.5),
+                  shape: BoxShape.circle,
+                ),
                 child: const Icon(Icons.close, size: 14, color: Colors.white),
               ),
             ),
