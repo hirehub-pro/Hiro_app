@@ -42,7 +42,8 @@ void main() async {
     if (!kIsWeb &&
         defaultTargetPlatform == TargetPlatform.android &&
         kDebugMode) {
-      await FirebaseAuth.instance.setSettings(forceRecaptchaFlow: true);
+      // Keep Android verification on default flow (Play Integrity first).
+      await FirebaseAuth.instance.setSettings(forceRecaptchaFlow: false);
     }
 
     FirebaseFirestore.instance.settings = const Settings(
@@ -237,7 +238,6 @@ class MyHomePage extends StatefulWidget {
 
 class _MyHomePageState extends State<MyHomePage> {
   int pagenumber = 0;
-  bool _isAdmin = false;
 
   final List<Widget> _pages = [
     const HomePage(),
@@ -278,7 +278,6 @@ class _MyHomePageState extends State<MyHomePage> {
           final data = doc.data() as Map<String, dynamic>;
           if (data['role'] == 'admin') {
             setState(() {
-              _isAdmin = true;
               _pages[4] = const AdminProfile();
             });
           }

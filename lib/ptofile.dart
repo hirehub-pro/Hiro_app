@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -65,6 +64,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
   String _profileImageUrl = "";
   String _userRole = "customer";
   List<String> _userProfessions = [];
+  Map<String, Map<String, String>> _professionTranslations = {};
   List<Map<String, dynamic>> _userReviews = [];
   List<Map<String, dynamic>> _projects = [];
   int _profileViews = 0;
@@ -86,6 +86,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
     super.initState();
     _checkInitialOwnership();
     _initTabController();
+    _loadProfessionTranslations();
 
     _authSubscription = FirebaseAuth.instance.authStateChanges().listen((user) {
       if (user != null && widget.userId == null) {
@@ -94,6 +95,57 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
     });
 
     _fetchUserData();
+  }
+
+  Future<void> _loadProfessionTranslations() async {
+    try {
+      final doc = await _firestore
+          .collection('metadata')
+          .doc('professions')
+          .get();
+      final items = (doc.data()?['items'] as List?) ?? const [];
+
+      final map = <String, Map<String, String>>{};
+      for (final raw in items.whereType<Map>()) {
+        final item = Map<String, dynamic>.from(raw);
+        final en = item['en']?.toString().trim();
+        if (en == null || en.isEmpty) continue;
+
+        map[en.toLowerCase()] = {
+          'en': en,
+          'he': item['he']?.toString().trim() ?? '',
+          'ar': item['ar']?.toString().trim() ?? '',
+          'ru': item['ru']?.toString().trim() ?? '',
+          'am': item['am']?.toString().trim() ?? '',
+        };
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _professionTranslations = map;
+      });
+    } catch (e) {
+      debugPrint("Failed to load profession translations: $e");
+    }
+  }
+
+  String _translateProfessionName(String profession, String localeCode) {
+    final key = profession.trim().toLowerCase();
+    final localized = _professionTranslations[key];
+    if (localized == null) return profession;
+
+    final translated = localized[localeCode]?.trim();
+    if (translated != null && translated.isNotEmpty) {
+      return translated;
+    }
+
+    return localized['en'] ?? profession;
+  }
+
+  List<String> _localizedProfessionList(String localeCode) {
+    return _userProfessions
+        .map((p) => _translateProfessionName(p, localeCode))
+        .toList();
   }
 
   String _weekKey(DateTime date) {
@@ -645,9 +697,10 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
   @override
   Widget build(BuildContext context) {
     final strings = _getLocalizedStrings(context);
-    final isRtl =
-        Provider.of<LanguageProvider>(context).locale.languageCode == 'he' ||
-        Provider.of<LanguageProvider>(context).locale.languageCode == 'ar';
+    final localeCode = Provider.of<LanguageProvider>(
+      context,
+    ).locale.languageCode;
+    final isRtl = localeCode == 'he' || localeCode == 'ar';
 
     if (_isLoading) {
       return const Scaffold(
@@ -843,7 +896,9 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
                             const SizedBox(height: 6),
                             if (_userProfessions.isNotEmpty)
                               Text(
-                                _userProfessions.join(' • '),
+                                _localizedProfessionList(
+                                  localeCode,
+                                ).join(' • '),
                                 style: TextStyle(
                                   color: Colors.white.withOpacity(0.9),
                                   fontSize: 16,
@@ -946,7 +1001,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
               color: Colors.white,
               child: TabBarView(
                 controller: _tabController,
-                children: _buildTabViews(strings),
+                children: _buildTabViews(strings, localeCode),
               ),
             ),
           ),
@@ -1046,7 +1101,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
     return [Tab(text: strings['about']), Tab(text: "Activity")];
   }
 
-  List<Widget> _buildTabViews(Map<String, String> strings) {
+  List<Widget> _buildTabViews(Map<String, String> strings, String localeCode) {
     if (_userRole == 'worker' || _isOwnProfile) {
       final currentUserId =
           widget.userId ?? FirebaseAuth.instance.currentUser?.uid;
@@ -1058,7 +1113,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
       }
       return [
         _buildProjectsGrid(strings),
-        _buildReviewsList(strings),
+        _buildReviewsList(strings, localeCode),
         SchedulePage(workerId: currentUserId, workerName: _userName),
         _buildAboutSection(strings),
       ];
@@ -1340,7 +1395,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
     }
   }
 
-  Widget _buildReviewsList(Map<String, String> strings) {
+  Widget _buildReviewsList(Map<String, String> strings, String localeCode) {
     final currentUser = FirebaseAuth.instance.currentUser;
     bool hasReviewed = false;
     if (currentUser != null) {
@@ -1439,7 +1494,10 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
                           ),
                           if (review['profession'] != null)
                             Text(
-                              review['profession'],
+                              _translateProfessionName(
+                                review['profession'].toString(),
+                                localeCode,
+                              ),
                               style: TextStyle(
                                 color: Colors.grey[500],
                                 fontSize: 12,

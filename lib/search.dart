@@ -1,6 +1,4 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
@@ -8,7 +6,6 @@ import 'package:untitled1/services/language_provider.dart';
 import 'package:untitled1/services/analytics_service.dart';
 import 'package:untitled1/services/location_context_service.dart';
 import 'package:untitled1/ptofile.dart';
-import 'package:untitled1/pages/average_prices.dart';
 import 'package:untitled1/pages/location_manager_page.dart';
 
 class SearchPage extends StatefulWidget {
@@ -28,6 +25,7 @@ class _SearchPageState extends State<SearchPage> {
   List<Map<String, dynamic>> _filteredWorkers = [];
   List<Map<String, dynamic>> _professions = [];
   List<Map<String, dynamic>> _filteredProfessions = [];
+  Map<String, Map<String, dynamic>> _professionByEnLower = {};
   bool _isLoadingWorkers = false;
   bool _isLoadingProfessions = true;
 
@@ -45,9 +43,59 @@ class _SearchPageState extends State<SearchPage> {
 
   int _fetchSessionId = 0;
 
+  static const List<String> _professionLanguageKeys = [
+    'en',
+    'he',
+    'ar',
+    'ru',
+    'am',
+  ];
+
+  String _normalizeSearchText(String value) {
+    return value.toLowerCase().trim();
+  }
+
+  List<String> _professionSearchTerms(Map<String, dynamic> profession) {
+    final terms = <String>{};
+    for (final key in _professionLanguageKeys) {
+      final value = profession[key]?.toString();
+      if (value != null && value.trim().isNotEmpty) {
+        terms.add(_normalizeSearchText(value));
+      }
+    }
+    return terms.toList();
+  }
+
+  List<String> _workerProfessionSearchTerms(Map<String, dynamic> worker) {
+    final workerProfs =
+        (worker['professions'] as List?)
+            ?.map((e) => _normalizeSearchText(e.toString()))
+            .where((p) => p.isNotEmpty)
+            .toList() ??
+        <String>[];
+
+    final terms = <String>{...workerProfs};
+    for (final en in workerProfs) {
+      final profession = _professionByEnLower[en];
+      if (profession != null) {
+        terms.addAll(_professionSearchTerms(profession));
+      }
+    }
+
+    return terms.toList();
+  }
+
+  void _onLocationPermissionGranted() {
+    if (!mounted) return;
+    _refreshSearchPage();
+  }
+
   @override
   void initState() {
     super.initState();
+    LocationContextService.locationPermissionGrantedTick.addListener(
+      _onLocationPermissionGranted,
+    );
     _loadProfessions();
     _getCurrentLocation(silent: true);
 
@@ -63,23 +111,80 @@ class _SearchPageState extends State<SearchPage> {
 
   @override
   void dispose() {
+    LocationContextService.locationPermissionGrantedTick.removeListener(
+      _onLocationPermissionGranted,
+    );
     _scrollController.dispose();
     _searchController.dispose();
     super.dispose();
   }
 
+  Future<void> _refreshSearchPage() async {
+    final selectedProfessionName = _selectedProfession?['en']
+        ?.toString()
+        .toLowerCase();
+
+    await _getCurrentLocation(silent: true);
+    await _loadProfessions();
+
+    if (!mounted) return;
+
+    if (_showWorkerList && selectedProfessionName != null) {
+      final refreshedProfession = _professions.firstWhere(
+        (p) => p['en'].toString().toLowerCase() == selectedProfessionName,
+        orElse: () => <String, dynamic>{},
+      );
+
+      if (refreshedProfession.isNotEmpty) {
+        setState(() {
+          _selectedProfession = refreshedProfession;
+        });
+      }
+
+      await _fetchWorkers(isRefresh: true);
+      return;
+    }
+
+    _applyFilters();
+  }
+
   Future<void> _loadProfessions() async {
     try {
-      final String response = await rootBundle.loadString(
-        'assets/profeissions.json',
-      );
-      final List<dynamic> data = json.decode(response);
+      final metadataDoc = await _firestore
+          .collection('metadata')
+          .doc('professions')
+          .get();
+      final metadata = metadataDoc.data();
+      final items = (metadata?['items'] as List?) ?? const [];
+
+      final data =
+          items
+              .whereType<Map>()
+              .map((item) => Map<String, dynamic>.from(item))
+              .toList()
+            ..sort((a, b) {
+              final aId = int.tryParse(a['id']?.toString() ?? '') ?? 1 << 30;
+              final bId = int.tryParse(b['id']?.toString() ?? '') ?? 1 << 30;
+              return aId.compareTo(bId);
+            });
+
+      final professionIndex = <String, Map<String, dynamic>>{};
+      for (final profession in data) {
+        final en = _normalizeSearchText(profession['en']?.toString() ?? '');
+        if (en.isNotEmpty) {
+          professionIndex[en] = profession;
+        }
+      }
+
       setState(() {
-        _professions = data.cast<Map<String, dynamic>>();
+        _professions = data;
         _filteredProfessions = _professions;
+        _professionByEnLower = professionIndex;
         _isLoadingProfessions = false;
 
-        if (widget.initialTrade != null) {
+        if (!_showWorkerList &&
+            _selectedProfession == null &&
+            widget.initialTrade != null) {
           final initial = _professions.firstWhere(
             (p) =>
                 p['en'].toString().toLowerCase() ==
@@ -96,6 +201,13 @@ class _SearchPageState extends State<SearchPage> {
       });
     } catch (e) {
       debugPrint("Analytics error: $e");
+      if (!mounted) return;
+      setState(() {
+        _professions = [];
+        _filteredProfessions = [];
+        _professionByEnLower = {};
+        _isLoadingProfessions = false;
+      });
     }
   }
 
@@ -284,7 +396,7 @@ class _SearchPageState extends State<SearchPage> {
   }
 
   void _applyFilters() {
-    final query = _searchController.text.toLowerCase();
+    final query = _normalizeSearchText(_searchController.text);
     final locale = Provider.of<LanguageProvider>(
       context,
       listen: false,
@@ -293,17 +405,22 @@ class _SearchPageState extends State<SearchPage> {
     setState(() {
       if (_showWorkerList) {
         _filteredWorkers = _allWorkers.where((w) {
-          final workerProfs =
+          final workerProfsEn =
               (w['professions'] as List?)
-                  ?.map((e) => e.toString().toLowerCase().trim())
+                  ?.map((e) => _normalizeSearchText(e.toString()))
                   .toList() ??
               [];
 
+          final workerProfSearchTerms = _workerProfessionSearchTerms(w);
+
+          final workerName = _normalizeSearchText((w['name'] ?? '').toString());
+          final workerTown = _normalizeSearchText((w['town'] ?? '').toString());
+
           final matchesSearch =
               query.isEmpty ||
-              (w['name'] ?? '').toLowerCase().contains(query) ||
-              (w['town'] ?? '').toLowerCase().contains(query) ||
-              workerProfs.any((p) => p.contains(query));
+              workerName.contains(query) ||
+              workerTown.contains(query) ||
+              workerProfSearchTerms.any((p) => p.contains(query));
 
           bool matchesRadius = true;
           if (_filterByRadius && _currentPosition != null) {
@@ -341,9 +458,8 @@ class _SearchPageState extends State<SearchPage> {
           if (_selectedProfession != null) {
             final targetProf = _selectedProfession!['en']
                 .toString()
-                .toLowerCase()
-                .trim();
-            matchesSelectedProf = workerProfs.any((p) => p == targetProf);
+                .toLowerCase();
+            matchesSelectedProf = workerProfsEn.any((p) => p == targetProf);
           }
 
           return matchesSearch &&
@@ -362,9 +478,18 @@ class _SearchPageState extends State<SearchPage> {
         }
       } else {
         _filteredProfessions = _professions.where((p) {
-          final name = (p[locale] ?? p['en']).toString().toLowerCase();
-          final enName = p['en'].toString().toLowerCase();
-          return name.contains(query) || enName.contains(query);
+          if (query.isEmpty) return true;
+
+          final terms = _professionSearchTerms(p);
+          if (terms.any((term) => term.contains(query))) {
+            return true;
+          }
+
+          // Keep locale-first behavior when exact localized field exists.
+          final localized = _normalizeSearchText(
+            (p[locale] ?? p['en'] ?? '').toString(),
+          );
+          return localized.contains(query);
         }).toList();
       }
     });
@@ -604,419 +729,450 @@ class _SearchPageState extends State<SearchPage> {
 
   Widget _buildProfessionGrid(String locale) {
     if (_filteredProfessions.isEmpty) {
-      return Center(
-        child: Text(
-          locale == 'he' ? 'לא נמצאו מקצועות' : 'No professions found',
-        ),
-      );
-    }
-
-    return GridView.builder(
-      padding: const EdgeInsets.all(20),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        crossAxisSpacing: 16,
-        mainAxisSpacing: 16,
-        childAspectRatio: 1.0,
-      ),
-      itemCount: _filteredProfessions.length,
-      itemBuilder: (context, index) {
-        final p = _filteredProfessions[index];
-        final color = _getColorFromHex(p['color']);
-
-        return InkWell(
-          onTap: () {
-            setState(() {
-              _selectedProfession = p;
-              _showWorkerList = true;
-              _allWorkers = [];
-              _filteredWorkers = [];
-              _isLoadingWorkers = true;
-              _searchController.clear();
-            });
-            _fetchWorkers(isRefresh: true);
-            _trackSearch(p['en']);
-          },
-          borderRadius: BorderRadius.circular(24),
-          child: Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(24),
-              boxShadow: [
-                BoxShadow(
-                  color: color.withOpacity(0.15),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: color.withOpacity(0.1),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(_getIcon(p['logo']), color: color, size: 32),
-                ),
-                const SizedBox(height: 12),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: Text(
-                    p[locale] ?? p['en'],
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                      color: Colors.black87,
-                    ),
-                    textAlign: TextAlign.center,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildWorkerList(String locale, Color themeColor) {
-    if (_filteredWorkers.isEmpty && !_isLoadingWorkers) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+      return RefreshIndicator(
+        onRefresh: _refreshSearchPage,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
           children: [
-            Icon(
-              Icons.person_search_rounded,
-              size: 80,
-              color: Colors.grey[300],
-            ),
-            const SizedBox(height: 16),
-            Text(
-              locale == 'he'
-                  ? 'אין עובדים זמינים כרגע'
-                  : 'No available workers at the moment',
-              style: const TextStyle(color: Colors.grey),
+            SizedBox(
+              height: MediaQuery.of(context).size.height * 0.55,
+              child: Center(
+                child: Text(
+                  locale == 'he' ? 'לא נמצאו מקצועות' : 'No professions found',
+                ),
+              ),
             ),
           ],
         ),
       );
     }
-    return ListView.builder(
-      controller: _scrollController,
-      physics: const BouncingScrollPhysics(
-        parent: AlwaysScrollableScrollPhysics(),
-      ),
-      padding: const EdgeInsets.all(16),
-      itemCount: _filteredWorkers.length + (_hasMore ? 1 : 0),
-      itemBuilder: (context, index) {
-        if (index == _filteredWorkers.length) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: _isFetchingMore
-                  ? const CircularProgressIndicator()
-                  : Column(
-                      children: [
-                        const Icon(
-                          Icons.arrow_upward,
-                          color: Colors.grey,
-                          size: 20,
-                        ),
-                        Text(
-                          locale == 'he'
-                              ? 'משוך למעלה לעוד'
-                              : 'Pull up to load more',
-                          style: const TextStyle(
-                            color: Colors.grey,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
+
+    return RefreshIndicator(
+      onRefresh: _refreshSearchPage,
+      child: GridView.builder(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(20),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          crossAxisSpacing: 16,
+          mainAxisSpacing: 16,
+          childAspectRatio: 1.0,
+        ),
+        itemCount: _filteredProfessions.length,
+        itemBuilder: (context, index) {
+          final p = _filteredProfessions[index];
+          final color = _getColorFromHex(p['color']);
+
+          return InkWell(
+            onTap: () {
+              setState(() {
+                _selectedProfession = p;
+                _showWorkerList = true;
+                _allWorkers = [];
+                _filteredWorkers = [];
+                _isLoadingWorkers = true;
+                _searchController.clear();
+              });
+              _fetchWorkers(isRefresh: true);
+              _trackSearch(p['en']);
+            },
+            borderRadius: BorderRadius.circular(24),
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: [
+                  BoxShadow(
+                    color: color.withOpacity(0.15),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: color.withOpacity(0.1),
+                      shape: BoxShape.circle,
                     ),
+                    child: Icon(_getIcon(p['logo']), color: color, size: 32),
+                  ),
+                  const SizedBox(height: 12),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: Text(
+                      p[locale] ?? p['en'],
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                        color: Colors.black87,
+                      ),
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
             ),
           );
-        }
+        },
+      ),
+    );
+  }
 
-        final w = _filteredWorkers[index];
+  Widget _buildWorkerList(String locale, Color themeColor) {
+    if (_filteredWorkers.isEmpty && !_isLoadingWorkers) {
+      return RefreshIndicator(
+        onRefresh: _refreshSearchPage,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          children: [
+            SizedBox(
+              height: MediaQuery.of(context).size.height * 0.55,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.person_search_rounded,
+                    size: 80,
+                    color: Colors.grey[300],
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    locale == 'he'
+                        ? 'אין עובדים זמינים כרגע'
+                        : 'No available workers at the moment',
+                    style: const TextStyle(color: Colors.grey),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    return RefreshIndicator(
+      onRefresh: _refreshSearchPage,
+      child: ListView.builder(
+        controller: _scrollController,
+        physics: const BouncingScrollPhysics(
+          parent: AlwaysScrollableScrollPhysics(),
+        ),
+        padding: const EdgeInsets.all(16),
+        itemCount: _filteredWorkers.length + (_hasMore ? 1 : 0),
+        itemBuilder: (context, index) {
+          if (index == _filteredWorkers.length) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: _isFetchingMore
+                    ? const CircularProgressIndicator()
+                    : Column(
+                        children: [
+                          const Icon(
+                            Icons.arrow_upward,
+                            color: Colors.grey,
+                            size: 20,
+                          ),
+                          Text(
+                            locale == 'he'
+                                ? 'משוך למעלה לעוד'
+                                : 'Pull up to load more',
+                            style: const TextStyle(
+                              color: Colors.grey,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+              ),
+            );
+          }
 
-        String distanceStr = "";
-        if (_currentPosition != null) {
-          final distance = _localDistanceToWorker(w);
-          if (distance.isFinite) {
-            if (distance < 1000) {
-              distanceStr = "${distance.toStringAsFixed(0)}m";
-            } else {
-              distanceStr = "${(distance / 1000).toStringAsFixed(1)}km";
+          final w = _filteredWorkers[index];
+
+          String distanceStr = "";
+          if (_currentPosition != null) {
+            final distance = _localDistanceToWorker(w);
+            if (distance.isFinite) {
+              if (distance < 1000) {
+                distanceStr = "${distance.toStringAsFixed(0)}m";
+              } else {
+                distanceStr = "${(distance / 1000).toStringAsFixed(1)}km";
+              }
             }
           }
-        }
 
-        final bool isIdVerified = w['isIdVerified'] ?? false;
-        final bool isBusinessVerified = w['isBusinessVerified'] ?? false;
-        final bool isInsured = w['isInsured'] ?? false;
+          final bool isIdVerified = w['isIdVerified'] ?? false;
+          final bool isBusinessVerified = w['isBusinessVerified'] ?? false;
+          final bool isInsured = w['isInsured'] ?? false;
 
-        double displayRating = 0.0;
-        int displayReviewCount = 0;
-        bool isServiceSpecific = false;
+          double displayRating = 0.0;
+          int displayReviewCount = 0;
+          bool isServiceSpecific = false;
 
-        if (_selectedProfession != null) {
-          String profKey = _selectedProfession!['en'];
-          if (w['professionStats']?[profKey] != null) {
-            displayRating = (w['professionStats'][profKey]['avg'] ?? 0.0)
-                .toDouble();
-            displayReviewCount = w['professionStats'][profKey]['count'] ?? 0;
-            isServiceSpecific = true;
+          if (_selectedProfession != null) {
+            String profKey = _selectedProfession!['en'];
+            if (w['professionStats']?[profKey] != null) {
+              displayRating = (w['professionStats'][profKey]['avg'] ?? 0.0)
+                  .toDouble();
+              displayReviewCount = w['professionStats'][profKey]['count'] ?? 0;
+              isServiceSpecific = true;
+            } else {
+              displayRating = (w['avgRating'] as num).toDouble();
+              displayReviewCount = w['reviewCount'] ?? 0;
+            }
           } else {
             displayRating = (w['avgRating'] as num).toDouble();
             displayReviewCount = w['reviewCount'] ?? 0;
           }
-        } else {
-          displayRating = (w['avgRating'] as num).toDouble();
-          displayReviewCount = w['reviewCount'] ?? 0;
-        }
 
-        final createdAt = w['createdAt'] as Timestamp?;
-        bool isNew = false;
-        if (createdAt != null) {
-          final diff = DateTime.now().difference(createdAt.toDate());
-          isNew = diff.inDays <= 7;
-        }
+          final createdAt = w['createdAt'] as Timestamp?;
+          bool isNew = false;
+          if (createdAt != null) {
+            final diff = DateTime.now().difference(createdAt.toDate());
+            isNew = diff.inDays <= 7;
+          }
 
-        return Container(
-          margin: const EdgeInsets.only(bottom: 16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.05),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Stack(
-            children: [
-              ListTile(
-                contentPadding: const EdgeInsets.all(12),
-                leading: Hero(
-                  tag: w['uid'],
-                  child: CircleAvatar(
-                    radius: 30,
-                    backgroundImage:
-                        w['profileImageUrl'] != null &&
-                            w['profileImageUrl'].toString().isNotEmpty
-                        ? NetworkImage(w['profileImageUrl'])
-                        : null,
-                    backgroundColor: const Color(0xFFF1F5F9),
-                    child:
-                        w['profileImageUrl'] == null ||
-                            w['profileImageUrl'].toString().isEmpty
-                        ? Icon(Icons.person, color: themeColor)
-                        : null,
+          return Container(
+            margin: const EdgeInsets.only(bottom: 16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Stack(
+              children: [
+                ListTile(
+                  contentPadding: const EdgeInsets.all(12),
+                  leading: Hero(
+                    tag: w['uid'],
+                    child: CircleAvatar(
+                      radius: 30,
+                      backgroundImage:
+                          w['profileImageUrl'] != null &&
+                              w['profileImageUrl'].toString().isNotEmpty
+                          ? NetworkImage(w['profileImageUrl'])
+                          : null,
+                      backgroundColor: const Color(0xFFF1F5F9),
+                      child:
+                          w['profileImageUrl'] == null ||
+                              w['profileImageUrl'].toString().isEmpty
+                          ? Icon(Icons.person, color: themeColor)
+                          : null,
+                    ),
                   ),
-                ),
-                title: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Flexible(
-                      child: Text(
-                        w['name'] ?? 'Worker',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 17,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    if (isIdVerified)
-                      const Icon(
-                        Icons.assignment_ind,
-                        color: Colors.green,
-                        size: 14,
-                      ),
-                    if (isBusinessVerified)
-                      const Padding(
-                        padding: EdgeInsets.only(left: 2),
-                        child: Icon(
-                          Icons.business_center,
-                          color: Colors.orange,
-                          size: 14,
-                        ),
-                      ),
-                    if (isInsured)
-                      const Padding(
-                        padding: EdgeInsets.only(left: 2),
-                        child: Icon(Icons.shield, color: Colors.blue, size: 14),
-                      ),
-                  ],
-                ),
-                subtitle: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        const Icon(
-                          Icons.location_on_rounded,
-                          size: 14,
-                          color: Colors.grey,
-                        ),
-                        const SizedBox(width: 4),
-                        Flexible(
-                          child: Text(
-                            w['town'] ?? '',
-                            style: const TextStyle(
-                              color: Colors.grey,
-                              fontSize: 13,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        if (distanceStr.isNotEmpty) ...[
-                          const SizedBox(width: 8),
-                          Text(
-                            distanceStr,
-                            style: TextStyle(
-                              color: themeColor,
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                    if (w['professions'] != null &&
-                        (w['professions'] as List).isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        (w['professions'] as List).join(', '),
-                        style: const TextStyle(
-                          color: Colors.grey,
-                          fontSize: 12,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                  ],
-                ),
-                trailing: SizedBox(
-                  width: 90,
-                  child: Column(
+                  title: Row(
                     mainAxisSize: MainAxisSize.min,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      if (isServiceSpecific)
-                        FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Text(
-                            locale == 'he'
-                                ? 'דירוג לשירות זה'
-                                : 'Rating for service',
-                            style: TextStyle(
-                              fontSize: 8,
-                              color: themeColor,
-                              fontWeight: FontWeight.bold,
-                            ),
+                      Flexible(
+                        child: Text(
+                          w['name'] ?? 'Worker',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 17,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      if (isIdVerified)
+                        const Icon(
+                          Icons.assignment_ind,
+                          color: Colors.green,
+                          size: 14,
+                        ),
+                      if (isBusinessVerified)
+                        const Padding(
+                          padding: EdgeInsets.only(left: 2),
+                          child: Icon(
+                            Icons.business_center,
+                            color: Colors.orange,
+                            size: 14,
                           ),
                         ),
-                      const SizedBox(height: 1),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 2,
+                      if (isInsured)
+                        const Padding(
+                          padding: EdgeInsets.only(left: 2),
+                          child: Icon(
+                            Icons.shield,
+                            color: Colors.blue,
+                            size: 14,
+                          ),
                         ),
-                        decoration: BoxDecoration(
-                          color: Colors.amber.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(
-                              Icons.star_rounded,
-                              color: Colors.amber,
-                              size: 14,
-                            ),
-                            const SizedBox(width: 2),
-                            Text(
-                              displayRating.toStringAsFixed(1),
+                    ],
+                  ),
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.location_on_rounded,
+                            size: 14,
+                            color: Colors.grey,
+                          ),
+                          const SizedBox(width: 4),
+                          Flexible(
+                            child: Text(
+                              w['town'] ?? '',
                               style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: Colors.amber,
+                                color: Colors.grey,
+                                fontSize: 13,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (distanceStr.isNotEmpty) ...[
+                            const SizedBox(width: 8),
+                            Text(
+                              distanceStr,
+                              style: TextStyle(
+                                color: themeColor,
                                 fontSize: 12,
+                                fontWeight: FontWeight.bold,
                               ),
                             ),
                           ],
-                        ),
+                        ],
                       ),
-                      Padding(
-                        padding: const EdgeInsets.only(top: 1, right: 4),
-                        child: Text(
-                          "($displayReviewCount)",
+                      if (w['professions'] != null &&
+                          (w['professions'] as List).isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          (w['professions'] as List).join(', '),
                           style: const TextStyle(
-                            fontSize: 10,
                             color: Colors.grey,
-                            fontWeight: FontWeight.w500,
+                            fontSize: 12,
                           ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                      ),
+                      ],
                     ],
                   ),
-                ),
-                onTap: () {
-                  AnalyticsService.logWorkerProfileOpened(
-                    source: 'search_results',
-                    profession: _selectedProfession?['en']?.toString(),
-                  );
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => Profile(
-                        userId: w['uid'],
-                        viewedProfession: _selectedProfession?['en']
-                            ?.toString(),
+                  trailing: SizedBox(
+                    width: 90,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        if (isServiceSpecific)
+                          FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              locale == 'he'
+                                  ? 'דירוג לשירות זה'
+                                  : 'Rating for service',
+                              style: TextStyle(
+                                fontSize: 8,
+                                color: themeColor,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        const SizedBox(height: 1),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.amber.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.star_rounded,
+                                color: Colors.amber,
+                                size: 14,
+                              ),
+                              const SizedBox(width: 2),
+                              Text(
+                                displayRating.toStringAsFixed(1),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.amber,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.only(top: 1, right: 4),
+                          child: Text(
+                            '($displayReviewCount)',
+                            style: const TextStyle(
+                              fontSize: 10,
+                              color: Colors.grey,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  onTap: () {
+                    AnalyticsService.logWorkerProfileOpened(
+                      source: 'search_results',
+                      profession: _selectedProfession?['en']?.toString(),
+                    );
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => Profile(
+                          userId: w['uid'],
+                          viewedProfession: _selectedProfession?['en']
+                              ?.toString(),
+                        ),
                       ),
-                    ),
-                  );
-                },
-              ),
-              if (isNew)
-                Positioned(
-                  top: 8,
-                  left: locale == 'he' ? null : 8,
-                  right: locale == 'he' ? 8 : null,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 6,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.red,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      locale == 'he' ? 'חדש' : 'NEW',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 9,
-                        fontWeight: FontWeight.bold,
+                    );
+                  },
+                ),
+                if (isNew)
+                  Positioned(
+                    top: 8,
+                    left: locale == 'he' ? null : 8,
+                    right: locale == 'he' ? 8 : null,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.red,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        locale == 'he' ? 'חדש' : 'NEW',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
                   ),
-                ),
-            ],
-          ),
-        );
-      },
+              ],
+            ),
+          );
+        },
+      ),
     );
   }
 
@@ -1094,41 +1250,5 @@ class _SearchPageState extends State<SearchPage> {
         ),
       ),
     );
-  }
-
-  Map<String, String> _getLocalizedStrings(BuildContext context) {
-    final locale = Provider.of<LanguageProvider>(context).locale.languageCode;
-    switch (locale) {
-      case 'he':
-        return {
-          'search_hint': 'חפש מקצוע או בעל מקצוע...',
-          'find_pro': 'מצא את בעל המקצוע המתאים',
-          'popular_categories': 'קטגוריות פופולריות',
-          'no_results': 'לא נמצאו תוצאות',
-          'no_pros_found': 'לא נמצאו בעלי מקצוע בקטגוריה זו',
-          'reviews': 'ביקורות',
-          'filters': 'מסננים',
-          'sort_rating': 'דירוג גבוה',
-          'sort_distance': 'קרוב אלי',
-          'filter_verified': 'רק מאומתים',
-          'filter_radius': 'בטווח השירות שלי',
-          'apply': 'החל מסננים',
-        };
-      default:
-        return {
-          'search_hint': 'Search trade or name...',
-          'find_pro': 'Find the right professional',
-          'popular_categories': 'Popular Categories',
-          'no_results': 'No results found',
-          'no_pros_found': 'No pros found in this category',
-          'reviews': 'reviews',
-          'filters': 'Filters',
-          'sort_rating': 'Highest Rating',
-          'sort_distance': 'Near Me',
-          'filter_verified': 'Verified Only',
-          'filter_radius': 'Within my radius',
-          'apply': 'Apply Filters',
-        };
-    }
   }
 }

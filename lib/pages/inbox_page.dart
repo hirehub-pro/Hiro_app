@@ -28,7 +28,10 @@ class _InboxPageState extends State<InboxPage> {
       return Scaffold(
         backgroundColor: Colors.grey[50],
         appBar: AppBar(
-          title: Text(isRtl ? 'הודעות' : 'Messages', style: const TextStyle(fontWeight: FontWeight.bold)),
+          title: Text(
+            isRtl ? 'הודעות' : 'Messages',
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
           backgroundColor: const Color(0xFF1976D2),
           foregroundColor: Colors.white,
           elevation: 0,
@@ -42,9 +45,15 @@ class _InboxPageState extends State<InboxPage> {
                 Icon(Icons.lock_outline, size: 80, color: Colors.grey[300]),
                 const SizedBox(height: 24),
                 Text(
-                  isRtl ? 'אנא התחבר כדי לצפות בהודעות' : 'Please log in to view messages',
+                  isRtl
+                      ? 'אנא התחבר כדי לצפות בהודעות'
+                      : 'Please log in to view messages',
                   textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 18, color: Colors.grey[600], fontWeight: FontWeight.w500),
+                  style: TextStyle(
+                    fontSize: 18,
+                    color: Colors.grey[600],
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ],
             ),
@@ -105,9 +114,11 @@ class _InboxPageState extends State<InboxPage> {
                     debugPrint("Stream error: ${snapshot.error}");
                     return _buildErrorState(isRtl);
                   }
-                  
+
                   if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator(color: Color(0xFF1976D2)));
+                    return const Center(
+                      child: CircularProgressIndicator(color: Color(0xFF1976D2)),
+                    );
                   }
 
                   final docs = (snapshot.data?.docs ?? []).where((doc) {
@@ -123,19 +134,34 @@ class _InboxPageState extends State<InboxPage> {
                   return ListView.separated(
                     padding: const EdgeInsets.symmetric(horizontal: 8),
                     itemCount: docs.length,
-                    separatorBuilder: (context, index) => const Divider(height: 1, indent: 70, endIndent: 20, color: Color(0xFFF1F5F9)),
+                    separatorBuilder: (context, index) => const Divider(
+                      height: 1,
+                      indent: 70,
+                      endIndent: 20,
+                      color: Color(0xFFF1F5F9),
+                    ),
                     itemBuilder: (context, index) {
                       final doc = docs[index];
                       final data = doc.data() as Map<String, dynamic>;
                       final List<dynamic> users = data['users'] ?? [];
-                      
+
                       if (users.length < 2) return const SizedBox.shrink();
 
-                      final String otherUserId = users.firstWhere((id) => id != user.uid, orElse: () => "");
+                      final String otherUserId = users.firstWhere(
+                        (id) => id != user.uid,
+                        orElse: () => "",
+                      );
                       if (otherUserId.isEmpty) return const SizedBox.shrink();
 
-                      final Map<String, dynamic> userNames = data['userNames'] ?? {};
-                      final String otherUserName = userNames[otherUserId] ?? "User";
+                      final Map<String, dynamic> userNames =
+                          data['userNames'] ?? {};
+                      final String otherUserName =
+                          userNames[otherUserId] ?? "User";
+
+                      final Map<String, dynamic> unreadCount =
+                          (data['unreadCount'] as Map<String, dynamic>?) ?? {};
+                      final int unread =
+                          (unreadCount[user.uid] as num?)?.toInt() ?? 0;
 
                       return _buildChatTile(
                         context,
@@ -143,6 +169,7 @@ class _InboxPageState extends State<InboxPage> {
                         data['lastMessage'] ?? "",
                         data['lastTimestamp'],
                         otherUserId,
+                        unread,
                       );
                     },
                   );
@@ -176,22 +203,38 @@ class _InboxPageState extends State<InboxPage> {
       child: Material(
         color: Colors.transparent,
         child: ListTile(
-          contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 20,
+            vertical: 8,
+          ),
           leading: Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
               color: Colors.white.withOpacity(0.2),
               shape: BoxShape.circle,
             ),
-            child: const Icon(Icons.support_agent, color: Colors.white, size: 28),
+            child: const Icon(
+              Icons.support_agent,
+              color: Colors.white,
+              size: 28,
+            ),
           ),
           title: const Text(
             "HireHub Support",
-            style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 18),
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+              fontSize: 18,
+            ),
           ),
           subtitle: Text(
-            isRtl ? 'צ׳אט עם הבוט שלנו או עם נציג' : 'Chat with our bot or a human',
-            style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 13),
+            isRtl
+                ? 'צ׳אט עם הבוט שלנו או עם נציג'
+                : 'Chat with our bot or a human',
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.8),
+              fontSize: 13,
+            ),
           ),
           trailing: const Icon(Icons.chevron_right, color: Colors.white),
           onTap: () {
@@ -205,15 +248,27 @@ class _InboxPageState extends State<InboxPage> {
     );
   }
 
-  Widget _buildChatTile(BuildContext context, String name, String message, dynamic timestamp, String otherId) {
+  Widget _buildChatTile(
+    BuildContext context,
+    String name,
+    String message,
+    dynamic timestamp,
+    String otherId,
+    int unread,
+  ) {
+    final bool hasUnread = unread > 0;
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       leading: CircleAvatar(
         radius: 28,
         backgroundColor: const Color(0xFF1976D2).withOpacity(0.1),
         child: Text(
-          name.isNotEmpty ? name[0].toUpperCase() : "?", 
-          style: const TextStyle(color: Color(0xFF1976D2), fontWeight: FontWeight.bold, fontSize: 20)
+          name.isNotEmpty ? name[0].toUpperCase() : "?",
+          style: const TextStyle(
+            color: Color(0xFF1976D2),
+            fontWeight: FontWeight.bold,
+            fontSize: 20,
+          ),
         ),
       ),
       title: Row(
@@ -222,7 +277,11 @@ class _InboxPageState extends State<InboxPage> {
           Expanded(
             child: Text(
               name,
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF1E293B)),
+              style: TextStyle(
+                fontWeight: hasUnread ? FontWeight.w900 : FontWeight.bold,
+                fontSize: 16,
+                color: const Color(0xFF1E293B),
+              ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -230,27 +289,56 @@ class _InboxPageState extends State<InboxPage> {
           if (timestamp != null)
             Text(
               _formatTimestamp(timestamp),
-              style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+              style: TextStyle(
+                fontSize: 12,
+                color: hasUnread ? const Color(0xFF1976D2) : Colors.grey[500],
+                fontWeight: hasUnread ? FontWeight.bold : FontWeight.normal,
+              ),
             ),
         ],
       ),
       subtitle: Padding(
         padding: const EdgeInsets.only(top: 4.0),
-        child: Text(
-          message,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(color: Colors.grey[600], fontSize: 14),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                message,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: hasUnread ? const Color(0xFF1E293B) : Colors.grey[600],
+                  fontSize: 14,
+                  fontWeight: hasUnread ? FontWeight.w600 : FontWeight.normal,
+                ),
+              ),
+            ),
+            if (hasUnread)
+              Container(
+                margin: const EdgeInsets.only(left: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                decoration: const BoxDecoration(
+                  color: Color(0xFF1976D2),
+                  borderRadius: BorderRadius.all(Radius.circular(12)),
+                ),
+                child: Text(
+                  unread > 99 ? '99+' : unread.toString(),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
       onTap: () {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => ChatPage(
-              receiverId: otherId,
-              receiverName: name,
-            ),
+            builder: (context) =>
+                ChatPage(receiverId: otherId, receiverName: name),
           ),
         );
       },
@@ -268,16 +356,26 @@ class _InboxPageState extends State<InboxPage> {
               color: Colors.grey[50],
               shape: BoxShape.circle,
             ),
-            child: Icon(Icons.chat_bubble_outline, size: 64, color: Colors.grey[300]),
+            child: Icon(
+              Icons.chat_bubble_outline,
+              size: 64,
+              color: Colors.grey[300],
+            ),
           ),
           const SizedBox(height: 20),
           Text(
             isRtl ? 'אין הודעות עדיין' : 'No messages yet',
-            style: TextStyle(color: Colors.grey[400], fontSize: 18, fontWeight: FontWeight.w500),
+            style: TextStyle(
+              color: Colors.grey[400],
+              fontSize: 18,
+              fontWeight: FontWeight.w500,
+            ),
           ),
           const SizedBox(height: 8),
           Text(
-            isRtl ? 'ההודעות שלך יופיעו כאן' : 'Your conversations will appear here',
+            isRtl
+                ? 'ההודעות שלך יופיעו כאן'
+                : 'Your conversations will appear here',
             style: TextStyle(color: Colors.grey[400], fontSize: 14),
           ),
         ],
@@ -294,12 +392,15 @@ class _InboxPageState extends State<InboxPage> {
           const SizedBox(height: 16),
           Text(
             isRtl ? 'שגיאה בטעינת הודעות' : 'Error loading messages',
-            style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold),
+            style: const TextStyle(
+              color: Colors.redAccent,
+              fontWeight: FontWeight.bold,
+            ),
           ),
           TextButton(
             onPressed: () => setState(() {}),
             child: Text(isRtl ? 'נסה שוב' : 'Try Again'),
-          )
+          ),
         ],
       ),
     );
@@ -309,7 +410,9 @@ class _InboxPageState extends State<InboxPage> {
     if (timestamp is Timestamp) {
       final date = timestamp.toDate();
       final now = DateTime.now();
-      if (date.day == now.day && date.month == now.month && date.year == now.year) {
+      if (date.day == now.day &&
+          date.month == now.month &&
+          date.year == now.year) {
         return intl.DateFormat.Hm().format(date);
       }
       return intl.DateFormat('dd/MM/yy').format(date);

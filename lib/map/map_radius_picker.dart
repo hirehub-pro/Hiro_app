@@ -24,7 +24,6 @@ class _MapRadiusPickerState extends State<MapRadiusPicker> {
   Set<Circle> _circles = {};
   Set<Marker> _markers = {};
   bool _isLoading = false;
-  String? _errorMessage;
 
   // Exact bounds for Israel to lock the map
   final LatLngBounds _israelBounds = LatLngBounds(
@@ -37,12 +36,12 @@ class _MapRadiusPickerState extends State<MapRadiusPicker> {
     super.initState();
     _radius = widget.initialRadius;
     _center = widget.initialCenter;
-    
+
     // If no initial center or initial center is outside Israel, default to center of Israel (approx Tel Aviv area)
     if (_center == null || !_isWithinIsrael(_center!)) {
-      _center = const LatLng(32.0853, 34.7818); 
+      _center = const LatLng(32.0853, 34.7818);
     }
-    
+
     _updateMapElements();
     _determinePosition();
   }
@@ -52,7 +51,6 @@ class _MapRadiusPickerState extends State<MapRadiusPicker> {
       if (mounted) {
         setState(() {
           _isLoading = true;
-          _errorMessage = null;
         });
       }
 
@@ -68,18 +66,18 @@ class _MapRadiusPickerState extends State<MapRadiusPicker> {
           throw 'Location permissions are denied.';
         }
       }
-      
+
       if (permission == LocationPermission.deniedForever) {
         throw 'Location permissions are permanently denied.';
-      } 
+      }
 
       Position position = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
         timeLimit: const Duration(seconds: 10),
       );
-      
+
       LatLng newCenter = LatLng(position.latitude, position.longitude);
-      
+
       // Only update if the user is actually in Israel
       if (_isWithinIsrael(newCenter)) {
         if (mounted) {
@@ -91,13 +89,12 @@ class _MapRadiusPickerState extends State<MapRadiusPicker> {
           _moveCameraToCenter();
         }
       } else {
-         if (mounted) setState(() => _isLoading = false);
+        if (mounted) setState(() => _isLoading = false);
       }
     } catch (e) {
       if (mounted) {
         setState(() {
           _isLoading = false;
-          _errorMessage = e.toString();
         });
       }
     }
@@ -105,9 +102,9 @@ class _MapRadiusPickerState extends State<MapRadiusPicker> {
 
   bool _isWithinIsrael(LatLng position) {
     return position.latitude >= _israelBounds.southwest.latitude &&
-           position.latitude <= _israelBounds.northeast.latitude &&
-           position.longitude >= _israelBounds.southwest.longitude &&
-           position.longitude <= _israelBounds.northeast.longitude;
+        position.latitude <= _israelBounds.northeast.latitude &&
+        position.longitude >= _israelBounds.southwest.longitude &&
+        position.longitude <= _israelBounds.northeast.longitude;
   }
 
   void _moveCameraToCenter() {
@@ -139,7 +136,9 @@ class _MapRadiusPickerState extends State<MapRadiusPicker> {
             } else {
               // If dragged out, snap back to a valid position near the edge or keep old center
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text("Please stay within Israel bounds")),
+                const SnackBar(
+                  content: Text("Please stay within Israel bounds"),
+                ),
               );
             }
             _updateMapElements();
@@ -164,7 +163,10 @@ class _MapRadiusPickerState extends State<MapRadiusPicker> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Work Area', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+        title: const Text(
+          'Work Area',
+          style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
+        ),
         backgroundColor: Colors.white,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.black),
@@ -179,7 +181,14 @@ class _MapRadiusPickerState extends State<MapRadiusPicker> {
                     'radius': _radius,
                   });
                 },
-                child: const Text('Save', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF1976D2))),
+                child: const Text(
+                  'Save',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                    color: Color(0xFF1976D2),
+                  ),
+                ),
               ),
             ),
         ],
@@ -217,10 +226,12 @@ class _MapRadiusPickerState extends State<MapRadiusPicker> {
               mapToolbarEnabled: false,
               compassEnabled: true,
             ),
-          
+
           if (_isLoading)
-            const Center(child: CircularProgressIndicator(color: Color(0xFF1976D2))),
-          
+            const Center(
+              child: CircularProgressIndicator(color: Color(0xFF1976D2)),
+            ),
+
           Positioned(
             top: 16,
             right: 16,
@@ -230,19 +241,24 @@ class _MapRadiusPickerState extends State<MapRadiusPicker> {
                   heroTag: 'my_location',
                   onPressed: _determinePosition,
                   backgroundColor: Colors.white,
-                  child: const Icon(Icons.my_location, color: Color(0xFF1976D2)),
+                  child: const Icon(
+                    Icons.my_location,
+                    color: Color(0xFF1976D2),
+                  ),
                 ),
                 const SizedBox(height: 8),
                 FloatingActionButton.small(
                   heroTag: 'zoom_in',
-                  onPressed: () => _mapController?.animateCamera(CameraUpdate.zoomIn()),
+                  onPressed: () =>
+                      _mapController?.animateCamera(CameraUpdate.zoomIn()),
                   backgroundColor: Colors.white,
                   child: const Icon(Icons.add, color: Color(0xFF1976D2)),
                 ),
                 const SizedBox(height: 8),
                 FloatingActionButton.small(
                   heroTag: 'zoom_out',
-                  onPressed: () => _mapController?.animateCamera(CameraUpdate.zoomOut()),
+                  onPressed: () =>
+                      _mapController?.animateCamera(CameraUpdate.zoomOut()),
                   backgroundColor: Colors.white,
                   child: const Icon(Icons.remove, color: Color(0xFF1976D2)),
                 ),
@@ -260,7 +276,11 @@ class _MapRadiusPickerState extends State<MapRadiusPicker> {
                 color: Colors.white,
                 borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
                 boxShadow: [
-                  BoxShadow(color: Colors.black12, blurRadius: 20, offset: Offset(0, -5)),
+                  BoxShadow(
+                    color: Colors.black12,
+                    blurRadius: 20,
+                    offset: Offset(0, -5),
+                  ),
                 ],
               ),
               child: Column(
@@ -271,17 +291,28 @@ class _MapRadiusPickerState extends State<MapRadiusPicker> {
                     children: [
                       const Text(
                         'Work Radius',
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF1E293B),
+                        ),
                       ),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
                         decoration: BoxDecoration(
                           color: const Color(0xFF1976D2).withOpacity(0.1),
                           borderRadius: BorderRadius.circular(20),
                         ),
                         child: Text(
                           '${(_radius / 1000).toStringAsFixed(1)} km',
-                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1976D2)),
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF1976D2),
+                          ),
                         ),
                       ),
                     ],
@@ -290,14 +321,17 @@ class _MapRadiusPickerState extends State<MapRadiusPicker> {
                   SliderTheme(
                     data: SliderTheme.of(context).copyWith(
                       activeTrackColor: const Color(0xFF1976D2),
-                      inactiveTrackColor: const Color(0xFF1976D2).withOpacity(0.2),
+                      inactiveTrackColor: const Color(
+                        0xFF1976D2,
+                      ).withOpacity(0.2),
                       thumbColor: const Color(0xFF1976D2),
                       overlayColor: const Color(0xFF1976D2).withOpacity(0.2),
                     ),
                     child: Slider(
                       value: _radius,
                       min: 1000,
-                      max: 200000, // Reduced to 200km as it covers most of Israel's width/height effectively
+                      max:
+                          200000, // Reduced to 200km as it covers most of Israel's width/height effectively
                       divisions: 199,
                       onChanged: (value) {
                         setState(() {

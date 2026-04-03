@@ -13,13 +13,11 @@ import 'package:file_picker/file_picker.dart';
 import 'package:record/record.dart';
 import 'package:audioplayers/audioplayers.dart' as ap;
 import 'package:path_provider/path_provider.dart';
-import 'package:video_player/video_player.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:http/http.dart' as http;
-import 'package:gal/gal.dart';
+import 'package:untitled1/ptofile.dart';
 
-import '../ptofile.dart';
 import '../widgets/cached_video_player.dart';
 
 class ChatPage extends StatefulWidget {
@@ -42,12 +40,12 @@ class _ChatPageState extends State<ChatPage> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseStorage _storage = FirebaseStorage.instance;
   final ScrollController _scrollController = ScrollController();
-  
+
   final AudioRecorder _audioRecorder = AudioRecorder();
   final ap.AudioPlayer _audioPlayer = ap.AudioPlayer();
   bool _isRecording = false;
   late Stream<QuerySnapshot> _messageStream;
-  
+
   // Selection Mode State
   bool _isSelectionMode = false;
   final Set<String> _selectedMessageIds = {};
@@ -60,13 +58,40 @@ class _ChatPageState extends State<ChatPage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(_lifecycleObserver);
     _checkUserType();
+    final currentUserId = _auth.currentUser!.uid;
+    final chatRoomId = _getChatRoomId(currentUserId, widget.receiverId);
     _messageStream = _firestore
         .collection('chat_rooms')
-        .doc(_getChatRoomId(_auth.currentUser!.uid, widget.receiverId))
+        .doc(chatRoomId)
         .collection('messages')
         .orderBy('timestamp', descending: true)
         .snapshots();
+    _resetUnreadCount(chatRoomId, currentUserId);
+    _setActiveChat(currentUserId);
+  }
+
+  late final WidgetsBindingObserver _lifecycleObserver =
+      _ChatPageLifecycleObserver(
+        onResumed: () {
+          final userId = _auth.currentUser?.uid;
+          if (userId != null) {
+            _setActiveChat(userId);
+          }
+        },
+        onBackgrounded: () {
+          final userId = _auth.currentUser?.uid;
+          if (userId != null) {
+            _clearActiveChat(userId);
+          }
+        },
+      );
+
+  void _resetUnreadCount(String chatRoomId, String userId) {
+    _firestore.collection('chat_rooms').doc(chatRoomId).set({
+      'unreadCount': {userId: 0},
+    }, SetOptions(merge: true));
   }
 
   Future<DocumentSnapshot?> _getUserDoc(String uid) async {
@@ -96,11 +121,83 @@ class _ChatPageState extends State<ChatPage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(_lifecycleObserver);
+    final userId = _auth.currentUser?.uid;
+    if (userId != null) {
+      _clearActiveChat(userId);
+    }
     _messageController.dispose();
     _scrollController.dispose();
     _audioRecorder.dispose();
     _audioPlayer.dispose();
     super.dispose();
+  }
+
+  Future<void> _setActiveChat(String userId) async {
+    try {
+      await _firestore.collection('users').doc(userId).set({
+        'activeChatWith': widget.receiverId,
+        'activeChatUpdatedAt': FieldValue.serverTimestamp(),
+        'isInChatPage': true,
+      }, SetOptions(merge: true));
+    } catch (e) {
+      debugPrint("Error setting active chat: $e");
+    }
+  }
+
+  Future<void> _clearActiveChat(String userId) async {
+    try {
+      final userRef = _firestore.collection('users').doc(userId);
+      final snap = await userRef.get();
+      final data = snap.data() ?? {};
+      if (data['activeChatWith'] == widget.receiverId) {
+        await userRef.set({
+          'activeChatWith': FieldValue.delete(),
+          'activeChatUpdatedAt': FieldValue.serverTimestamp(),
+          'isInChatPage': false,
+        }, SetOptions(merge: true));
+      }
+    } catch (e) {
+      debugPrint("Error clearing active chat: $e");
+    }
+  }
+
+  Future<void> _notifyReceiverIfNotInChat({
+    required String senderId,
+    required String preview,
+  }) async {
+    try {
+      final receiverDoc = await _firestore
+          .collection('users')
+          .doc(widget.receiverId)
+          .get();
+      final receiverData = receiverDoc.data() ?? {};
+      final bool receiverInThisChat =
+          receiverData['isInChatPage'] == true &&
+          receiverData['activeChatWith'] == senderId;
+
+      if (receiverInThisChat) {
+        return;
+      }
+
+      await _firestore
+          .collection('users')
+          .doc(widget.receiverId)
+          .collection('notifications')
+          .add({
+            'type': 'chat_message',
+            'title': _currentUserName ?? 'New message',
+            'body': preview,
+            'fromId': senderId,
+            'fromName': _currentUserName ?? 'User',
+            'chatPartnerId': senderId,
+            'chatPartnerName': _currentUserName ?? 'User',
+            'isRead': false,
+            'timestamp': FieldValue.serverTimestamp(),
+          });
+    } catch (e) {
+      debugPrint("Error creating receiver notification: $e");
+    }
   }
 
   String _getChatRoomId(String user1, String user2) {
@@ -109,12 +206,17 @@ class _ChatPageState extends State<ChatPage> {
     return ids.join('_');
   }
 
-  void _sendMessage({String? text, String type = 'text', String? url, String? fileName}) async {
+  void _sendMessage({
+    String? text,
+    String type = 'text',
+    String? url,
+    String? fileName,
+  }) async {
     if (type == 'text' && (text == null || text.trim().isEmpty)) return;
 
     final String currentUserId = _auth.currentUser!.uid;
     final String chatRoomId = _getChatRoomId(currentUserId, widget.receiverId);
-    
+
     final messageData = {
       'senderId': currentUserId,
       'receiverId': widget.receiverId,
@@ -134,11 +236,20 @@ class _ChatPageState extends State<ChatPage> {
 
       String lastMsgDisplay = "";
       switch (type) {
-        case 'image': lastMsgDisplay = "📷 Photo"; break;
-        case 'video': lastMsgDisplay = "🎥 Video"; break;
-        case 'file': lastMsgDisplay = "📄 File: $fileName"; break;
-        case 'audio': lastMsgDisplay = "🎤 Voice message"; break;
-        default: lastMsgDisplay = text ?? "";
+        case 'image':
+          lastMsgDisplay = "📷 Photo";
+          break;
+        case 'video':
+          lastMsgDisplay = "🎥 Video";
+          break;
+        case 'file':
+          lastMsgDisplay = "📄 File: $fileName";
+          break;
+        case 'audio':
+          lastMsgDisplay = "🎤 Voice message";
+          break;
+        default:
+          lastMsgDisplay = text ?? "";
       }
 
       await _firestore.collection('chat_rooms').doc(chatRoomId).set({
@@ -148,8 +259,17 @@ class _ChatPageState extends State<ChatPage> {
         'user_names': {
           currentUserId: _currentUserName ?? "User",
           widget.receiverId: widget.receiverName,
-        }
+        },
       }, SetOptions(merge: true));
+
+      await _firestore.collection('chat_rooms').doc(chatRoomId).update({
+        'unreadCount.${widget.receiverId}': FieldValue.increment(1),
+      });
+
+      await _notifyReceiverIfNotInChat(
+        senderId: currentUserId,
+        preview: lastMsgDisplay,
+      );
 
       _messageController.clear();
       _scrollController.animateTo(
@@ -162,14 +282,76 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
+  void _openReceiverProfile() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => Profile(userId: widget.receiverId)),
+    );
+  }
+
+  Widget _buildChatHeaderTitle(bool isRtl) {
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: _firestore.collection('users').doc(widget.receiverId).snapshots(),
+      builder: (context, snapshot) {
+        final data = snapshot.data?.data() ?? <String, dynamic>{};
+        final displayName = (data['name'] ?? widget.receiverName).toString();
+        final imageUrl = (data['profileImageUrl'] ?? '').toString();
+
+        return InkWell(
+          onTap: _openReceiverProfile,
+          borderRadius: BorderRadius.circular(20),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircleAvatar(
+                  radius: 16,
+                  backgroundColor: const Color(0xFFE2E8F0),
+                  backgroundImage: imageUrl.isNotEmpty
+                      ? CachedNetworkImageProvider(imageUrl)
+                      : null,
+                  child: imageUrl.isEmpty
+                      ? const Icon(
+                          Icons.person,
+                          size: 18,
+                          color: Color(0xFF64748B),
+                        )
+                      : null,
+                ),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    displayName,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Icon(
+                  isRtl
+                      ? Icons.arrow_back_ios_new_rounded
+                      : Icons.arrow_forward_ios_rounded,
+                  size: 12,
+                  color: const Color(0xFF64748B),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final isRtl = Provider.of<LanguageProvider>(context).locale.languageCode == 'he' ||
+    final isRtl =
+        Provider.of<LanguageProvider>(context).locale.languageCode == 'he' ||
         Provider.of<LanguageProvider>(context).locale.languageCode == 'ar';
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.receiverName),
+        title: _buildChatHeaderTitle(isRtl),
         centerTitle: true,
         backgroundColor: Colors.white,
         foregroundColor: const Color(0xFF1976D2),
@@ -254,25 +436,39 @@ class _ChatPageState extends State<ChatPage> {
                   padding: const EdgeInsets.all(16),
                   itemCount: messages.length,
                   itemBuilder: (context, index) {
-                    final message = messages[index].data() as Map<String, dynamic>;
+                    final message =
+                        messages[index].data() as Map<String, dynamic>;
                     final isMe = message['senderId'] == _auth.currentUser!.uid;
-                    return _buildMessageBubble(message, isMe, messages[index].id);
+                    return _buildMessageBubble(
+                      message,
+                      isMe,
+                      messages[index].id,
+                    );
                   },
                 );
               },
             ),
           ),
-          if (_isSelectionMode) _buildSelectionActionBar() else _buildInputArea(isRtl),
+          if (_isSelectionMode)
+            _buildSelectionActionBar()
+          else
+            _buildInputArea(isRtl),
         ],
       ),
     );
   }
 
-  Widget _buildMessageBubble(Map<String, dynamic> message, bool isMe, String messageId) {
+  Widget _buildMessageBubble(
+    Map<String, dynamic> message,
+    bool isMe,
+    String messageId,
+  ) {
     final bool isSelected = _selectedMessageIds.contains(messageId);
     final String type = message['type'] ?? 'text';
     final timestamp = message['timestamp'] as Timestamp?;
-    final timeStr = timestamp != null ? intl.DateFormat('HH:mm').format(timestamp.toDate()) : "";
+    final timeStr = timestamp != null
+        ? intl.DateFormat('HH:mm').format(timestamp.toDate())
+        : "";
 
     return GestureDetector(
       onLongPress: () {
@@ -299,7 +495,9 @@ class _ChatPageState extends State<ChatPage> {
         margin: const EdgeInsets.only(bottom: 12),
         alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
         child: Container(
-          constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
+          constraints: BoxConstraints(
+            maxWidth: MediaQuery.of(context).size.width * 0.75,
+          ),
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
             color: isSelected
@@ -332,8 +530,12 @@ class _ChatPageState extends State<ChatPage> {
                   borderRadius: BorderRadius.circular(8),
                   child: CachedNetworkImage(
                     imageUrl: message['url'] ?? "",
-                    placeholder: (context, url) => const SizedBox(height: 150, child: Center(child: CircularProgressIndicator())),
-                    errorWidget: (context, url, error) => const Icon(Icons.error),
+                    placeholder: (context, url) => const SizedBox(
+                      height: 150,
+                      child: Center(child: CircularProgressIndicator()),
+                    ),
+                    errorWidget: (context, url, error) =>
+                        const Icon(Icons.error),
                   ),
                 )
               else if (type == 'video')
@@ -348,13 +550,18 @@ class _ChatPageState extends State<ChatPage> {
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.insert_drive_file_rounded, color: isMe ? Colors.white70 : Colors.grey),
+                    Icon(
+                      Icons.insert_drive_file_rounded,
+                      color: isMe ? Colors.white70 : Colors.grey,
+                    ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         message['fileName'] ?? "File",
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(color: isMe ? Colors.white : Colors.black87),
+                        style: TextStyle(
+                          color: isMe ? Colors.white : Colors.black87,
+                        ),
                       ),
                     ),
                   ],
@@ -386,7 +593,7 @@ class _ChatPageState extends State<ChatPage> {
         IconButton(
           icon: const Icon(Icons.play_arrow, color: Colors.white),
           onPressed: () async {
-             if (url.isNotEmpty) await _audioPlayer.play(ap.UrlSource(url));
+            if (url.isNotEmpty) await _audioPlayer.play(ap.UrlSource(url));
           },
         ),
       ],
@@ -399,14 +606,21 @@ class _ChatPageState extends State<ChatPage> {
       decoration: BoxDecoration(
         color: Colors.white,
         boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, -2)),
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, -2),
+          ),
         ],
       ),
       child: SafeArea(
         child: Row(
           children: [
             IconButton(
-              icon: const Icon(Icons.add_circle_outline_rounded, color: Color(0xFF1976D2)),
+              icon: const Icon(
+                Icons.add_circle_outline_rounded,
+                color: Color(0xFF1976D2),
+              ),
               onPressed: _showAttachmentOptions,
             ),
             Expanded(
@@ -434,7 +648,11 @@ class _ChatPageState extends State<ChatPage> {
               child: CircleAvatar(
                 backgroundColor: const Color(0xFF1976D2),
                 child: IconButton(
-                  icon: Icon(_isRecording ? Icons.mic : Icons.send_rounded, color: Colors.white, size: 20),
+                  icon: Icon(
+                    _isRecording ? Icons.mic : Icons.send_rounded,
+                    color: Colors.white,
+                    size: 20,
+                  ),
                   onPressed: () {
                     if (_messageController.text.trim().isNotEmpty) {
                       _sendMessage(text: _messageController.text);
@@ -466,8 +684,17 @@ class _ChatPageState extends State<ChatPage> {
           Text("${_selectedMessageIds.length} selected"),
           Row(
             children: [
-              IconButton(icon: const Icon(Icons.copy_rounded), onPressed: _copyMessages),
-              IconButton(icon: const Icon(Icons.delete_outline_rounded, color: Colors.red), onPressed: _deleteMessages),
+              IconButton(
+                icon: const Icon(Icons.copy_rounded),
+                onPressed: _copyMessages,
+              ),
+              IconButton(
+                icon: const Icon(
+                  Icons.delete_outline_rounded,
+                  color: Colors.red,
+                ),
+                onPressed: _deleteMessages,
+              ),
             ],
           ),
         ],
@@ -478,17 +705,39 @@ class _ChatPageState extends State<ChatPage> {
   void _showAttachmentOptions() {
     showModalBottomSheet(
       context: context,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
       builder: (context) {
         return Container(
           padding: const EdgeInsets.all(24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _buildAttachmentOption(Icons.image_rounded, "Image", Colors.purple, () => _pickMedia(ImageSource.gallery, 'image')),
-              _buildAttachmentOption(Icons.videocam_rounded, "Video", Colors.orange, () => _pickMedia(ImageSource.gallery, 'video')),
-              _buildAttachmentOption(Icons.insert_drive_file_rounded, "File", Colors.blue, _pickFile),
-              _buildAttachmentOption(Icons.camera_alt_rounded, "Camera", Colors.green, () => _pickMedia(ImageSource.camera, 'image')),
+              _buildAttachmentOption(
+                Icons.image_rounded,
+                "Image",
+                Colors.purple,
+                () => _pickMedia(ImageSource.gallery, 'image'),
+              ),
+              _buildAttachmentOption(
+                Icons.videocam_rounded,
+                "Video",
+                Colors.orange,
+                () => _pickMedia(ImageSource.gallery, 'video'),
+              ),
+              _buildAttachmentOption(
+                Icons.insert_drive_file_rounded,
+                "File",
+                Colors.blue,
+                _pickFile,
+              ),
+              _buildAttachmentOption(
+                Icons.camera_alt_rounded,
+                "Camera",
+                Colors.green,
+                () => _pickMedia(ImageSource.camera, 'image'),
+              ),
             ],
           ),
         );
@@ -496,9 +745,17 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
-  Widget _buildAttachmentOption(IconData icon, String label, Color color, VoidCallback onTap) {
+  Widget _buildAttachmentOption(
+    IconData icon,
+    String label,
+    Color color,
+    VoidCallback onTap,
+  ) {
     return ListTile(
-      leading: CircleAvatar(backgroundColor: color.withOpacity(0.1), child: Icon(icon, color: color)),
+      leading: CircleAvatar(
+        backgroundColor: color.withOpacity(0.1),
+        child: Icon(icon, color: color),
+      ),
       title: Text(label),
       onTap: () {
         Navigator.pop(context);
@@ -509,8 +766,8 @@ class _ChatPageState extends State<ChatPage> {
 
   Future<void> _pickMedia(ImageSource source, String type) async {
     final picker = ImagePicker();
-    final pickedFile = type == 'image' 
-        ? await picker.pickImage(source: source) 
+    final pickedFile = type == 'image'
+        ? await picker.pickImage(source: source)
         : await picker.pickVideo(source: source);
 
     if (pickedFile != null) {
@@ -521,13 +778,20 @@ class _ChatPageState extends State<ChatPage> {
   Future<void> _pickFile() async {
     FilePickerResult? result = await FilePicker.platform.pickFiles();
     if (result != null) {
-      _uploadAndSend(File(result.files.single.path!), 'file', result.files.single.name);
+      _uploadAndSend(
+        File(result.files.single.path!),
+        'file',
+        result.files.single.name,
+      );
     }
   }
 
   Future<void> _uploadAndSend(File file, String type, String fileName) async {
     try {
-      final ref = _storage.ref().child('chats').child(DateTime.now().millisecondsSinceEpoch.toString());
+      final ref = _storage
+          .ref()
+          .child('chats')
+          .child(DateTime.now().millisecondsSinceEpoch.toString());
       final uploadTask = ref.putFile(file);
       final snapshot = await uploadTask;
       final url = await snapshot.ref.getDownloadURL();
@@ -540,7 +804,8 @@ class _ChatPageState extends State<ChatPage> {
   void _startRecording() async {
     if (await _audioRecorder.hasPermission()) {
       final directory = await getApplicationDocumentsDirectory();
-      final path = '${directory.path}/audio_${DateTime.now().millisecondsSinceEpoch}.m4a';
+      final path =
+          '${directory.path}/audio_${DateTime.now().millisecondsSinceEpoch}.m4a';
       await _audioRecorder.start(const RecordConfig(), path: path);
       setState(() => _isRecording = true);
     }
@@ -555,16 +820,16 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   void _openFile(String url, String? fileName) async {
-     if (url.isEmpty) return;
-     try {
-       final response = await http.get(Uri.parse(url));
-       final directory = await getTemporaryDirectory();
-       final file = File('${directory.path}/${fileName ?? "temp"}');
-       await file.writeAsBytes(response.bodyBytes);
-       await OpenFilex.open(file.path);
-     } catch (e) {
-       debugPrint("Open file error: $e");
-     }
+    if (url.isEmpty) return;
+    try {
+      final response = await http.get(Uri.parse(url));
+      final directory = await getTemporaryDirectory();
+      final file = File('${directory.path}/${fileName ?? "temp"}');
+      await file.writeAsBytes(response.bodyBytes);
+      await OpenFilex.open(file.path);
+    } catch (e) {
+      debugPrint("Open file error: $e");
+    }
   }
 
   void _copyMessages() {
@@ -572,13 +837,46 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   void _deleteMessages() async {
-    final chatRoomId = _getChatRoomId(_auth.currentUser!.uid, widget.receiverId);
+    final chatRoomId = _getChatRoomId(
+      _auth.currentUser!.uid,
+      widget.receiverId,
+    );
     for (var id in _selectedMessageIds) {
-      await _firestore.collection('chat_rooms').doc(chatRoomId).collection('messages').doc(id).delete();
+      await _firestore
+          .collection('chat_rooms')
+          .doc(chatRoomId)
+          .collection('messages')
+          .doc(id)
+          .delete();
     }
     setState(() {
       _isSelectionMode = false;
       _selectedMessageIds.clear();
     });
+  }
+}
+
+class _ChatPageLifecycleObserver extends WidgetsBindingObserver {
+  _ChatPageLifecycleObserver({
+    required this.onResumed,
+    required this.onBackgrounded,
+  });
+
+  final VoidCallback onResumed;
+  final VoidCallback onBackgrounded;
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      onResumed();
+      return;
+    }
+
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached ||
+        state == AppLifecycleState.hidden) {
+      onBackgrounded();
+    }
   }
 }

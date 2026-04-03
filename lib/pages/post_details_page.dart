@@ -47,7 +47,7 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
         .collection('projects')
         .doc(widget.project['id'])
         .collection('likes')
-        .doc(_currentUser!.uid)
+        .doc(_currentUser.uid)
         .get();
 
     if (mounted) {
@@ -65,8 +65,8 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
         .doc(widget.workerId)
         .collection('projects')
         .doc(widget.project['id']);
-    
-    final likeRef = projectRef.collection('likes').doc(_currentUser!.uid);
+
+    final likeRef = projectRef.collection('likes').doc(_currentUser.uid);
 
     if (_isLiked) {
       setState(() {
@@ -83,7 +83,7 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
       });
       await likeRef.set({'timestamp': FieldValue.serverTimestamp()});
       await projectRef.update({'likesCount': FieldValue.increment(1)});
-      
+
       Future.delayed(const Duration(milliseconds: 1000), () {
         if (mounted) setState(() => _showHeartAnimation = false);
       });
@@ -96,7 +96,10 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
     final commentText = _commentController.text.trim();
     _commentController.clear();
 
-    final userDoc = await _firestore.collection('users').doc(_currentUser!.uid).get();
+    final userDoc = await _firestore
+        .collection('users')
+        .doc(_currentUser.uid)
+        .get();
     final userName = userDoc.data()?['name'] ?? 'User';
     final userImage = userDoc.data()?['profileImageUrl'] ?? '';
 
@@ -107,13 +110,13 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
         .doc(widget.project['id'])
         .collection('comments')
         .add({
-      'userId': _currentUser!.uid,
-      'userName': userName,
-      'userImage': userImage,
-      'text': commentText,
-      'timestamp': FieldValue.serverTimestamp(),
-    });
-    
+          'userId': _currentUser.uid,
+          'userName': userName,
+          'userImage': userImage,
+          'text': commentText,
+          'timestamp': FieldValue.serverTimestamp(),
+        });
+
     await _firestore
         .collection('users')
         .doc(widget.workerId)
@@ -124,17 +127,25 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
 
   bool _isPathVideo(String url) {
     final lowerUrl = url.toLowerCase();
-    return lowerUrl.contains('.mp4') || lowerUrl.contains('.mov') || lowerUrl.contains('.avi') || lowerUrl.contains('.mkv');
+    return lowerUrl.contains('.mp4') ||
+        lowerUrl.contains('.mov') ||
+        lowerUrl.contains('.avi') ||
+        lowerUrl.contains('.mkv');
   }
 
   @override
   Widget build(BuildContext context) {
-    final List<dynamic> media = widget.project['imageUrls'] ?? [widget.project['imageUrl'] ?? widget.project['image'] ?? ""];
+    final List<dynamic> media =
+        widget.project['imageUrls'] ??
+        [widget.project['imageUrl'] ?? widget.project['image'] ?? ""];
 
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text("Post Details", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+        title: const Text(
+          "Post Details",
+          style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
+        ),
         backgroundColor: Colors.white,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.black),
@@ -151,11 +162,18 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
                   ListTile(
                     leading: CircleAvatar(
                       backgroundImage: widget.workerProfileImage.isNotEmpty
-                          ? CachedNetworkImageProvider(widget.workerProfileImage)
+                          ? CachedNetworkImageProvider(
+                              widget.workerProfileImage,
+                            )
                           : null,
-                      child: widget.workerProfileImage.isEmpty ? const Icon(Icons.person) : null,
+                      child: widget.workerProfileImage.isEmpty
+                          ? const Icon(Icons.person)
+                          : null,
                     ),
-                    title: Text(widget.workerName, style: const TextStyle(fontWeight: FontWeight.bold)),
+                    title: Text(
+                      widget.workerName,
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
                     subtitle: const Text("Worker"),
                     trailing: const Icon(Icons.more_vert),
                   ),
@@ -193,8 +211,16 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
                                       : CachedNetworkImage(
                                           imageUrl: url,
                                           fit: BoxFit.cover,
-                                          placeholder: (context, url) => Container(color: Colors.grey[200], child: const Center(child: CircularProgressIndicator())),
-                                          errorWidget: (context, url, error) => const Icon(Icons.error),
+                                          placeholder: (context, url) =>
+                                              Container(
+                                                color: Colors.grey[200],
+                                                child: const Center(
+                                                  child:
+                                                      CircularProgressIndicator(),
+                                                ),
+                                              ),
+                                          errorWidget: (context, url, error) =>
+                                              const Icon(Icons.error),
                                         ),
                                 ),
                               );
@@ -202,18 +228,28 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
                           ),
                         ),
                         if (_showHeartAnimation)
-                          const Icon(Icons.favorite, color: Colors.white, size: 100),
+                          const Icon(
+                            Icons.favorite,
+                            color: Colors.white,
+                            size: 100,
+                          ),
                       ],
                     ),
                   ),
 
                   // Actions (Like, Comment, Share)
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
                     child: Row(
                       children: [
                         IconButton(
-                          icon: Icon(_isLiked ? Icons.favorite : Icons.favorite_border, color: _isLiked ? Colors.red : Colors.black),
+                          icon: Icon(
+                            _isLiked ? Icons.favorite : Icons.favorite_border,
+                            color: _isLiked ? Colors.red : Colors.black,
+                          ),
                           onPressed: _toggleLike,
                         ),
                         IconButton(
@@ -231,18 +267,30 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
                   // Likes Count
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Text("$_likesCount likes", style: const TextStyle(fontWeight: FontWeight.bold)),
+                    child: Text(
+                      "$_likesCount likes",
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
                   ),
 
                   // Description
-                  if (widget.project['description'] != null && widget.project['description'].toString().isNotEmpty)
+                  if (widget.project['description'] != null &&
+                      widget.project['description'].toString().isNotEmpty)
                     Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
                       child: RichText(
                         text: TextSpan(
                           style: const TextStyle(color: Colors.black),
                           children: [
-                            TextSpan(text: "${widget.workerName} ", style: const TextStyle(fontWeight: FontWeight.bold)),
+                            TextSpan(
+                              text: "${widget.workerName} ",
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                             TextSpan(text: widget.project['description']),
                           ],
                         ),
@@ -262,30 +310,52 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
                         .orderBy('timestamp', descending: true)
                         .snapshots(),
                     builder: (context, snapshot) {
-                      if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+                      if (!snapshot.hasData)
+                        return const Center(child: CircularProgressIndicator());
                       final comments = snapshot.data!.docs;
-                      
+
                       return ListView.builder(
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),
                         itemCount: comments.length,
                         itemBuilder: (context, index) {
-                          final comment = comments[index].data() as Map<String, dynamic>;
+                          final comment =
+                              comments[index].data() as Map<String, dynamic>;
                           return ListTile(
                             leading: CircleAvatar(
                               radius: 15,
-                              backgroundImage: (comment['userImage'] ?? '').isNotEmpty
-                                  ? CachedNetworkImageProvider(comment['userImage'])
+                              backgroundImage:
+                                  (comment['userImage'] ?? '').isNotEmpty
+                                  ? CachedNetworkImageProvider(
+                                      comment['userImage'],
+                                    )
                                   : null,
-                              child: (comment['userImage'] ?? '').isEmpty ? const Icon(Icons.person, size: 15) : null,
+                              child: (comment['userImage'] ?? '').isEmpty
+                                  ? const Icon(Icons.person, size: 15)
+                                  : null,
                             ),
-                            title: Text(comment['userName'] ?? 'User', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                            subtitle: Text(comment['text'] ?? '', style: const TextStyle(fontSize: 13)),
+                            title: Text(
+                              comment['userName'] ?? 'User',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                              ),
+                            ),
+                            subtitle: Text(
+                              comment['text'] ?? '',
+                              style: const TextStyle(fontSize: 13),
+                            ),
                             trailing: Text(
                               comment['timestamp'] != null
-                                  ? DateFormat.yMMMd().format((comment['timestamp'] as Timestamp).toDate())
+                                  ? DateFormat.yMMMd().format(
+                                      (comment['timestamp'] as Timestamp)
+                                          .toDate(),
+                                    )
                                   : '',
-                              style: const TextStyle(fontSize: 10, color: Colors.grey),
+                              style: const TextStyle(
+                                fontSize: 10,
+                                color: Colors.grey,
+                              ),
                             ),
                           );
                         },
@@ -308,8 +378,12 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
               children: [
                 CircleAvatar(
                   radius: 18,
-                  backgroundImage: _currentUser?.photoURL != null ? CachedNetworkImageProvider(_currentUser!.photoURL!) : null,
-                  child: _currentUser?.photoURL == null ? const Icon(Icons.person) : null,
+                  backgroundImage: _currentUser?.photoURL != null
+                      ? CachedNetworkImageProvider(_currentUser!.photoURL!)
+                      : null,
+                  child: _currentUser?.photoURL == null
+                      ? const Icon(Icons.person)
+                      : null,
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -323,7 +397,13 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
                 ),
                 TextButton(
                   onPressed: _addComment,
-                  child: const Text("Post", style: TextStyle(color: Colors.blue, fontWeight: FontWeight.bold)),
+                  child: const Text(
+                    "Post",
+                    style: TextStyle(
+                      color: Colors.blue,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ),
               ],
             ),

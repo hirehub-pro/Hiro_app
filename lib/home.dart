@@ -1,6 +1,4 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -39,9 +37,24 @@ class _HomePageState extends State<HomePage> {
   String _userRole = "customer";
   AppLocation? _currentPosition;
 
+  void _onLocationPermissionGranted() {
+    if (!mounted) return;
+    _reloadAfterPermissionGranted();
+  }
+
+  Future<void> _reloadAfterPermissionGranted() async {
+    await _getCurrentLocation();
+    await _fetchTopRatedWorkers();
+    if (!mounted) return;
+    setState(() {});
+  }
+
   @override
   void initState() {
     super.initState();
+    LocationContextService.locationPermissionGrantedTick.addListener(
+      _onLocationPermissionGranted,
+    );
     _initData();
     _listenForPopups();
   }
@@ -56,7 +69,11 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _getCurrentLocation() async {
     try {
-      _currentPosition = await LocationContextService.getActiveLocation();
+      final location = await LocationContextService.getActiveLocation();
+      if (!mounted) return;
+      setState(() {
+        _currentPosition = location;
+      });
     } catch (e) {
       debugPrint("Location error: $e");
     }
@@ -77,6 +94,9 @@ class _HomePageState extends State<HomePage> {
 
   @override
   void dispose() {
+    LocationContextService.locationPermissionGrantedTick.removeListener(
+      _onLocationPermissionGranted,
+    );
     _popupSubscription?.cancel();
     super.dispose();
   }
@@ -209,13 +229,15 @@ class _HomePageState extends State<HomePage> {
     setState(() => _isPopularLoading = true);
 
     try {
-      final String response = await rootBundle.loadString(
-        'assets/profeissions.json',
-      );
-      final List<dynamic> allProfsJson = json.decode(response);
-      final List<Map<String, dynamic>> allProfs = allProfsJson
-          .map((e) => Map<String, dynamic>.from(e))
-          .toList();
+      final professionsDoc = await _firestore
+          .collection('metadata')
+          .doc('professions')
+          .get();
+      final List<Map<String, dynamic>> allProfs =
+          ((professionsDoc.data()?['items'] as List?) ?? const [])
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList();
 
       List<Map<String, dynamic>> popular = [];
 
@@ -261,11 +283,10 @@ class _HomePageState extends State<HomePage> {
           'Cleaner',
         ];
         for (var name in defaults) {
-          final prof = allProfs.cast<Map<String, dynamic>?>().firstWhere(
-            (p) => p?['en'] == name,
-            orElse: () => null,
-          );
-          if (prof != null) popular.add(prof);
+          final matches = allProfs.where((p) => p['en'] == name);
+          if (matches.isNotEmpty) {
+            popular.add(matches.first);
+          }
         }
       }
 

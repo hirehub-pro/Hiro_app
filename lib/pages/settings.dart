@@ -11,7 +11,6 @@ import 'package:untitled1/pages/about.dart';
 import 'package:untitled1/pages/account_settings.dart';
 import 'package:untitled1/pages/privacy_policy_page.dart';
 import 'package:untitled1/pages/terms_of_service_page.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -42,7 +41,10 @@ class _SettingsPageState extends State<SettingsPage> {
     }
 
     try {
-      final doc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
 
       if (doc.exists) {
         final data = doc.data() as Map<String, dynamic>;
@@ -364,14 +366,24 @@ class _SettingsPageState extends State<SettingsPage> {
                           Icons.lock_outline_rounded,
                           strings['privacy']!,
                           () {
-                            Navigator.push(context, MaterialPageRoute(builder: (_) => const PrivacyPolicyPage()));
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const PrivacyPolicyPage(),
+                              ),
+                            );
                           },
                         ),
                         _buildGalaxyTile(
                           Icons.description_outlined,
                           strings['terms']!,
                           () {
-                            Navigator.push(context, MaterialPageRoute(builder: (_) => const TermsOfServicePage()));
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const TermsOfServicePage(),
+                              ),
+                            );
                           },
                         ),
                       ]),
@@ -482,15 +494,17 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
-  Widget _buildGalaxyTile(IconData icon, String title, VoidCallback onTap, {Color? color}) {
+  Widget _buildGalaxyTile(
+    IconData icon,
+    String title,
+    VoidCallback onTap, {
+    Color? color,
+  }) {
     return ListTile(
       leading: Icon(icon, color: color ?? const Color(0xFF1976D2)),
       title: Text(
-        title, 
-        style: TextStyle(
-          fontWeight: FontWeight.w500,
-          color: color,
-        )
+        title,
+        style: TextStyle(fontWeight: FontWeight.w500, color: color),
       ),
       trailing: const Icon(Icons.chevron_right_rounded, size: 20),
       onTap: onTap,
@@ -550,7 +564,12 @@ class _SettingsPageState extends State<SettingsPage> {
                   title: Text(strings['privacy']!),
                   trailing: const CupertinoListTileChevron(),
                   onTap: () {
-                    Navigator.push(context, CupertinoPageRoute(builder: (_) => const PrivacyPolicyPage()));
+                    Navigator.push(
+                      context,
+                      CupertinoPageRoute(
+                        builder: (_) => const PrivacyPolicyPage(),
+                      ),
+                    );
                   },
                 ),
                 CupertinoListTile(
@@ -561,83 +580,88 @@ class _SettingsPageState extends State<SettingsPage> {
                   title: Text(strings['terms']!),
                   trailing: const CupertinoListTileChevron(),
                   onTap: () {
-                    Navigator.push(context, CupertinoPageRoute(builder: (_) => const TermsOfServicePage()));
+                    Navigator.push(
+                      context,
+                      CupertinoPageRoute(
+                        builder: (_) => const TermsOfServicePage(),
+                      ),
+                    );
                   },
                 ),
               ],
             ),
             if (_userRole == 'worker')
-            CupertinoListSection.insetGrouped(
-              header: Text(strings['schedule']!),
-              children: [
-                CupertinoListTile(
-                  leading: const Icon(
-                    CupertinoIcons.calendar,
-                    color: CupertinoColors.systemIndigo,
+              CupertinoListSection.insetGrouped(
+                header: Text(strings['schedule']!),
+                children: [
+                  CupertinoListTile(
+                    leading: const Icon(
+                      CupertinoIcons.calendar,
+                      color: CupertinoColors.systemIndigo,
+                    ),
+                    title: Text(strings['hide_schedule']!),
+                    trailing: CupertinoSwitch(
+                      value: _hideSchedule,
+                      onChanged: (v) {
+                        setState(() => _hideSchedule = v);
+                        _updateSetting('hideSchedule', v);
+                      },
+                    ),
                   ),
-                  title: Text(strings['hide_schedule']!),
-                  trailing: CupertinoSwitch(
-                    value: _hideSchedule,
-                    onChanged: (v) {
-                      setState(() => _hideSchedule = v);
-                      _updateSetting('hideSchedule', v);
-                    },
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 8,
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: List.generate(7, (index) {
-                      final dayNum = index + 1;
-                      final isOff = _disabledDays.contains(dayNum);
-                      return GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            if (isOff) {
-                              _disabledDays.remove(dayNum);
-                            } else {
-                              _disabledDays.add(dayNum);
-                            }
-                          });
-                          _updateSetting('disabledDays', _disabledDays);
-                        },
-                        child: Container(
-                          width: 32,
-                          height: 32,
-                          decoration: BoxDecoration(
-                            color: isOff
-                                ? CupertinoColors.systemRed.withOpacity(0.1)
-                                : CupertinoColors.systemBlue.withOpacity(0.1),
-                            shape: BoxShape.circle,
-                            border: Border.all(
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: List.generate(7, (index) {
+                        final dayNum = index + 1;
+                        final isOff = _disabledDays.contains(dayNum);
+                        return GestureDetector(
+                          onTap: () {
+                            setState(() {
+                              if (isOff) {
+                                _disabledDays.remove(dayNum);
+                              } else {
+                                _disabledDays.add(dayNum);
+                              }
+                            });
+                            _updateSetting('disabledDays', _disabledDays);
+                          },
+                          child: Container(
+                            width: 32,
+                            height: 32,
+                            decoration: BoxDecoration(
                               color: isOff
-                                  ? CupertinoColors.systemRed
-                                  : CupertinoColors.systemBlue,
-                            ),
-                          ),
-                          child: Center(
-                            child: Text(
-                              strings['days']!.split(',')[index],
-                              style: TextStyle(
+                                  ? CupertinoColors.systemRed.withOpacity(0.1)
+                                  : CupertinoColors.systemBlue.withOpacity(0.1),
+                              shape: BoxShape.circle,
+                              border: Border.all(
                                 color: isOff
                                     ? CupertinoColors.systemRed
                                     : CupertinoColors.systemBlue,
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            child: Center(
+                              child: Text(
+                                strings['days']!.split(',')[index],
+                                style: TextStyle(
+                                  color: isOff
+                                      ? CupertinoColors.systemRed
+                                      : CupertinoColors.systemBlue,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                      );
-                    }),
+                        );
+                      }),
+                    ),
                   ),
-                ),
-              ],
-            ),
+                ],
+              ),
             CupertinoListSection.insetGrouped(
               header: Text(strings['notifications']!),
               children: [

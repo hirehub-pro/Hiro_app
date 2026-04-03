@@ -1,7 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
-import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import '../utils/video_cache_manager.dart'; // Ensure this path is correct
 
 class CachedVideoPlayer extends StatefulWidget {
@@ -20,7 +19,7 @@ class CachedVideoPlayer extends StatefulWidget {
   State<CachedVideoPlayer> createState() => _CachedVideoPlayerState();
 }
 
-class _CachedVideoPlayerState extends State<CachedVideoPlayer> 
+class _CachedVideoPlayerState extends State<CachedVideoPlayer>
     with AutomaticKeepAliveClientMixin {
   VideoPlayerController? _controller;
   bool _isInitialized = false;
@@ -38,7 +37,9 @@ class _CachedVideoPlayerState extends State<CachedVideoPlayer>
   Future<void> _initializeController() async {
     try {
       // 1. Check/Download from Cache
-      final fileInfo = await VideoCacheManager.instance.getFileFromCache(widget.url);
+      final fileInfo = await VideoCacheManager.instance.getFileFromCache(
+        widget.url,
+      );
       File videoFile;
 
       if (fileInfo == null) {
@@ -52,7 +53,7 @@ class _CachedVideoPlayerState extends State<CachedVideoPlayer>
       // 2. Initialize Controller using local file
       _controller = VideoPlayerController.file(videoFile);
       await _controller!.initialize();
-      
+
       if (mounted) {
         setState(() {
           _isInitialized = true;
@@ -87,9 +88,11 @@ class _CachedVideoPlayerState extends State<CachedVideoPlayer>
   @override
   Widget build(BuildContext context) {
     super.build(context); // Required by AutomaticKeepAliveClientMixin
-    
+
     if (_isError) {
-      return const Center(child: Icon(Icons.error_outline, color: Colors.white, size: 40));
+      return const Center(
+        child: Icon(Icons.error_outline, color: Colors.white, size: 40),
+      );
     }
 
     if (!_isInitialized) {
@@ -136,7 +139,11 @@ class _VideoControls extends StatelessWidget {
                 : Container(
                     color: Colors.black38,
                     child: const Center(
-                      child: Icon(Icons.play_arrow, color: Colors.white, size: 80),
+                      child: Icon(
+                        Icons.play_arrow,
+                        color: Colors.white,
+                        size: 80,
+                      ),
                     ),
                   ),
           );

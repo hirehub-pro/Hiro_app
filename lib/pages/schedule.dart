@@ -109,7 +109,9 @@ class _SchedulePageState extends State<SchedulePage> {
             _allReminders = (data['allReminders'] as Map).map(
               (k, v) => MapEntry(
                 k.toString(),
-                (v as List).map((item) => Map<String, dynamic>.from(item)).toList(),
+                (v as List)
+                    .map((item) => Map<String, dynamic>.from(item))
+                    .toList(),
               ),
             );
           }
@@ -421,9 +423,7 @@ class _SchedulePageState extends State<SchedulePage> {
       });
     });
 
-    await _scheduleDoc.set({
-      'vacations': _vacations,
-    }, SetOptions(merge: true));
+    await _scheduleDoc.set({'vacations': _vacations}, SetOptions(merge: true));
   }
 
   Future<void> _showVacationDialog() async {
@@ -518,28 +518,6 @@ class _SchedulePageState extends State<SchedulePage> {
       }, SetOptions(merge: true));
     } catch (e) {
       debugPrint("Error deleting reminder: $e");
-    }
-  }
-
-  Future<void> _saveNotes() async {
-    final dateStr =
-        "${_selectedDay.year}-${_selectedDay.month}-${_selectedDay.day}";
-    final note = _notesController.text;
-
-    setState(() {
-      if (note.isEmpty) {
-        _dayNotes.remove(dateStr);
-      } else {
-        _dayNotes[dateStr] = note;
-      }
-    });
-
-    try {
-      await _scheduleDoc.set({
-        'dayNotes': _dayNotes,
-      }, SetOptions(merge: true));
-    } catch (e) {
-      debugPrint("Error saving notes: $e");
     }
   }
 
@@ -731,8 +709,9 @@ class _SchedulePageState extends State<SchedulePage> {
                 child: Column(
                   children: [
                     TableCalendar(
-                      firstDay:
-                          DateTime.now().subtract(const Duration(days: 365)),
+                      firstDay: DateTime.now().subtract(
+                        const Duration(days: 365),
+                      ),
                       lastDay: DateTime.now().add(const Duration(days: 365)),
                       focusedDay: _focusedDay,
                       selectedDayPredicate: (day) =>
@@ -768,7 +747,9 @@ class _SchedulePageState extends State<SchedulePage> {
                       ),
                       eventLoader: (day) {
                         final dStr = "${day.year}-${day.month}-${day.day}";
-                        return _reminderDates.contains(dStr) ? ['reminder'] : [];
+                        return _reminderDates.contains(dStr)
+                            ? ['reminder']
+                            : [];
                       },
                       calendarBuilders: CalendarBuilders(
                         defaultBuilder: (context, day, focusedDay) {
@@ -891,7 +872,6 @@ class _SchedulePageState extends State<SchedulePage> {
       ],
     );
   }
-
 
   Widget _buildOwnerControls(
     Map<String, String> strings,

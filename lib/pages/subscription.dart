@@ -30,15 +30,16 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
   late StreamSubscription<List<PurchaseDetails>> _subscription;
   List<ProductDetails> _products = [];
   bool _isLoading = true;
-  bool _isStoreAvailable = false;
 
   static const String _proProductId = 'pro_worker_monthly';
-  static const String _backwardsCompatibleId = 'com-hirehub-app-pro-worker-monthly';
+  static const String _backwardsCompatibleId =
+      'com-hirehub-app-pro-worker-monthly';
 
   @override
   void initState() {
     super.initState();
-    final Stream<List<PurchaseDetails>> purchaseUpdated = _inAppPurchase.purchaseStream;
+    final Stream<List<PurchaseDetails>> purchaseUpdated =
+        _inAppPurchase.purchaseStream;
     _subscription = purchaseUpdated.listen(
       (purchaseDetailsList) => _listenToPurchaseUpdated(purchaseDetailsList),
       onDone: () => _subscription.cancel(),
@@ -59,18 +60,17 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
     if (!isAvailable) {
       setState(() {
         _isLoading = false;
-        _isStoreAvailable = false;
       });
       return;
     }
 
     const Set<String> kIds = <String>{_proProductId, _backwardsCompatibleId};
-    final ProductDetailsResponse response = await _inAppPurchase.queryProductDetails(kIds);
+    final ProductDetailsResponse response = await _inAppPurchase
+        .queryProductDetails(kIds);
 
     setState(() {
       _products = response.productDetails;
       _isLoading = false;
-      _isStoreAvailable = true;
     });
   }
 
@@ -78,7 +78,9 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
     for (var purchaseDetails in purchaseDetailsList) {
       if (purchaseDetails.status == PurchaseStatus.error) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("הרכישה נכשלה: ${purchaseDetails.error?.message}")),
+          SnackBar(
+            content: Text("הרכישה נכשלה: ${purchaseDetails.error?.message}"),
+          ),
         );
       } else if (purchaseDetails.status == PurchaseStatus.purchased ||
           purchaseDetails.status == PurchaseStatus.restored) {
@@ -106,10 +108,12 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) return false;
       final firestore = FirebaseFirestore.instance;
-      
+
       // Fetch existing user data from unified 'users' collection
       final userDoc = await firestore.collection('users').doc(user.uid).get();
-      Map<String, dynamic> userData = userDoc.exists ? (userDoc.data() ?? {}) : {};
+      Map<String, dynamic> userData = userDoc.exists
+          ? (userDoc.data() ?? {})
+          : {};
 
       userData.addAll({
         'role': 'worker',
@@ -117,16 +121,22 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
         'subscriptionDate': FieldValue.serverTimestamp(),
       });
 
-      if (widget.pendingUserData != null) userData.addAll(widget.pendingUserData!);
+      if (widget.pendingUserData != null)
+        userData.addAll(widget.pendingUserData!);
 
       if (widget.pendingImage != null) {
-        final storageRef = FirebaseStorage.instance.ref().child('profile_pictures/${user.uid}.jpg');
+        final storageRef = FirebaseStorage.instance.ref().child(
+          'profile_pictures/${user.uid}.jpg',
+        );
         await storageRef.putFile(widget.pendingImage!);
         userData['profileImageUrl'] = await storageRef.getDownloadURL();
       }
 
       // Update the same document with new role and subscription status
-      await firestore.collection('users').doc(user.uid).set(userData, SetOptions(merge: true));
+      await firestore
+          .collection('users')
+          .doc(user.uid)
+          .set(userData, SetOptions(merge: true));
       return true;
     } catch (e) {
       debugPrint("Upgrade Error: $e");
@@ -143,9 +153,16 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
       builder: (context) => Directionality(
         textDirection: TextDirection.rtl,
         child: AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: const Text('מזל טוב!', style: TextStyle(fontWeight: FontWeight.bold)),
-          content: const Text('הפכת לעובד Pro רשום בהצלחה! כעת תוכל ליהנות מכל היתרונות.'),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          title: const Text(
+            'מזל טוב!',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          content: const Text(
+            'הפכת לעובד Pro רשום בהצלחה! כעת תוכל ליהנות מכל היתרונות.',
+          ),
           actions: [
             ElevatedButton(
               onPressed: () {
@@ -167,7 +184,9 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
                 }
               },
               style: ElevatedButton.styleFrom(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
               child: const Text('המשך'),
             ),
@@ -183,7 +202,10 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
       textDirection: TextDirection.rtl,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('מנוי Pro', style: TextStyle(fontWeight: FontWeight.bold)),
+          title: const Text(
+            'מנוי Pro',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
           centerTitle: true,
           elevation: 0,
           backgroundColor: Colors.transparent,
@@ -207,13 +229,21 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
                     children: [
                       const Text(
                         'שדרג את החשבון שלך',
-                        style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.black87),
+                        style: TextStyle(
+                          fontSize: 28,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black87,
+                        ),
                         textAlign: TextAlign.center,
                       ),
                       const SizedBox(height: 12),
                       const Text(
                         'קבל יותר עבודות ולידים עם מנוי המקצוענים שלנו. הצטרף לקהילת המומחים המובילה!',
-                        style: TextStyle(fontSize: 16, color: Colors.black54, height: 1.5),
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: Colors.black54,
+                          height: 1.5,
+                        ),
                         textAlign: TextAlign.center,
                       ),
                       const SizedBox(height: 40),
@@ -224,13 +254,19 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF1976D2),
                           padding: const EdgeInsets.symmetric(vertical: 18),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(15),
+                          ),
                           elevation: 8,
                           shadowColor: Colors.blueAccent.withOpacity(0.5),
                         ),
                         child: const Text(
                           'הירשם עכשיו למסלול Pro',
-                          style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                       const SizedBox(height: 16),
@@ -272,7 +308,12 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
             children: [
               const Text(
                 'מסלול PRO WORKER',
-                style: TextStyle(color: Colors.white70, fontSize: 16, fontWeight: FontWeight.w600, letterSpacing: 1.5),
+                style: TextStyle(
+                  color: Colors.white70,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 1.5,
+                ),
               ),
               const SizedBox(height: 12),
               Row(
@@ -281,13 +322,23 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
                 textBaseline: TextBaseline.alphabetic,
                 children: [
                   Text(
-                    _products.isNotEmpty ? _products.first.price.split(' ')[0] : '100',
-                    style: const TextStyle(color: Colors.white, fontSize: 48, fontWeight: FontWeight.w900),
+                    _products.isNotEmpty
+                        ? _products.first.price.split(' ')[0]
+                        : '100',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 48,
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
                   const SizedBox(width: 8),
                   const Text(
                     '₪ / חודש',
-                    style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w500),
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ],
               ),
@@ -310,11 +361,21 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
               decoration: BoxDecoration(
                 color: Colors.amber,
                 borderRadius: BorderRadius.circular(20),
-                boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 10, offset: Offset(0, 4))],
+                boxShadow: const [
+                  BoxShadow(
+                    color: Colors.black26,
+                    blurRadius: 10,
+                    offset: Offset(0, 4),
+                  ),
+                ],
               ),
               child: const Text(
                 'הכי פופולרי',
-                style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 14),
+                style: TextStyle(
+                  color: Colors.black,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
               ),
             ),
           ),
@@ -330,12 +391,22 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
         children: [
           Container(
             padding: const EdgeInsets.all(4),
-            decoration: const BoxDecoration(color: Colors.white24, shape: BoxShape.circle),
+            decoration: const BoxDecoration(
+              color: Colors.white24,
+              shape: BoxShape.circle,
+            ),
             child: const Icon(Icons.check, color: Colors.white, size: 16),
           ),
           const SizedBox(width: 16),
           Expanded(
-            child: Text(text, style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w400)),
+            child: Text(
+              text,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 17,
+                fontWeight: FontWeight.w400,
+              ),
+            ),
           ),
         ],
       ),

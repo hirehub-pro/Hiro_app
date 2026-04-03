@@ -2,6 +2,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' as intl;
+import 'package:provider/provider.dart';
+import 'package:untitled1/services/language_provider.dart';
 
 class AnalyticsPage extends StatefulWidget {
   final String userId;
@@ -51,6 +53,281 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   Map<String, Map<String, int>> _professionWeeklyViews = {};
   List<int> _weeklyViewCounts = List.filled(7, 0);
   int _lifetimeProfileViews = 0;
+
+  String _normalizeLocaleCode(String code) {
+    final normalized = code.toLowerCase();
+    if (normalized.startsWith('he') || normalized == 'iw') return 'he';
+    if (normalized.startsWith('ar')) return 'ar';
+    if (normalized.startsWith('ru')) return 'ru';
+    if (normalized.startsWith('am')) return 'am';
+    return 'en';
+  }
+
+  String get _localeCode {
+    final code = Provider.of<LanguageProvider>(
+      context,
+      listen: false,
+    ).locale.languageCode;
+    return _normalizeLocaleCode(code);
+  }
+
+  Map<String, String> _localStrings(String locale) {
+    switch (locale) {
+      case 'he':
+        return {
+          'analytics_title': 'לוח בקרה עסקי',
+          'all_professions': 'כל המקצועות',
+          'total_earnings': 'הכנסות משוערות',
+          'total_jobs': 'עבודות',
+          'rating': 'דירוג',
+          'views': 'צפיות',
+          'conversion': 'המרה',
+          'top_skill': 'מיומנות מובילה',
+          'conversion_help':
+              'המרה היא אחוז הצופים בפרופיל שהפכו לעבודות. נוסחה: עבודות חלקי צפיות כפול 100.',
+          'earnings_trend': 'מגמת הכנסות (7 ימים אחרונים)',
+          'profile_reach': 'חשיפה לפרופיל',
+          'service_quality_breakdown': 'פירוט איכות השירות',
+          'price': 'מחיר',
+          'service': 'שירות',
+          'timing': 'עמידה בזמנים',
+          'work_quality': 'איכות עבודה',
+          'growth_recommendation': 'המלצת צמיחה',
+          'no_data': 'אין נתונים',
+          'growth_scope_all': 'בכל המקצועות',
+          'growth_scope_for': 'עבור',
+          'growth_getting_started':
+              'אתה רק בתחילת הדרך. השלם את העבודות הראשונות ובקש מלקוחות ביקורות כדי לפתוח תובנות מדויקות יותר.',
+          'growth_low_visibility':
+              'החשיפה שלך עדיין נמוכה {scope}. עדכן תמונת פרופיל, כותרת ותיאור שירות כדי למשוך יותר צפיות.',
+          'growth_low_conversion':
+              'אתה מקבל צפיות אבל מעט סגירות {scope}. שפר כותרת פרופיל, הוסף מחירים ברורים והדגש תוצאות אחרונות.',
+          'growth_high_conversion':
+              'המרה מצוינת {scope}. שמור על זמן תגובה מהיר והמשך לבקש ביקורות מלקוחות מרוצים.',
+          'growth_excellent_rating':
+              'הדירוג שלך מצוין. השתמש בזה כהוכחה חברתית בראש הפרופיל כדי לזכות ביותר עבודות.',
+          'growth_improve_rating':
+              'אפשר לשפר את הדירוג. התמקד בשיפור {metric} בעבודות הבאות ובקש משוב מפורט מלקוחות.',
+          'growth_top_service':
+              'המקצוע החזק ביותר שלך הוא {service}. הצג אותו ראשון בפרופיל ובפורטפוליו.',
+          'growth_stable':
+              'הביצועים יציבים {scope}. המשך להשלים עבודות באופן עקבי ואסוף יותר ביקורות כדי לצמוח מהר יותר.',
+          'day_sun': 'א',
+          'day_mon': 'ב',
+          'day_tue': 'ג',
+          'day_wed': 'ד',
+          'day_thu': 'ה',
+          'day_fri': 'ו',
+          'day_sat': 'ש',
+        };
+      case 'ar':
+        return {
+          'analytics_title': 'لوحة تحكم الأعمال',
+          'all_professions': 'كل المهن',
+          'total_earnings': 'الأرباح التقديرية',
+          'total_jobs': 'الأعمال',
+          'rating': 'التقييم',
+          'views': 'المشاهدات',
+          'conversion': 'التحويل',
+          'top_skill': 'المهارة الأقوى',
+          'conversion_help':
+              'التحويل هو نسبة مشاهدي الملف الذين أصبحوا أعمالاً. المعادلة: الأعمال ÷ المشاهدات × 100.',
+          'earnings_trend': 'اتجاه الأرباح (آخر 7 أيام)',
+          'profile_reach': 'وصول الملف الشخصي',
+          'service_quality_breakdown': 'تفصيل جودة الخدمة',
+          'price': 'السعر',
+          'service': 'الخدمة',
+          'timing': 'الالتزام بالوقت',
+          'work_quality': 'جودة العمل',
+          'growth_recommendation': 'توصية للنمو',
+          'no_data': 'لا توجد بيانات',
+          'growth_scope_all': 'عبر جميع المهن',
+          'growth_scope_for': 'لـ',
+          'growth_getting_started':
+              'أنت في البداية. أكمل أعمالك الأولى واطلب تقييمات من العملاء للحصول على رؤى أفضل.',
+          'growth_low_visibility':
+              'ظهورك ما زال منخفضاً {scope}. حدّث صورة الملف والعنوان ووصف الخدمة لجذب المزيد من المشاهدات.',
+          'growth_low_conversion':
+              'تحصل على مشاهدات لكن حجوزات قليلة {scope}. حسّن عنوان ملفك وأضف أسعاراً واضحة وأبرز نتائجك الأخيرة.',
+          'growth_high_conversion':
+              'معدل التحويل ممتاز {scope}. حافظ على سرعة الرد واستمر بطلب التقييمات من العملاء الراضين.',
+          'growth_excellent_rating':
+              'تقييمك ممتاز. استخدم ذلك كدليل اجتماعي في أعلى ملفك للفوز بمزيد من الأعمال.',
+          'growth_improve_rating':
+              'يمكن تحسين تقييمك. ركّز على تحسين {metric} في أعمالك القادمة واطلب ملاحظات تفصيلية من العملاء.',
+          'growth_top_service':
+              'أقوى خدمة لديك هي {service}. اعرضها أولاً في ملفك ومعرض أعمالك.',
+          'growth_stable':
+              'الأداء مستقر {scope}. استمر في إنجاز الأعمال بانتظام واجمع مزيداً من التقييمات للنمو أسرع.',
+          'day_sun': 'ح',
+          'day_mon': 'ن',
+          'day_tue': 'ث',
+          'day_wed': 'ر',
+          'day_thu': 'خ',
+          'day_fri': 'ج',
+          'day_sat': 'س',
+        };
+      case 'ru':
+        return {
+          'analytics_title': 'Бизнес-аналитика',
+          'all_professions': 'Все профессии',
+          'total_earnings': 'Оценочный доход',
+          'total_jobs': 'Заказы',
+          'rating': 'Рейтинг',
+          'views': 'Просмотры',
+          'conversion': 'Конверсия',
+          'top_skill': 'Лучший навык',
+          'conversion_help':
+              'Конверсия — это процент просмотров профиля, которые стали заказами. Формула: заказы ÷ просмотры × 100.',
+          'earnings_trend': 'Динамика дохода (последние 7 дней)',
+          'profile_reach': 'Охват профиля',
+          'service_quality_breakdown': 'Показатели качества сервиса',
+          'price': 'Цена',
+          'service': 'Сервис',
+          'timing': 'Сроки',
+          'work_quality': 'Качество работы',
+          'growth_recommendation': 'Рекомендация по росту',
+          'no_data': 'Нет данных',
+          'growth_scope_all': 'по всем профессиям',
+          'growth_scope_for': 'для',
+          'growth_getting_started':
+              'Вы только начинаете. Выполните первые заказы и попросите клиентов оставить отзывы, чтобы получить более точную аналитику.',
+          'growth_low_visibility':
+              'Ваша видимость пока низкая {scope}. Обновите фото профиля, заголовок и описание услуг, чтобы привлечь больше просмотров.',
+          'growth_low_conversion':
+              'У вас есть просмотры, но мало заказов {scope}. Улучшите заголовок профиля, добавьте понятные цены и покажите последние результаты.',
+          'growth_high_conversion':
+              'Отличная конверсия {scope}. Отвечайте быстро и продолжайте просить довольных клиентов оставлять отзывы.',
+          'growth_excellent_rating':
+              'Ваш рейтинг отличный. Используйте это как социальное доказательство вверху профиля, чтобы получать больше заказов.',
+          'growth_improve_rating':
+              'Рейтинг можно улучшить. Сфокусируйтесь на улучшении показателя {metric} в следующих заказах и просите подробную обратную связь.',
+          'growth_top_service':
+              'Ваша самая сильная услуга — {service}. Покажите её первой в профиле и портфолио.',
+          'growth_stable':
+              'Показатели стабильны {scope}. Продолжайте регулярно выполнять заказы и собирайте больше отзывов для ускоренного роста.',
+          'day_sun': 'Вс',
+          'day_mon': 'Пн',
+          'day_tue': 'Вт',
+          'day_wed': 'Ср',
+          'day_thu': 'Чт',
+          'day_fri': 'Пт',
+          'day_sat': 'Сб',
+        };
+      case 'am':
+        return {
+          'analytics_title': 'የንግድ ትንታኔ',
+          'all_professions': 'ሁሉም ሙያዎች',
+          'total_earnings': 'የተገመተ ገቢ',
+          'total_jobs': 'ስራዎች',
+          'rating': 'ደረጃ',
+          'views': 'እይታዎች',
+          'conversion': 'መቀየር',
+          'top_skill': 'ከፍተኛ ችሎታ',
+          'conversion_help':
+              'መቀየር ማለት ፕሮፋይል እይታዎች ወደ ስራ የተቀየሩበት መጠን ነው። ፎርሙላ: ስራዎች ÷ እይታዎች × 100.',
+          'earnings_trend': 'የገቢ አቅጣጫ (የመጨረሻ 7 ቀናት)',
+          'profile_reach': 'የፕሮፋይል ድርሻ',
+          'service_quality_breakdown': 'የአገልግሎት ጥራት ዝርዝር',
+          'price': 'ዋጋ',
+          'service': 'አገልግሎት',
+          'timing': 'ሰዓት',
+          'work_quality': 'የስራ ጥራት',
+          'growth_recommendation': 'የእድገት ምክር',
+          'no_data': 'መረጃ የለም',
+          'growth_scope_all': 'በሁሉም ሙያዎች',
+          'growth_scope_for': 'ለ',
+          'growth_getting_started':
+              'አሁን ብቻ ጀምረዋል። የመጀመሪያ ስራዎችዎን ያጠናቀቁ እና የተሻለ ትንታኔ ለማግኘት ከደንበኞች ግምገማ ይጠይቁ።',
+          'growth_low_visibility':
+              'የእርስዎ ታይነት አሁንም ዝቅተኛ ነው {scope}። የፕሮፋይል ፎቶ፣ ርዕስ እና የአገልግሎት መግለጫ ያዘምኑ።',
+          'growth_low_conversion':
+              'እይታ አለዎት ነገር ግን ቦኪንግ ዝቅተኛ ነው {scope}። የፕሮፋይል ርዕስ ያሻሽሉ፣ ግልፅ ዋጋ ያክሉ እና የቅርብ ውጤቶችን ያሳዩ።',
+          'growth_high_conversion':
+              'በጣም ጥሩ መቀየር {scope}። ፈጣን ምላሽ ይቀጥሉ እና ከደስተኛ ደንበኞች ግምገማ መጠየቅ ይቀጥሉ።',
+          'growth_excellent_rating':
+              'ደረጃዎ በጣም ጥሩ ነው። ተጨማሪ ስራ ለማግኘት በፕሮፋይል ላይ እንደ ማስረጃ ያሳዩት።',
+          'growth_improve_rating':
+              'ደረጃዎን ማሻሻል ይቻላል። በሚቀጥሉት ስራዎች {metric} ላይ ትኩረት ያድርጉ እና ዝርዝር አስተያየት ይጠይቁ።',
+          'growth_top_service':
+              'ከፍተኛ ጠንካራ አገልግሎትዎ {service} ነው። በፕሮፋይልና በፖርትፎሊዮ መጀመሪያ ያሳዩ።',
+          'growth_stable':
+              'አፈፃፀሙ የተረጋጋ ነው {scope}። ስራ በመደበኛ ሁኔታ ይቀጥሉ እና ተጨማሪ ግምገማዎች ይሰብስቡ።',
+          'day_sun': 'እሑድ',
+          'day_mon': 'ሰኞ',
+          'day_tue': 'ማክ',
+          'day_wed': 'ረቡዕ',
+          'day_thu': 'ሐሙስ',
+          'day_fri': 'አርብ',
+          'day_sat': 'ቅዳ',
+        };
+      default:
+        return {
+          'analytics_title': 'Business Dashboard',
+          'all_professions': 'All professions',
+          'total_earnings': 'Estimated Earnings',
+          'total_jobs': 'Jobs',
+          'rating': 'Rating',
+          'views': 'Views',
+          'conversion': 'Conversion',
+          'top_skill': 'Top Skill',
+          'conversion_help':
+              'Conversion is the percentage of profile viewers who became jobs. Formula: jobs ÷ views × 100.',
+          'earnings_trend': 'Earnings Trend (Last 7 Days)',
+          'profile_reach': 'Profile Reach',
+          'service_quality_breakdown': 'Service Quality Breakdown',
+          'price': 'Price',
+          'service': 'Service',
+          'timing': 'Timing',
+          'work_quality': 'Work Quality',
+          'growth_recommendation': 'Growth Recommendation',
+          'no_data': 'No data',
+          'growth_scope_all': 'across all professions',
+          'growth_scope_for': 'for',
+          'growth_getting_started':
+              'You are just getting started. Complete your first jobs and ask clients for reviews to unlock better insights.',
+          'growth_low_visibility':
+              'Your visibility is still low {scope}. Update your profile photo, title, and service description to attract more views.',
+          'growth_low_conversion':
+              'You are getting views but few bookings {scope}. Improve your profile headline, add clear prices, and highlight recent results.',
+          'growth_high_conversion':
+              'Great conversion {scope}. Keep response time fast and continue asking happy clients for new reviews.',
+          'growth_excellent_rating':
+              'Your rating is excellent. Use this as social proof near the top of your profile to win more jobs.',
+          'growth_improve_rating':
+              'Your rating can improve. Focus on better {metric} in your next jobs and ask clients for detailed feedback.',
+          'growth_top_service':
+              'Your strongest profession is {service}. Feature it first in your profile and portfolio.',
+          'growth_stable':
+              'Performance looks stable {scope}. Keep completing jobs consistently and collect more reviews to grow faster.',
+          'day_sun': 'Sun',
+          'day_mon': 'Mon',
+          'day_tue': 'Tue',
+          'day_wed': 'Wed',
+          'day_thu': 'Thu',
+          'day_fri': 'Fri',
+          'day_sat': 'Sat',
+        };
+    }
+  }
+
+  String _t(String key) {
+    final localized = _localStrings(_localeCode)[key];
+    if (localized != null && localized.isNotEmpty) return localized;
+
+    final fromParent = widget.strings[key];
+    if (fromParent != null && fromParent.isNotEmpty) return fromParent;
+
+    return _localStrings('en')[key] ?? key;
+  }
+
+  String _tp(String key, Map<String, String> params) {
+    String value = _t(key);
+    params.forEach((param, replacement) {
+      value = value.replaceAll('{$param}', replacement);
+    });
+    return value;
+  }
 
   @override
   void initState() {
@@ -185,50 +462,38 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   }
 
   String _buildGrowthRecommendation() {
-    final noData = widget.strings['no_reviews'] ?? 'No data';
+    final noData = _t('no_data');
 
     if (_profileViews == 0 && _totalJobs == 0) {
-      return 'You are just getting started. Complete your first jobs and ask clients for reviews to unlock better insights.';
+      return _t('growth_getting_started');
     }
 
     final parts = <String>[];
     final scope = _selectedProfession == _allProfessionsKey
-        ? 'across all professions'
-        : 'for $_selectedProfession';
+        ? _t('growth_scope_all')
+        : '${_t('growth_scope_for')} $_selectedProfession';
 
     if (_profileViews < 20) {
-      parts.add(
-        'Your visibility is still low $scope. Update your profile photo, title, and service description to attract more views.',
-      );
+      parts.add(_tp('growth_low_visibility', {'scope': scope}));
     } else if (_conversionRate < 5) {
-      parts.add(
-        'You are getting views but few bookings $scope. Improve your profile headline, add clear prices, and highlight recent results.',
-      );
+      parts.add(_tp('growth_low_conversion', {'scope': scope}));
     } else if (_conversionRate >= 20) {
-      parts.add(
-        'Great conversion $scope. Keep response time fast and continue asking happy clients for new reviews.',
-      );
+      parts.add(_tp('growth_high_conversion', {'scope': scope}));
     }
 
     if (_avgRating >= 4.5) {
-      parts.add(
-        'Your rating is excellent. Use this as social proof near the top of your profile to win more jobs.',
-      );
+      parts.add(_t('growth_excellent_rating'));
     } else if (_avgRating > 0 && _avgRating < 4.0) {
       final weakestMetric = _getWeakestMetricLabel();
-      parts.add(
-        'Your rating can improve. Focus on better $weakestMetric in your next jobs and ask clients for detailed feedback.',
-      );
+      parts.add(_tp('growth_improve_rating', {'metric': weakestMetric}));
     }
 
     if (_topServices.isNotEmpty && _topServices != noData) {
-      parts.add(
-        'Your strongest profession is $_topServices. Feature it first in your profile and portfolio.',
-      );
+      parts.add(_tp('growth_top_service', {'service': _topServices}));
     }
 
     if (parts.isEmpty) {
-      return 'Performance looks stable $scope. Keep completing jobs consistently and collect more reviews to grow faster.';
+      return _tp('growth_stable', {'scope': scope});
     }
 
     return parts.join(' ');
@@ -236,13 +501,10 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
 
   String _getWeakestMetricLabel() {
     final metrics = <MapEntry<String, double>>[
-      MapEntry(widget.strings['price'] ?? 'price', _avgPrice),
-      MapEntry(widget.strings['service'] ?? 'service', _avgService),
-      MapEntry(widget.strings['timing'] ?? 'timing', _avgTiming),
-      MapEntry(
-        widget.strings['work_quality'] ?? 'work quality',
-        _avgWorkQuality,
-      ),
+      MapEntry(_t('price'), _avgPrice),
+      MapEntry(_t('service'), _avgService),
+      MapEntry(_t('timing'), _avgTiming),
+      MapEntry(_t('work_quality'), _avgWorkQuality),
     ];
 
     metrics.sort((a, b) => a.value.compareTo(b.value));
@@ -416,7 +678,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
       _avgService = 0.0;
       _avgTiming = 0.0;
       _avgWorkQuality = 0.0;
-      _topServices = widget.strings['no_reviews'] ?? 'No data';
+      _topServices = _t('no_data');
       return;
     }
 
@@ -482,9 +744,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
       }
     });
 
-    return bestProfession.isEmpty
-        ? (widget.strings['no_reviews'] ?? 'No data')
-        : bestProfession;
+    return bestProfession.isEmpty ? _t('no_data') : bestProfession;
   }
 
   void _generateChartData() {
@@ -517,6 +777,9 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
 
   @override
   Widget build(BuildContext context) {
+    // Rebuild this page when app language changes from settings.
+    Provider.of<LanguageProvider>(context);
+
     if (_isLoading && _totalJobs == 0) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
@@ -525,7 +788,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
       backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
         title: Text(
-          widget.strings['analytics_title'] ?? 'Business Dashboard',
+          _t('analytics_title'),
           style: const TextStyle(
             fontWeight: FontWeight.w900,
             color: Color(0xFF0F172A),
@@ -550,14 +813,11 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
               const SizedBox(height: 24),
               _buildMetricsGrid(),
               const SizedBox(height: 32),
-              _buildChartCard(
-                'Earnings Trend (Last 7 Days)',
-                _buildEarningsChart(),
-              ),
+              _buildChartCard(_t('earnings_trend'), _buildEarningsChart()),
               const SizedBox(height: 24),
-              _buildChartCard('Profile Reach', _buildViewsChart()),
+              _buildChartCard(_t('profile_reach'), _buildViewsChart()),
               const SizedBox(height: 32),
-              _buildSectionHeader('Service Quality Breakdown'),
+              _buildSectionHeader(_t('service_quality_breakdown')),
               const SizedBox(height: 16),
               _buildRatingsSection(),
               const SizedBox(height: 32),
@@ -591,9 +851,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           items: [
             DropdownMenuItem(
               value: _allProfessionsKey,
-              child: Text(
-                widget.strings['all_professions'] ?? 'All professions',
-              ),
+              child: Text(_t('all_professions')),
             ),
             ..._professionOptions.map(
               (p) => DropdownMenuItem(value: p, child: Text(p)),
@@ -642,7 +900,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                widget.strings['total_earnings'] ?? 'Estimated Earnings',
+                _t('total_earnings'),
                 style: const TextStyle(
                   color: Colors.white60,
                   fontSize: 14,
@@ -672,17 +930,17 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               _buildQuickStat(
-                widget.strings['total_jobs'] ?? 'Jobs',
+                _t('total_jobs'),
                 _totalJobs.toString(),
                 Icons.check_circle_outline,
               ),
               _buildQuickStat(
-                'Rating',
+                _t('rating'),
                 _avgRating.toStringAsFixed(1),
                 Icons.star_border_rounded,
               ),
               _buildQuickStat(
-                'Views',
+                _t('views'),
                 _profileViews.toString(),
                 Icons.bar_chart_rounded,
               ),
@@ -725,18 +983,17 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
       children: [
         Expanded(
           child: _buildInfoTile(
-            'Conversion',
+            _t('conversion'),
             '${_conversionRate.toStringAsFixed(1)}%',
             Icons.swap_calls_rounded,
             Colors.teal,
-            helpText:
-                'Conversion is the percentage of profile viewers who became jobs. Formula: jobs ÷ views × 100.',
+            helpText: _t('conversion_help'),
           ),
         ),
         const SizedBox(width: 16),
         Expanded(
           child: _buildInfoTile(
-            'Top Skill',
+            _t('top_skill'),
             _topServices,
             Icons.auto_graph_rounded,
             Colors.indigo,
@@ -856,26 +1113,14 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
       ),
       child: Column(
         children: [
-          _buildRatingProgress(
-            widget.strings['price'] ?? 'Price',
-            _avgPrice,
-            Colors.amber,
-          ),
+          _buildRatingProgress(_t('price'), _avgPrice, Colors.amber),
+          const SizedBox(height: 20),
+          _buildRatingProgress(_t('service'), _avgService, Colors.blueAccent),
+          const SizedBox(height: 20),
+          _buildRatingProgress(_t('timing'), _avgTiming, Colors.greenAccent),
           const SizedBox(height: 20),
           _buildRatingProgress(
-            widget.strings['service'] ?? 'Service',
-            _avgService,
-            Colors.blueAccent,
-          ),
-          const SizedBox(height: 20),
-          _buildRatingProgress(
-            widget.strings['timing'] ?? 'Timing',
-            _avgTiming,
-            Colors.greenAccent,
-          ),
-          const SizedBox(height: 20),
-          _buildRatingProgress(
-            widget.strings['work_quality'] ?? 'Work Quality',
+            _t('work_quality'),
             _avgWorkQuality,
             Colors.deepPurpleAccent,
           ),
@@ -942,9 +1187,9 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Growth Recommendation',
-                  style: TextStyle(
+                Text(
+                  _t('growth_recommendation'),
+                  style: const TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.bold,
                     fontSize: 16,
@@ -999,7 +1244,15 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   }
 
   String _dayLabel(int index) {
-    const labels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    final labels = [
+      _t('day_sun'),
+      _t('day_mon'),
+      _t('day_tue'),
+      _t('day_wed'),
+      _t('day_thu'),
+      _t('day_fri'),
+      _t('day_sat'),
+    ];
     if (index < 0 || index >= labels.length) return '';
     return labels[index];
   }

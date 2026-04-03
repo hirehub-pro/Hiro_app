@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 
 class AppLocation {
@@ -41,6 +42,8 @@ class AppLocation {
 
 class LocationContextService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  static final ValueNotifier<int> locationPermissionGrantedTick =
+      ValueNotifier<int>(0);
 
   static String? get _uid => FirebaseAuth.instance.currentUser?.uid;
 
@@ -133,39 +136,26 @@ class LocationContextService {
     }
   }
 
-  static Future<AppLocation?> getProfileLocation() async {
-    final uid = _uid;
-    if (uid == null) return null;
-
-    final doc = await _userDoc(uid).get();
-    final data = doc.data();
-    if (data == null) return null;
-
-    final lat = data['lat'];
-    final lng = data['lng'];
-    if (lat is! num || lng is! num) return null;
-
-    return AppLocation(
-      id: AppLocation.currentId,
-      label: 'Profile Location',
-      latitude: lat.toDouble(),
-      longitude: lng.toDouble(),
-      isCurrent: true,
-    );
-  }
-
   static Future<AppLocation?> getCurrentDeviceLocation() async {
     try {
       final serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) return null;
 
       var permission = await Geolocator.checkPermission();
+      final previousPermission = permission;
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
         if (permission == LocationPermission.denied) return null;
       }
 
       if (permission == LocationPermission.deniedForever) return null;
+
+      if ((previousPermission == LocationPermission.denied ||
+              previousPermission == LocationPermission.deniedForever) &&
+          permission != LocationPermission.denied &&
+          permission != LocationPermission.deniedForever) {
+        locationPermissionGrantedTick.value++;
+      }
 
       final pos = await Geolocator.getCurrentPosition();
       return AppLocation(

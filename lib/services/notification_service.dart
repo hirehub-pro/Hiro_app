@@ -7,21 +7,22 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 
-
 @pragma('vm:entry-point')
-Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-}
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {}
 
 class NotificationService {
-  static final FlutterLocalNotificationsPlugin _notificationsPlugin = FlutterLocalNotificationsPlugin();
+  static final FlutterLocalNotificationsPlugin _notificationsPlugin =
+      FlutterLocalNotificationsPlugin();
   static final FirebaseMessaging _messaging = FirebaseMessaging.instance;
   static StreamSubscription? _notificationSubscription;
   static StreamSubscription? _broadcastSubscription;
+  static StreamSubscription<String>? _tokenRefreshSubscription;
   static bool _isInitialized = false;
   static bool _isListening = false;
   static String? _activeUserId;
 
-  static final StreamController<String?> selectNotificationStream = StreamController<String?>.broadcast();
+  static final StreamController<String?> selectNotificationStream =
+      StreamController<String?>.broadcast();
 
   static Future<void> init() async {
     if (_isInitialized) return;
@@ -29,16 +30,18 @@ class NotificationService {
     const AndroidInitializationSettings initializationSettingsAndroid =
         AndroidInitializationSettings('@mipmap/ic_launcher');
 
-    const DarwinInitializationSettings initializationSettingsIOS = DarwinInitializationSettings(
-      requestAlertPermission: true,
-      requestBadgePermission: true,
-      requestSoundPermission: true,
-    );
+    const DarwinInitializationSettings initializationSettingsIOS =
+        DarwinInitializationSettings(
+          requestAlertPermission: true,
+          requestBadgePermission: true,
+          requestSoundPermission: true,
+        );
 
-    const InitializationSettings initializationSettings = InitializationSettings(
-      android: initializationSettingsAndroid,
-      iOS: initializationSettingsIOS,
-    );
+    const InitializationSettings initializationSettings =
+        InitializationSettings(
+          android: initializationSettingsAndroid,
+          iOS: initializationSettingsIOS,
+        );
 
     await _notificationsPlugin.initialize(
       settings: initializationSettings,
@@ -78,7 +81,9 @@ class NotificationService {
 
     try {
       NotificationSettings settings = await _messaging.requestPermission(
-        alert: true, badge: true, sound: true,
+        alert: true,
+        badge: true,
+        sound: true,
       );
 
       if (settings.authorizationStatus == AuthorizationStatus.authorized) {
@@ -91,7 +96,10 @@ class NotificationService {
             'platform': Platform.isAndroid ? 'android' : 'ios',
           };
           // Save token to the unified 'users' collection
-          await firestore.collection('users').doc(user.uid).set(data, SetOptions(merge: true));
+          await firestore
+              .collection('users')
+              .doc(user.uid)
+              .set(data, SetOptions(merge: true));
         }
       }
     } catch (e) {
@@ -107,11 +115,15 @@ class NotificationService {
     }
 
     if (_isListening && _activeUserId == user.uid) return;
-    
+
     _isListening = true;
     _activeUserId = user.uid;
 
-    saveDeviceToken(); 
+    saveDeviceToken();
+    _tokenRefreshSubscription?.cancel();
+    _tokenRefreshSubscription = _messaging.onTokenRefresh.listen((_) {
+      saveDeviceToken();
+    });
     _notificationSubscription?.cancel();
     _broadcastSubscription?.cancel();
 
@@ -127,20 +139,20 @@ class NotificationService {
         .limit(1)
         .snapshots()
         .listen((snapshot) {
-      if (isInitialLoad) {
-        isInitialLoad = false;
-        return;
-      }
-      if (snapshot.docs.isNotEmpty) {
-        final data = snapshot.docs.first.data();
-        _showNotification(
-          id: snapshot.docs.first.id.hashCode,
-          title: data['title'] ?? 'New Notification',
-          body: data['body'] ?? '',
-          payload: jsonEncode(data),
-        );
-      }
-    });
+          if (isInitialLoad) {
+            isInitialLoad = false;
+            return;
+          }
+          if (snapshot.docs.isNotEmpty) {
+            final data = snapshot.docs.first.data();
+            _showNotification(
+              id: snapshot.docs.first.id.hashCode,
+              title: data['title'] ?? 'New Notification',
+              body: data['body'] ?? '',
+              payload: jsonEncode(data),
+            );
+          }
+        });
 
     // 2. Global Broadcasts
     bool isInitialBroadcastLoad = true;
@@ -150,27 +162,29 @@ class NotificationService {
         .limit(1)
         .snapshots()
         .listen((snapshot) {
-      if (isInitialBroadcastLoad) {
-        isInitialBroadcastLoad = false;
-        return;
-      }
-      if (snapshot.docs.isNotEmpty) {
-        final data = snapshot.docs.first.data();
-        _showNotification(
-          id: snapshot.docs.first.id.hashCode,
-          title: data['title'] ?? 'System Broadcast',
-          body: data['message'] ?? '',
-          payload: jsonEncode({'type': 'broadcast', ...data}),
-        );
-      }
-    });
+          if (isInitialBroadcastLoad) {
+            isInitialBroadcastLoad = false;
+            return;
+          }
+          if (snapshot.docs.isNotEmpty) {
+            final data = snapshot.docs.first.data();
+            _showNotification(
+              id: snapshot.docs.first.id.hashCode,
+              title: data['title'] ?? 'System Broadcast',
+              body: data['message'] ?? '',
+              payload: jsonEncode({'type': 'broadcast', ...data}),
+            );
+          }
+        });
   }
 
   static void stopListening() {
     _notificationSubscription?.cancel();
     _broadcastSubscription?.cancel();
+    _tokenRefreshSubscription?.cancel();
     _notificationSubscription = null;
     _broadcastSubscription = null;
+    _tokenRefreshSubscription = null;
     _isListening = false;
     _activeUserId = null;
   }
@@ -181,12 +195,13 @@ class NotificationService {
     required String body,
     String? payload,
   }) async {
-    const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
-      'main_channel',
-      'Main Notifications',
-      importance: Importance.max,
-      priority: Priority.high,
-    );
+    const AndroidNotificationDetails androidDetails =
+        AndroidNotificationDetails(
+          'main_channel',
+          'Main Notifications',
+          importance: Importance.max,
+          priority: Priority.high,
+        );
 
     const NotificationDetails notificationDetails = NotificationDetails(
       android: androidDetails,

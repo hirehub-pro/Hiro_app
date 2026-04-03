@@ -567,10 +567,7 @@ class _SignInPageState extends State<SignInPage> {
           ),
           child: Text(
             strings['signup'] ?? 'Sign Up',
-            style: const TextStyle(
-              color: Color(0xFF1976D2),
-              fontWeight: FontWeight.bold,
-            ),
+            style: const TextStyle(color: Color(0xFF1976D2), fontWeight: FontWeight.bold),
           ),
         ),
       ],

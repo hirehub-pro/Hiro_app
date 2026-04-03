@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:untitled1/services/language_provider.dart';
 import 'package:untitled1/pages/request_details.dart';
 import 'package:rxdart/rxdart.dart';
@@ -42,27 +41,13 @@ class NotificationsPage extends StatelessWidget {
     }
   }
 
-  Future<void> _handleCall(BuildContext context, String? userId) async {
-    if (userId == null) return;
-    try {
-      // Fetch from unified 'users' collection
-      final doc = await FirebaseFirestore.instance.collection('users').doc(userId).get();
-      final phone = doc.data()?['phone'];
-      if (phone != null && phone.toString().isNotEmpty) {
-        final Uri url = Uri.parse('tel:$phone');
-        if (await canLaunchUrl(url)) {
-          await launchUrl(url);
-        }
-      }
-    } catch (_) {}
-  }
-
   @override
   Widget build(BuildContext context) {
     final strings = _getLocalizedStrings(context);
     final user = FirebaseAuth.instance.currentUser;
-    final isRtl = Provider.of<LanguageProvider>(context).locale.languageCode == 'he' || 
-                  Provider.of<LanguageProvider>(context).locale.languageCode == 'ar';
+    final isRtl =
+        Provider.of<LanguageProvider>(context).locale.languageCode == 'he' ||
+        Provider.of<LanguageProvider>(context).locale.languageCode == 'ar';
 
     if (user == null || user.isAnonymous) {
       return _buildScaffold(context, strings, isRtl, user);
@@ -71,34 +56,45 @@ class NotificationsPage extends StatelessWidget {
     return _buildScaffold(context, strings, isRtl, user);
   }
 
-  Widget _buildScaffold(BuildContext context, Map<String, String> strings, bool isRtl, User? user) {
+  Widget _buildScaffold(
+    BuildContext context,
+    Map<String, String> strings,
+    bool isRtl,
+    User? user,
+  ) {
     return Directionality(
       textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
       child: Scaffold(
         backgroundColor: const Color(0xFFF8FAFC),
         appBar: AppBar(
-          title: Text(strings['title']!, style: const TextStyle(fontWeight: FontWeight.bold)),
+          title: Text(
+            strings['title']!,
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
           backgroundColor: const Color(0xFF1976D2),
           foregroundColor: Colors.white,
           actions: [
             if (user != null && !user.isAnonymous)
               TextButton(
                 onPressed: () async {
-                   final snapshots = await FirebaseFirestore.instance
-                    .collection('users')
-                    .doc(user.uid)
-                    .collection('notifications')
-                    .get();
-                   
-                   if (snapshots.docs.isEmpty) return;
+                  final snapshots = await FirebaseFirestore.instance
+                      .collection('users')
+                      .doc(user.uid)
+                      .collection('notifications')
+                      .get();
 
-                   final batch = FirebaseFirestore.instance.batch();
-                   for (var doc in snapshots.docs) {
-                     batch.delete(doc.reference);
-                   }
-                   await batch.commit();
+                  if (snapshots.docs.isEmpty) return;
+
+                  final batch = FirebaseFirestore.instance.batch();
+                  for (var doc in snapshots.docs) {
+                    batch.delete(doc.reference);
+                  }
+                  await batch.commit();
                 },
-                child: Text(strings['clear']!, style: const TextStyle(color: Colors.white)),
+                child: Text(
+                  strings['clear']!,
+                  style: const TextStyle(color: Colors.white),
+                ),
               ),
           ],
         ),
@@ -127,7 +123,8 @@ class NotificationsPage extends StatelessWidget {
                       data['id'] = doc.id;
                       data['isBroadcast'] = true;
                       data['type'] = 'broadcast';
-                      data['body'] = data['message']; // Map 'message' to 'body' for consistency
+                      data['body'] =
+                          data['message']; // Map 'message' to 'body' for consistency
                       all.add(data);
                     }
                     all.sort((a, b) {
@@ -155,7 +152,12 @@ class NotificationsPage extends StatelessWidget {
                     itemCount: notifications.length,
                     itemBuilder: (context, index) {
                       final data = notifications[index];
-                      return _buildNotificationCard(context, data['id'], data, strings);
+                      return _buildNotificationCard(
+                        context,
+                        data['id'],
+                        data,
+                        strings,
+                      );
                     },
                   );
                 },
@@ -169,15 +171,27 @@ class NotificationsPage extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.notifications_off_outlined, size: 80, color: Colors.grey[300]),
+          Icon(
+            Icons.notifications_off_outlined,
+            size: 80,
+            color: Colors.grey[300],
+          ),
           const SizedBox(height: 16),
-          Text(strings['empty']!, style: const TextStyle(color: Colors.grey, fontSize: 16)),
+          Text(
+            strings['empty']!,
+            style: const TextStyle(color: Colors.grey, fontSize: 16),
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildNotificationCard(BuildContext context, String docId, Map<String, dynamic> data, Map<String, String> strings) {
+  Widget _buildNotificationCard(
+    BuildContext context,
+    String docId,
+    Map<String, dynamic> data,
+    Map<String, String> strings,
+  ) {
     final bool isWorkRequest = data['type'] == 'work_request';
     final bool isBroadcast = data['isBroadcast'] == true;
     final String status = data['status'] ?? 'none';
@@ -190,7 +204,13 @@ class NotificationsPage extends StatelessWidget {
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
         onTap: isWorkRequest && status == 'pending'
-            ? () => Navigator.push(context, MaterialPageRoute(builder: (_) => RequestDetailsPage(notificationId: docId, data: data)))
+            ? () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      RequestDetailsPage(notificationId: docId, data: data),
+                ),
+              )
             : null,
         child: Column(
           children: [
@@ -203,13 +223,18 @@ class NotificationsPage extends StatelessWidget {
                   shape: BoxShape.circle,
                 ),
                 child: Icon(
-                  isBroadcast ? Icons.campaign : (isWorkRequest ? Icons.calendar_today : Icons.notifications_active),
+                  isBroadcast
+                      ? Icons.campaign
+                      : (isWorkRequest
+                            ? Icons.calendar_today
+                            : Icons.notifications_active),
                   color: Colors.white,
                   size: 20,
                 ),
               ),
               title: Text(
-                data['title'] ?? (isBroadcast ? strings['broadcast']! : 'Notification'),
+                data['title'] ??
+                    (isBroadcast ? strings['broadcast']! : 'Notification'),
                 style: const TextStyle(fontWeight: FontWeight.bold),
               ),
               subtitle: Column(
@@ -226,7 +251,9 @@ class NotificationsPage extends StatelessWidget {
                   ],
                 ],
               ),
-              trailing: isWorkRequest && status == 'pending' ? const Icon(Icons.chevron_right, color: Colors.grey) : null,
+              trailing: isWorkRequest && status == 'pending'
+                  ? const Icon(Icons.chevron_right, color: Colors.grey)
+                  : null,
             ),
             if (isWorkRequest && status != 'pending')
               Padding(
@@ -237,14 +264,20 @@ class NotificationsPage extends StatelessWidget {
                       child: Container(
                         padding: const EdgeInsets.symmetric(vertical: 8),
                         decoration: BoxDecoration(
-                          color: status == 'accepted' ? Colors.green.withOpacity(0.1) : Colors.red.withOpacity(0.1),
+                          color: status == 'accepted'
+                              ? Colors.green.withOpacity(0.1)
+                              : Colors.red.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Center(
                           child: Text(
-                            status == 'accepted' ? strings['accepted']! : strings['declined']!,
+                            status == 'accepted'
+                                ? strings['accepted']!
+                                : strings['declined']!,
                             style: TextStyle(
-                              color: status == 'accepted' ? Colors.green : Colors.red,
+                              color: status == 'accepted'
+                                  ? Colors.green
+                                  : Colors.red,
                               fontWeight: FontWeight.bold,
                             ),
                           ),
