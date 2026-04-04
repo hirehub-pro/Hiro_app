@@ -25,6 +25,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
   final _formKey = GlobalKey<FormState>();
   late TextEditingController _nameController;
   late TextEditingController _emailController;
+  late TextEditingController _dobController;
   late TextEditingController _phoneController;
   late TextEditingController _altPhoneController;
   late TextEditingController _descriptionController;
@@ -39,6 +40,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
 
   double _workRadius = 25000.0;
   LatLng? _workCenter;
+  DateTime? _dateOfBirth;
 
   final List<String> _allProfessions =
       ProfessionLocalization.canonicalProfessions;
@@ -48,6 +50,10 @@ class _EditProfilePageState extends State<EditProfilePage> {
     super.initState();
     _nameController = TextEditingController(text: widget.userData['name']);
     _emailController = TextEditingController(text: widget.userData['email']);
+    _dateOfBirth = _parseDate(widget.userData['dateOfBirth']);
+    _dobController = TextEditingController(
+      text: _dateOfBirth != null ? _formatDate(_dateOfBirth!) : '',
+    );
     _phoneController = TextEditingController(text: widget.userData['phone']);
     _altPhoneController = TextEditingController(
       text: widget.userData['optionalPhone'],
@@ -78,6 +84,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
   void dispose() {
     _nameController.dispose();
     _emailController.dispose();
+    _dobController.dispose();
     _phoneController.dispose();
     _altPhoneController.dispose();
     _descriptionController.dispose();
@@ -188,6 +195,9 @@ class _EditProfilePageState extends State<EditProfilePage> {
       final updateData = {
         'name': _nameController.text.trim(),
         'email': _emailController.text.trim(),
+        'dateOfBirth': _dateOfBirth != null
+            ? Timestamp.fromDate(_dateOfBirth!)
+            : null,
         'town': _selectedTown,
         'lat': lat,
         'lng': lng,
@@ -233,6 +243,9 @@ class _EditProfilePageState extends State<EditProfilePage> {
           'about_you': 'עליך',
           'name': 'שם מלא',
           'email': 'אימייל',
+          'dob': 'תאריך לידה',
+          'dob_hint': 'בחר תאריך לידה',
+          'dob_required': 'יש לבחור תאריך לידה',
           'phone': 'מספר טלפון',
           'town': 'עיר',
           'professions': 'בחר מקצועות',
@@ -256,6 +269,9 @@ class _EditProfilePageState extends State<EditProfilePage> {
           'about_you': 'About You',
           'name': 'Full Name',
           'email': 'Email',
+          'dob': 'Date of Birth',
+          'dob_hint': 'Select date of birth',
+          'dob_required': 'Date of birth is required',
           'phone': 'Phone Number',
           'town': 'City',
           'professions': 'Select Professions',
@@ -272,6 +288,37 @@ class _EditProfilePageState extends State<EditProfilePage> {
           'location_info': 'Precise location helps others find you easily',
         };
     }
+  }
+
+  DateTime? _parseDate(dynamic value) {
+    if (value == null) return null;
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    if (value is String) return DateTime.tryParse(value);
+    return null;
+  }
+
+  String _formatDate(DateTime date) {
+    final day = date.day.toString().padLeft(2, '0');
+    final month = date.month.toString().padLeft(2, '0');
+    return '$day/$month/${date.year}';
+  }
+
+  Future<void> _pickDateOfBirth() async {
+    final now = DateTime.now();
+    final initial = _dateOfBirth ?? DateTime(now.year - 18, now.month, now.day);
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(1900),
+      lastDate: now,
+    );
+
+    if (picked == null || !mounted) return;
+    setState(() {
+      _dateOfBirth = DateTime(picked.year, picked.month, picked.day);
+      _dobController.text = _formatDate(_dateOfBirth!);
+    });
   }
 
   @override
@@ -315,6 +362,19 @@ class _EditProfilePageState extends State<EditProfilePage> {
                                     labelText: strings['email']!,
                                     icon: Icons.email_outlined,
                                     keyboardType: TextInputType.emailAddress,
+                                  ),
+                                  const SizedBox(height: 16),
+                                  _buildStyledTextField(
+                                    controller: _dobController,
+                                    labelText: strings['dob']!,
+                                    hintText: strings['dob_hint']!,
+                                    icon: Icons.cake_outlined,
+                                    readOnly: true,
+                                    onTap: _pickDateOfBirth,
+                                    validator: (v) =>
+                                        (v == null || v.trim().isEmpty)
+                                        ? strings['dob_required']
+                                        : null,
                                   ),
                                   const SizedBox(height: 16),
                                   _buildLocationSection(strings),

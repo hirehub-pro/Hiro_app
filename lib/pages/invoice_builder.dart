@@ -1,4 +1,5 @@
 import 'dart:developer' as dev;
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:pdf/pdf.dart' as pdf;
@@ -11,6 +12,19 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart' as firebase_storage;
 import 'package:untitled1/services/subscription_access_service.dart';
+import 'package:untitled1/widgets/tour_tip_dialog.dart';
+
+class _SavedInvoiceResult {
+  final String url;
+  final String fileName;
+  final bool wasCreated;
+
+  const _SavedInvoiceResult({
+    required this.url,
+    required this.fileName,
+    required this.wasCreated,
+  });
+}
 
 class InvoiceItem {
   final String description;
@@ -33,6 +47,7 @@ class InvoiceBuilderPage extends StatefulWidget {
   final String? receiverName;
   final String? receiverPhone;
   final String? receiverAddress;
+  final String? tourIntroText;
 
   const InvoiceBuilderPage({
     super.key,
@@ -43,6 +58,7 @@ class InvoiceBuilderPage extends StatefulWidget {
     this.receiverName,
     this.receiverPhone,
     this.receiverAddress,
+    this.tourIntroText,
   });
 
   @override
@@ -53,6 +69,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   final _clientNameController = TextEditingController();
   final _clientAddressController = TextEditingController();
   final _clientPhoneController = TextEditingController();
+  final _invoiceCounterController = TextEditingController(text: "1");
   final _itemDescController = TextEditingController();
   final _itemQtyController = TextEditingController(text: "1");
   final _itemPriceController = TextEditingController();
@@ -76,6 +93,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   Map<String, String>? _cachedStrings;
   String? _lastLocale;
   late final Future<SubscriptionAccessState> _accessFuture;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
+  _invoiceCounterSubscription;
 
   @override
   void initState() {
@@ -95,8 +114,63 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       _clientAddressController.text = widget.receiverAddress!;
     }
 
+    _bindInvoiceCounterLiveSync();
     _fetchWorkerInfo();
     _loadAssets();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _showTourIntroIfNeeded();
+    });
+  }
+
+  Future<void> _showTourIntroIfNeeded() async {
+    final intro = widget.tourIntroText;
+    if (intro == null || intro.isEmpty || !mounted) return;
+
+    final locale = Provider.of<LanguageProvider>(
+      context,
+      listen: false,
+    ).locale.languageCode;
+    final isRtl = locale == 'he' || locale == 'ar';
+
+    await showTourTipDialog(
+      context: context,
+      title: isRtl ? 'יוצר חשבוניות' : 'Invoice Builder',
+      body: intro,
+      stepLabel: isRtl ? 'שלב 6 / 8' : 'Step 6 / 8',
+      icon: Icons.description_outlined,
+      isRtl: isRtl,
+      confirmLabel: isRtl ? 'הבנתי' : 'Got it',
+    );
+  }
+
+  void _bindInvoiceCounterLiveSync() {
+    final ref = _verificationInfoLatestRef();
+    if (ref == null) return;
+
+    _invoiceCounterSubscription?.cancel();
+    _invoiceCounterSubscription = ref.snapshots().listen((snapshot) {
+      final data = snapshot.data();
+      final counter = (data?['invoiceCounter'] as num?)?.toInt() ?? 1;
+      final safeCounter = counter < 1 ? 1 : counter;
+      final counterText = safeCounter.toString();
+
+      if (!mounted) return;
+
+      final currentCounterText = _invoiceCounterController.text;
+      final nextInvoiceNumber =
+          "${intl.DateFormat('yyyy').format(DateTime.now())}-${safeCounter.toString().padLeft(4, '0')}";
+
+      if (currentCounterText != counterText ||
+          _invoiceNumber != nextInvoiceNumber) {
+        setState(() {
+          _invoiceCounterController.text = counterText;
+          _invoiceCounterController.selection = TextSelection.fromPosition(
+            TextPosition(offset: _invoiceCounterController.text.length),
+          );
+          _invoiceNumber = nextInvoiceNumber;
+        });
+      }
+    });
   }
 
   Future<void> _fetchWorkerInfo() async {
@@ -130,6 +204,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
 
               // Sequential Invoice Counter logic
               int counter = vData?['invoiceCounter'] ?? 1;
+              _invoiceCounterController.text = counter.toString();
               _invoiceNumber =
                   "${intl.DateFormat('yyyy').format(DateTime.now())}-${counter.toString().padLeft(4, '0')}";
 
@@ -148,18 +223,30 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   }
 
   Future<void> _incrementInvoiceCounter() async {
+    final currentCounter = int.tryParse(_invoiceCounterController.text) ?? 1;
+    final nextCounter = (currentCounter < 1 ? 1 : currentCounter) + 1;
+    await _persistInvoiceCounter(nextCounter);
+  }
+
+  DocumentReference<Map<String, dynamic>>? _verificationInfoLatestRef() {
     final user = FirebaseAuth.instance.currentUser;
-    if (user != null) {
-      try {
-        await FirebaseFirestore.instance
-            .collection('users')
-            .doc(user.uid)
-            .collection('verification_info')
-            .doc('latest')
-            .update({'invoiceCounter': FieldValue.increment(1)});
-      } catch (e) {
-        dev.log("Error incrementing counter: $e");
-      }
+    if (user == null) return null;
+    return FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .collection('verification_info')
+        .doc('latest');
+  }
+
+  Future<void> _persistInvoiceCounter(int counter) async {
+    final ref = _verificationInfoLatestRef();
+    if (ref == null) return;
+
+    final safeCounter = counter < 1 ? 1 : counter;
+    try {
+      await ref.set({'invoiceCounter': safeCounter}, SetOptions(merge: true));
+    } catch (e) {
+      dev.log("Error updating invoiceCounter: $e");
     }
   }
 
@@ -168,6 +255,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     _clientNameController.dispose();
     _clientAddressController.dispose();
     _clientPhoneController.dispose();
+    _invoiceCounterController.dispose();
+    _invoiceCounterSubscription?.cancel();
     _itemDescController.dispose();
     _itemQtyController.dispose();
     _itemPriceController.dispose();
@@ -227,9 +316,10 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'worker': 'פרטי העסק:',
           'date': 'תאריך:',
           'inv_no': 'מספר מסמך:',
+          'invoice_counter': 'מונה חשבוניות',
           'preparing': 'מכין את המסמך...',
           'legal_disclaimer':
-              'הופק באמצעות HireHub. מסמך זה הינו מסמך ממוחשב המאושר ע"י רשות המסים בישראל. מקור.',
+              'הופק באמצעות הירו. מסמך זה הינו מסמך ממוחשב המאושר ע"י רשות המסים בישראל. מקור.',
           'send_to_contact': 'שלח ישירות בצ׳אט',
           'send_to': 'שלח ל-',
           'no_contacts': 'לא נמצאו אנשי קשר',
@@ -271,9 +361,10 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'worker': 'Business Details:',
           'date': 'Date:',
           'inv_no': 'Document No:',
+          'invoice_counter': 'Invoice Counter',
           'preparing': 'Preparing document...',
           'legal_disclaimer':
-              'Generated via HireHub. This is a computerized document authorized by the Israel Tax Authority. Original.',
+              'Generated via hiro. This is a computerized document authorized by the Israel Tax Authority. Original.',
           'send_to_contact': 'Send to Contact',
           'send_to': 'Send to ',
           'no_contacts': 'No contacts found',
@@ -298,6 +389,51 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         };
     }
     return _cachedStrings!;
+  }
+
+  Map<String, String> _withRequiredDefaults(Map<String, String> source) {
+    const defaults = {
+      'title': 'Business Document Builder',
+      'preparing': 'Preparing document...',
+      'doc_type': 'Document Type',
+      'receipt': 'Receipt',
+      'invoice': 'Tax Invoice',
+      'invoice_receipt': 'Tax Invoice / Receipt',
+      'licensed_only': 'Verified Licensed Dealers only',
+      'invoice_counter': 'Invoice Counter',
+      'client_info': 'Client Details:',
+      'client_name': 'Client Name',
+      'client_phone': 'Client Phone',
+      'client_address': 'Client Address',
+      'items': 'Service Items & Details',
+      'desc': 'Description',
+      'qty': 'Qty',
+      'price': 'Unit Price',
+      'add_item': 'Add Item',
+      'notes': 'Notes / Payment Terms',
+      'total': 'Grand Total',
+      'generate': 'Preview / Print PDF',
+      'empty_items': 'Please add at least one item',
+      'send_to_contact': 'Send to Contact',
+      'no_contacts': 'No contacts found',
+      'sent_success': 'Invoice sent successfully!',
+      'worker': 'Business Details:',
+      'date': 'Date:',
+      'inv_no': 'Document No:',
+      'tax_invoice_num': 'Tax Invoice No:',
+      'original': 'Original',
+      'business_address': 'Business Address:',
+      'subtotal': 'Subtotal (Excl. VAT)',
+      'vat': 'VAT (17%):',
+      'legal_disclaimer':
+          'Generated via hiro. This is a computerized document authorized by the Israel Tax Authority. Original.',
+      'licensed_dealer': 'Licensed Dealer',
+      'exempt_dealer': 'Exempt Dealer',
+      'vat_id': 'VAT ID / Tax ID:',
+      'authorized_dealer_label': 'Authorized Dealer:',
+    };
+
+    return {...defaults, ...source};
   }
 
   void _addItem() {
@@ -326,6 +462,17 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     });
   }
 
+  Future<void> _syncInvoiceNumberFromCounter() async {
+    final counter = int.tryParse(_invoiceCounterController.text) ?? 1;
+    final safeCounter = counter < 1 ? 1 : counter;
+    final year = intl.DateFormat('yyyy').format(DateTime.now());
+    setState(() {
+      _invoiceCounterController.text = safeCounter.toString();
+      _invoiceNumber = '$year-${safeCounter.toString().padLeft(4, '0')}';
+    });
+    await _persistInvoiceCounter(safeCounter);
+  }
+
   Future<Uint8List?> _getGeneratedPdfBytes() async {
     if (_items.isEmpty) return null;
 
@@ -343,7 +490,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     }
   }
 
-  Future<void> _displayPdf() async {
+  Future<void> _openPreviewPage() async {
     if (_items.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -358,27 +505,38 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     setState(() => _isPreparing = true);
 
     try {
-      if (_cachedFont == null) await _loadAssets();
+      final pdfBytes = await _getGeneratedPdfBytes();
+      if (pdfBytes == null) {
+        if (mounted) setState(() => _isPreparing = false);
+        return;
+      }
 
       if (!mounted) return;
       setState(() => _isPreparing = false);
 
-      await Printing.layoutPdf(
-        onLayout: (format) async {
-          return await _generatePdf(
-            format,
-            _cachedFont!,
-            _cachedFontBold!,
-            _cachedLogo,
-          );
-        },
-        name: '$_invoiceNumber.pdf',
+      final action = await Navigator.push<String>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => InvoicePreviewPage(
+            pdfBytes: pdfBytes,
+            fileName: '$_invoiceNumber.pdf',
+            onSave: () async {
+              await _saveInvoicePdf(pdfBytes);
+            },
+          ),
+        ),
       );
 
-      // Increment counter after issuance
-      await _incrementInvoiceCounter();
-      // Refresh to show next sequential number for next invoice
-      _fetchWorkerInfo();
+      if (action == 'send' && mounted) {
+        if (widget.receiverId != null) {
+          await _sendToContact(
+            widget.receiverId!,
+            widget.receiverName ?? "User",
+          );
+        } else {
+          await _showContactPickerAndSend();
+        }
+      }
     } catch (e) {
       if (mounted) setState(() => _isPreparing = false);
       dev.log("PDF Layout Error: $e");
@@ -388,6 +546,129 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         ).showSnackBar(SnackBar(content: Text("Error: ${e.toString()}")));
       }
     }
+  }
+
+  Future<_SavedInvoiceResult?> _saveInvoicePdf(
+    Uint8List pdfBytes, {
+    String? receiverNameOverride,
+    bool showFeedback = true,
+  }) async {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) return null;
+
+    final receiverName = receiverNameOverride?.trim().isNotEmpty == true
+        ? receiverNameOverride!.trim()
+        : (widget.receiverName?.trim().isNotEmpty == true
+              ? widget.receiverName!.trim()
+              : (_clientNameController.text.trim().isNotEmpty
+                    ? _clientNameController.text.trim()
+                    : 'Client'));
+    final userInvoicesRef = FirebaseFirestore.instance
+        .collection('users')
+        .doc(currentUser.uid)
+        .collection('saved_invoices');
+
+    try {
+      // Prevent duplicate save/increment for the same issued invoice number.
+      final existingByInvoice = await userInvoicesRef
+          .where('invoiceNumber', isEqualTo: _invoiceNumber)
+          .limit(1)
+          .get();
+      if (existingByInvoice.docs.isNotEmpty) {
+        final existingData = existingByInvoice.docs.first.data();
+        if (showFeedback && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                Provider.of<LanguageProvider>(
+                          context,
+                          listen: false,
+                        ).locale.languageCode ==
+                        'he'
+                    ? 'החשבונית כבר נשמרה'
+                    : 'Invoice already saved',
+              ),
+            ),
+          );
+        }
+        return _SavedInvoiceResult(
+          url: (existingData['url'] ?? '').toString(),
+          fileName: (existingData['fileName'] ?? '$_invoiceNumber.pdf')
+              .toString(),
+          wasCreated: false,
+        );
+      }
+
+      final datePart = intl.DateFormat('yyyy-MM-dd').format(DateTime.now());
+      final baseName = '$receiverName $datePart';
+
+      final existing = await userInvoicesRef
+          .where('baseName', isEqualTo: baseName)
+          .get();
+
+      final suffixIndex = existing.docs.length + 1;
+      final finalName = suffixIndex == 1
+          ? baseName
+          : '$baseName ($suffixIndex)';
+      final safeName = _safeFileName(finalName);
+      final storagePath = 'saved_invoices/${currentUser.uid}/$safeName.pdf';
+
+      final ref = firebase_storage.FirebaseStorage.instance.ref().child(
+        storagePath,
+      );
+      await ref.putData(pdfBytes);
+      final downloadUrl = await ref.getDownloadURL();
+
+      await userInvoicesRef.add({
+        'name': finalName,
+        'baseName': baseName,
+        'receiverName': receiverName,
+        'fileName': '$finalName.pdf',
+        'storagePath': storagePath,
+        'url': downloadUrl,
+        'amount': _totalAmount,
+        'invoiceNumber': _invoiceNumber,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      await _incrementInvoiceCounter();
+
+      if (showFeedback && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              Provider.of<LanguageProvider>(
+                        context,
+                        listen: false,
+                      ).locale.languageCode ==
+                      'he'
+                  ? 'החשבונית נשמרה בהצלחה'
+                  : 'Invoice saved successfully',
+            ),
+          ),
+        );
+      }
+
+      return _SavedInvoiceResult(
+        url: downloadUrl,
+        fileName: '$finalName.pdf',
+        wasCreated: true,
+      );
+    } catch (e) {
+      dev.log('Save invoice error: $e');
+      if (!mounted) return null;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Failed to save invoice.')));
+      return null;
+    }
+  }
+
+  String _safeFileName(String input) {
+    return input
+        .replaceAll(RegExp(r'[\\/:*?"<>|]'), '_')
+        .replaceAll(RegExp(r'\s+'), '_')
+        .trim();
   }
 
   Future<void> _showContactPickerAndSend() async {
@@ -444,7 +725,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                     final rooms = snapshot.data!.docs.where((doc) {
                       final data = doc.data() as Map<String, dynamic>;
                       final List users = data['users'] ?? [];
-                      return !users.contains('hirehub_manager');
+                      return !users.contains('hiro_manager');
                     }).toList();
 
                     if (rooms.isEmpty)
@@ -499,20 +780,21 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     }
 
     try {
-      final fileName = "invoice_${DateTime.now().millisecondsSinceEpoch}.pdf";
-      final ref = firebase_storage.FirebaseStorage.instance
-          .ref()
-          .child('invoices')
-          .child(fileName);
-      await ref.putData(pdfBytes);
-      final url = await ref.getDownloadURL();
+      final saved = await _saveInvoicePdf(
+        pdfBytes,
+        receiverNameOverride: receiverName,
+        showFeedback: false,
+      );
+      if (saved == null || saved.url.isEmpty) {
+        if (mounted) setState(() => _isPreparing = false);
+        return;
+      }
 
       final currentUser = FirebaseAuth.instance.currentUser;
       if (currentUser == null) return;
 
-      final roomId = currentUser.uid.hashCode <= receiverId.hashCode
-          ? '${currentUser.uid}_$receiverId'
-          : '${receiverId}_${currentUser.uid}';
+      final ids = [currentUser.uid, receiverId]..sort();
+      final roomId = ids.join('_');
 
       await FirebaseFirestore.instance
           .collection('chat_rooms')
@@ -521,9 +803,12 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           .add({
             'senderId': currentUser.uid,
             'receiverId': receiverId,
+            'message': 'Sent a document: $_invoiceNumber',
             'text': 'Sent a document: $_invoiceNumber',
-            'fileUrl': url,
-            'fileName': '$_invoiceNumber.pdf',
+            'type': 'file',
+            'url': saved.url,
+            'fileUrl': saved.url,
+            'fileName': saved.fileName,
             'timestamp': FieldValue.serverTimestamp(),
             'isRead': false,
           });
@@ -540,11 +825,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         },
         SetOptions(merge: true),
       );
-
-      // Increment counter after successful issuance
-      await _incrementInvoiceCounter();
-      // Refresh to get the next sequential number
-      _fetchWorkerInfo();
 
       if (mounted) {
         setState(() => _isPreparing = false);
@@ -920,7 +1200,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
 
   @override
   Widget build(BuildContext context) {
-    final strings = _getLocalizedStrings(context);
+    final strings = _withRequiredDefaults(_getLocalizedStrings(context));
     final isRtl =
         Provider.of<LanguageProvider>(context).locale.languageCode == 'he' ||
         Provider.of<LanguageProvider>(context).locale.languageCode == 'ar';
@@ -1044,6 +1324,51 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                 if (val != null)
                                   setState(() => _selectedDocType = val);
                               },
+                            ),
+                            const SizedBox(height: 12),
+                            TextField(
+                              controller: _invoiceCounterController,
+                              keyboardType: TextInputType.number,
+                              inputFormatters: [
+                                FilteringTextInputFormatter.digitsOnly,
+                              ],
+                              onChanged: (_) {
+                                final year = intl.DateFormat(
+                                  'yyyy',
+                                ).format(DateTime.now());
+                                final counter =
+                                    int.tryParse(
+                                      _invoiceCounterController.text,
+                                    ) ??
+                                    1;
+                                setState(() {
+                                  _invoiceNumber =
+                                      '$year-${(counter < 1 ? 1 : counter).toString().padLeft(4, '0')}';
+                                });
+                              },
+                              onSubmitted: (_) =>
+                                  _syncInvoiceNumberFromCounter(),
+                              decoration: _inputStyle(
+                                strings['invoice_counter']!,
+                                Icons.format_list_numbered_rounded,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: TextButton.icon(
+                                onPressed: () =>
+                                    _syncInvoiceNumberFromCounter(),
+                                icon: const Icon(
+                                  Icons.refresh_rounded,
+                                  size: 18,
+                                ),
+                                label: Text(
+                                  isRtl
+                                      ? 'עדכן מספר מסמך'
+                                      : 'Update Document Number',
+                                ),
+                              ),
                             ),
                           ],
                         ),
@@ -1260,41 +1585,13 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                   children: [
                                     Expanded(
                                       child: ElevatedButton.icon(
-                                        onPressed: _displayPdf,
+                                        onPressed: _openPreviewPage,
                                         icon: const Icon(Icons.print_rounded),
                                         label: Text(strings['generate']!),
                                         style: ElevatedButton.styleFrom(
                                           backgroundColor: Colors.white
                                               .withValues(alpha: 0.2),
                                           foregroundColor: Colors.white,
-                                          elevation: 0,
-                                          shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(
-                                              12,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: ElevatedButton.icon(
-                                        onPressed: _showContactPickerAndSend,
-                                        icon: const Icon(Icons.send_rounded),
-                                        label: Text(
-                                          widget.receiverId != null
-                                              ? (isRtl
-                                                    ? "שלח ישירות"
-                                                    : "Send Direct")
-                                              : (isRtl
-                                                    ? "שלח איש קשר"
-                                                    : "Send Contact"),
-                                        ),
-                                        style: ElevatedButton.styleFrom(
-                                          backgroundColor: Colors.white,
-                                          foregroundColor: const Color(
-                                            0xFF1976D2,
-                                          ),
                                           elevation: 0,
                                           shape: RoundedRectangleBorder(
                                             borderRadius: BorderRadius.circular(
@@ -1390,6 +1687,152 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       filled: true,
       fillColor: const Color(0xFFF8FAFC),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+    );
+  }
+}
+
+class InvoicePreviewPage extends StatefulWidget {
+  final Uint8List pdfBytes;
+  final String fileName;
+  final Future<void> Function() onSave;
+
+  const InvoicePreviewPage({
+    super.key,
+    required this.pdfBytes,
+    required this.fileName,
+    required this.onSave,
+  });
+
+  @override
+  State<InvoicePreviewPage> createState() => _InvoicePreviewPageState();
+}
+
+class _InvoicePreviewPageState extends State<InvoicePreviewPage> {
+  bool _isSaved = false;
+  bool _isSaving = false;
+
+  Future<void> _handleSave() async {
+    if (_isSaving || _isSaved) return;
+
+    setState(() => _isSaving = true);
+    try {
+      await widget.onSave();
+      if (!mounted) return;
+      setState(() => _isSaved = true);
+    } finally {
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isRtl =
+        Provider.of<LanguageProvider>(context).locale.languageCode == 'he' ||
+        Provider.of<LanguageProvider>(context).locale.languageCode == 'ar';
+
+    return Directionality(
+      textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(isRtl ? 'תצוגה מקדימה לחשבונית' : 'Invoice Preview'),
+          backgroundColor: Colors.white,
+          foregroundColor: const Color(0xFF1976D2),
+        ),
+        body: PdfPreview(
+          canDebug: false,
+          canChangePageFormat: false,
+          canChangeOrientation: false,
+          allowPrinting: false,
+          allowSharing: false,
+          useActions: false,
+          initialPageFormat: pdf.PdfPageFormat.a4,
+          build: (_) async => widget.pdfBytes,
+        ),
+        bottomNavigationBar: SafeArea(
+          minimum: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _isSaved ? null : _handleSave,
+                  icon: const Icon(Icons.save_alt_rounded),
+                  label: Text(
+                    _isSaved
+                        ? (isRtl ? 'נשמר' : 'Saved')
+                        : (_isSaving
+                              ? (isRtl ? 'שומר...' : 'Saving...')
+                              : (isRtl ? 'שמור' : 'Save')),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF1976D2),
+                    side: const BorderSide(color: Color(0xFF1976D2)),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                ),
+              ),
+              if (_isSaved) ...[
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () => Navigator.pop(context, 'send'),
+                        icon: const Icon(Icons.send_rounded),
+                        label: Text(isRtl ? 'שלח' : 'Send'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF0EA5E9),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          Printing.layoutPdf(
+                            name: widget.fileName,
+                            onLayout: (_) async => widget.pdfBytes,
+                          );
+                        },
+                        icon: const Icon(Icons.print_rounded),
+                        label: Text(isRtl ? 'הדפס' : 'Print'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF1976D2),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          Printing.sharePdf(
+                            bytes: widget.pdfBytes,
+                            filename: widget.fileName,
+                          );
+                        },
+                        icon: const Icon(Icons.share_rounded),
+                        label: Text(isRtl ? 'שתף' : 'Share'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF0F766E),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

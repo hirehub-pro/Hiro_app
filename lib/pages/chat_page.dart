@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -45,6 +46,13 @@ class _ChatPageState extends State<ChatPage> {
   final AudioRecorder _audioRecorder = AudioRecorder();
   final ap.AudioPlayer _audioPlayer = ap.AudioPlayer();
   bool _isRecording = false;
+  Timer? _recordingTimer;
+  int _recordingSeconds = 0;
+  final Map<String, String> _localMediaPaths = {};
+  final Map<String, double> _downloadProgress = {};
+  final Set<String> _downloadingUrls = {};
+  final Set<String> _failedDownloads = {};
+  final Map<String, Future<String?>> _localResolveFutures = {};
   late Stream<QuerySnapshot> _messageStream;
 
   // Selection Mode State
@@ -137,6 +145,7 @@ class _ChatPageState extends State<ChatPage> {
     }
     _messageController.dispose();
     _scrollController.dispose();
+    _recordingTimer?.cancel();
     _audioRecorder.dispose();
     _audioPlayer.dispose();
     super.dispose();
@@ -494,7 +503,9 @@ class _ChatPageState extends State<ChatPage> {
     String messageId,
   ) {
     final bool isSelected = _selectedMessageIds.contains(messageId);
-    final String type = message['type'] ?? 'text';
+    final String type = _resolveMessageType(message);
+    final String url = _resolveMessageUrl(message);
+    final String? fileName = message['fileName']?.toString();
     final timestamp = message['timestamp'] as Timestamp?;
     final timeStr = timestamp != null
         ? intl.DateFormat('HH:mm').format(timestamp.toDate())
@@ -518,7 +529,11 @@ class _ChatPageState extends State<ChatPage> {
             }
           });
         } else if (type == 'file') {
-          _openFile(message['url'] ?? "", message['fileName']);
+          _openFile(url, fileName);
+        } else if (type == 'image') {
+          _openImageFullscreen(url, fileName: fileName);
+        } else if (type == 'video') {
+          _openVideoFullscreen(url, fileName: fileName);
         }
       },
       child: Container(
@@ -552,52 +567,23 @@ class _ChatPageState extends State<ChatPage> {
             children: [
               if (type == 'text')
                 Text(
-                  message['message'] ?? "",
+                  _resolveMessageText(message),
                   style: TextStyle(color: isMe ? Colors.white : Colors.black87),
                 )
               else if (type == 'image')
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: CachedNetworkImage(
-                    imageUrl: message['url'] ?? "",
-                    placeholder: (context, url) => const SizedBox(
-                      height: 150,
-                      child: Center(child: CircularProgressIndicator()),
-                    ),
-                    errorWidget: (context, url, error) =>
-                        const Icon(Icons.error),
-                  ),
-                )
+                _buildImageAttachment(url, fileName)
               else if (type == 'video')
                 ClipRRect(
                   borderRadius: BorderRadius.circular(8),
                   child: CachedVideoPlayer(
-                    url: message['url'] ?? "",
+                    url: url,
                     play: false, // Don't autoplay in chat list
                   ),
                 )
               else if (type == 'file')
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.insert_drive_file_rounded,
-                      color: isMe ? Colors.white70 : Colors.grey,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        message['fileName'] ?? "File",
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: isMe ? Colors.white : Colors.black87,
-                        ),
-                      ),
-                    ),
-                  ],
-                )
+                _buildFileAttachment(url, fileName, isMe)
               else if (type == 'audio')
-                _buildAudioPlayer(message['url'] ?? ""),
+                _buildAudioPlayer(url, isMe: isMe, fileName: fileName),
               const SizedBox(height: 4),
               Text(
                 timeStr,
@@ -613,24 +599,278 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
-  Widget _buildAudioPlayer(String url) {
+  String _resolveMessageType(Map<String, dynamic> message) {
+    final rawType = (message['type'] ?? '').toString().trim();
+    if (rawType.isNotEmpty) return rawType;
+
+    final fileUrl = (message['fileUrl'] ?? '').toString().trim();
+    if (fileUrl.isNotEmpty) return 'file';
+
+    return 'text';
+  }
+
+  String _resolveMessageUrl(Map<String, dynamic> message) {
+    final primary = (message['url'] ?? '').toString().trim();
+    if (primary.isNotEmpty) return primary;
+    return (message['fileUrl'] ?? '').toString().trim();
+  }
+
+  String _resolveMessageText(Map<String, dynamic> message) {
+    final primary = (message['message'] ?? '').toString();
+    if (primary.isNotEmpty) return primary;
+    return (message['text'] ?? '').toString();
+  }
+
+  Widget _buildImageAttachment(String url, String? fileName) {
+    return FutureBuilder<String?>(
+      future: _resolveLocalAttachmentCached(
+        url: url,
+        type: 'image',
+        fileName: fileName,
+        autoDownload: true,
+      ),
+      builder: (context, snapshot) {
+        final localPath = snapshot.data;
+        final isDownloading = _downloadingUrls.contains(url);
+        final progress = _downloadProgress[url] ?? 0;
+        final hasError = _failedDownloads.contains(url);
+
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              if (localPath != null)
+                Image.file(
+                  File(localPath),
+                  height: 190,
+                  width: 220,
+                  fit: BoxFit.cover,
+                )
+              else
+                CachedNetworkImage(
+                  imageUrl: url,
+                  width: 220,
+                  height: 190,
+                  fit: BoxFit.cover,
+                  placeholder: (context, _) => const SizedBox(
+                    height: 190,
+                    width: 220,
+                    child: Center(child: CircularProgressIndicator()),
+                  ),
+                  errorWidget: (context, _, __) => const SizedBox(
+                    height: 190,
+                    width: 220,
+                    child: Icon(Icons.error),
+                  ),
+                ),
+              if (isDownloading)
+                Container(
+                  color: Colors.black38,
+                  height: 190,
+                  width: 220,
+                  child: Center(
+                    child: CircularProgressIndicator(
+                      value: progress > 0 ? progress : null,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              if (hasError)
+                Positioned.fill(
+                  child: Container(
+                    color: Colors.black38,
+                    child: Center(
+                      child: IconButton(
+                        icon: const Icon(
+                          Icons.refresh_rounded,
+                          color: Colors.white,
+                        ),
+                        onPressed: () => _retryAttachmentDownload(
+                          url: url,
+                          type: 'image',
+                          fileName: fileName,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _openImageFullscreen(String url, {String? fileName}) async {
+    if (url.isEmpty) return;
+
+    final localPath = await _resolveLocalAttachmentCached(
+      url: url,
+      type: 'image',
+      fileName: fileName,
+      autoDownload: true,
+    );
+
+    if (!mounted) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) =>
+            _ImageFullscreenViewer(imageUrl: url, localPath: localPath),
+      ),
+    );
+  }
+
+  Future<void> _openVideoFullscreen(String url, {String? fileName}) async {
+    if (url.isEmpty) return;
+
+    if (!mounted) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) =>
+            _VideoFullscreenViewer(videoUrl: url, fileName: fileName),
+      ),
+    );
+  }
+
+  Widget _buildAudioPlayer(String url, {required bool isMe, String? fileName}) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        const Icon(Icons.mic, color: Colors.white, size: 20),
+        Icon(Icons.mic, color: isMe ? Colors.white : Colors.black54, size: 20),
         const SizedBox(width: 8),
-        const Text("Voice Message", style: TextStyle(color: Colors.white)),
-        IconButton(
-          icon: const Icon(Icons.play_arrow, color: Colors.white),
-          onPressed: () async {
-            if (url.isNotEmpty) await _audioPlayer.play(ap.UrlSource(url));
+        Text(
+          "Voice Message",
+          style: TextStyle(color: isMe ? Colors.white : Colors.black87),
+        ),
+        FutureBuilder<String?>(
+          future: _resolveLocalAttachmentCached(
+            url: url,
+            type: 'audio',
+            fileName: fileName,
+            autoDownload: true,
+          ),
+          builder: (context, snapshot) {
+            final localPath = snapshot.data;
+            final isDownloading = _downloadingUrls.contains(url);
+            return IconButton(
+              icon: isDownloading
+                  ? SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        value: _downloadProgress[url],
+                        color: isMe ? Colors.white : const Color(0xFF1976D2),
+                      ),
+                    )
+                  : Icon(
+                      Icons.play_arrow,
+                      color: isMe ? Colors.white : const Color(0xFF1976D2),
+                    ),
+              onPressed: isDownloading
+                  ? null
+                  : () async {
+                      if (localPath != null) {
+                        await _audioPlayer.play(ap.DeviceFileSource(localPath));
+                        return;
+                      }
+                      if (url.isNotEmpty) {
+                        await _audioPlayer.play(ap.UrlSource(url));
+                      }
+                    },
+            );
           },
         ),
       ],
     );
   }
 
+  Widget _buildFileAttachment(String url, String? fileName, bool isMe) {
+    return FutureBuilder<String?>(
+      future: _resolveLocalAttachmentCached(
+        url: url,
+        type: 'file',
+        fileName: fileName,
+        autoDownload: true,
+      ),
+      builder: (context, snapshot) {
+        final localPath = snapshot.data;
+        final isDownloading = _downloadingUrls.contains(url);
+        final hasError = _failedDownloads.contains(url);
+        final progress = _downloadProgress[url] ?? 0;
+
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.insert_drive_file_rounded,
+              color: isMe ? Colors.white70 : Colors.grey,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    fileName ?? "File",
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: isMe ? Colors.white : Colors.black87,
+                    ),
+                  ),
+                  if (isDownloading)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: LinearProgressIndicator(
+                        value: progress > 0 ? progress : null,
+                        minHeight: 3,
+                        color: isMe ? Colors.white : const Color(0xFF1976D2),
+                        backgroundColor: isMe
+                            ? Colors.white24
+                            : const Color(0xFFE2E8F0),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            if (hasError)
+              IconButton(
+                icon: Icon(
+                  Icons.refresh_rounded,
+                  color: isMe ? Colors.white : const Color(0xFF1976D2),
+                ),
+                onPressed: () => _retryAttachmentDownload(
+                  url: url,
+                  type: 'file',
+                  fileName: fileName,
+                ),
+              )
+            else
+              Icon(
+                localPath != null
+                    ? Icons.download_done_rounded
+                    : Icons.download_rounded,
+                size: 18,
+                color: isMe ? Colors.white70 : Colors.grey,
+              ),
+          ],
+        );
+      },
+    );
+  }
+
   Widget _buildInputArea(bool isRtl) {
+    final recordingLabel = isRtl
+        ? "מקליט הודעה קולית..."
+        : "Recording voice...";
+    final recordingDuration = Duration(seconds: _recordingSeconds);
+    final timerText =
+        '${recordingDuration.inMinutes.toString().padLeft(2, '0')}:${(recordingDuration.inSeconds % 60).toString().padLeft(2, '0')}';
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
@@ -654,43 +894,99 @@ class _ChatPageState extends State<ChatPage> {
               onPressed: _showAttachmentOptions,
             ),
             Expanded(
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF1F5F9),
-                  borderRadius: BorderRadius.circular(24),
-                ),
-                child: TextField(
-                  controller: _messageController,
-                  maxLines: null,
-                  decoration: InputDecoration(
-                    hintText: isRtl ? "כתוב הודעה..." : "Type a message...",
-                    border: InputBorder.none,
-                    hintStyle: TextStyle(color: Colors.grey[500]),
-                  ),
-                ),
-              ),
+              child: _isRecording
+                  ? Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 12,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFEBEE),
+                        borderRadius: BorderRadius.circular(24),
+                        border: Border.all(color: const Color(0xFFFFCDD2)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.mic,
+                            color: Color(0xFFD32F2F),
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              '$recordingLabel  $timerText',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Color(0xFFB71C1C),
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  : Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(24),
+                      ),
+                      child: TextField(
+                        controller: _messageController,
+                        maxLines: null,
+                        decoration: InputDecoration(
+                          hintText: isRtl
+                              ? "כתוב הודעה..."
+                              : "Type a message...",
+                          border: InputBorder.none,
+                          hintStyle: TextStyle(color: Colors.grey[500]),
+                        ),
+                      ),
+                    ),
             ),
             const SizedBox(width: 8),
-            GestureDetector(
-              onLongPress: _startRecording,
-              onLongPressUp: _stopRecording,
-              child: CircleAvatar(
-                backgroundColor: const Color(0xFF1976D2),
+            if (_isRecording) ...[
+              CircleAvatar(
+                backgroundColor: const Color(0xFFE57373),
                 child: IconButton(
-                  icon: Icon(
-                    _isRecording ? Icons.mic : Icons.send_rounded,
-                    color: Colors.white,
-                    size: 20,
-                  ),
-                  onPressed: () {
-                    if (_messageController.text.trim().isNotEmpty) {
-                      _sendMessage(text: _messageController.text);
-                    }
-                  },
+                  icon: const Icon(Icons.close_rounded, color: Colors.white),
+                  onPressed: () => _stopRecording(send: false),
                 ),
               ),
-            ),
+              const SizedBox(width: 8),
+              CircleAvatar(
+                backgroundColor: const Color(0xFF2E7D32),
+                child: IconButton(
+                  icon: const Icon(Icons.send_rounded, color: Colors.white),
+                  onPressed: () => _stopRecording(send: true),
+                ),
+              ),
+            ] else
+              ValueListenableBuilder<TextEditingValue>(
+                valueListenable: _messageController,
+                builder: (context, value, _) {
+                  final hasInput = value.text.isNotEmpty;
+                  return CircleAvatar(
+                    backgroundColor: const Color(0xFF1976D2),
+                    child: IconButton(
+                      icon: Icon(
+                        hasInput ? Icons.send_rounded : Icons.mic_rounded,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                      onPressed: () {
+                        if (hasInput) {
+                          _sendMessage(text: value.text);
+                        } else {
+                          _startRecording();
+                        }
+                      },
+                    ),
+                  );
+                },
+              ),
           ],
         ),
       ),
@@ -825,38 +1121,310 @@ class _ChatPageState extends State<ChatPage> {
       final uploadTask = ref.putFile(file);
       final snapshot = await uploadTask;
       final url = await snapshot.ref.getDownloadURL();
+
+      // Keep a local copy so sent attachments are instantly available like chat apps.
+      await _cacheSentFileLocally(
+        remoteUrl: url,
+        sourceFile: file,
+        type: type,
+        fileName: fileName,
+      );
+
       _sendMessage(type: type, url: url, fileName: fileName);
     } catch (e) {
       debugPrint("Upload error: $e");
     }
   }
 
-  void _startRecording() async {
-    if (await _audioRecorder.hasPermission()) {
-      final directory = await getApplicationDocumentsDirectory();
-      final path =
-          '${directory.path}/audio_${DateTime.now().millisecondsSinceEpoch}.m4a';
-      await _audioRecorder.start(const RecordConfig(), path: path);
+  Future<void> _cacheSentFileLocally({
+    required String remoteUrl,
+    required File sourceFile,
+    required String type,
+    String? fileName,
+  }) async {
+    try {
+      final localPath = await _buildLocalAttachmentPath(
+        url: remoteUrl,
+        type: type,
+        fileName: fileName,
+      );
+      final targetFile = File(localPath);
+      if (!await targetFile.exists()) {
+        await sourceFile.copy(localPath);
+      }
+      if (mounted) {
+        setState(() {
+          _localMediaPaths[remoteUrl] = localPath;
+          _failedDownloads.remove(remoteUrl);
+        });
+      }
+    } catch (e) {
+      debugPrint('Local cache save error: $e');
+    }
+  }
+
+  Future<String?> _resolveLocalAttachmentCached({
+    required String url,
+    required String type,
+    String? fileName,
+    bool autoDownload = false,
+  }) {
+    if (url.isEmpty) return Future.value(null);
+    return _localResolveFutures.putIfAbsent(
+      url,
+      () => _resolveLocalAttachment(
+        url: url,
+        type: type,
+        fileName: fileName,
+        autoDownload: autoDownload,
+      ),
+    );
+  }
+
+  Future<String?> _resolveLocalAttachment({
+    required String url,
+    required String type,
+    String? fileName,
+    bool autoDownload = false,
+  }) async {
+    final cachedPath = _localMediaPaths[url];
+    if (cachedPath != null && await File(cachedPath).exists()) {
+      return cachedPath;
+    }
+
+    final localPath = await _buildLocalAttachmentPath(
+      url: url,
+      type: type,
+      fileName: fileName,
+    );
+    final localFile = File(localPath);
+    if (await localFile.exists()) {
+      _localMediaPaths[url] = localPath;
+      return localPath;
+    }
+
+    if (!autoDownload) return null;
+    return _downloadAttachment(url, localPath);
+  }
+
+  Future<String?> _downloadAttachment(String url, String localPath) async {
+    if (_downloadingUrls.contains(url)) return null;
+
+    _downloadingUrls.add(url);
+    _failedDownloads.remove(url);
+    _downloadProgress[url] = 0;
+    if (mounted) setState(() {});
+
+    try {
+      final request = http.Request('GET', Uri.parse(url));
+      final response = await http.Client().send(request);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw Exception('Download failed (${response.statusCode})');
+      }
+
+      final file = File(localPath);
+      await file.parent.create(recursive: true);
+      final sink = file.openWrite();
+      final total = response.contentLength ?? 0;
+      int received = 0;
+
+      await for (final chunk in response.stream) {
+        sink.add(chunk);
+        received += chunk.length;
+        if (total > 0) {
+          _downloadProgress[url] = received / total;
+          if (mounted) setState(() {});
+        }
+      }
+      await sink.flush();
+      await sink.close();
+
+      _localMediaPaths[url] = localPath;
+      _downloadProgress.remove(url);
+      _downloadingUrls.remove(url);
+      _failedDownloads.remove(url);
+      if (mounted) setState(() {});
+      return localPath;
+    } catch (e) {
+      _downloadProgress.remove(url);
+      _downloadingUrls.remove(url);
+      _failedDownloads.add(url);
+      if (mounted) setState(() {});
+      debugPrint('Attachment download error: $e');
+      return null;
+    }
+  }
+
+  Future<void> _retryAttachmentDownload({
+    required String url,
+    required String type,
+    String? fileName,
+  }) async {
+    _failedDownloads.remove(url);
+    _localResolveFutures.remove(url);
+    if (mounted) setState(() {});
+    await _resolveLocalAttachmentCached(
+      url: url,
+      type: type,
+      fileName: fileName,
+      autoDownload: true,
+    );
+  }
+
+  Future<String> _buildLocalAttachmentPath({
+    required String url,
+    required String type,
+    String? fileName,
+  }) async {
+    final root = await getApplicationDocumentsDirectory();
+    final dir = Directory('${root.path}/chat_media');
+    if (!await dir.exists()) {
+      await dir.create(recursive: true);
+    }
+
+    final ext = _attachmentExtension(type: type, url: url, fileName: fileName);
+    final hash = _stableHash(url);
+    return '${dir.path}/$hash$ext';
+  }
+
+  String _stableHash(String input) {
+    int hash = 2166136261;
+    for (final unit in input.codeUnits) {
+      hash ^= unit;
+      hash = (hash * 16777619) & 0x7fffffff;
+    }
+    return hash.toRadixString(16);
+  }
+
+  String _attachmentExtension({
+    required String type,
+    required String url,
+    String? fileName,
+  }) {
+    String candidate = fileName ?? '';
+    if (candidate.contains('.')) {
+      final dot = candidate.lastIndexOf('.');
+      if (dot != -1 && dot < candidate.length - 1) {
+        return candidate.substring(dot);
+      }
+    }
+
+    final uri = Uri.tryParse(url);
+    final path = uri?.path ?? '';
+    if (path.contains('.')) {
+      final dot = path.lastIndexOf('.');
+      if (dot != -1 && dot < path.length - 1) {
+        return path.substring(dot);
+      }
+    }
+
+    switch (type) {
+      case 'image':
+        return '.jpg';
+      case 'video':
+        return '.mp4';
+      case 'audio':
+        return '.m4a';
+      default:
+        return '.bin';
+    }
+  }
+
+  Future<void> _startRecording() async {
+    if (_isRecording) return;
+
+    final hasPermission = await _audioRecorder.hasPermission();
+    if (!hasPermission) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            Provider.of<LanguageProvider>(
+                      context,
+                      listen: false,
+                    ).locale.languageCode ==
+                    'he'
+                ? 'נדרשת הרשאת מיקרופון כדי להקליט הודעה קולית.'
+                : 'Microphone permission is required to record voice messages.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    final directory = await getApplicationDocumentsDirectory();
+    final path =
+        '${directory.path}/audio_${DateTime.now().millisecondsSinceEpoch}.m4a';
+
+    await _audioRecorder.start(
+      const RecordConfig(
+        encoder: AudioEncoder.aacLc,
+        bitRate: 128000,
+        sampleRate: 44100,
+      ),
+      path: path,
+    );
+
+    _recordingTimer?.cancel();
+    _recordingSeconds = 0;
+    _recordingTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      setState(() {
+        _recordingSeconds++;
+      });
+    });
+
+    if (mounted) {
       setState(() => _isRecording = true);
     }
   }
 
-  void _stopRecording() async {
+  Future<void> _stopRecording({required bool send}) async {
+    if (!_isRecording) return;
+
     final path = await _audioRecorder.stop();
-    setState(() => _isRecording = false);
-    if (path != null) {
-      _uploadAndSend(File(path), 'audio', 'Voice Message');
+    _recordingTimer?.cancel();
+
+    if (mounted) {
+      setState(() {
+        _isRecording = false;
+        _recordingSeconds = 0;
+      });
+    }
+
+    if (path == null || !send) {
+      if (path != null) {
+        final file = File(path);
+        if (await file.exists()) {
+          await file.delete();
+        }
+      }
+      return;
+    }
+
+    final file = File(path);
+    if (await file.exists()) {
+      _uploadAndSend(file, 'audio', 'Voice Message');
     }
   }
 
   void _openFile(String url, String? fileName) async {
     if (url.isEmpty) return;
     try {
-      final response = await http.get(Uri.parse(url));
-      final directory = await getTemporaryDirectory();
-      final file = File('${directory.path}/${fileName ?? "temp"}');
-      await file.writeAsBytes(response.bodyBytes);
-      await OpenFilex.open(file.path);
+      final localPath = await _resolveLocalAttachmentCached(
+        url: url,
+        type: 'file',
+        fileName: fileName,
+        autoDownload: true,
+      );
+      if (localPath == null) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to download file.')),
+        );
+        return;
+      }
+      await OpenFilex.open(localPath);
     } catch (e) {
       debugPrint("Open file error: $e");
     }
@@ -908,5 +1476,62 @@ class _ChatPageLifecycleObserver extends WidgetsBindingObserver {
         state == AppLifecycleState.hidden) {
       onBackgrounded();
     }
+  }
+}
+
+class _ImageFullscreenViewer extends StatelessWidget {
+  final String imageUrl;
+  final String? localPath;
+
+  const _ImageFullscreenViewer({required this.imageUrl, this.localPath});
+
+  @override
+  Widget build(BuildContext context) {
+    final hasLocal = localPath != null && localPath!.isNotEmpty;
+
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(backgroundColor: Colors.black, elevation: 0),
+      body: Center(
+        child: InteractiveViewer(
+          minScale: 0.8,
+          maxScale: 4,
+          child: hasLocal
+              ? Image.file(File(localPath!), fit: BoxFit.contain)
+              : CachedNetworkImage(
+                  imageUrl: imageUrl,
+                  fit: BoxFit.contain,
+                  placeholder: (context, _) => const Center(
+                    child: CircularProgressIndicator(color: Colors.white),
+                  ),
+                  errorWidget: (context, _, __) => const Icon(
+                    Icons.broken_image_rounded,
+                    color: Colors.white70,
+                    size: 60,
+                  ),
+                ),
+        ),
+      ),
+    );
+  }
+}
+
+class _VideoFullscreenViewer extends StatelessWidget {
+  final String videoUrl;
+  final String? fileName;
+
+  const _VideoFullscreenViewer({required this.videoUrl, this.fileName});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        elevation: 0,
+        title: Text(fileName ?? 'Video'),
+      ),
+      body: Center(child: CachedVideoPlayer(url: videoUrl, play: true)),
+    );
   }
 }

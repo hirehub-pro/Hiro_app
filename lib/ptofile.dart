@@ -15,6 +15,7 @@ import 'package:untitled1/sign_in.dart';
 import 'package:untitled1/pages/schedule.dart';
 import 'package:untitled1/pages/settings.dart';
 import 'package:untitled1/pages/invoice_builder.dart';
+import 'package:untitled1/pages/saved_invoices_page.dart';
 import 'package:untitled1/pages/verify_business.dart';
 import 'package:untitled1/pages/chat_page.dart';
 import 'package:untitled1/pages/analytics_page.dart';
@@ -29,11 +30,20 @@ import 'package:untitled1/services/location_context_service.dart';
 import 'package:untitled1/services/subscription_access_service.dart';
 
 import 'package:untitled1/widgets/cached_video_player.dart';
+import 'package:untitled1/widgets/tour_tip_dialog.dart';
 
 class Profile extends StatefulWidget {
   final String? userId;
   final String? viewedProfession;
-  const Profile({super.key, this.userId, this.viewedProfession});
+  final bool showWorkerToolsGuide;
+  final VoidCallback? onDismissWorkerToolsGuide;
+  const Profile({
+    super.key,
+    this.userId,
+    this.viewedProfession,
+    this.showWorkerToolsGuide = false,
+    this.onDismissWorkerToolsGuide,
+  });
 
   @override
   State<Profile> createState() => _ProfileState();
@@ -65,6 +75,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
   String _altPhoneNumber = "";
   String _email = "";
   String _town = "";
+  DateTime? _dateOfBirth;
   String _profileImageUrl = "";
   String _userRole = "customer";
   List<String> _userProfessions = [];
@@ -89,6 +100,9 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
   String _distanceStr = "";
   double? _proLat;
   double? _proLng;
+  int _workerGuideStep = 0;
+  bool _workerGuideDialogOpen = false;
+  final ScrollController _aboutScrollController = ScrollController();
 
   bool get _hasActiveWorkerSubscription {
     return SubscriptionAccessService.hasActiveWorkerSubscriptionFromData({
@@ -316,14 +330,197 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
     _tabController!.addListener(() {
       if (!_tabController!.indexIsChanging) {
         setState(() {});
+        _handleWorkerGuideTabChange();
+        _maybeScrollAboutToTools();
       }
     });
+  }
+
+  bool get _isWorkerGuideActive {
+    return widget.showWorkerToolsGuide &&
+        _isOwnProfile &&
+        _userRole == 'worker' &&
+        _isSubscribed;
+  }
+
+  void _maybeScrollAboutToTools() {
+    // About tab is index 3 for workers, index 0 for non-workers.
+    final aboutIndex = (_userRole == 'worker' || _isOwnProfile) ? 3 : 0;
+    if (_tabController?.index != aboutIndex) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (!_aboutScrollController.hasClients) return;
+      _aboutScrollController.animateTo(
+        _aboutScrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 600),
+        curve: Curves.easeInOut,
+      );
+    });
+  }
+
+  Future<void> _showWorkerGuideDialog({
+    required String title,
+    required String body,
+    String? stepLabel,
+    IconData icon = Icons.tour_rounded,
+  }) async {
+    if (!mounted) return;
+    _workerGuideDialogOpen = true;
+
+    final locale = Provider.of<LanguageProvider>(
+      context,
+      listen: false,
+    ).locale.languageCode;
+    final isRtl = locale == 'he' || locale == 'ar';
+
+    await showTourTipDialog(
+      context: context,
+      title: title,
+      body: body,
+      stepLabel: stepLabel,
+      icon: icon,
+      isRtl: isRtl,
+      confirmLabel: isRtl ? 'הבנתי' : 'Got it',
+    );
+
+    _workerGuideDialogOpen = false;
+  }
+
+  Future<void> _handleWorkerGuideTabChange() async {
+    if (!_isWorkerGuideActive || _tabController == null) return;
+    if (_workerGuideDialogOpen) return;
+
+    final locale = Provider.of<LanguageProvider>(
+      context,
+      listen: false,
+    ).locale.languageCode;
+    final isRtl = locale == 'he' || locale == 'ar';
+    final tabIndex = _tabController!.index;
+
+    if (_workerGuideStep == 1 && tabIndex == 1) {
+      await _showWorkerGuideDialog(
+        title: isRtl ? 'ביקורות' : 'Reviews',
+        body: isRtl
+            ? 'כאן תראה ביקורות, דירוגים ומשוב מלקוחות. אפשר גם לערוך ביקורת קיימת.'
+            : 'Here you can see reviews, ratings, and customer feedback. You can also edit existing reviews.',
+        stepLabel: isRtl ? 'שלב 2 / 8' : 'Step 2 / 8',
+        icon: Icons.star_outline_rounded,
+      );
+      if (mounted) setState(() => _workerGuideStep = 2);
+    } else if (_workerGuideStep == 2 && tabIndex == 2) {
+      await _showWorkerGuideDialog(
+        title: isRtl ? 'לו"ז - מערכת הזמנות' : 'Schedule — Booking',
+        body: isRtl
+            ? 'כאן מסמנים ימים ושעות זמינים, מוסיפים הערות וחוסמים ימים לא זמינים.'
+            : 'Here you mark available days and hours, add notes, and block unavailable dates.',
+        stepLabel: isRtl ? 'שלב 3 / 8' : 'Step 3 / 8',
+        icon: Icons.calendar_month_outlined,
+      );
+      if (mounted) setState(() => _workerGuideStep = 3);
+    } else if (_workerGuideStep == 3 && tabIndex == 3) {
+      await _showWorkerGuideDialog(
+        title: isRtl ? 'כלי עבודה בפרופיל' : 'Business Tools',
+        body: isRtl
+            ? 'מצוין! כל כלי העבודה שלך נמצאים כאן. לחץ על כל אחד לפי הסדר כדי ללמוד אותו.'
+            : 'Great! All your business tools are right here. Press each highlighted tool in order to learn it.',
+        stepLabel: isRtl ? 'שלב 4 / 8' : 'Step 4 / 8',
+        icon: Icons.build_outlined,
+      );
+      if (mounted) setState(() => _workerGuideStep = 4);
+    }
+  }
+
+  int? _expectedToolStepForId(String toolId) {
+    switch (toolId) {
+      case 'analytics':
+        return 4;
+      case 'invoice_builder':
+        return 5;
+      case 'saved_invoices':
+        return 6;
+      case 'verify_business':
+        return 7;
+      default:
+        return null;
+    }
+  }
+
+  String? _toolIdForStep(int step) {
+    switch (step) {
+      case 4:
+        return 'analytics';
+      case 5:
+        return 'invoice_builder';
+      case 6:
+        return 'saved_invoices';
+      case 7:
+        return 'verify_business';
+      default:
+        return null;
+    }
+  }
+
+  Future<void> _handleGuidedToolTap({
+    required String toolId,
+    required Future<void> Function() onTap,
+  }) async {
+    if (!_isWorkerGuideActive) {
+      await onTap();
+      return;
+    }
+
+    final expectedStep = _expectedToolStepForId(toolId);
+    if (expectedStep == null) {
+      await onTap();
+      return;
+    }
+
+    final locale = Provider.of<LanguageProvider>(
+      context,
+      listen: false,
+    ).locale.languageCode;
+    final isRtl = locale == 'he' || locale == 'ar';
+
+    if (_workerGuideStep != expectedStep) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          duration: const Duration(milliseconds: 1000),
+          content: Text(
+            isRtl
+                ? 'לחץ על הכלי המודגש כדי להמשיך'
+                : 'Press the highlighted tool to continue',
+          ),
+        ),
+      );
+      return;
+    }
+
+    await onTap();
+    if (!mounted) return;
+    if (_workerGuideStep < 7) {
+      setState(() => _workerGuideStep += 1);
+      return;
+    }
+
+    setState(() => _workerGuideStep += 1);
+    widget.onDismissWorkerToolsGuide?.call();
   }
 
   DateTime? _toDate(dynamic value) {
     if (value is Timestamp) return value.toDate();
     if (value is String) return DateTime.tryParse(value);
     return null;
+  }
+
+  int? _calculateAge(DateTime? dob) {
+    if (dob == null) return null;
+    final now = DateTime.now();
+    int years = now.year - dob.year;
+    final birthdayPassedThisYear =
+        now.month > dob.month || (now.month == dob.month && now.day >= dob.day);
+    if (!birthdayPassedThisYear) years -= 1;
+    return years < 0 ? null : years;
   }
 
   Future<void> _enforceSubscriptionLifecycle(String uid) async {
@@ -395,6 +592,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
           _altPhoneNumber = data['optionalPhone']?.toString() ?? "";
           _email = data['email']?.toString() ?? "";
           _town = data['town']?.toString() ?? "";
+          _dateOfBirth = _toDate(data['dateOfBirth']);
           _profileImageUrl = data['profileImageUrl']?.toString() ?? "";
           _viewsCount = 0;
           _userRole = data['role'] ?? 'customer';
@@ -648,10 +846,27 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
   }
 
   Future<void> _addProject() async {
-    final result = await Navigator.push(
+    final locale = Provider.of<LanguageProvider>(
       context,
-      MaterialPageRoute(builder: (context) => const AddProjectPage()),
+      listen: false,
+    ).locale.languageCode;
+    final isRtl = locale == 'he' || locale == 'ar';
+
+    final result = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => AddProjectPage(
+          tourIntroText: _isWorkerGuideActive && _workerGuideStep == 0
+              ? (isRtl
+                    ? 'כאן מוסיפים פרויקט חדש: תמונות או וידאו, תיאור העבודה, ואז שומרים כדי להציג ללקוחות.'
+                    : 'Add a new project here: upload photos/video, describe the work, then save to showcase it to clients.')
+              : null,
+        ),
+      ),
     );
+    if (_isWorkerGuideActive && _workerGuideStep == 0 && mounted) {
+      setState(() => _workerGuideStep = 1);
+    }
     if (result == true) {
       _fetchUserData();
     }
@@ -896,250 +1111,268 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
       child: Scaffold(
         key: _scaffoldKey,
         backgroundColor: Colors.white,
-        body: RefreshIndicator(
-          key: _refreshIndicatorKey,
-          color: const Color(0xFF1976D2),
-          onRefresh: _fetchUserData,
-          child: NestedScrollView(
-            headerSliverBuilder: (context, innerBoxIsScrolled) => [
-              SliverAppBar(
-                expandedHeight: 450,
-                pinned: true,
-                stretch: true,
-                backgroundColor: const Color(0xFF1976D2),
-                actions: [
-                  IconButton(
-                    icon: const Icon(Icons.place_outlined),
-                    onPressed: _openLocationManager,
-                  ),
-                  if (_isOwnProfile && !_isGuest())
-                    IconButton(
-                      icon: const Icon(Icons.favorite_outline),
-                      onPressed: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const LikedProsPage(),
-                        ),
+        body: Stack(
+          children: [
+            RefreshIndicator(
+              key: _refreshIndicatorKey,
+              color: const Color(0xFF1976D2),
+              onRefresh: _fetchUserData,
+              child: NestedScrollView(
+                headerSliverBuilder: (context, innerBoxIsScrolled) => [
+                  SliverAppBar(
+                    expandedHeight: 450,
+                    pinned: true,
+                    stretch: true,
+                    backgroundColor: const Color(0xFF1976D2),
+                    actions: [
+                      IconButton(
+                        icon: const Icon(Icons.place_outlined),
+                        onPressed: _openLocationManager,
                       ),
-                    ),
-                  IconButton(
-                    icon: const Icon(Icons.share_outlined),
-                    onPressed: () => _shareProfile(strings),
-                  ),
-                  if (!_isOwnProfile)
-                    IconButton(
-                      icon: Icon(
-                        _isFavorite ? Icons.favorite : Icons.favorite_border,
-                        color: _isFavorite ? Colors.redAccent : Colors.white,
-                      ),
-                      onPressed: _toggleFavorite,
-                    ),
-                  if (!_isOwnProfile)
-                    IconButton(
-                      icon: const Icon(
-                        Icons.report_problem_outlined,
-                        color: Colors.white70,
-                      ),
-                      onPressed: () => _reportUser(strings),
-                    ),
-                  if (_isOwnProfile && !_isGuest())
-                    IconButton(
-                      icon: const Icon(Icons.settings_outlined),
-                      onPressed: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const SettingsPage()),
-                      ).then((_) => _fetchUserData()),
-                    ),
-                ],
-                flexibleSpace: FlexibleSpaceBar(
-                  stretchModes: const [
-                    StretchMode.zoomBackground,
-                    StretchMode.blurBackground,
-                  ],
-                  background: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      Hero(
-                        tag:
-                            widget.userId ??
-                            (FirebaseAuth.instance.currentUser?.uid ??
-                                'profile'),
-                        child: _profileImageUrl.isNotEmpty
-                            ? CachedNetworkImage(
-                                imageUrl: _profileImageUrl,
-                                fit: BoxFit.cover,
-                                placeholder: (context, url) =>
-                                    Container(color: const Color(0xFF1E3A8A)),
-                                errorWidget: (context, url, error) =>
-                                    const Icon(Icons.error),
-                              )
-                            : Container(
-                                color: const Color(0xFF1E3A8A),
-                                child: const Icon(
-                                  Icons.person,
-                                  size: 100,
-                                  color: Colors.white24,
-                                ),
-                              ),
-                      ),
-                      Container(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [
-                              Colors.transparent,
-                              Colors.black.withOpacity(0.2),
-                              Colors.black.withOpacity(0.8),
-                            ],
+                      if (_isOwnProfile && !_isGuest())
+                        IconButton(
+                          icon: const Icon(Icons.favorite_outline),
+                          onPressed: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const LikedProsPage(),
+                            ),
                           ),
                         ),
+                      IconButton(
+                        icon: const Icon(Icons.share_outlined),
+                        onPressed: () => _shareProfile(strings),
                       ),
-                      Positioned(
-                        bottom: 60,
-                        left: 24,
-                        right: 24,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Flexible(
-                                  child: Text(
-                                    _userName,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 30,
-                                      fontWeight: FontWeight.bold,
-                                      letterSpacing: -0.5,
-                                    ),
-                                  ),
-                                ),
-                                if (_userRole == 'worker')
-                                  const Padding(
-                                    padding: EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                    ),
-                                    child: Icon(
-                                      Icons.verified,
-                                      color: Color(0xFF60A5FA),
-                                      size: 24,
-                                    ),
-                                  ),
-                              ],
+                      if (!_isOwnProfile)
+                        IconButton(
+                          icon: Icon(
+                            _isFavorite
+                                ? Icons.favorite
+                                : Icons.favorite_border,
+                            color: _isFavorite
+                                ? Colors.redAccent
+                                : Colors.white,
+                          ),
+                          onPressed: _toggleFavorite,
+                        ),
+                      if (!_isOwnProfile)
+                        IconButton(
+                          icon: const Icon(
+                            Icons.report_problem_outlined,
+                            color: Colors.white70,
+                          ),
+                          onPressed: () => _reportUser(strings),
+                        ),
+                      if (_isOwnProfile && !_isGuest())
+                        IconButton(
+                          icon: const Icon(Icons.settings_outlined),
+                          onPressed: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const SettingsPage(),
                             ),
-                            const SizedBox(height: 6),
-                            if (_userProfessions.isNotEmpty)
-                              Text(
-                                _localizedProfessionList(
-                                  localeCode,
-                                ).join(' • '),
-                                style: TextStyle(
-                                  color: Colors.white.withOpacity(0.9),
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w400,
-                                ),
-                              ),
-                            const SizedBox(height: 16),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                _buildStatItem(
-                                  _projects.length.toString(),
-                                  strings['projects']!,
-                                ),
-                                _buildStatItem(
-                                  _userReviews.length.toString(),
-                                  strings['reviews']!,
-                                ),
-                                _buildStatItem(
-                                  _viewsCount.toString(),
-                                  strings['views']!,
-                                ),
-                                if (_userReviews.isNotEmpty)
-                                  _buildStatItem(
-                                    _calculateAverageRating().toStringAsFixed(
-                                      1,
+                          ).then((_) => _fetchUserData()),
+                        ),
+                    ],
+                    flexibleSpace: FlexibleSpaceBar(
+                      stretchModes: const [
+                        StretchMode.zoomBackground,
+                        StretchMode.blurBackground,
+                      ],
+                      background: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          Hero(
+                            tag:
+                                widget.userId ??
+                                (FirebaseAuth.instance.currentUser?.uid ??
+                                    'profile'),
+                            child: _profileImageUrl.isNotEmpty
+                                ? CachedNetworkImage(
+                                    imageUrl: _profileImageUrl,
+                                    fit: BoxFit.cover,
+                                    placeholder: (context, url) => Container(
+                                      color: const Color(0xFF1E3A8A),
                                     ),
-                                    strings['rating']!,
+                                    errorWidget: (context, url, error) =>
+                                        const Icon(Icons.error),
+                                  )
+                                : Container(
+                                    color: const Color(0xFF1E3A8A),
+                                    child: const Icon(
+                                      Icons.person,
+                                      size: 100,
+                                      color: Colors.white24,
+                                    ),
                                   ),
-                              ],
-                            ),
-                            const SizedBox(height: 16),
-                            SingleChildScrollView(
-                              scrollDirection: Axis.horizontal,
-                              child: Row(
-                                children: [
-                                  if (_isIdVerified)
-                                    _buildHeaderBadge(
-                                      Icons.assignment_ind,
-                                      strings['verified_id']!,
-                                      Colors.greenAccent,
-                                    ),
-                                  if (_isBusinessVerified)
-                                    _buildHeaderBadge(
-                                      Icons.business_center,
-                                      strings['verified_biz']!,
-                                      Colors.orangeAccent,
-                                    ),
-                                  if (_isInsured)
-                                    _buildHeaderBadge(
-                                      Icons.shield,
-                                      strings['insured']!,
-                                      Colors.blueAccent,
-                                    ),
+                          ),
+                          Container(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [
+                                  Colors.transparent,
+                                  Colors.black.withOpacity(0.2),
+                                  Colors.black.withOpacity(0.8),
                                 ],
                               ),
                             ),
-                          ],
-                        ),
-                      ),
-                      Positioned(
-                        bottom: -1,
-                        left: 0,
-                        right: 0,
-                        child: Container(
-                          height: 30,
-                          decoration: const BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.vertical(
-                              top: Radius.circular(30),
+                          ),
+                          Positioned(
+                            bottom: 60,
+                            left: 24,
+                            right: 24,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Flexible(
+                                      child: Text(
+                                        _userName,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 30,
+                                          fontWeight: FontWeight.bold,
+                                          letterSpacing: -0.5,
+                                        ),
+                                      ),
+                                    ),
+                                    if (_userRole == 'worker')
+                                      const Padding(
+                                        padding: EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                        ),
+                                        child: Icon(
+                                          Icons.verified,
+                                          color: Color(0xFF60A5FA),
+                                          size: 24,
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                                const SizedBox(height: 6),
+                                if (_userProfessions.isNotEmpty)
+                                  Text(
+                                    _localizedProfessionList(
+                                      localeCode,
+                                    ).join(' • '),
+                                    style: TextStyle(
+                                      color: Colors.white.withOpacity(0.9),
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w400,
+                                    ),
+                                  ),
+                                const SizedBox(height: 16),
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    _buildStatItem(
+                                      _projects.length.toString(),
+                                      strings['projects']!,
+                                    ),
+                                    _buildStatItem(
+                                      _userReviews.length.toString(),
+                                      strings['reviews']!,
+                                    ),
+                                    _buildStatItem(
+                                      _viewsCount.toString(),
+                                      strings['views']!,
+                                    ),
+                                    if (_userReviews.isNotEmpty)
+                                      _buildStatItem(
+                                        _calculateAverageRating()
+                                            .toStringAsFixed(1),
+                                        strings['rating']!,
+                                      ),
+                                  ],
+                                ),
+                                const SizedBox(height: 16),
+                                SingleChildScrollView(
+                                  scrollDirection: Axis.horizontal,
+                                  child: Row(
+                                    children: [
+                                      if (_isIdVerified)
+                                        _buildHeaderBadge(
+                                          Icons.assignment_ind,
+                                          strings['verified_id']!,
+                                          Colors.greenAccent,
+                                        ),
+                                      if (_isBusinessVerified)
+                                        _buildHeaderBadge(
+                                          Icons.business_center,
+                                          strings['verified_biz']!,
+                                          Colors.orangeAccent,
+                                        ),
+                                      if (_isInsured)
+                                        _buildHeaderBadge(
+                                          Icons.shield,
+                                          strings['insured']!,
+                                          Colors.blueAccent,
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                        ),
+                          Positioned(
+                            bottom: -1,
+                            left: 0,
+                            right: 0,
+                            child: Container(
+                              height: 30,
+                              decoration: const BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.vertical(
+                                  top: Radius.circular(30),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                ),
-              ),
-              SliverPersistentHeader(
-                pinned: true,
-                delegate: _SliverAppBarDelegate(
-                  TabBar(
-                    controller: _tabController,
-                    isScrollable: false,
-                    indicatorColor: const Color(0xFF1976D2),
-                    indicatorWeight: 3,
-                    indicatorSize: TabBarIndicatorSize.label,
-                    labelColor: const Color(0xFF1976D2),
-                    unselectedLabelColor: Colors.grey[400],
-                    labelStyle: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
                     ),
-                    tabs: _buildTabs(strings),
+                  ),
+                  SliverPersistentHeader(
+                    pinned: true,
+                    delegate: _SliverAppBarDelegate(
+                      TabBar(
+                        controller: _tabController,
+                        isScrollable: false,
+                        indicatorColor: const Color(0xFF1976D2),
+                        indicatorWeight: 3,
+                        indicatorSize: TabBarIndicatorSize.label,
+                        labelColor: const Color(0xFF1976D2),
+                        unselectedLabelColor: Colors.grey[400],
+                        labelStyle: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                        tabs: _buildTabs(strings),
+                      ),
+                    ),
+                  ),
+                ],
+                body: Container(
+                  color: Colors.white,
+                  child: TabBarView(
+                    controller: _tabController,
+                    children: _buildTabViews(strings, localeCode),
                   ),
                 ),
-              ),
-            ],
-            body: Container(
-              color: Colors.white,
-              child: TabBarView(
-                controller: _tabController,
-                children: _buildTabViews(strings, localeCode),
               ),
             ),
-          ),
+            if (_isWorkerGuideActive && _workerGuideStep < 4)
+              Positioned(
+                top: 12,
+                left: 12,
+                right: 12,
+                child: _buildWorkerGuideTopHint(isRtl),
+              ),
+          ],
         ),
         bottomNavigationBar:
             (!_isOwnProfile &&
@@ -1151,23 +1384,94 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
             (_isOwnProfile &&
                 _tabController != null &&
                 _tabController!.index == 0)
-            ? FloatingActionButton.extended(
-                heroTag: 'profile_fab',
-                onPressed: _addProject,
-                backgroundColor: const Color(0xFF1976D2),
-                icon: const Icon(
-                  Icons.add_photo_alternate_rounded,
-                  color: Colors.white,
-                ),
-                label: Text(
-                  strings['add']!,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
+            ? Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  if (_isWorkerGuideActive && _workerGuideStep == 0)
+                    const Padding(
+                      padding: EdgeInsets.only(bottom: 6),
+                      child: _BouncingArrow(size: 36),
+                    ),
+                  FloatingActionButton.extended(
+                    heroTag: 'profile_fab',
+                    onPressed: _addProject,
+                    backgroundColor:
+                        _isWorkerGuideActive && _workerGuideStep == 0
+                        ? const Color(0xFF0EA5E9)
+                        : const Color(0xFF1976D2),
+                    icon: const Icon(
+                      Icons.add_photo_alternate_rounded,
+                      color: Colors.white,
+                    ),
+                    label: Text(
+                      strings['add']!,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
-                ),
+                ],
               )
             : null,
+      ),
+    );
+  }
+
+  Widget _buildWorkerGuideTopHint(bool isRtl) {
+    final stepText = _workerGuideStep == 0
+        ? (isRtl
+              ? 'שלב 1/8: לחץ על Add Project כדי להוסיף עבודה ראשונה.'
+              : 'Step 1/8: Press Add Project to add your first work item.')
+        : _workerGuideStep == 1
+        ? (isRtl
+              ? 'שלב 2/8: לחץ על לשונית Reviews למעלה.'
+              : 'Step 2/8: Press the Reviews tab at the top.')
+        : _workerGuideStep == 2
+        ? (isRtl
+              ? 'שלב 3/8: לחץ על לשונית Schedule כדי להגדיר ימים והערות.'
+              : 'Step 3/8: Press Schedule to set days and notes.')
+        : (isRtl
+              ? 'שלב 4/8: לחץ על לשונית About כדי להמשיך לכלי העבודה.'
+              : 'Step 4/8: Press About to continue to business tools.');
+
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF8FAFF),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFDCE8FF)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.06),
+              blurRadius: 10,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.touch_app_rounded, color: Color(0xFF2563EB)),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                stepText,
+                textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
+                style: const TextStyle(
+                  color: Color(0xFF1E3A8A),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            TextButton(
+              onPressed: widget.onDismissWorkerToolsGuide,
+              child: Text(isRtl ? 'דלג' : 'Skip'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1760,7 +2064,16 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
   Widget _buildAboutSection(Map<String, String> strings) {
     final currentUserId =
         widget.userId ?? FirebaseAuth.instance.currentUser?.uid;
+    final age = _calculateAge(_dateOfBirth);
+    final locale = Provider.of<LanguageProvider>(
+      context,
+      listen: false,
+    ).locale.languageCode;
+    final isRtl = locale == 'he' || locale == 'ar';
+    final shouldShowToolsGuide = _isWorkerGuideActive;
+    final expectedTool = _toolIdForStep(_workerGuideStep);
     return SingleChildScrollView(
+      controller: _aboutScrollController,
       padding: const EdgeInsets.all(24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1795,6 +2108,12 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
               ),
             _buildInfoRow(Icons.email_rounded, "Email", _email),
             _buildInfoRow(Icons.location_city_rounded, "Town", _town),
+            if (age != null)
+              _buildInfoRow(
+                Icons.cake_outlined,
+                strings['age'] ?? 'Age',
+                age.toString(),
+              ),
             if (_distanceStr.isNotEmpty)
               _buildInfoRow(Icons.straighten_rounded, "Distance", _distanceStr),
           ]),
@@ -1807,6 +2126,72 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
                   : strings['upgrade_worker']!,
             ),
             const SizedBox(height: 16),
+            if (shouldShowToolsGuide)
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.only(bottom: 16),
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFF),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: const Color(0xFFDCE8FF)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      isRtl ? 'סיור מודרך לבעלי מקצוע' : 'Guided Worker Tour',
+                      textDirection: isRtl
+                          ? TextDirection.rtl
+                          : TextDirection.ltr,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF1E3A8A),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      isRtl
+                          ? (_workerGuideStep == 0
+                                ? 'שלב 1/8: לחץ על Add Project (הכפתור הצף)'
+                                : _workerGuideStep == 1
+                                ? 'שלב 2/8: לחץ על לשונית Reviews למעלה'
+                                : _workerGuideStep == 2
+                                ? 'שלב 3/8: לחץ על לשונית Schedule למעלה'
+                                : _workerGuideStep == 3
+                                ? 'שלב 4/8: לחץ על לשונית About למעלה'
+                                : 'שלב ${_workerGuideStep + 1}/8: לחץ על הכלי המודגש בכחול')
+                          : (_workerGuideStep == 0
+                                ? 'Step 1/8: Press Add Project (floating button)'
+                                : _workerGuideStep == 1
+                                ? 'Step 2/8: Press Reviews tab'
+                                : _workerGuideStep == 2
+                                ? 'Step 3/8: Press Schedule tab'
+                                : _workerGuideStep == 3
+                                ? 'Step 4/8: Press About tab'
+                                : 'Step ${_workerGuideStep + 1}/8: Press the blue highlighted tool'),
+                      textDirection: isRtl
+                          ? TextDirection.rtl
+                          : TextDirection.ltr,
+                      style: const TextStyle(
+                        height: 1.35,
+                        color: Color(0xFF334155),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: isRtl
+                          ? Alignment.centerLeft
+                          : Alignment.centerRight,
+                      child: TextButton.icon(
+                        onPressed: widget.onDismissWorkerToolsGuide,
+                        icon: const Icon(Icons.close_rounded),
+                        label: Text(isRtl ? 'דלג על הסיור' : 'Skip Tour'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             if (_userRole == 'worker' &&
                 (_subscriptionStatus == 'inactive' || !_isSubscribed)) ...[
               _buildRenewSubscriptionCard(strings),
@@ -1826,33 +2211,99 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
                       Icons.analytics_outlined,
                       strings['analytics']!,
                       Colors.indigo,
-                      () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => AnalyticsPage(
-                            userId: currentUserId,
-                            strings: strings,
-                          ),
-                        ),
+                      () => _handleGuidedToolTap(
+                        toolId: 'analytics',
+                        onTap: () async {
+                          await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => AnalyticsPage(
+                                userId: currentUserId,
+                                strings: strings,
+                                tourIntroText:
+                                    shouldShowToolsGuide &&
+                                        expectedTool == 'analytics'
+                                    ? (isRtl
+                                          ? 'זה לוח האנליטיקה שלך: כאן תראה צפיות, מגמות ותובנות לצמיחה.'
+                                          : 'This is your analytics dashboard: track views, trends, and growth insights.')
+                                    : null,
+                              ),
+                            ),
+                          );
+                        },
                       ),
+                      highlight:
+                          shouldShowToolsGuide && expectedTool == 'analytics',
+                      guideTag: shouldShowToolsGuide ? '1' : null,
+                      showArrow:
+                          shouldShowToolsGuide && expectedTool == 'analytics',
                     ),
                   if (_hasActiveWorkerSubscription)
                     _buildModernToolCard(
                       Icons.description_outlined,
                       strings['invoice_builder']!,
                       Colors.teal,
-                      () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => InvoiceBuilderPage(
-                              workerName: _userName,
-                              workerPhone: _phoneNumber,
-                              workerEmail: _email,
+                      () => _handleGuidedToolTap(
+                        toolId: 'invoice_builder',
+                        onTap: () async {
+                          await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => InvoiceBuilderPage(
+                                workerName: _userName,
+                                workerPhone: _phoneNumber,
+                                workerEmail: _email,
+                                tourIntroText:
+                                    shouldShowToolsGuide &&
+                                        expectedTool == 'invoice_builder'
+                                    ? (isRtl
+                                          ? 'זה יוצר החשבוניות: צור חשבונית, שמור, הדפס/שתף או שלח בצ׳אט.'
+                                          : 'This is Invoice Builder: create invoices, save, print/share, or send in chat.')
+                                    : null,
+                              ),
                             ),
-                          ),
-                        );
-                      },
+                          );
+                        },
+                      ),
+                      highlight:
+                          shouldShowToolsGuide &&
+                          expectedTool == 'invoice_builder',
+                      guideTag: shouldShowToolsGuide ? '2' : null,
+                      showArrow:
+                          shouldShowToolsGuide &&
+                          expectedTool == 'invoice_builder',
+                    ),
+                  if (_hasActiveWorkerSubscription)
+                    _buildModernToolCard(
+                      Icons.folder_copy_outlined,
+                      strings['saved_invoices']!,
+                      Colors.cyan,
+                      () => _handleGuidedToolTap(
+                        toolId: 'saved_invoices',
+                        onTap: () async {
+                          await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => SavedInvoicesPage(
+                                tourIntroText:
+                                    shouldShowToolsGuide &&
+                                        expectedTool == 'saved_invoices'
+                                    ? (isRtl
+                                          ? 'זה מסך החשבוניות השמורות: צפייה, פתיחה, הדפסה ושיתוף מהיר.'
+                                          : 'This is Saved Invoices: preview, open, print, and share quickly.')
+                                    : null,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                      highlight:
+                          shouldShowToolsGuide &&
+                          expectedTool == 'saved_invoices',
+                      guideTag: shouldShowToolsGuide ? '3' : null,
+                      showArrow:
+                          shouldShowToolsGuide &&
+                          expectedTool == 'saved_invoices',
                     ),
                   if (_hasActiveWorkerSubscription)
                     _buildModernToolCard(
@@ -1861,12 +2312,32 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
                           ? strings['change_business']!
                           : strings['verify_business']!,
                       Colors.deepOrange,
-                      () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const VerifyBusinessPage(),
-                        ),
+                      () => _handleGuidedToolTap(
+                        toolId: 'verify_business',
+                        onTap: () async {
+                          await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => VerifyBusinessPage(
+                                tourIntroText:
+                                    shouldShowToolsGuide &&
+                                        expectedTool == 'verify_business'
+                                    ? (isRtl
+                                          ? 'זה מסך אימות ועדכון עסק: העלאת מסמכים ועדכון פרטים לשיפור אמון.'
+                                          : 'This is business verification/update: upload documents and keep business details up to date.')
+                                    : null,
+                              ),
+                            ),
+                          );
+                        },
                       ),
+                      highlight:
+                          shouldShowToolsGuide &&
+                          expectedTool == 'verify_business',
+                      guideTag: shouldShowToolsGuide ? '4' : null,
+                      showArrow:
+                          shouldShowToolsGuide &&
+                          expectedTool == 'verify_business',
                     ),
                 ],
               )
@@ -1994,8 +2465,11 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
     IconData icon,
     String title,
     Color color,
-    VoidCallback onTap,
-  ) {
+    VoidCallback onTap, {
+    bool highlight = false,
+    String? guideTag,
+    bool showArrow = false,
+  }) {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(20),
@@ -2004,22 +2478,63 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
         decoration: BoxDecoration(
           color: color.withOpacity(0.06),
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: color.withOpacity(0.15)),
+          border: Border.all(
+            color: highlight
+                ? const Color(0xFF2563EB)
+                : color.withOpacity(0.15),
+            width: highlight ? 2 : 1,
+          ),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.center,
+        child: Stack(
           children: [
-            Icon(icon, color: color, size: 28),
-            const SizedBox(height: 12),
-            Text(
-              title,
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 13,
-                color: color.withOpacity(0.9),
-              ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon, color: color, size: 28),
+                const SizedBox(height: 12),
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                    color: color.withOpacity(0.9),
+                  ),
+                ),
+              ],
             ),
+            if (guideTag != null)
+              Positioned(
+                top: 8,
+                right: 8,
+                child: Container(
+                  width: 24,
+                  height: 24,
+                  alignment: Alignment.center,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF2563EB),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Text(
+                    guideTag,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              ),
+            if (showArrow)
+              const Positioned(
+                top: -10,
+                left: 0,
+                right: 0,
+                child: Align(
+                  alignment: Alignment.topCenter,
+                  child: _BouncingArrow(size: 30),
+                ),
+              ),
           ],
         ),
       ),
@@ -2192,6 +2707,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
   void dispose() {
     _tabController?.dispose();
     _authSubscription?.cancel();
+    _aboutScrollController.dispose();
     super.dispose();
   }
 
@@ -2213,6 +2729,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
           'bio_title': 'ביוגרפיה',
           'bio': _bio.isNotEmpty ? _bio : 'אין תיאור זמין עדיין.',
           'contact_info': 'מידע ליצירת קשר',
+          'age': 'גיל',
           'call': 'התקשר',
           'message': 'הודעה',
           'share_profile': 'שתף פרופיל',
@@ -2235,6 +2752,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
           'business_tools': 'כלי עבודה',
           'analytics': 'אנליטיקה',
           'invoice_builder': 'יוצר חשבוניות',
+          'saved_invoices': 'חשבוניות שמורות',
           'verify_business': 'אמת עסק',
           'change_business': 'עדכן פרטי עסק',
           'renew_subscription': 'חדש מנוי',
@@ -2259,6 +2777,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
           'bio_title': 'السيرة الدراسية',
           'bio': _bio.isNotEmpty ? _bio : 'لا يوجد وصف متاح بعد.',
           'contact_info': 'معلومات الاتصال',
+          'age': 'العمر',
           'call': 'اتصال',
           'message': 'رسالة',
           'share_profile': 'مشاركة الملف',
@@ -2281,6 +2800,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
           'business_tools': 'أدوات العمل',
           'analytics': 'التحليلات',
           'invoice_builder': 'منشئ الفواتير',
+          'saved_invoices': 'الفواتير المحفوظة',
           'verify_business': 'توثيق العمل',
           'change_business': 'تحديث بيانات العمل',
           'renew_subscription': 'تجديد الاشتراك',
@@ -2305,6 +2825,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
           'bio_title': 'Biography',
           'bio': _bio.isNotEmpty ? _bio : 'No description available yet.',
           'contact_info': 'Contact Information',
+          'age': 'Age',
           'call': 'Call',
           'message': 'Message',
           'share_profile': 'Share Profile',
@@ -2327,6 +2848,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
           'business_tools': 'Business Tools',
           'analytics': 'Analytics',
           'invoice_builder': 'Invoice Builder',
+          'saved_invoices': 'Saved Invoices',
           'verify_business': 'Verify Business',
           'change_business': 'Update Business',
           'renew_subscription': 'Renew Subscription',
@@ -2365,6 +2887,71 @@ class _SliverAppBarDelegate extends SliverPersistentHeaderDelegate {
   @override
   bool shouldRebuild(_SliverAppBarDelegate oldDelegate) {
     return false;
+  }
+}
+
+class _BouncingArrow extends StatefulWidget {
+  final Color color;
+  final double size;
+  const _BouncingArrow({this.color = const Color(0xFF0EA5E9), this.size = 36});
+
+  @override
+  State<_BouncingArrow> createState() => _BouncingArrowState();
+}
+
+class _BouncingArrowState extends State<_BouncingArrow>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final Animation<double> _bounce;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 700),
+    )..repeat(reverse: true);
+    _bounce = Tween<double>(
+      begin: 0,
+      end: 10,
+    ).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut));
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _bounce,
+      builder: (context, _) => Transform.translate(
+        offset: Offset(0, _bounce.value),
+        child: Container(
+          width: widget.size + 12,
+          height: widget.size + 12,
+          decoration: BoxDecoration(
+            color: widget.color.withOpacity(0.15),
+            shape: BoxShape.circle,
+            border: Border.all(color: widget.color.withOpacity(0.5), width: 2),
+            boxShadow: [
+              BoxShadow(
+                color: widget.color.withOpacity(0.35),
+                blurRadius: 14,
+                spreadRadius: 1,
+              ),
+            ],
+          ),
+          child: Icon(
+            Icons.arrow_downward_rounded,
+            color: widget.color,
+            size: widget.size,
+          ),
+        ),
+      ),
+    );
   }
 }
 

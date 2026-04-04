@@ -11,50 +11,50 @@ class AboutPage extends StatelessWidget {
       case 'he':
         return {
           'title': 'אודות ומשפטי',
-          'app_name': 'HireHub',
+          'app_name': 'hiro',
           'version': 'גרסה 1.0.0',
           'terms_title': 'תנאי שימוש',
           'privacy_title': 'מדיניות פרטיות',
-          'terms_content': 'ברוכים הבאים ל-HireHub. בשימוש באפליקציה, הנך מסכים לתנאים הבאים:\n1. HireHub היא פלטפורמת תיווך בלבד.\n2. האחראיות על איכות העבודה והתשלום היא בין הלקוח לבעל המקצוע.\n3. חל איסור על פרסום תוכן פוגעני או כוזב.\n4. המערכת רשאית להשעות משתמשים המפרים את הכללים.',
+          'terms_content': 'ברוכים הבאים ל-הירו. בשימוש באפליקציה, הנך מסכים לתנאים הבאים:\n1. hiro היא פלטפורמת תיווך בלבד.\n2. האחראיות על איכות העבודה והתשלום היא בין הלקוח לבעל המקצוע.\n3. חל איסור על פרסום תוכן פוגעני או כוזב.\n4. המערכת רשאית להשעות משתמשים המפרים את הכללים.',
           'privacy_content': 'הפרטיות שלך חשובה לנו:\n1. אנו אוספים מידע בסיסי (שם, טלפון, עיר) כדי לאפשר את פעילות השירות.\n2. מיקום המכשיר משמש למציאת בעלי מקצוע קרובים אליך.\n3. המידע שלך אינו מועבר לצד ג\' למטרות פרסום.\n4. ניתן לבקש את מחיקת החשבון והמידע בכל עת דרך ההגדרות.',
-          'developer': 'פותח על ידי צוות HireHub',
-          'contact': 'צור קשר: support@hirehub.com',
+          'developer': 'פותח על ידי צוות הירו',
+          'contact': 'צור קשר: support@hiro.com',
         };
       case 'ar':
         return {
           'title': 'حول والقانونية',
-          'app_name': 'HireHub',
+          'app_name': 'هايرو',
           'version': 'الإصدار 1.0.0',
           'terms_title': 'شروط الخدمة',
           'privacy_title': 'سياسة الخصوصية',
-          'terms_content': 'مرحباً بكم في HireHub. باستخدام التطبيق، فإنك توافق على الشروط التالية:\n1. HireHub هي منصة وساطة فقط.\n2. المسؤولیة عن جودة العمل والدفع تقع على عاتق العميل والمحترف.\n3. يمنع نشر محتوى مسيء أو كاذب.\n4. يحق للمنصة تعليق حسابات المستخدمين الذين ينتهكون القواعد.',
+          'terms_content': 'مرحباً بكم في هايرو. باستخدام التطبيق، فإنك توافق على الشروط التالية:\n1. هايرو هي منصة وساطة فقط.\n2. المسؤولیة عن جودة العمل والدفع تقع على عاتق العميل والمحترف.\n3. يمنع نشر محتوى مسيء أو كاذب.\n4. يحق للمنصة تعليق حسابات المستخدمين الذين ينتهكون القواعد.',
           'privacy_content': 'خصوصيتك تهمنا:\n1. نجمع معلومات أساسية (الاسم، الهاتف، المدينة) لتشغيل الخدمة.\n2. نستخدم الموقع الجغرافي للعثور على المحترفين القريبين منك.\n3. لا يتم بيع بياناتك لأطراف ثالثة لأغراض إعلانية.\n4. يمكنك طلب حذف حسابك وبياناتك في أي وقت من خلال الإعدادات.',
-          'developer': 'تم التطوير بواسطة فريق HireHub',
-          'contact': 'اتصل بنا: support@hirehub.com',
+          'developer': 'تم التطوير بواسطة فريق هايرو',
+          'contact': 'اتصل بنا: support@hiro.com',
         };
       case 'am':
         return {
           'title': 'ስለ እኛ እና ህጋዊ',
-          'app_name': 'HireHub',
+          'app_name': 'ሂሮ',
           'version': 'ስሪት 1.0.0',
           'terms_title': 'የአጠቃቀም ደንቦች',
           'privacy_title': 'የግላዊነት ፖሊሲ',
-          'terms_content': 'ወደ HireHub እንኳን ደህና መጡ። መተግበሪያውን ሲጠቀሙ በሚከተሉት ደንቦች ይስማማሉ፡\n1. HireHub አገናኝ መድረክ ብቻ ነው።\n2. ለስራው ጥራት እና ለክፍያ ኃላፊነቱ በደንበኛው እና በባለሙያው መካከል ነው።\n3. አፀያፊ ወይም የሐሰት ይዘት መለጠፍ የተከለከለ ነው።\n4. ደንቦችን የሚጥሱ ተጠቃሚዎችን የማገድ መብታችን የተጠበቀ ነው።',
+          'terms_content': 'ወደ ሂሮ እንኳን ደህና መጡ። መተግበሪያውን ሲጠቀሙ በሚከተሉት ደንቦች ይስማማሉ፡\n1. ሂሮ አገናኝ መድረክ ብቻ ነው።\n2. ለስራው ጥራት እና ለክፍያ ኃላፊነቱ በደንበኛው እና በባለሙያው መካከል ነው።\n3. አፀያፊ ወይም የሐሰት ይዘት መለጠፍ የተከለከለ ነው።\n4. ደንቦችን የሚጥሱ ተጠቃሚዎችን የማገድ መብታችን የተጠበቀ ነው።',
           'privacy_content': 'የእርስዎ ግላዊነት ለእኛ አስፈላጊ ነው፡\n1. መሰረታዊ መረጃዎችን (ስም፣ ስልክ፣ ከተማ) ለአገልግሎቱ እንሰበስባለን።\n2. በአቅራቢያዎ ያሉ ባለሙያዎችን ለማግኘት የእርስዎን አካባቢ እንጠቀማለን።\n3. የእርስዎ መረጃ ለሶስተኛ ወገን ለንግድ ማስታወቂያ አይተላለፍም።\n4. በማንኛውም ጊዜ አካውንትዎን እና መረጃዎን እንዲሰረዝ መጠየቅ ይችላሉ።',
-          'developer': 'በ HireHub ቡድን የተገነባ',
-          'contact': 'ያግኙን: support@hirehub.com',
+          'developer': 'በ ሂሮ ቡድን የተገነባ',
+          'contact': 'ያግኙን: support@hiro.com',
         };
       default:
         return {
           'title': 'About & Legal',
-          'app_name': 'HireHub',
+          'app_name': 'hiro',
           'version': 'Version 1.0.0',
           'terms_title': 'Terms of Service',
           'privacy_title': 'Privacy Policy',
-          'terms_content': 'Welcome to HireHub. By using this app, you agree to the following:\n1. HireHub is a matching platform only.\n2. Quality of work and payments are strictly between the client and the professional.\n3. Posting offensive or false content is prohibited.\n4. We reserve the right to suspend accounts that violate these rules.',
+          'terms_content': 'Welcome to hiro. By using this app, you agree to the following:\n1. hiro is a matching platform only.\n2. Quality of work and payments are strictly between the client and the professional.\n3. Posting offensive or false content is prohibited.\n4. We reserve the right to suspend accounts that violate these rules.',
           'privacy_content': 'Your privacy matters:\n1. We collect basic info (name, phone, city) to enable our services.\n2. Location data is used to find pros near you.\n3. Your data is never sold to third parties for advertising.\n4. You can request account and data deletion at any time via settings.',
-          'developer': 'Developed by HireHub Team',
-          'contact': 'Contact Us: support@hirehub.com',
+          'developer': 'Developed by hiro Team',
+          'contact': 'Contact Us: support@hiro.com',
         };
     }
   }

@@ -6,12 +6,15 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 import 'package:untitled1/services/language_provider.dart';
+import 'package:untitled1/widgets/tour_tip_dialog.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:path_provider/path_provider.dart' as path_provider;
 import 'package:video_player/video_player.dart';
 
 class AddProjectPage extends StatefulWidget {
-  const AddProjectPage({super.key});
+  final String? tourIntroText;
+
+  const AddProjectPage({super.key, this.tourIntroText});
 
   @override
   State<AddProjectPage> createState() => _AddProjectPageState();
@@ -23,10 +26,46 @@ class _AddProjectPageState extends State<AddProjectPage> {
   bool _isUploading = false;
   double _uploadProgress = 0;
   final _picker = ImagePicker();
+  bool _tourIntroShown = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _showTourIntroIfNeeded();
+    });
+  }
+
+  Future<void> _showTourIntroIfNeeded() async {
+    if (_tourIntroShown) return;
+    final intro = widget.tourIntroText;
+    if (intro == null || intro.isEmpty || !mounted) return;
+    _tourIntroShown = true;
+
+    final strings = _getLocalizedStrings();
+    final locale = Provider.of<LanguageProvider>(
+      context,
+      listen: false,
+    ).locale.languageCode;
+    final isRtl = locale == 'he' || locale == 'ar';
+
+    await showTourTipDialog(
+      context: context,
+      title: strings['title']!,
+      body: intro,
+      stepLabel: isRtl ? 'שלב 1 / 8' : 'Step 1 / 8',
+      icon: Icons.add_photo_alternate_rounded,
+      isRtl: isRtl,
+      confirmLabel: isRtl ? 'הבנתי' : 'Got it',
+    );
+  }
 
   bool _isVideo(String path) {
     final p = path.toLowerCase();
-    return p.endsWith('.mp4') || p.endsWith('.mov') || p.endsWith('.avi') || p.endsWith('.mkv');
+    return p.endsWith('.mp4') ||
+        p.endsWith('.mov') ||
+        p.endsWith('.avi') ||
+        p.endsWith('.mkv');
   }
 
   void _showLimitReached() {
@@ -49,7 +88,9 @@ class _AddProjectPageState extends State<AddProjectPage> {
     final pickedFiles = await _picker.pickMultiImage(imageQuality: 70);
     if (pickedFiles.isNotEmpty) {
       setState(() {
-        _mediaFiles.addAll(pickedFiles.take(remaining).map((file) => File(file.path)));
+        _mediaFiles.addAll(
+          pickedFiles.take(remaining).map((file) => File(file.path)),
+        );
       });
       if (pickedFiles.length > remaining) {
         _showLimitReached();
@@ -67,7 +108,7 @@ class _AddProjectPageState extends State<AddProjectPage> {
       source: ImageSource.gallery,
       maxDuration: const Duration(minutes: 1),
     );
-    
+
     if (video != null) {
       // Secondary manual check for safety
       final controller = VideoPlayerController.file(File(video.path));
@@ -108,15 +149,31 @@ class _AddProjectPageState extends State<AddProjectPage> {
             mainAxisSize: MainAxisSize.min,
             children: [
               const SizedBox(height: 8),
-              Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2))),
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
               Padding(
                 padding: const EdgeInsets.all(20),
-                child: Text(strings['pick_media']!, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                child: Text(
+                  strings['pick_media']!,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ),
               ListTile(
                 leading: Container(
                   padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(color: Colors.blue[50], shape: BoxShape.circle),
+                  decoration: BoxDecoration(
+                    color: Colors.blue[50],
+                    shape: BoxShape.circle,
+                  ),
                   child: Icon(Icons.photo_library, color: Colors.blue[700]),
                 ),
                 title: Text(strings['image']!),
@@ -128,7 +185,10 @@ class _AddProjectPageState extends State<AddProjectPage> {
               ListTile(
                 leading: Container(
                   padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(color: Colors.orange[50], shape: BoxShape.circle),
+                  decoration: BoxDecoration(
+                    color: Colors.orange[50],
+                    shape: BoxShape.circle,
+                  ),
                   child: Icon(Icons.video_library, color: Colors.orange[700]),
                 ),
                 title: Text(strings['video']!),
@@ -154,7 +214,8 @@ class _AddProjectPageState extends State<AddProjectPage> {
   Future<File?> _compressImage(File file) async {
     final tempDir = await path_provider.getTemporaryDirectory();
     final path = tempDir.path;
-    final targetPath = "$path/${DateTime.now().millisecondsSinceEpoch}_compressed.jpg";
+    final targetPath =
+        "$path/${DateTime.now().millisecondsSinceEpoch}_compressed.jpg";
 
     final result = await FlutterImageCompress.compressAndGetFile(
       file.absolute.path,
@@ -194,20 +255,25 @@ class _AddProjectPageState extends State<AddProjectPage> {
         }
 
         final extension = isVideoFile ? 'mp4' : 'jpg';
-        final fileName = '${DateTime.now().millisecondsSinceEpoch}_$i.$extension';
+        final fileName =
+            '${DateTime.now().millisecondsSinceEpoch}_$i.$extension';
         final storageRef = FirebaseStorage.instance
             .ref()
             .child('projects')
             .child(user.uid)
             .child(fileName);
 
-        final metadata = SettableMetadata(contentType: isVideoFile ? 'video/mp4' : 'image/jpeg');
+        final metadata = SettableMetadata(
+          contentType: isVideoFile ? 'video/mp4' : 'image/jpeg',
+        );
         final uploadTask = storageRef.putFile(fileToUpload, metadata);
 
         uploadTask.snapshotEvents.listen((TaskSnapshot snapshot) {
           setState(() {
-            _uploadProgress = (i / _mediaFiles.length) + 
-                             (snapshot.bytesTransferred / snapshot.totalBytes) / _mediaFiles.length;
+            _uploadProgress =
+                (i / _mediaFiles.length) +
+                (snapshot.bytesTransferred / snapshot.totalBytes) /
+                    _mediaFiles.length;
           });
         });
 
@@ -222,13 +288,15 @@ class _AddProjectPageState extends State<AddProjectPage> {
           .doc(user.uid)
           .collection('projects')
           .add({
-        'imageUrls': mediaUrls,
-        'imageUrl': mediaUrls.first,
-        'description': _descriptionController.text.trim(),
-        'timestamp': FieldValue.serverTimestamp(),
-        'hasVideo': _mediaFiles.any((f) => _isVideo(f.path)),
-        'mediaTypes': _mediaFiles.map((f) => _isVideo(f.path) ? 'video' : 'image').toList(),
-      });
+            'imageUrls': mediaUrls,
+            'imageUrl': mediaUrls.first,
+            'description': _descriptionController.text.trim(),
+            'timestamp': FieldValue.serverTimestamp(),
+            'hasVideo': _mediaFiles.any((f) => _isVideo(f.path)),
+            'mediaTypes': _mediaFiles
+                .map((f) => _isVideo(f.path) ? 'video' : 'image')
+                .toList(),
+          });
 
       if (mounted) {
         Navigator.pop(context, true);
@@ -236,9 +304,9 @@ class _AddProjectPageState extends State<AddProjectPage> {
     } catch (e) {
       debugPrint("Upload error: $e");
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('העלאה נכשלה: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('העלאה נכשלה: $e')));
       }
     } finally {
       if (mounted) setState(() => _isUploading = false);
@@ -246,7 +314,10 @@ class _AddProjectPageState extends State<AddProjectPage> {
   }
 
   Map<String, String> _getLocalizedStrings() {
-    final locale = Provider.of<LanguageProvider>(context, listen: false).locale.languageCode;
+    final locale = Provider.of<LanguageProvider>(
+      context,
+      listen: false,
+    ).locale.languageCode;
     if (locale == 'he') {
       return {
         'title': 'הוסף פרויקט חדש',
@@ -278,14 +349,18 @@ class _AddProjectPageState extends State<AddProjectPage> {
   @override
   Widget build(BuildContext context) {
     final strings = _getLocalizedStrings();
-    final isRtl = Provider.of<LanguageProvider>(context).locale.languageCode == 'he';
+    final isRtl =
+        Provider.of<LanguageProvider>(context).locale.languageCode == 'he';
 
     return Directionality(
       textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
       child: Scaffold(
         backgroundColor: Colors.white,
         appBar: AppBar(
-          title: Text(strings['title']!, style: const TextStyle(fontWeight: FontWeight.bold)),
+          title: Text(
+            strings['title']!,
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
           centerTitle: true,
           elevation: 0,
           backgroundColor: Colors.white,
@@ -306,7 +381,11 @@ class _AddProjectPageState extends State<AddProjectPage> {
                   const SizedBox(height: 32),
                   Text(
                     strings['description']!,
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.black87),
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black87,
+                    ),
                   ),
                   const SizedBox(height: 12),
                   TextField(
@@ -332,13 +411,18 @@ class _AddProjectPageState extends State<AddProjectPage> {
                       backgroundColor: const Color(0xFF1976D2),
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 18),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
                       elevation: 4,
                       shadowColor: Colors.blue.withOpacity(0.4),
                     ),
                     child: Text(
                       strings['save']!,
-                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 20),
@@ -350,7 +434,9 @@ class _AddProjectPageState extends State<AddProjectPage> {
                 color: Colors.black.withOpacity(0.5),
                 child: Center(
                   child: Card(
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                    ),
                     margin: const EdgeInsets.symmetric(horizontal: 40),
                     child: Padding(
                       padding: const EdgeInsets.all(24),
@@ -367,7 +453,9 @@ class _AddProjectPageState extends State<AddProjectPage> {
                           LinearProgressIndicator(
                             value: _uploadProgress,
                             backgroundColor: Colors.grey[200],
-                            valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF1976D2)),
+                            valueColor: const AlwaysStoppedAnimation<Color>(
+                              Color(0xFF1976D2),
+                            ),
                             borderRadius: BorderRadius.circular(10),
                           ),
                           const SizedBox(height: 8),
@@ -397,7 +485,10 @@ class _AddProjectPageState extends State<AddProjectPage> {
             ),
             Text(
               "${_mediaFiles.length}/5",
-              style: TextStyle(color: Colors.grey[600], fontWeight: FontWeight.w500),
+              style: TextStyle(
+                color: Colors.grey[600],
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ],
         ),
@@ -410,20 +501,34 @@ class _AddProjectPageState extends State<AddProjectPage> {
               decoration: BoxDecoration(
                 color: Colors.blue[50]?.withOpacity(0.5),
                 borderRadius: BorderRadius.circular(24),
-                border: Border.all(color: Colors.blue[100]!, width: 2, style: BorderStyle.solid),
+                border: Border.all(
+                  color: Colors.blue[100]!,
+                  width: 2,
+                  style: BorderStyle.solid,
+                ),
               ),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Container(
                     padding: const EdgeInsets.all(16),
-                    decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-                    child: Icon(Icons.add_to_photos_rounded, size: 40, color: Colors.blue[700]),
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.add_to_photos_rounded,
+                      size: 40,
+                      color: Colors.blue[700],
+                    ),
                   ),
                   const SizedBox(height: 12),
                   Text(
                     strings['pick_media']!,
-                    style: TextStyle(color: Colors.blue[700], fontWeight: FontWeight.w600),
+                    style: TextStyle(
+                      color: Colors.blue[700],
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ],
               ),
@@ -434,7 +539,9 @@ class _AddProjectPageState extends State<AddProjectPage> {
             height: 120,
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
-              itemCount: _mediaFiles.length < 5 ? _mediaFiles.length + 1 : _mediaFiles.length,
+              itemCount: _mediaFiles.length < 5
+                  ? _mediaFiles.length + 1
+                  : _mediaFiles.length,
               itemBuilder: (context, index) {
                 if (index == _mediaFiles.length && _mediaFiles.length < 5) {
                   return GestureDetector(
@@ -447,7 +554,11 @@ class _AddProjectPageState extends State<AddProjectPage> {
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(color: Colors.grey[200]!),
                       ),
-                      child: Icon(Icons.add_photo_alternate_outlined, color: Colors.grey[400], size: 32),
+                      child: Icon(
+                        Icons.add_photo_alternate_outlined,
+                        color: Colors.grey[400],
+                        size: 32,
+                      ),
                     ),
                   );
                 }
@@ -464,11 +575,20 @@ class _AddProjectPageState extends State<AddProjectPage> {
                         borderRadius: BorderRadius.circular(20),
                         child: isVideo
                             ? _VideoThumbnail(file: file)
-                            : Image.file(file, fit: BoxFit.cover, width: 100, height: 120),
+                            : Image.file(
+                                file,
+                                fit: BoxFit.cover,
+                                width: 100,
+                                height: 120,
+                              ),
                       ),
                       if (isVideo)
                         const Center(
-                          child: Icon(Icons.play_circle_fill, color: Colors.white70, size: 32),
+                          child: Icon(
+                            Icons.play_circle_fill,
+                            color: Colors.white70,
+                            size: 32,
+                          ),
                         ),
                       Positioned(
                         top: 4,
@@ -481,7 +601,11 @@ class _AddProjectPageState extends State<AddProjectPage> {
                               color: Colors.black.withOpacity(0.6),
                               shape: BoxShape.circle,
                             ),
-                            child: const Icon(Icons.close, size: 14, color: Colors.white),
+                            child: const Icon(
+                              Icons.close,
+                              size: 14,
+                              color: Colors.white,
+                            ),
                           ),
                         ),
                       ),
@@ -526,6 +650,11 @@ class _VideoThumbnailState extends State<_VideoThumbnail> {
   Widget build(BuildContext context) {
     return _controller.value.isInitialized
         ? VideoPlayer(_controller)
-        : Container(color: Colors.black12, child: const Center(child: CircularProgressIndicator(strokeWidth: 2)));
+        : Container(
+            color: Colors.black12,
+            child: const Center(
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          );
   }
 }

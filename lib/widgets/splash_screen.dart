@@ -144,7 +144,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                   child: Column(
                     children: [
                       const Text(
-                        'HIREHUB',
+                        'hiro',
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 48,

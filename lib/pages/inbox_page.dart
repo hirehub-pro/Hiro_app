@@ -161,7 +161,7 @@ class _InboxPageState extends State<InboxPage> {
                       final docs = (snapshot.data?.docs ?? []).where((doc) {
                         final data = doc.data() as Map<String, dynamic>;
                         final users = data['users'] as List<dynamic>? ?? [];
-                        return !users.contains('hirehub_manager');
+                        return !users.contains('hiro_manager');
                       }).toList();
 
                       if (docs.isEmpty) {
@@ -261,7 +261,7 @@ class _InboxPageState extends State<InboxPage> {
             ),
           ),
           title: const Text(
-            "HireHub Support",
+            "hiro Support",
             style: TextStyle(
               fontWeight: FontWeight.bold,
               color: Colors.white,

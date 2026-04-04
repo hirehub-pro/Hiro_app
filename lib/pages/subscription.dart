@@ -37,7 +37,7 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
 
   static const String _proProductId = 'pro_worker_monthly';
   static const String _backwardsCompatibleId =
-      'com-hirehub-app-pro-worker-monthly';
+      'com-hiro-app-pro-worker-monthly';
 
   static const Set<String> _allowedSubscriptionIds = {
     _proProductId,
@@ -580,7 +580,7 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
               SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  'HireHub Pro לעסקים שרוצים לגדול',
+                  'הירו פרו לעסקים שרוצים לגדול',
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(

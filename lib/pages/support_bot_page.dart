@@ -98,7 +98,7 @@ class _SupportBotPageState extends State<SupportBotPage>
       } else {
         t = "ערב טוב";
       }
-      return "👋 $t${_userName != null ? ' $_userName' : ''}! אני העוזר החכם של HireHub.\n\nאני יכול לעזור לך **למצוא אנשי מקצוע**, לענות על שאלות בנושאי **תשלום ובטיחות**, ולנהל את **החשבון שלך**. במה אוכל לעזור?";
+      return "👋 $t${_userName != null ? ' $_userName' : ''}! אני העוזר החכם של הירו.\n\nאני יכול לעזור לך **למצוא אנשי מקצוע**, לענות על שאלות בנושאי **תשלום ובטיחות**, ולנהל את **החשבון שלך**. במה אוכל לעזור?";
     }
     String t;
     if (hour < 12) {
@@ -108,7 +108,7 @@ class _SupportBotPageState extends State<SupportBotPage>
     } else {
       t = "Good evening";
     }
-    return "👋 $t${_userName != null ? ' $_userName' : ''}! I'm your HireHub AI Assistant.\n\nI can help you **find professionals**, answer questions about **payments & safety**, and manage your **account**. How can I help?";
+    return "👋 $t${_userName != null ? ' $_userName' : ''}! I'm your Hiro AI Assistant.\n\nI can help you **find professionals**, answer questions about **payments & safety**, and manage your **account**. How can I help?";
   }
 
   List<String> _getInitialQuickReplies() {
@@ -419,8 +419,8 @@ class _SupportBotPageState extends State<SupportBotPage>
       _lastIntent = intent;
       _addBotMessage(
         isHe
-            ? "💰 **מידע על תשלומים:**\nהשימוש ב-HireHub הוא **בחינם לחלוטין**. התשלום מתבצע ישירות מול בעל המקצוע לאחר סיום העבודה.\n\nמומלץ להשתמש ב**מפיק החשבוניות** שלנו לתיעוד בטוח ומסודר."
-            : "💰 **Payment Info:**\nHireHub is **completely free** to use. You pay the professional directly after the work is done.\n\nWe recommend using our **Invoice Builder** for secure, professional records.",
+            ? "💰 **מידע על תשלומים:**\nהשימוש ב-הירו הוא **בחינם לחלוטין**. התשלום מתבצע ישירות מול בעל המקצוע לאחר סיום העבודה.\n\nמומלץ להשתמש ב**מפיק החשבוניות** שלנו לתיעוד בטוח ומסודר."
+            : "💰 **Payment Info:**\nHiro is **completely free** to use. You pay the professional directly after the work is done.\n\nWe recommend using our **Invoice Builder** for secure, professional records.",
         action: _buildNavBtn(
           isHe ? "פתח מפיק חשבוניות" : "Open Invoice Builder",
           InvoiceBuilderPage(workerName: _userName ?? "Professional"),
@@ -476,8 +476,8 @@ class _SupportBotPageState extends State<SupportBotPage>
       _lastIntent = intent;
       _addBotMessage(
         isHe
-            ? "📱 **איך HireHub עובד:**\n\n1️⃣ **חפש** בעל מקצוע לפי תחום\n2️⃣ **צפה** בפרופיל, דירוגים וביקורות\n3️⃣ **שלח הודעה** ישירות דרך הצ'אט\n4️⃣ **סגור פרויקט** וצור חשבונית\n\nכל העסקאות מפוקחות על ידי מערכת האימות שלנו!"
-            : "📱 **How HireHub Works:**\n\n1️⃣ **Search** for a professional by trade\n2️⃣ **View** profile, ratings & reviews\n3️⃣ **Message** them directly via chat\n4️⃣ **Close the project** & create an invoice\n\nAll transactions are monitored by our verification system!",
+            ? "📱 **איך הירו עובד:**\n\n1️⃣ **חפש** בעל מקצוע לפי תחום\n2️⃣ **צפה** בפרופיל, דירוגים וביקורות\n3️⃣ **שלח הודעה** ישירות דרך הצ'אט\n4️⃣ **סגור פרויקט** וצור חשבונית\n\nכל העסקאות מפוקחות על ידי מערכת האימות שלנו!"
+            : "📱 **How Hiro Works:**\n\n1️⃣ **Search** for a professional by trade\n2️⃣ **View** profile, ratings & reviews\n3️⃣ **Message** them directly via chat\n4️⃣ **Close the project** & create an invoice\n\nAll transactions are monitored by our verification system!",
         quickReplies: isHe
             ? ["חיפוש בעל מקצוע", "ביטחון ותשלומים", "חשבונית"]
             : ["Find a Pro", "Safety & Payments", "Invoice Builder"],
@@ -563,8 +563,8 @@ class _SupportBotPageState extends State<SupportBotPage>
           context,
           MaterialPageRoute(
             builder: (_) => const ChatPage(
-              receiverId: 'hirehub_manager',
-              receiverName: 'HireHub Support',
+              receiverId: 'hiro_manager',
+              receiverName: 'Hiro Support',
             ),
           ),
         );
@@ -806,7 +806,7 @@ class _SupportBotPageState extends State<SupportBotPage>
           return Directionality(
             textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
             child: SubscriptionAccessService.buildLockedScaffold(
-              title: isRtl ? 'עוזר HireHub' : 'HireHub AI Assistant',
+              title: isRtl ? 'עוזר הירו' : 'Hiro Assistant',
               message: isRtl
                   ? 'צ׳אט הבוט זמין רק לבעלי מנוי Pro פעיל.'
                   : 'The bot chat is available only with an active Pro subscription.',
@@ -864,7 +864,7 @@ class _SupportBotPageState extends State<SupportBotPage>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        isRtl ? "עוזר HireHub" : "HireHub AI Assistant",
+                        isRtl ? "עוזר הירו" : "Hiro Assistant",
                         style: const TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 16,

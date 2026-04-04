@@ -5,12 +5,19 @@ import 'package:intl/intl.dart' as intl;
 import 'package:provider/provider.dart';
 import 'package:untitled1/services/language_provider.dart';
 import 'package:untitled1/services/subscription_access_service.dart';
+import 'package:untitled1/widgets/tour_tip_dialog.dart';
 
 class AnalyticsPage extends StatefulWidget {
   final String userId;
   final Map<String, String> strings;
+  final String? tourIntroText;
 
-  const AnalyticsPage({super.key, required this.userId, required this.strings});
+  const AnalyticsPage({
+    super.key,
+    required this.userId,
+    required this.strings,
+    this.tourIntroText,
+  });
 
   @override
   State<AnalyticsPage> createState() => _AnalyticsPageState();
@@ -342,6 +349,26 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     super.initState();
     _accessFuture = SubscriptionAccessService.getCurrentUserState();
     _fetchAnalytics();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _showTourIntroIfNeeded();
+    });
+  }
+
+  Future<void> _showTourIntroIfNeeded() async {
+    final intro = widget.tourIntroText;
+    if (intro == null || intro.isEmpty || !mounted) return;
+
+    final isRtl = _localeCode == 'he' || _localeCode == 'ar';
+
+    await showTourTipDialog(
+      context: context,
+      title: _t('analytics_title'),
+      body: intro,
+      stepLabel: isRtl ? 'שלב 5 / 8' : 'Step 5 / 8',
+      icon: Icons.analytics_outlined,
+      isRtl: isRtl,
+      confirmLabel: isRtl ? 'הבנתי' : 'Got it',
+    );
   }
 
   double _asDouble(dynamic value, {double fallback = 0.0}) {
