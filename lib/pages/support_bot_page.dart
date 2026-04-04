@@ -815,122 +815,129 @@ class _SupportBotPageState extends State<SupportBotPage>
         }
 
         return Directionality(
-      textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
-      child: Scaffold(
-        backgroundColor: const Color(0xFFF1F5FB),
-        appBar: AppBar(
-          elevation: 0,
-          backgroundColor: Colors.white,
-          foregroundColor: const Color(0xFF1976D2),
-          centerTitle: false,
-          title: Row(
-            children: [
-              Stack(
+          textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
+          child: Scaffold(
+            backgroundColor: const Color(0xFFF1F5FB),
+            appBar: AppBar(
+              elevation: 0,
+              backgroundColor: Colors.white,
+              foregroundColor: const Color(0xFF1976D2),
+              centerTitle: false,
+              title: Row(
                 children: [
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: const BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [Color(0xFF1976D2), Color(0xFF42A5F5)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.smart_toy_rounded,
-                      color: Colors.white,
-                      size: 22,
-                    ),
-                  ),
-                  Positioned(
-                    right: 0,
-                    bottom: 0,
-                    child: Container(
-                      width: 12,
-                      height: 12,
-                      decoration: BoxDecoration(
-                        color: Colors.green[400],
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 2),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(width: 12),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    isRtl ? "עוזר HireHub" : "HireHub AI Assistant",
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
-                  ),
-                  Row(
+                  Stack(
                     children: [
                       Container(
-                        width: 6,
-                        height: 6,
-                        margin: const EdgeInsets.only(right: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.green[400],
+                        width: 40,
+                        height: 40,
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [Color(0xFF1976D2), Color(0xFF42A5F5)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
                           shape: BoxShape.circle,
                         ),
+                        child: const Icon(
+                          Icons.smart_toy_rounded,
+                          color: Colors.white,
+                          size: 22,
+                        ),
                       ),
+                      Positioned(
+                        right: 0,
+                        bottom: 0,
+                        child: Container(
+                          width: 12,
+                          height: 12,
+                          decoration: BoxDecoration(
+                            color: Colors.green[400],
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white, width: 2),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(width: 12),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
                       Text(
-                        isRtl ? "פעיל עכשיו" : "Online",
-                        style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+                        isRtl ? "עוזר HireHub" : "HireHub AI Assistant",
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                      Row(
+                        children: [
+                          Container(
+                            width: 6,
+                            height: 6,
+                            margin: const EdgeInsets.only(right: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.green[400],
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          Text(
+                            isRtl ? "פעיל עכשיו" : "Online",
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey[500],
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
                 ],
               ),
-            ],
+              actions: [
+                IconButton(
+                  icon: const Icon(Icons.refresh_rounded, color: Colors.grey),
+                  tooltip: isRtl ? "שיחה חדשה" : "New conversation",
+                  onPressed: () {
+                    setState(() => _messages.clear());
+                    _addBotMessage(
+                      _getGreeting(),
+                      quickReplies: _getInitialQuickReplies(),
+                    );
+                  },
+                ),
+              ],
+            ),
+            body: Column(
+              children: [
+                Expanded(
+                  child: ListView.builder(
+                    controller: _scrollController,
+                    padding: const EdgeInsets.fromLTRB(12, 16, 12, 8),
+                    itemCount: _messages.length + (_isTyping ? 1 : 0),
+                    itemBuilder: (context, index) {
+                      if (index == _messages.length) {
+                        return _buildTypingIndicator(isRtl);
+                      }
+                      final m = _messages[index];
+                      final isLastBot =
+                          m['isBot'] == true &&
+                          index ==
+                              _messages.lastIndexWhere(
+                                (msg) => msg['isBot'] == true,
+                              );
+                      return _buildBubble(
+                        m,
+                        isRtl,
+                        showQuickReplies: isLastBot,
+                      );
+                    },
+                  ),
+                ),
+                _buildInputArea(isRtl),
+              ],
+            ),
           ),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.refresh_rounded, color: Colors.grey),
-              tooltip: isRtl ? "שיחה חדשה" : "New conversation",
-              onPressed: () {
-                setState(() => _messages.clear());
-                _addBotMessage(
-                  _getGreeting(),
-                  quickReplies: _getInitialQuickReplies(),
-                );
-              },
-            ),
-          ],
-        ),
-        body: Column(
-          children: [
-            Expanded(
-              child: ListView.builder(
-                controller: _scrollController,
-                padding: const EdgeInsets.fromLTRB(12, 16, 12, 8),
-                itemCount: _messages.length + (_isTyping ? 1 : 0),
-                itemBuilder: (context, index) {
-                  if (index == _messages.length) {
-                    return _buildTypingIndicator(isRtl);
-                  }
-                  final m = _messages[index];
-                  final isLastBot =
-                      m['isBot'] == true &&
-                      index ==
-                          _messages.lastIndexWhere(
-                            (msg) => msg['isBot'] == true,
-                          );
-                  return _buildBubble(m, isRtl, showQuickReplies: isLastBot);
-                },
-              ),
-            ),
-            _buildInputArea(isRtl),
-          ],
-        ),
-      ),
         );
       },
     );

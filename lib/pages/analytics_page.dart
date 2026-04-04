@@ -31,7 +31,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
 
   bool _isLoading = true;
   int _totalJobs = 0;
-  int _profileViews = 0;
+  int _viewsCount = 0;
   double _totalEarnings = 0.0;
   double _avgRating = 0.0;
   double _overallAvgRating = 0.0;
@@ -53,8 +53,9 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   Map<String, Map<String, dynamic>> _professionRatingStats = {};
   Map<String, Map<String, int>> _professionWeeklyViews = {};
   List<int> _weeklyViewCounts = List.filled(7, 0);
-  int _lifetimeProfileViews = 0;
   late final Future<SubscriptionAccessState> _accessFuture;
+
+  int get _weeklyViewsTotal => _sumWeekCounts(_weeklyViewCounts);
 
   String _normalizeLocaleCode(String code) {
     final normalized = code.toLowerCase();
@@ -83,6 +84,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           'total_jobs': 'עבודות',
           'rating': 'דירוג',
           'views': 'צפיות',
+          'views_this_week': 'צפיות השבוע',
           'conversion': 'המרה',
           'top_skill': 'מיומנות מובילה',
           'conversion_help':
@@ -130,6 +132,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           'total_jobs': 'الأعمال',
           'rating': 'التقييم',
           'views': 'المشاهدات',
+          'views_this_week': 'مشاهدات هذا الأسبوع',
           'conversion': 'التحويل',
           'top_skill': 'المهارة الأقوى',
           'conversion_help':
@@ -177,6 +180,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           'total_jobs': 'Заказы',
           'rating': 'Рейтинг',
           'views': 'Просмотры',
+          'views_this_week': 'Просмотры за неделю',
           'conversion': 'Конверсия',
           'top_skill': 'Лучший навык',
           'conversion_help':
@@ -224,6 +228,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           'total_jobs': 'ስራዎች',
           'rating': 'ደረጃ',
           'views': 'እይታዎች',
+          'views_this_week': 'የዚህ ሳምንት እይታዎች',
           'conversion': 'መቀየር',
           'top_skill': 'ከፍተኛ ችሎታ',
           'conversion_help':
@@ -271,6 +276,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           'total_jobs': 'Jobs',
           'rating': 'Rating',
           'views': 'Views',
+          'views_this_week': 'Views This Week',
           'conversion': 'Conversion',
           'top_skill': 'Top Skill',
           'conversion_help':
@@ -467,7 +473,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   String _buildGrowthRecommendation() {
     final noData = _t('no_data');
 
-    if (_profileViews == 0 && _totalJobs == 0) {
+    if (_viewsCount == 0 && _totalJobs == 0) {
       return _t('growth_getting_started');
     }
 
@@ -476,7 +482,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
         ? _t('growth_scope_all')
         : '${_t('growth_scope_for')} $_selectedProfession';
 
-    if (_profileViews < 20) {
+    if (_viewsCount < 20) {
       parts.add(_tp('growth_low_visibility', {'scope': scope}));
     } else if (_conversionRate < 5) {
       parts.add(_tp('growth_low_conversion', {'scope': scope}));
@@ -526,8 +532,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
       if (userDoc.exists) {
         final data = userDoc.data()!;
         _totalJobs = data['totalJobs'] ?? 0;
-        _lifetimeProfileViews = data['profileViews'] ?? 0;
-        _profileViews = _lifetimeProfileViews;
+        _viewsCount = 0;
         _totalEarnings = _asDouble(data['totalEarnings']);
         _overallAvgRating = _asDouble(data['avgRating']);
         _avgRating = _overallAvgRating;
@@ -559,8 +564,8 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
 
       _applyProfessionSelection();
 
-      _conversionRate = _profileViews > 0
-          ? (_totalJobs / _profileViews) * 100
+      _conversionRate = _viewsCount > 0
+          ? (_totalJobs / _viewsCount) * 100
           : 0.0;
 
       _performanceOverview = _buildGrowthRecommendation();
@@ -584,6 +589,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
         final data = doc.data();
         final profession = (data['profession'] ?? doc.id).toString();
         result[profession] = {
+          'totalViews': _asInt(data['totalViews']),
           'reviewCount': data['reviewCount'] ?? 0,
           'avgOverallRating': _asDouble(data['avgOverallRating']),
           'avgPriceRating': _asDouble(data['avgPriceRating']),
@@ -642,6 +648,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
       if (count == 0) return;
 
       result[profession] = {
+        'totalViews': 0,
         'reviewCount': count,
         'avgOverallRating': overallSum / count,
         'avgPriceRating': priceSum / count,
@@ -661,8 +668,6 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
         _professionWeeklyViews.containsKey(_selectedProfession)) {
       final selectedViews = _professionWeeklyViews[_selectedProfession]!;
       _weeklyViewCounts = _extractWeekCounts(selectedViews);
-      _profileViews =
-          selectedViews['TVTW'] ?? _sumWeekCounts(_weeklyViewCounts);
     } else if (_professionWeeklyViews.isNotEmpty) {
       for (final map in _professionWeeklyViews.values) {
         final dayCounts = _extractWeekCounts(map);
@@ -670,9 +675,19 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           _weeklyViewCounts[i] += dayCounts[i];
         }
       }
-      _profileViews = _sumWeekCounts(_weeklyViewCounts);
+    }
+
+    if (_selectedProfession != _allProfessionsKey &&
+        _professionRatingStats.containsKey(_selectedProfession)) {
+      final selected = _professionRatingStats[_selectedProfession]!;
+      _viewsCount = _asInt(selected['totalViews']);
+    } else if (_professionRatingStats.isNotEmpty) {
+      _viewsCount = _professionRatingStats.values.fold<int>(
+        0,
+        (sum, stats) => sum + _asInt(stats['totalViews']),
+      );
     } else {
-      _profileViews = _lifetimeProfileViews;
+      _viewsCount = 0;
     }
 
     if (_professionRatingStats.isEmpty) {
@@ -789,7 +804,9 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
       future: _accessFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState != ConnectionState.done) {
-          return const Scaffold(body: Center(child: CircularProgressIndicator()));
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
         }
 
         if (snapshot.data?.isUnsubscribedWorker == true) {
@@ -805,52 +822,54 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
         }
 
         if (_isLoading && _totalJobs == 0) {
-          return const Scaffold(body: Center(child: CircularProgressIndicator()));
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
         }
 
         return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
-      appBar: AppBar(
-        title: Text(
-          _t('analytics_title'),
-          style: const TextStyle(
-            fontWeight: FontWeight.w900,
-            color: Color(0xFF0F172A),
+          backgroundColor: const Color(0xFFF8FAFC),
+          appBar: AppBar(
+            title: Text(
+              _t('analytics_title'),
+              style: const TextStyle(
+                fontWeight: FontWeight.w900,
+                color: Color(0xFF0F172A),
+              ),
+            ),
+            backgroundColor: Colors.white,
+            elevation: 0,
+            foregroundColor: const Color(0xFF0F172A),
           ),
-        ),
-        backgroundColor: Colors.white,
-        elevation: 0,
-        foregroundColor: const Color(0xFF0F172A),
-      ),
-      body: RefreshIndicator(
-        onRefresh: _fetchAnalytics,
-        color: const Color(0xFF1976D2),
-        child: SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildMainBalanceCard(),
-              const SizedBox(height: 24),
-              _buildProfessionSelector(),
-              const SizedBox(height: 24),
-              _buildMetricsGrid(),
-              const SizedBox(height: 32),
-              _buildChartCard(_t('earnings_trend'), _buildEarningsChart()),
-              const SizedBox(height: 24),
-              _buildChartCard(_t('profile_reach'), _buildViewsChart()),
-              const SizedBox(height: 32),
-              _buildSectionHeader(_t('service_quality_breakdown')),
-              const SizedBox(height: 16),
-              _buildRatingsSection(),
-              const SizedBox(height: 32),
-              _buildAITipCard(),
-              const SizedBox(height: 40),
-            ],
+          body: RefreshIndicator(
+            onRefresh: _fetchAnalytics,
+            color: const Color(0xFF1976D2),
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildMainBalanceCard(),
+                  const SizedBox(height: 24),
+                  _buildProfessionSelector(),
+                  const SizedBox(height: 24),
+                  _buildMetricsGrid(),
+                  const SizedBox(height: 32),
+                  _buildChartCard(_t('earnings_trend'), _buildEarningsChart()),
+                  const SizedBox(height: 24),
+                  _buildChartCard(_t('profile_reach'), _buildViewsChart()),
+                  const SizedBox(height: 32),
+                  _buildSectionHeader(_t('service_quality_breakdown')),
+                  const SizedBox(height: 16),
+                  _buildRatingsSection(),
+                  const SizedBox(height: 32),
+                  _buildAITipCard(),
+                  const SizedBox(height: 40),
+                ],
+              ),
+            ),
           ),
-        ),
-      ),
         );
       },
     );
@@ -949,6 +968,25 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
               letterSpacing: -1,
             ),
           ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              const Icon(
+                Icons.visibility_rounded,
+                color: Colors.white70,
+                size: 16,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '${_t('views_this_week')}: $_weeklyViewsTotal',
+                style: const TextStyle(
+                  color: Colors.white70,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 24),
           const Divider(color: Colors.white10),
           const SizedBox(height: 24),
@@ -967,7 +1005,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
               ),
               _buildQuickStat(
                 _t('views'),
-                _profileViews.toString(),
+                _viewsCount.toString(),
                 Icons.bar_chart_rounded,
               ),
             ],

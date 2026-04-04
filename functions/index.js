@@ -80,7 +80,7 @@ exports.sendChatPushOnNotificationCreate = onDocumentCreated(
 
 exports.syncWorkerSubscriptionLifecycle = onSchedule(
   {
-    schedule: "every 24 hours",
+    schedule: "every 1 hours",
     region: "us-central1",
     timeZone: "UTC",
   },
@@ -91,7 +91,6 @@ exports.syncWorkerSubscriptionLifecycle = onSchedule(
 
     let lastDoc = null;
     let scanned = 0;
-    let extended = 0;
     let deactivated = 0;
 
     while (true) {
@@ -115,7 +114,6 @@ exports.syncWorkerSubscriptionLifecycle = onSchedule(
         scanned += 1;
 
         const data = doc.data() || {};
-        const status = String(data.subscriptionStatus || "inactive").toLowerCase();
         const isSubscribed = data.isSubscribed === true;
         if (!isSubscribed) continue;
 
@@ -129,25 +127,13 @@ exports.syncWorkerSubscriptionLifecycle = onSchedule(
           continue;
         }
 
-        if (status === "active") {
-          let nextExpiry = new Date(expiry.getTime());
-          while (now >= nextExpiry) {
-            nextExpiry = addDays(nextExpiry, 30);
-          }
-
-          batch.update(doc.ref, {
-            subscriptionExpiresAt: admin.firestore.Timestamp.fromDate(nextExpiry),
-            subscriptionUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
-          });
-          extended += 1;
-        } else {
-          batch.update(doc.ref, {
-            isSubscribed: false,
-            subscriptionStatus: "inactive",
-            subscriptionUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
-          });
-          deactivated += 1;
-        }
+        batch.update(doc.ref, {
+          isSubscribed: false,
+          subscriptionStatus: "inactive",
+          subscriptionCanceled: true,
+          subscriptionUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        deactivated += 1;
       }
 
       await batch.commit();
@@ -160,7 +146,6 @@ exports.syncWorkerSubscriptionLifecycle = onSchedule(
 
     logger.info("Worker subscription lifecycle sync completed", {
       scanned,
-      extended,
       deactivated,
     });
   }

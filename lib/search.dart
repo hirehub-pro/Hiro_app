@@ -276,13 +276,18 @@ class _SearchPageState extends State<SearchPage> {
       if (snapshot.docs.isNotEmpty) {
         _lastDocument = snapshot.docs.last;
 
-        final newWorkers = snapshot.docs.map((doc) {
-          final data = doc.data() as Map<String, dynamic>;
-          data['uid'] = doc.id;
-          data['avgRating'] = (data['avgRating'] ?? 0.0).toDouble();
-          data['reviewCount'] = data['reviewCount'] ?? 0;
-          return data;
-        }).where(SubscriptionAccessService.hasActiveWorkerSubscriptionFromData).toList();
+        final newWorkers = snapshot.docs
+            .map((doc) {
+              final data = doc.data() as Map<String, dynamic>;
+              data['uid'] = doc.id;
+              data['avgRating'] = (data['avgRating'] ?? 0.0).toDouble();
+              data['reviewCount'] = data['reviewCount'] ?? 0;
+              return data;
+            })
+            .where(
+              SubscriptionAccessService.hasActiveWorkerSubscriptionFromData,
+            )
+            .toList();
 
         if (mounted && currentId == _fetchSessionId) {
           setState(() {
@@ -406,7 +411,9 @@ class _SearchPageState extends State<SearchPage> {
     setState(() {
       if (_showWorkerList) {
         _filteredWorkers = _allWorkers.where((w) {
-          if (!SubscriptionAccessService.hasActiveWorkerSubscriptionFromData(w)) {
+          if (!SubscriptionAccessService.hasActiveWorkerSubscriptionFromData(
+            w,
+          )) {
             return false;
           }
 

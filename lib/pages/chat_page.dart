@@ -377,111 +377,112 @@ class _ChatPageState extends State<ChatPage> {
         }
 
         return Scaffold(
-      appBar: AppBar(
-        title: _buildChatHeaderTitle(isRtl),
-        centerTitle: true,
-        backgroundColor: Colors.white,
-        foregroundColor: const Color(0xFF1976D2),
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
-          onPressed: () => Navigator.pop(context),
-        ),
-        actions: [
-          if (_canCreateInvoices)
-            IconButton(
-              tooltip: isRtl ? "הפק חשבונית" : "Create Invoice",
-              icon: const Icon(Icons.receipt_long_rounded, size: 22),
-              onPressed: () async {
-                final receiverDoc = await _getUserDoc(widget.receiverId);
-                String? phone;
-                String? address;
-                if (receiverDoc != null && receiverDoc.exists) {
-                  final data = receiverDoc.data() as Map<String, dynamic>;
-                  phone = data['phone'];
-                  address = data['address'] ?? data['town'];
-                }
-
-                if (!mounted) return;
-
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => InvoiceBuilderPage(
-                      workerName: _currentUserName ?? "Worker",
-                      workerPhone: _currentUserPhone,
-                      workerEmail: _currentUserEmail,
-                      receiverId: widget.receiverId,
-                      receiverName: widget.receiverName,
-                      receiverPhone: phone,
-                      receiverAddress: address,
-                    ),
-                  ),
-                );
-              },
+          appBar: AppBar(
+            title: _buildChatHeaderTitle(isRtl),
+            centerTitle: true,
+            backgroundColor: Colors.white,
+            foregroundColor: const Color(0xFF1976D2),
+            elevation: 0,
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+              onPressed: () => Navigator.pop(context),
             ),
-          IconButton(
-            icon: const Icon(Icons.call_rounded, size: 22),
-            onPressed: () async {
-              final userDoc = await _getUserDoc(widget.receiverId);
-              if (userDoc != null && userDoc.exists) {
-                final data = userDoc.data() as Map<String, dynamic>;
-                final phone = data['phone'];
-                if (phone != null) {
-                  final Uri url = Uri.parse("tel:$phone");
-                  if (await canLaunchUrl(url)) {
-                    await launchUrl(url);
-                  }
-                }
-              }
-            },
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          Expanded(
-            child: StreamBuilder<QuerySnapshot>(
-              stream: _messageStream,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                  return Center(
-                    child: Text(
-                      isRtl ? "אין הודעות עדיין" : "No messages yet",
-                      style: TextStyle(color: Colors.grey[400]),
-                    ),
-                  );
-                }
+            actions: [
+              if (_canCreateInvoices)
+                IconButton(
+                  tooltip: isRtl ? "הפק חשבונית" : "Create Invoice",
+                  icon: const Icon(Icons.receipt_long_rounded, size: 22),
+                  onPressed: () async {
+                    final receiverDoc = await _getUserDoc(widget.receiverId);
+                    String? phone;
+                    String? address;
+                    if (receiverDoc != null && receiverDoc.exists) {
+                      final data = receiverDoc.data() as Map<String, dynamic>;
+                      phone = data['phone'];
+                      address = data['address'] ?? data['town'];
+                    }
 
-                final messages = snapshot.data!.docs;
-                return ListView.builder(
-                  controller: _scrollController,
-                  reverse: true,
-                  padding: const EdgeInsets.all(16),
-                  itemCount: messages.length,
-                  itemBuilder: (context, index) {
-                    final message =
-                        messages[index].data() as Map<String, dynamic>;
-                    final isMe = message['senderId'] == _auth.currentUser!.uid;
-                    return _buildMessageBubble(
-                      message,
-                      isMe,
-                      messages[index].id,
+                    if (!mounted) return;
+
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => InvoiceBuilderPage(
+                          workerName: _currentUserName ?? "Worker",
+                          workerPhone: _currentUserPhone,
+                          workerEmail: _currentUserEmail,
+                          receiverId: widget.receiverId,
+                          receiverName: widget.receiverName,
+                          receiverPhone: phone,
+                          receiverAddress: address,
+                        ),
+                      ),
                     );
                   },
-                );
-              },
-            ),
+                ),
+              IconButton(
+                icon: const Icon(Icons.call_rounded, size: 22),
+                onPressed: () async {
+                  final userDoc = await _getUserDoc(widget.receiverId);
+                  if (userDoc != null && userDoc.exists) {
+                    final data = userDoc.data() as Map<String, dynamic>;
+                    final phone = data['phone'];
+                    if (phone != null) {
+                      final Uri url = Uri.parse("tel:$phone");
+                      if (await canLaunchUrl(url)) {
+                        await launchUrl(url);
+                      }
+                    }
+                  }
+                },
+              ),
+            ],
           ),
-          if (_isSelectionMode)
-            _buildSelectionActionBar()
-          else
-            _buildInputArea(isRtl),
-        ],
-      ),
+          body: Column(
+            children: [
+              Expanded(
+                child: StreamBuilder<QuerySnapshot>(
+                  stream: _messageStream,
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                      return Center(
+                        child: Text(
+                          isRtl ? "אין הודעות עדיין" : "No messages yet",
+                          style: TextStyle(color: Colors.grey[400]),
+                        ),
+                      );
+                    }
+
+                    final messages = snapshot.data!.docs;
+                    return ListView.builder(
+                      controller: _scrollController,
+                      reverse: true,
+                      padding: const EdgeInsets.all(16),
+                      itemCount: messages.length,
+                      itemBuilder: (context, index) {
+                        final message =
+                            messages[index].data() as Map<String, dynamic>;
+                        final isMe =
+                            message['senderId'] == _auth.currentUser!.uid;
+                        return _buildMessageBubble(
+                          message,
+                          isMe,
+                          messages[index].id,
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+              if (_isSelectionMode)
+                _buildSelectionActionBar()
+              else
+                _buildInputArea(isRtl),
+            ],
+          ),
         );
       },
     );

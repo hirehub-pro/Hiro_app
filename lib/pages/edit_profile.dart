@@ -11,6 +11,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:untitled1/services/language_provider.dart';
 import 'package:untitled1/map/map_radius_picker.dart';
 import 'package:untitled1/map/location_picker.dart';
+import 'package:untitled1/utils/profession_localization.dart';
 
 class EditProfilePage extends StatefulWidget {
   final Map<String, dynamic> userData;
@@ -29,22 +30,18 @@ class _EditProfilePageState extends State<EditProfilePage> {
   late TextEditingController _descriptionController;
   late TextEditingController _townController;
   TextEditingController? _professionsSearchController;
-  
+
   String? _selectedTown;
   List<String> _selectedProfessions = [];
   File? _image;
   bool _isLoading = false;
   final ImagePicker _picker = ImagePicker();
-  
+
   double _workRadius = 25000.0;
   LatLng? _workCenter;
 
-  final List<String> _allProfessions = [
-    'Plumber', 'Carpenter', 'Electrician', 'Painter', 'Cleaner', 'Handyman',
-    'Landscaper', 'HVAC', 'Locksmith', 'Gardener', 'Mechanic', 'Photographer',
-    'Tutor', 'Tailor', 'Mover', 'Interior Designer', 'Beautician', 'Pet Groomer',
-    'Welder', 'Roofer', 'Flooring Expert', 'AC Technician', 'Pest Control'
-  ];
+  final List<String> _allProfessions =
+      ProfessionLocalization.canonicalProfessions;
 
   @override
   void initState() {
@@ -52,16 +49,27 @@ class _EditProfilePageState extends State<EditProfilePage> {
     _nameController = TextEditingController(text: widget.userData['name']);
     _emailController = TextEditingController(text: widget.userData['email']);
     _phoneController = TextEditingController(text: widget.userData['phone']);
-    _altPhoneController = TextEditingController(text: widget.userData['optionalPhone']);
-    _descriptionController = TextEditingController(text: widget.userData['description'] ?? widget.userData['bio']);
+    _altPhoneController = TextEditingController(
+      text: widget.userData['optionalPhone'],
+    );
+    _descriptionController = TextEditingController(
+      text: widget.userData['description'] ?? widget.userData['bio'],
+    );
     _selectedTown = widget.userData['town'];
     _townController = TextEditingController(text: _selectedTown);
-    _selectedProfessions = List<String>.from(widget.userData['professions'] ?? []);
-    
+    _selectedProfessions = List<String>.from(
+      widget.userData['professions'] ?? [],
+    ).map(ProfessionLocalization.toCanonical).toList();
+
     _workRadius = (widget.userData['workRadius'] ?? 25000.0).toDouble();
-    if (widget.userData['workCenterLat'] != null && widget.userData['workCenterLng'] != null) {
-      _workCenter = LatLng(widget.userData['workCenterLat'], widget.userData['workCenterLng']);
-    } else if (widget.userData['lat'] != null && widget.userData['lng'] != null) {
+    if (widget.userData['workCenterLat'] != null &&
+        widget.userData['workCenterLng'] != null) {
+      _workCenter = LatLng(
+        widget.userData['workCenterLat'],
+        widget.userData['workCenterLng'],
+      );
+    } else if (widget.userData['lat'] != null &&
+        widget.userData['lng'] != null) {
       _workCenter = LatLng(widget.userData['lat'], widget.userData['lng']);
     }
   }
@@ -78,7 +86,10 @@ class _EditProfilePageState extends State<EditProfilePage> {
   }
 
   Future<void> _pickImage() async {
-    final picked = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
+    final picked = await _picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 70,
+    );
     if (picked != null) setState(() => _image = File(picked.path));
   }
 
@@ -97,10 +108,10 @@ class _EditProfilePageState extends State<EditProfilePage> {
           throw 'Location permissions are denied';
         }
       }
-      
+
       if (permission == LocationPermission.deniedForever) {
         throw 'Location permissions are permanently denied.';
-      } 
+      }
 
       Position position = await Geolocator.getCurrentPosition();
       LatLng loc = LatLng(position.latitude, position.longitude);
@@ -110,7 +121,9 @@ class _EditProfilePageState extends State<EditProfilePage> {
       await _updateTownFromLocation(loc);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.toString())));
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -119,9 +132,13 @@ class _EditProfilePageState extends State<EditProfilePage> {
 
   Future<void> _updateTownFromLocation(LatLng loc) async {
     try {
-      List<Placemark> placemarks = await placemarkFromCoordinates(loc.latitude, loc.longitude);
+      List<Placemark> placemarks = await placemarkFromCoordinates(
+        loc.latitude,
+        loc.longitude,
+      );
       if (placemarks.isNotEmpty) {
-        String? town = placemarks.first.locality ?? placemarks.first.subLocality;
+        String? town =
+            placemarks.first.locality ?? placemarks.first.subLocality;
         if (town != null && town.isNotEmpty) {
           setState(() {
             _selectedTown = town;
@@ -144,10 +161,12 @@ class _EditProfilePageState extends State<EditProfilePage> {
 
       double? lat = _workCenter?.latitude;
       double? lng = _workCenter?.longitude;
-      
+
       if (lat == null && _selectedTown != null && _selectedTown!.isNotEmpty) {
         try {
-          List<Location> locations = await locationFromAddress("$_selectedTown, Israel");
+          List<Location> locations = await locationFromAddress(
+            "$_selectedTown, Israel",
+          );
           if (locations.isNotEmpty) {
             lat = locations.first.latitude;
             lng = locations.first.longitude;
@@ -159,7 +178,9 @@ class _EditProfilePageState extends State<EditProfilePage> {
 
       String? imageUrl;
       if (_image != null) {
-        final ref = FirebaseStorage.instance.ref().child('profile_pictures/${user.uid}.jpg');
+        final ref = FirebaseStorage.instance.ref().child(
+          'profile_pictures/${user.uid}.jpg',
+        );
         await ref.putFile(_image!);
         imageUrl = await ref.getDownloadURL();
       }
@@ -183,13 +204,18 @@ class _EditProfilePageState extends State<EditProfilePage> {
       }
 
       // Update in the unified 'users' collection
-      await FirebaseFirestore.instance.collection('users').doc(user.uid).update(updateData);
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .update(updateData);
       await user.updateDisplayName(_nameController.text.trim());
 
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error saving profile: $e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error saving profile: $e')));
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -202,6 +228,9 @@ class _EditProfilePageState extends State<EditProfilePage> {
       case 'he':
         return {
           'title': 'עריכת פרופיל',
+          'basic_info': 'פרטים בסיסיים',
+          'service_details': 'פרטי שירות',
+          'about_you': 'עליך',
           'name': 'שם מלא',
           'email': 'אימייל',
           'phone': 'מספר טלפון',
@@ -222,6 +251,9 @@ class _EditProfilePageState extends State<EditProfilePage> {
       default:
         return {
           'title': 'Edit Profile',
+          'basic_info': 'Basic Information',
+          'service_details': 'Service Details',
+          'about_you': 'About You',
           'name': 'Full Name',
           'email': 'Email',
           'phone': 'Phone Number',
@@ -251,7 +283,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
     return Directionality(
       textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
       child: Scaffold(
-        backgroundColor: Colors.white,
+        backgroundColor: const Color(0xFFF6F8FC),
         body: _isLoading
             ? const Center(child: CircularProgressIndicator())
             : SingleChildScrollView(
@@ -265,49 +297,71 @@ class _EditProfilePageState extends State<EditProfilePage> {
                         child: Column(
                           children: [
                             _buildImagePicker(),
-                            const SizedBox(height: 32),
-                            _buildStyledTextField(
-                              controller: _nameController,
-                              labelText: strings['name']!,
-                              icon: Icons.person_outline,
-                              validator: (v) => v!.isEmpty ? strings['req'] : null,
+                            const SizedBox(height: 24),
+                            _buildSectionCard(
+                              title: strings['basic_info']!,
+                              child: Column(
+                                children: [
+                                  _buildStyledTextField(
+                                    controller: _nameController,
+                                    labelText: strings['name']!,
+                                    icon: Icons.person_outline,
+                                    validator: (v) =>
+                                        v!.isEmpty ? strings['req'] : null,
+                                  ),
+                                  const SizedBox(height: 16),
+                                  _buildStyledTextField(
+                                    controller: _emailController,
+                                    labelText: strings['email']!,
+                                    icon: Icons.email_outlined,
+                                    keyboardType: TextInputType.emailAddress,
+                                  ),
+                                  const SizedBox(height: 16),
+                                  _buildLocationSection(strings),
+                                ],
+                              ),
                             ),
-                            const SizedBox(height: 16),
-                            _buildStyledTextField(
-                              controller: _emailController,
-                              labelText: strings['email']!,
-                              icon: Icons.email_outlined,
-                              keyboardType: TextInputType.emailAddress,
-                            ),
-                            const SizedBox(height: 16),
-                            _buildLocationSection(strings),
                             const SizedBox(height: 16),
                             if (widget.userData['role'] == 'worker') ...[
-                              _buildWorkRadiusSelector(strings),
-                              const SizedBox(height: 16),
-                              _buildMultiSelectProfessions(strings),
-                              const SizedBox(height: 16),
-                              _buildStyledTextField(
-                                controller: _altPhoneController,
-                                labelText: strings['alt_phone']!,
-                                icon: Icons.phone_android_outlined,
-                                keyboardType: TextInputType.phone,
+                              _buildSectionCard(
+                                title: strings['service_details']!,
+                                child: Column(
+                                  children: [
+                                    _buildWorkRadiusSelector(strings),
+                                    const SizedBox(height: 16),
+                                    _buildMultiSelectProfessions(strings),
+                                    const SizedBox(height: 16),
+                                    _buildStyledTextField(
+                                      controller: _altPhoneController,
+                                      labelText: strings['alt_phone']!,
+                                      icon: Icons.phone_android_outlined,
+                                      keyboardType: TextInputType.phone,
+                                    ),
+                                  ],
+                                ),
                               ),
                               const SizedBox(height: 16),
                             ],
-                            _buildStyledTextField(
-                              controller: _phoneController,
-                              labelText: strings['phone']!,
-                              icon: Icons.phone_android_outlined,
-                              keyboardType: TextInputType.phone,
-                              enabled: false,
-                            ),
-                            const SizedBox(height: 16),
-                            _buildStyledTextField(
-                              controller: _descriptionController,
-                              labelText: strings['desc']!,
-                              icon: Icons.description_outlined,
-                              maxLines: 3,
+                            _buildSectionCard(
+                              title: strings['about_you']!,
+                              child: Column(
+                                children: [
+                                  _buildStyledTextField(
+                                    controller: _phoneController,
+                                    labelText: strings['phone']!,
+                                    icon: Icons.phone_android_outlined,
+                                    keyboardType: TextInputType.phone,
+                                    enabled: false,
+                                  ),
+                                  const SizedBox(height: 16),
+                                  _buildStyledTextField(
+                                    controller: _descriptionController,
+                                    labelText: strings['desc']!,
+                                    icon: Icons.description_outlined,
+                                    maxLines: 3,
+                                  ),
+                                ],
+                              ),
                             ),
                             const SizedBox(height: 32),
                             _buildSaveButton(strings),
@@ -342,12 +396,17 @@ class _EditProfilePageState extends State<EditProfilePage> {
               child: OutlinedButton.icon(
                 onPressed: _getCurrentLocation,
                 icon: const Icon(Icons.my_location, size: 18),
-                label: Text(strings['current_loc']!, style: const TextStyle(fontSize: 12)),
+                label: Text(
+                  strings['current_loc']!,
+                  style: const TextStyle(fontSize: 12),
+                ),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: const Color(0xFF1976D2),
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   side: const BorderSide(color: Color(0xFF1976D2)),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
               ),
             ),
@@ -356,12 +415,17 @@ class _EditProfilePageState extends State<EditProfilePage> {
               child: OutlinedButton.icon(
                 onPressed: _openMapPicker,
                 icon: const Icon(Icons.map_outlined, size: 18),
-                label: Text(strings['pick_map']!, style: const TextStyle(fontSize: 12)),
+                label: Text(
+                  strings['pick_map']!,
+                  style: const TextStyle(fontSize: 12),
+                ),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: const Color(0xFF1976D2),
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   side: const BorderSide(color: Color(0xFF1976D2)),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
               ),
             ),
@@ -375,9 +439,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
     final result = await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => LocationPicker(
-          initialCenter: _workCenter,
-        ),
+        builder: (context) => LocationPicker(initialCenter: _workCenter),
       ),
     );
     if (result != null && result is LatLng) {
@@ -404,7 +466,11 @@ class _EditProfilePageState extends State<EditProfilePage> {
               const SizedBox(width: 12),
               Text(
                 strings['work_radius']!,
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: Color(0xFF64748B)),
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                  color: Color(0xFF64748B),
+                ),
               ),
             ],
           ),
@@ -413,8 +479,14 @@ class _EditProfilePageState extends State<EditProfilePage> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                strings['radius_val']!.replaceFirst('{val}', (_workRadius / 1000).toStringAsFixed(1)),
-                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                strings['radius_val']!.replaceFirst(
+                  '{val}',
+                  (_workRadius / 1000).toStringAsFixed(1),
+                ),
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
               ElevatedButton.icon(
                 onPressed: () async {
@@ -442,7 +514,10 @@ class _EditProfilePageState extends State<EditProfilePage> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF1976D2),
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
                 ),
               ),
             ],
@@ -457,8 +532,15 @@ class _EditProfilePageState extends State<EditProfilePage> {
       height: 180,
       width: double.infinity,
       decoration: const BoxDecoration(
-        gradient: LinearGradient(colors: [Color(0xFF1E3A8A), Color(0xFF1976D2)]),
-        borderRadius: BorderRadius.only(bottomLeft: Radius.circular(80)),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF1E3A8A), Color(0xFF1976D2)],
+        ),
+        borderRadius: BorderRadius.only(
+          bottomLeft: Radius.circular(36),
+          bottomRight: Radius.circular(36),
+        ),
       ),
       child: Stack(
         children: [
@@ -473,7 +555,11 @@ class _EditProfilePageState extends State<EditProfilePage> {
           Center(
             child: Text(
               strings['title']!,
-              style: const TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.bold),
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 28,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
         ],
@@ -485,27 +571,61 @@ class _EditProfilePageState extends State<EditProfilePage> {
     return GestureDetector(
       onTap: _pickImage,
       child: Stack(
+        clipBehavior: Clip.none,
         children: [
-          CircleAvatar(
-            radius: 60,
-            backgroundColor: const Color(0xFFF1F5F9),
-            backgroundImage: _image != null 
-                ? FileImage(_image!) 
-                : (widget.userData['profileImageUrl'] != null && widget.userData['profileImageUrl'].isNotEmpty
-                    ? NetworkImage(widget.userData['profileImageUrl']) 
-                    : null) as ImageProvider?,
-            child: _image == null && (widget.userData['profileImageUrl'] == null || widget.userData['profileImageUrl'].isEmpty)
-                ? Icon(Icons.person_rounded, size: 60, color: Colors.grey[400]) 
-                : null,
+          Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: const LinearGradient(
+                colors: [Color(0xFF1E3A8A), Color(0xFF60A5FA)],
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF1E3A8A).withOpacity(0.2),
+                  blurRadius: 20,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: CircleAvatar(
+              radius: 58,
+              backgroundColor: const Color(0xFFF1F5F9),
+              backgroundImage: _image != null
+                  ? FileImage(_image!)
+                  : (widget.userData['profileImageUrl'] != null &&
+                                widget.userData['profileImageUrl'].isNotEmpty
+                            ? NetworkImage(widget.userData['profileImageUrl'])
+                            : null)
+                        as ImageProvider?,
+              child:
+                  _image == null &&
+                      (widget.userData['profileImageUrl'] == null ||
+                          widget.userData['profileImageUrl'].isEmpty)
+                  ? Icon(
+                      Icons.person_rounded,
+                      size: 56,
+                      color: Colors.grey[400],
+                    )
+                  : null,
+            ),
           ),
           Positioned(
-            bottom: 0, 
-            right: 0, 
+            bottom: -2,
+            right: -2,
             child: Container(
-              padding: const EdgeInsets.all(8), 
-              decoration: const BoxDecoration(color: Color(0xFF1976D2), shape: BoxShape.circle), 
-              child: const Icon(Icons.camera_alt, color: Colors.white, size: 20)
-            )
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1976D2),
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 2),
+              ),
+              child: const Icon(
+                Icons.camera_alt,
+                color: Colors.white,
+                size: 18,
+              ),
+            ),
           ),
         ],
       ),
@@ -539,14 +659,69 @@ class _EditProfilePageState extends State<EditProfilePage> {
         prefixIcon: Icon(icon, color: const Color(0xFF1976D2)),
         filled: true,
         fillColor: enabled ? const Color(0xFFF8FAFC) : const Color(0xFFE2E8F0),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide.none,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: Color(0xFF1976D2), width: 1.4),
+        ),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 16,
+        ),
       ),
       validator: validator,
     );
   }
 
+  Widget _buildSectionCard({required String title, required Widget child}) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFE5EAF2)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF1E3A8A),
+            ),
+          ),
+          const SizedBox(height: 12),
+          child,
+        ],
+      ),
+    );
+  }
+
   Widget _buildMultiSelectProfessions(Map<String, String> strings) {
+    final localeCode = Provider.of<LanguageProvider>(
+      context,
+    ).locale.languageCode;
+    final localizedOptions = _allProfessions
+        .map((p) => ProfessionLocalization.toLocalized(p, localeCode))
+        .toList();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -554,16 +729,19 @@ class _EditProfilePageState extends State<EditProfilePage> {
           builder: (context, constraints) => Autocomplete<String>(
             optionsBuilder: (TextEditingValue textEditingValue) {
               if (textEditingValue.text.isEmpty) {
-                return _allProfessions;
+                return localizedOptions;
               }
-              return _allProfessions.where((String option) {
-                return option.toLowerCase().contains(textEditingValue.text.toLowerCase());
+              return localizedOptions.where((String option) {
+                return option.toLowerCase().contains(
+                  textEditingValue.text.toLowerCase(),
+                );
               });
             },
             onSelected: (String selection) {
+              final canonical = ProfessionLocalization.toCanonical(selection);
               setState(() {
-                if (!_selectedProfessions.contains(selection)) {
-                  _selectedProfessions.add(selection);
+                if (!_selectedProfessions.contains(canonical)) {
+                  _selectedProfessions.add(canonical);
                 }
               });
               _professionsSearchController?.clear();
@@ -592,16 +770,17 @@ class _EditProfilePageState extends State<EditProfilePage> {
                 ),
               );
             },
-            fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
-              _professionsSearchController = controller;
-              return _buildStyledTextField(
-                controller: controller,
-                labelText: strings['professions']!,
-                icon: Icons.work_outline,
-                focusNode: focusNode,
-                hintText: strings['search'],
-              );
-            },
+            fieldViewBuilder:
+                (context, controller, focusNode, onFieldSubmitted) {
+                  _professionsSearchController = controller;
+                  return _buildStyledTextField(
+                    controller: controller,
+                    labelText: strings['professions']!,
+                    icon: Icons.work_outline,
+                    focusNode: focusNode,
+                    hintText: strings['search'],
+                  );
+                },
           ),
         ),
         if (_selectedProfessions.isNotEmpty) ...[
@@ -609,14 +788,20 @@ class _EditProfilePageState extends State<EditProfilePage> {
           Wrap(
             spacing: 8,
             runSpacing: 4,
-            children: _selectedProfessions.map((prof) => Chip(
-              label: Text(prof),
-              onDeleted: () {
-                setState(() {
-                  _selectedProfessions.remove(prof);
-                });
-              },
-            )).toList(),
+            children: _selectedProfessions
+                .map(
+                  (prof) => Chip(
+                    label: Text(
+                      ProfessionLocalization.toLocalized(prof, localeCode),
+                    ),
+                    onDeleted: () {
+                      setState(() {
+                        _selectedProfessions.remove(prof);
+                      });
+                    },
+                  ),
+                )
+                .toList(),
           ),
         ],
       ],
@@ -624,18 +809,36 @@ class _EditProfilePageState extends State<EditProfilePage> {
   }
 
   Widget _buildSaveButton(Map<String, String> strings) {
-    return SizedBox(
+    return Container(
       width: double.infinity,
-      height: 55,
+      height: 56,
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF1E3A8A), Color(0xFF1976D2)],
+        ),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF1E3A8A).withOpacity(0.25),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
       child: ElevatedButton(
         onPressed: _saveProfile,
         style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFF1976D2), 
-          foregroundColor: Colors.white, 
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          elevation: 2,
+          backgroundColor: Colors.transparent,
+          shadowColor: Colors.transparent,
+          foregroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
         ),
-        child: Text(strings['save']!, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        child: Text(
+          strings['save']!,
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+        ),
       ),
     );
   }

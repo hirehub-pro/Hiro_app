@@ -94,119 +94,129 @@ class _InboxPageState extends State<InboxPage> {
         return Directionality(
           textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
           child: Scaffold(
-        backgroundColor: Colors.white,
-        appBar: AppBar(
-          title: Text(
-            isRtl ? 'הודעות' : 'Messages',
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 22),
-          ),
-          backgroundColor: Colors.white,
-          foregroundColor: const Color(0xFF1976D2),
-          elevation: 0,
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.search, color: Colors.grey),
-              onPressed: () {
-                // Implement search functionality here
-              },
-            ),
-          ],
-        ),
-        body: Column(
-          children: [
-            _buildSupportSection(user, isRtl),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-              child: Row(
-                children: [
-                  Text(
-                    isRtl ? 'צ׳אטים אחרונים' : 'Recent Chats',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.grey[50],
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                ],
+            backgroundColor: Colors.white,
+            appBar: AppBar(
+              title: Text(
+                isRtl ? 'הודעות' : 'Messages',
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 22,
+                ),
               ),
+              backgroundColor: Colors.white,
+              foregroundColor: const Color(0xFF1976D2),
+              elevation: 0,
+              actions: [
+                IconButton(
+                  icon: const Icon(Icons.search, color: Colors.grey),
+                  onPressed: () {
+                    // Implement search functionality here
+                  },
+                ),
+              ],
             ),
-            Expanded(
-              child: StreamBuilder<QuerySnapshot>(
-                stream: _firestore
-                    .collection('chat_rooms')
-                    .where('users', arrayContains: user.uid)
-                    .orderBy('lastTimestamp', descending: true)
-                    .snapshots(),
-                builder: (context, snapshot) {
-                  if (snapshot.hasError) {
-                    debugPrint("Stream error: ${snapshot.error}");
-                    return _buildErrorState(isRtl);
-                  }
+            body: Column(
+              children: [
+                _buildSupportSection(user, isRtl),
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 8,
+                  ),
+                  child: Row(
+                    children: [
+                      Text(
+                        isRtl ? 'צ׳אטים אחרונים' : 'Recent Chats',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.grey[50],
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: StreamBuilder<QuerySnapshot>(
+                    stream: _firestore
+                        .collection('chat_rooms')
+                        .where('users', arrayContains: user.uid)
+                        .orderBy('lastTimestamp', descending: true)
+                        .snapshots(),
+                    builder: (context, snapshot) {
+                      if (snapshot.hasError) {
+                        debugPrint("Stream error: ${snapshot.error}");
+                        return _buildErrorState(isRtl);
+                      }
 
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(
-                      child: CircularProgressIndicator(color: Color(0xFF1976D2)),
-                    );
-                  }
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const Center(
+                          child: CircularProgressIndicator(
+                            color: Color(0xFF1976D2),
+                          ),
+                        );
+                      }
 
-                  final docs = (snapshot.data?.docs ?? []).where((doc) {
-                    final data = doc.data() as Map<String, dynamic>;
-                    final users = data['users'] as List<dynamic>? ?? [];
-                    return !users.contains('hirehub_manager');
-                  }).toList();
+                      final docs = (snapshot.data?.docs ?? []).where((doc) {
+                        final data = doc.data() as Map<String, dynamic>;
+                        final users = data['users'] as List<dynamic>? ?? [];
+                        return !users.contains('hirehub_manager');
+                      }).toList();
 
-                  if (docs.isEmpty) {
-                    return _buildEmptyState(isRtl);
-                  }
+                      if (docs.isEmpty) {
+                        return _buildEmptyState(isRtl);
+                      }
 
-                  return ListView.separated(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    itemCount: docs.length,
-                    separatorBuilder: (context, index) => const Divider(
-                      height: 1,
-                      indent: 70,
-                      endIndent: 20,
-                      color: Color(0xFFF1F5F9),
-                    ),
-                    itemBuilder: (context, index) {
-                      final doc = docs[index];
-                      final data = doc.data() as Map<String, dynamic>;
-                      final List<dynamic> users = data['users'] ?? [];
+                      return ListView.separated(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        itemCount: docs.length,
+                        separatorBuilder: (context, index) => const Divider(
+                          height: 1,
+                          indent: 70,
+                          endIndent: 20,
+                          color: Color(0xFFF1F5F9),
+                        ),
+                        itemBuilder: (context, index) {
+                          final doc = docs[index];
+                          final data = doc.data() as Map<String, dynamic>;
+                          final List<dynamic> users = data['users'] ?? [];
 
-                      if (users.length < 2) return const SizedBox.shrink();
+                          if (users.length < 2) return const SizedBox.shrink();
 
-                      final String otherUserId = users.firstWhere(
-                        (id) => id != user.uid,
-                        orElse: () => "",
-                      );
-                      if (otherUserId.isEmpty) return const SizedBox.shrink();
+                          final String otherUserId = users.firstWhere(
+                            (id) => id != user.uid,
+                            orElse: () => "",
+                          );
+                          if (otherUserId.isEmpty)
+                            return const SizedBox.shrink();
 
-                      final Map<String, dynamic> userNames =
-                          data['userNames'] ?? {};
-                      final String otherUserName =
-                          userNames[otherUserId] ?? "User";
+                          final Map<String, dynamic> userNames =
+                              data['userNames'] ?? {};
+                          final String otherUserName =
+                              userNames[otherUserId] ?? "User";
 
-                      final Map<String, dynamic> unreadCount =
-                          (data['unreadCount'] as Map<String, dynamic>?) ?? {};
-                      final int unread =
-                          (unreadCount[user.uid] as num?)?.toInt() ?? 0;
+                          final Map<String, dynamic> unreadCount =
+                              (data['unreadCount'] as Map<String, dynamic>?) ??
+                              {};
+                          final int unread =
+                              (unreadCount[user.uid] as num?)?.toInt() ?? 0;
 
-                      return _buildChatTile(
-                        context,
-                        otherUserName,
-                        data['lastMessage'] ?? "",
-                        data['lastTimestamp'],
-                        otherUserId,
-                        unread,
+                          return _buildChatTile(
+                            context,
+                            otherUserName,
+                            data['lastMessage'] ?? "",
+                            data['lastTimestamp'],
+                            otherUserId,
+                            unread,
+                          );
+                        },
                       );
                     },
-                  );
-                },
-              ),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
           ),
         );
       },

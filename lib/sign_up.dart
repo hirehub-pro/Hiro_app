@@ -17,6 +17,7 @@ import 'package:untitled1/map/map_radius_picker.dart';
 import 'package:untitled1/map/location_picker.dart';
 import 'package:untitled1/pages/privacy_policy_page.dart';
 import 'package:untitled1/pages/terms_of_service_page.dart';
+import 'package:untitled1/utils/profession_localization.dart';
 import 'main.dart';
 
 class SignUpPage extends StatefulWidget {
@@ -67,31 +68,8 @@ class _SignUpPageState extends State<SignUpPage> {
   LatLng? _workCenter;
   double _workRadius = 5000.0;
 
-  final List<String> _allProfessions = [
-    'Plumber',
-    'Carpenter',
-    'Electrician',
-    'Painter',
-    'Cleaner',
-    'Handyman',
-    'Landscaper',
-    'HVAC',
-    'Locksmith',
-    'Gardener',
-    'Mechanic',
-    'Photographer',
-    'Tutor',
-    'Tailor',
-    'Mover',
-    'Interior Designer',
-    'Beautician',
-    'Pet Groomer',
-    'Welder',
-    'Roofer',
-    'Flooring Expert',
-    'AC Technician',
-    'Pest Control',
-  ];
+  final List<String> _allProfessions =
+      ProfessionLocalization.canonicalProfessions;
 
   @override
   void initState() {
@@ -108,7 +86,7 @@ class _SignUpPageState extends State<SignUpPage> {
       _selectedTown = widget.pendingWorkerData!['town'];
       _selectedProfessions = List<String>.from(
         widget.pendingWorkerData!['professions'] ?? [],
-      );
+      ).map(ProfessionLocalization.toCanonical).toList();
       _altPhoneController.text =
           widget.pendingWorkerData!['optionalPhone'] ?? "";
       _descriptionController.text =
@@ -1186,23 +1164,32 @@ class _SignUpPageState extends State<SignUpPage> {
   }
 
   Widget _buildMultiSelectProfessions(Map<String, String> strings) {
+    final localeCode = Provider.of<LanguageProvider>(
+      context,
+    ).locale.languageCode;
+    final localizedOptions = _allProfessions
+        .map((p) => ProfessionLocalization.toLocalized(p, localeCode))
+        .toList();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         LayoutBuilder(
           builder: (context, constraints) => Autocomplete<String>(
             optionsBuilder: (TextEditingValue textEditingValue) {
-              if (textEditingValue.text.isEmpty) return _allProfessions;
-              return _allProfessions.where(
+              if (textEditingValue.text.isEmpty) return localizedOptions;
+              return localizedOptions.where(
                 (option) => option.toLowerCase().contains(
                   textEditingValue.text.toLowerCase(),
                 ),
               );
             },
             onSelected: (selection) {
+              final canonical = ProfessionLocalization.toCanonical(selection);
               setState(() {
-                if (!_selectedProfessions.contains(selection))
-                  _selectedProfessions.add(selection);
+                if (!_selectedProfessions.contains(canonical)) {
+                  _selectedProfessions.add(canonical);
+                }
               });
               _professionsSearchController?.clear();
             },
@@ -1262,7 +1249,7 @@ class _SignUpPageState extends State<SignUpPage> {
                 .map(
                   (prof) => Chip(
                     label: Text(
-                      prof,
+                      ProfessionLocalization.toLocalized(prof, localeCode),
                       style: const TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w500,

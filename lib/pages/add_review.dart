@@ -102,7 +102,17 @@ class _AddReviewPageState extends State<AddReviewPage> {
     final existingDocs = await proRatingCol.get();
     for (final oldDoc in existingDocs.docs) {
       if (!grouped.containsKey(oldDoc.id)) {
-        batch.delete(oldDoc.reference);
+        final existingData = oldDoc.data();
+        batch.set(oldDoc.reference, {
+          'profession': (existingData['profession'] ?? oldDoc.id).toString(),
+          'reviewCount': 0,
+          'avgOverallRating': 0.0,
+          'avgPriceRating': 0.0,
+          'avgServiceRating': 0.0,
+          'avgTimingRating': 0.0,
+          'avgWorkQualityRating': 0.0,
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
       }
     }
 
@@ -159,7 +169,7 @@ class _AddReviewPageState extends State<AddReviewPage> {
         'avgTimingRating': avgTiming,
         'avgWorkQualityRating': avgWorkQuality,
         'updatedAt': FieldValue.serverTimestamp(),
-      });
+      }, SetOptions(merge: true));
 
       professionStats[profession] = {'avg': avgOverall, 'count': count};
 

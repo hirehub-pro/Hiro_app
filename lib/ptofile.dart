@@ -23,6 +23,8 @@ import 'package:untitled1/pages/add_review.dart';
 import 'package:untitled1/pages/post_details_page.dart';
 import 'package:untitled1/pages/location_manager_page.dart';
 import 'package:untitled1/pages/subscription.dart';
+import 'package:untitled1/pages/edit_profile.dart';
+import 'package:untitled1/pages/liked_pros_page.dart';
 import 'package:untitled1/services/location_context_service.dart';
 import 'package:untitled1/services/subscription_access_service.dart';
 
@@ -69,7 +71,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
   Map<String, Map<String, String>> _professionTranslations = {};
   List<Map<String, dynamic>> _userReviews = [];
   List<Map<String, dynamic>> _projects = [];
-  int _profileViews = 0;
+  int _viewsCount = 0;
   bool _isFavorite = false;
 
   bool _isOwnProfile = false;
@@ -170,37 +172,19 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
 
   int _randomShard() => Random().nextInt(_counterShardCount);
 
-  Future<int> _readShardedProfileViews(String userId) async {
-    final shards = await _firestore
+  Future<int> _readTotalViewsFromProRatings(String userId) async {
+    final proRatingSnapshot = await _firestore
         .collection('users')
         .doc(userId)
-        .collection('metrics')
-        .doc('profileViews')
-        .collection('shards')
+        .collection('ProRating')
         .get();
 
     int total = 0;
-    for (final doc in shards.docs) {
-      final data = doc.data();
-      final count = data['count'];
-      if (count is num) total += count.toInt();
+    for (final doc in proRatingSnapshot.docs) {
+      final value = doc.data()['totalViews'];
+      if (value is num) total += value.toInt();
     }
     return total;
-  }
-
-  Future<void> _incrementShardedProfileViews(String workerId) async {
-    final shardRef = _firestore
-        .collection('users')
-        .doc(workerId)
-        .collection('metrics')
-        .doc('profileViews')
-        .collection('shards')
-        .doc(_randomShard().toString());
-
-    await shardRef.set({
-      'count': FieldValue.increment(1),
-      'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
   }
 
   void _checkInitialOwnership() {
@@ -282,11 +266,6 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
         .collection('shards')
         .doc(_randomShard().toString());
 
-    await proRatingRef.set({
-      'profession': normalizedProfession,
-      'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
-
     await _firestore.runTransaction((tx) async {
       final now = DateTime.now();
       final dayKey = _dayKeyForDate(now);
@@ -311,6 +290,12 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
 
       current[dayKey] = (current[dayKey] ?? 0) + 1;
       current['TVTW'] = (current['TVTW'] ?? 0) + 1;
+
+      tx.set(proRatingRef, {
+        'profession': normalizedProfession,
+        'totalViews': FieldValue.increment(1),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
 
       tx.set(shardRef, {
         ...current,
@@ -357,35 +342,19 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
 
     _subscriptionSyncInProgress = true;
     try {
-      if (_subscriptionStatus == 'active') {
-        DateTime nextExpiry = effectiveExpiry;
-        while (!now.isBefore(nextExpiry)) {
-          nextExpiry = nextExpiry.add(const Duration(days: 30));
-        }
+      await _firestore.collection('users').doc(uid).update({
+        'isSubscribed': false,
+        'subscriptionStatus': 'inactive',
+        'subscriptionCanceled': true,
+        'subscriptionUpdatedAt': FieldValue.serverTimestamp(),
+      });
 
-        await _firestore.collection('users').doc(uid).update({
-          'subscriptionExpiresAt': Timestamp.fromDate(nextExpiry),
-          'subscriptionUpdatedAt': FieldValue.serverTimestamp(),
+      if (mounted) {
+        setState(() {
+          _isSubscribed = false;
+          _subscriptionStatus = 'inactive';
+          _subscriptionExpiresAt = effectiveExpiry;
         });
-
-        if (mounted) {
-          setState(() {
-            _subscriptionExpiresAt = nextExpiry;
-          });
-        }
-      } else {
-        await _firestore.collection('users').doc(uid).update({
-          'isSubscribed': false,
-          'subscriptionStatus': 'inactive',
-          'subscriptionUpdatedAt': FieldValue.serverTimestamp(),
-        });
-
-        if (mounted) {
-          setState(() {
-            _isSubscribed = false;
-            _subscriptionStatus = 'inactive';
-          });
-        }
       }
     } catch (e) {
       debugPrint('Subscription lifecycle sync failed: $e');
@@ -427,7 +396,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
           _email = data['email']?.toString() ?? "";
           _town = data['town']?.toString() ?? "";
           _profileImageUrl = data['profileImageUrl']?.toString() ?? "";
-          _profileViews = data['profileViews'] ?? 0;
+          _viewsCount = 0;
           _userRole = data['role'] ?? 'customer';
           _isSubscribed = data['isSubscribed'] == true;
           _subscriptionStatus =
@@ -470,13 +439,13 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
           });
         }
 
-        if (_isOwnProfile) {
-          final shardedViews = await _readShardedProfileViews(targetUid);
-          if (mounted && shardedViews > 0) {
-            setState(() {
-              _profileViews = shardedViews;
-            });
-          }
+        final int professionTotalViews = await _readTotalViewsFromProRatings(
+          targetUid,
+        );
+        if (mounted) {
+          setState(() {
+            _viewsCount = professionTotalViews;
+          });
         }
 
         if (currentUser != null && !_isOwnProfile) {
@@ -490,21 +459,21 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
         }
 
         if (!_isOwnProfile) {
-          await _incrementShardedProfileViews(targetUid);
-
           final viewedProfession = widget.viewedProfession?.trim() ?? '';
           if (viewedProfession.isNotEmpty) {
             await _incrementProfessionWeeklyViews(
               workerId: targetUid,
               profession: viewedProfession,
             );
-          }
 
-          final shardedViews = await _readShardedProfileViews(targetUid);
-          if (mounted) {
-            setState(() {
-              _profileViews = shardedViews;
-            });
+            final int updatedTotalViews = await _readTotalViewsFromProRatings(
+              targetUid,
+            );
+            if (mounted) {
+              setState(() {
+                _viewsCount = updatedTotalViews;
+              });
+            }
           }
         }
 
@@ -585,15 +554,26 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
           .doc(currentUser.uid)
           .collection('favorites')
           .doc(targetUid);
+      final likedByRef = _firestore
+          .collection('users')
+          .doc(targetUid)
+          .collection('likedBy')
+          .doc(currentUser.uid);
       if (_isFavorite) {
-        await favRef.delete();
+        await Future.wait([favRef.delete(), likedByRef.delete()]);
       } else {
-        await favRef.set({
-          'addedAt': FieldValue.serverTimestamp(),
-          'name': _userName,
-          'profileImageUrl': _profileImageUrl,
-          'professions': _userProfessions,
-        });
+        await Future.wait([
+          favRef.set({
+            'addedAt': FieldValue.serverTimestamp(),
+            'name': _userName,
+            'profileImageUrl': _profileImageUrl,
+            'professions': _userProfessions,
+          }),
+          likedByRef.set({
+            'addedAt': FieldValue.serverTimestamp(),
+            'sourceUserId': currentUser.uid,
+          }),
+        ]);
       }
       if (mounted) setState(() => _isFavorite = !_isFavorite);
     } catch (e) {
@@ -749,14 +729,31 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
           'role': 'worker',
         });
 
+        final upgradedUserDoc = await _firestore
+            .collection('users')
+            .doc(user.uid)
+            .get();
+        final upgradedUserData =
+            (upgradedUserDoc.data() ?? <String, dynamic>{});
+
+        if (mounted) setState(() => _isLoading = false);
+        if (!mounted) return;
+
+        await Navigator.push<bool>(
+          context,
+          MaterialPageRoute(
+            builder: (context) => EditProfilePage(userData: upgradedUserData),
+          ),
+        );
+
         await _fetchUserData();
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Account upgraded to worker successfully!'),
-            ),
-          );
+        if (!mounted) return;
+
+        if (_tabController != null && _tabController!.length > 3) {
+          _tabController!.animateTo(3);
         }
+
+        await _showSubscriptionUpsellDialog(strings);
       } catch (e) {
         debugPrint("Upgrade error: $e");
         if (mounted) {
@@ -766,6 +763,52 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
         }
       } finally {
         if (mounted) setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Future<void> _showSubscriptionUpsellDialog(
+    Map<String, String> strings,
+  ) async {
+    if (!mounted) return;
+
+    final bool? goToSubscription = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          strings['subscription_required_title'] ?? 'Activate Pro Subscription',
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        content: Text(
+          strings['subscription_required_message'] ??
+              'Your worker account is ready. To use all professional tools like analytics, invoices, and advanced business features, please activate a Pro subscription.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(strings['later'] ?? 'Later'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF1976D2),
+              foregroundColor: Colors.white,
+            ),
+            child: Text(strings['go_to_subscription'] ?? 'Go to Subscription'),
+          ),
+        ],
+      ),
+    );
+
+    if (goToSubscription == true && mounted) {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => SubscriptionPage(email: _email)),
+      );
+      await _fetchUserData();
+      if (mounted && _tabController != null && _tabController!.length > 3) {
+        _tabController!.animateTo(3);
       }
     }
   }
@@ -869,6 +912,16 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
                     icon: const Icon(Icons.place_outlined),
                     onPressed: _openLocationManager,
                   ),
+                  if (_isOwnProfile && !_isGuest())
+                    IconButton(
+                      icon: const Icon(Icons.favorite_outline),
+                      onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const LikedProsPage(),
+                        ),
+                      ),
+                    ),
                   IconButton(
                     icon: const Icon(Icons.share_outlined),
                     onPressed: () => _shareProfile(strings),
@@ -1000,7 +1053,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
                                   strings['reviews']!,
                                 ),
                                 _buildStatItem(
-                                  _profileViews.toString(),
+                                  _viewsCount.toString(),
                                   strings['views']!,
                                 ),
                                 if (_userReviews.isNotEmpty)
@@ -1818,13 +1871,94 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
                 ],
               )
             else
-              _buildModernToolCard(
-                Icons.upgrade_rounded,
-                strings['upgrade_worker']!,
-                Colors.purple,
-                _upgradeToWorker,
-              ),
+              _buildUpgradeWorkerPanel(strings),
           ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildUpgradeWorkerPanel(Map<String, String> strings) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFFF3E8FF), Color(0xFFE9D5FF)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: const Color(0xFFD8B4FE)),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF7E22CE).withOpacity(0.12),
+            blurRadius: 16,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.65),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(
+                  Icons.workspace_premium_rounded,
+                  color: Color(0xFF7E22CE),
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  strings['upgrade_worker']!,
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF581C87),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            strings['upgrade_msg']!,
+            style: const TextStyle(
+              fontSize: 13,
+              height: 1.45,
+              color: Color(0xFF6B21A8),
+            ),
+          ),
+          const SizedBox(height: 12),
+          const _UpgradeFeatureLine('Dashboard מקצועי לעסק שלך'),
+          const _UpgradeFeatureLine('קבלת פניות והזדמנויות מלקוחות'),
+          const _UpgradeFeatureLine('גישה לכלי ניהול מתקדמים'),
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: _upgradeToWorker,
+              icon: const Icon(Icons.rocket_launch_rounded),
+              label: Text(strings['upgrade_worker']!),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF7E22CE),
+                foregroundColor: Colors.white,
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -2106,6 +2240,11 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
           'renew_subscription': 'חדש מנוי',
           'subscription_inactive': 'המנוי אינו פעיל',
           'subscription_expires': 'הגישה מסתיימת בתאריך',
+          'subscription_required_title': 'הפעלת מנוי מקצועי',
+          'subscription_required_message':
+              'חשבון בעל המקצוע שלך מוכן. כדי להשתמש בכל הכלים המקצועיים כמו אנליטיקה, חשבוניות וכלי עסק מתקדמים, יש להפעיל מנוי מקצועי.',
+          'go_to_subscription': 'מעבר למנוי',
+          'later': 'אחר כך',
           'unknown': 'לא ידוע',
         };
       case 'ar':
@@ -2147,6 +2286,11 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
           'renew_subscription': 'تجديد الاشتراك',
           'subscription_inactive': 'الاشتراك غير نشط',
           'subscription_expires': 'تنتهي الصلاحية في',
+          'subscription_required_title': 'تفعيل الاشتراك المهني',
+          'subscription_required_message':
+              'حساب العامل الخاص بك أصبح جاهزًا. لاستخدام جميع الأدوات المهنية مثل التحليلات والفواتير وميزات الأعمال المتقدمة، يرجى تفعيل اشتراك مهني.',
+          'go_to_subscription': 'الانتقال إلى الاشتراك',
+          'later': 'لاحقًا',
           'unknown': 'غير معروف',
         };
       default:
@@ -2188,6 +2332,11 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
           'renew_subscription': 'Renew Subscription',
           'subscription_inactive': 'Subscription is inactive',
           'subscription_expires': 'Access expires on',
+          'subscription_required_title': 'Activate Pro Subscription',
+          'subscription_required_message':
+              'Your worker account is ready. To use all professional tools like analytics, invoices, and advanced business features, please activate a Pro subscription.',
+          'go_to_subscription': 'Go to Subscription',
+          'later': 'Later',
           'unknown': 'Unknown',
         };
     }
@@ -2216,5 +2365,38 @@ class _SliverAppBarDelegate extends SliverPersistentHeaderDelegate {
   @override
   bool shouldRebuild(_SliverAppBarDelegate oldDelegate) {
     return false;
+  }
+}
+
+class _UpgradeFeatureLine extends StatelessWidget {
+  final String text;
+
+  const _UpgradeFeatureLine(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.check_circle_rounded,
+            size: 16,
+            color: Color(0xFF7E22CE),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(
+                fontSize: 12.5,
+                color: Color(0xFF6B21A8),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
