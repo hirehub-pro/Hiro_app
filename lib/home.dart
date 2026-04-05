@@ -7,6 +7,7 @@ import 'package:untitled1/ptofile.dart';
 import 'package:untitled1/pages/admin_profile.dart';
 import 'package:untitled1/services/language_provider.dart';
 import 'package:untitled1/search.dart';
+import 'package:untitled1/pages/my_requests_page.dart';
 import 'package:untitled1/pages/notifications.dart';
 import 'package:untitled1/pages/location_manager_page.dart';
 import 'package:untitled1/widgets/skeleton.dart';
@@ -420,6 +421,7 @@ class _HomePageState extends State<HomePage> {
           'new_team': 'חדש בצוות הירו',
           'view_all': 'ראה עוד',
           'broadcast_title': 'הודעת מערכת',
+          'my_requests': 'הבקשות שלי',
           'new_tag': 'חדש',
           'no_reviews': 'אין ביקורות',
         };
@@ -435,6 +437,7 @@ class _HomePageState extends State<HomePage> {
           'new_team': 'جديد في فريق هايرو',
           'view_all': 'عرض الكل',
           'broadcast_title': 'بلاغ النظام',
+          'my_requests': 'طلباتي',
           'new_tag': 'جديد',
           'no_reviews': 'لا توجد تقييمات',
         };
@@ -450,6 +453,7 @@ class _HomePageState extends State<HomePage> {
           'new_team': 'New to hiro Team',
           'view_all': 'View all',
           'broadcast_title': 'System Broadcast',
+          'my_requests': 'My Requests',
           'new_tag': 'NEW',
           'no_reviews': 'No reviews',
         };
@@ -610,6 +614,16 @@ class _HomePageState extends State<HomePage> {
         IconButton(
           icon: const Icon(Icons.place_outlined, color: Colors.white),
           onPressed: _openLocationManager,
+        ),
+        IconButton(
+          tooltip: strings['my_requests'],
+          icon: const Icon(Icons.list_alt_rounded, color: Colors.white),
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const MyRequestsPage()),
+            );
+          },
         ),
         Padding(
           padding: const EdgeInsets.only(right: 12, left: 12),

@@ -192,7 +192,8 @@ class NotificationsPage extends StatelessWidget {
     Map<String, dynamic> data,
     Map<String, String> strings,
   ) {
-    final bool isWorkRequest = data['type'] == 'work_request';
+    final bool isActionableRequest =
+        data['type'] == 'work_request' || data['type'] == 'quote_request';
     final bool isBroadcast = data['isBroadcast'] == true;
     final String status = data['status'] ?? 'none';
 
@@ -203,7 +204,7 @@ class NotificationsPage extends StatelessWidget {
       color: isBroadcast ? Colors.blue.shade50 : Colors.white,
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        onTap: isWorkRequest && status == 'pending'
+        onTap: isActionableRequest && status == 'pending'
             ? () => Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -225,7 +226,7 @@ class NotificationsPage extends StatelessWidget {
                 child: Icon(
                   isBroadcast
                       ? Icons.campaign
-                      : (isWorkRequest
+                      : (isActionableRequest
                             ? Icons.calendar_today
                             : Icons.notifications_active),
                   color: Colors.white,
@@ -251,11 +252,11 @@ class NotificationsPage extends StatelessWidget {
                   ],
                 ],
               ),
-              trailing: isWorkRequest && status == 'pending'
+              trailing: isActionableRequest && status == 'pending'
                   ? const Icon(Icons.chevron_right, color: Colors.grey)
                   : null,
             ),
-            if (isWorkRequest && status != 'pending')
+            if (isActionableRequest && status != 'pending')
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                 child: Row(

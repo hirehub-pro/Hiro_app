@@ -1,11 +1,15 @@
 import 'dart:io';
-import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
+import 'package:untitled1/map/location_picker.dart';
+import 'package:untitled1/pages/my_requests_page.dart';
 import 'package:untitled1/services/language_provider.dart';
 
 class SendRequestPage extends StatefulWidget {
@@ -13,6 +17,7 @@ class SendRequestPage extends StatefulWidget {
   final String workerName;
   final DateTime selectedDay;
   final bool isExtraHours;
+  final bool isQuoteRequest;
   final String? initialFrom;
   final String? initialTo;
 
@@ -22,6 +27,7 @@ class SendRequestPage extends StatefulWidget {
     required this.workerName,
     required this.selectedDay,
     this.isExtraHours = false,
+    this.isQuoteRequest = false,
     this.initialFrom,
     this.initialTo,
   });
@@ -35,10 +41,12 @@ class _SendRequestPageState extends State<SendRequestPage> {
   final _descriptionController = TextEditingController();
   final List<File> _images = [];
   final ImagePicker _picker = ImagePicker();
-  
+
   TimeOfDay? _fromTime;
   TimeOfDay? _toTime;
   Position? _currentPosition;
+  LatLng? _selectedLocation;
+  String? _locationSelectionMode;
   bool _isLoading = false;
   bool _isLocating = false;
 
@@ -48,34 +56,48 @@ class _SendRequestPageState extends State<SendRequestPage> {
     if (widget.isExtraHours) {
       if (widget.initialFrom != null) {
         final parts = widget.initialFrom!.split(':');
-        _fromTime = TimeOfDay(hour: int.parse(parts[0]), minute: int.parse(parts[1]));
+        _fromTime = TimeOfDay(
+          hour: int.parse(parts[0]),
+          minute: int.parse(parts[1]),
+        );
       } else {
         _fromTime = const TimeOfDay(hour: 8, minute: 0);
       }
-      
+
       if (widget.initialTo != null) {
         final parts = widget.initialTo!.split(':');
-        _toTime = TimeOfDay(hour: int.parse(parts[0]), minute: int.parse(parts[1]));
+        _toTime = TimeOfDay(
+          hour: int.parse(parts[0]),
+          minute: int.parse(parts[1]),
+        );
       } else {
         _toTime = const TimeOfDay(hour: 16, minute: 0);
       }
     } else {
-       _fromTime = const TimeOfDay(hour: 8, minute: 0);
-       _toTime = const TimeOfDay(hour: 16, minute: 0);
+      _fromTime = const TimeOfDay(hour: 8, minute: 0);
+      _toTime = const TimeOfDay(hour: 16, minute: 0);
     }
-    _fetchLocation();
+    if (!widget.isQuoteRequest) {
+      _fetchLocation();
+    }
+  }
+
+  @override
+  void dispose() {
+    _descriptionController.dispose();
+    super.dispose();
   }
 
   Future<void> _fetchLocation() async {
     setState(() => _isLocating = true);
     try {
-      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
         setState(() => _isLocating = false);
         return;
       }
 
-      LocationPermission permission = await Geolocator.checkPermission();
+      var permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
         if (permission == LocationPermission.denied) {
@@ -83,7 +105,7 @@ class _SendRequestPageState extends State<SendRequestPage> {
           return;
         }
       }
-      
+
       if (permission == LocationPermission.deniedForever) {
         setState(() => _isLocating = false);
         return;
@@ -92,10 +114,12 @@ class _SendRequestPageState extends State<SendRequestPage> {
       final pos = await Geolocator.getCurrentPosition();
       setState(() {
         _currentPosition = pos;
+        _selectedLocation = LatLng(pos.latitude, pos.longitude);
+        _locationSelectionMode = 'current';
         _isLocating = false;
       });
     } catch (e) {
-      debugPrint("Error fetching location: $e");
+      debugPrint('Error fetching location: $e');
       setState(() => _isLocating = false);
     }
   }
@@ -109,145 +133,329 @@ class _SendRequestPageState extends State<SendRequestPage> {
     }
   }
 
+  Future<void> _pickLocationFromMap() async {
+    final picked = await Navigator.push<LatLng>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => LocationPicker(initialCenter: _selectedLocation),
+      ),
+    );
+
+    if (picked == null || !mounted) return;
+
+    setState(() {
+      _selectedLocation = picked;
+      _locationSelectionMode = 'map';
+    });
+  }
+
   Map<String, String> _getLocalizedStrings(BuildContext context) {
-    final locale = Provider.of<LanguageProvider>(context, listen: false).locale.languageCode;
+    final locale =
+        Provider.of<LanguageProvider>(context, listen: false)
+            .locale
+            .languageCode;
     switch (locale) {
       case 'he':
         return {
           'title': 'שליחת בקשת עבודה',
+          'subtitle':
+              'מלא כמה פרטים כדי שהעובד יוכל להבין את העבודה ולהגיב מהר יותר.',
           'worker': 'בעל מקצוע:',
           'date': 'תאריך:',
+          'request_type': 'סוג בקשה',
+          'my_requests': 'הבקשות שלי',
+          'extra_hours': 'שעות נוספות',
+          'regular_request': 'בקשת עבודה רגילה',
+          'quote_request': 'בקשה לתן הצעת מחיר',
           'desc_label': 'תיאור העבודה',
           'desc_hint': 'תאר את העבודה שאתה צריך...',
+          'desc_helper':
+              'כדאי לציין מה צריך לבצע, מיקום, גודל עבודה ודגשים חשובים.',
+          'desc_quick_help': 'עזרה מהירה לכתיבת תיאור',
+          'desc_quick_help_subtitle':
+              'בחר התחלה מהירה כדי למלא תיאור ברור ומדויק יותר.',
+          'desc_template_short': 'ניקיון / תיקון קטן',
+          'desc_template_medium': 'עבודה בינונית',
+          'desc_template_quote': 'בקשת הצעת מחיר',
+          'desc_template_short_text':
+              'אני צריך עזרה ב:\n- מה בדיוק צריך לבצע:\n- כתובת / אזור:\n- מתי נוח להגיע:\n- פרטים חשובים נוספים:',
+          'desc_template_medium_text':
+              'פירוט העבודה:\n- סוג העבודה:\n- גודל / כמות:\n- האם יש חומרים קיימים במקום:\n- מיקום מדויק:\n- דחיפות או טווח זמנים:',
+          'desc_template_quote_text':
+              'אשמח לקבל הצעת מחיר עבור:\n- מה צריך לבצע:\n- גודל העבודה / כמות:\n- כתובת או אזור:\n- האם יש תמונות / פרטים חשובים:\n- מתי תרצו לחזור אליי:',
           'images': 'תמונות (אופציונלי)',
+          'images_helper': 'הוסף תמונות כדי להסביר טוב יותר את העבודה.',
+          'add_images': 'הוסף תמונות',
+          'photos_count': 'תמונות',
           'location': 'מיקום GPS',
           'loc_found': 'המיקום נמצא',
           'loc_not_found': 'מחפש מיקום...',
+            'loc_current_selected': 'נבחר המיקום הנוכחי שלך',
+            'loc_map_selected': 'נבחר מיקום מהמפה',
+          'location_helper':
+              'המיקום יתווסף לבקשה כדי לעזור לעובד להבין היכן העבודה.',
+            'use_current_location': 'השתמש במיקום נוכחי',
+            'choose_from_map': 'בחר מהמפה',
           'from': 'מ-',
           'to': 'עד',
+          'time_window': 'שעות עבודה',
+          'time_window_helper': 'בחר את טווח השעות המבוקש לעבודה.',
           'send': 'שלח בקשה',
+          'send_cta': 'שלח עכשיו',
           'req': 'שדה חובה',
           'sending': 'שולח...',
           'success': 'הבקשה נשלחה בהצלחה',
           'error': 'שליחת הבקשה נכשלה',
-          'not_pro_warning': 'זהו עובד שאינו בסטטוס PRO. ייתכן שזמן התגובה יהיה איטי יותר.',
+          'invalid_time_range': 'שעת הסיום חייבת להיות אחרי שעת ההתחלה.',
+          'refresh_location': 'רענן מיקום',
+          'ready_to_send':
+              'הבקשה תישלח בצירוף תיאור, שעות, תמונות ומיקום אם זמינים.',
           'chat_request_msg': 'שלחתי לך בקשת עבודה לתאריך: ',
           'error_not_found': 'שגיאה: משתמש לא נמצא',
         };
       case 'ar':
         return {
           'title': 'إرسال طلب عمل',
+          'subtitle':
+              'أضف بعض التفاصيل حتى يفهم العامل الطلب ويرد بشكل أسرع.',
           'worker': 'المحترف:',
           'date': 'التاريخ:',
+          'request_type': 'نوع الطلب',
+          'my_requests': 'طلباتي',
+          'extra_hours': 'ساعات إضافية',
+          'regular_request': 'طلب عمل عادي',
+          'quote_request': 'طلب تقديم عرض سعر',
           'desc_label': 'وصف العمل',
           'desc_hint': 'صف العمل الذي تحتاجه...',
+          'desc_helper':
+              'اذكر المطلوب والموقع وحجم العمل وأي تفاصيل مهمة.',
+          'desc_quick_help': 'مساعدة سريعة لكتابة الوصف',
+          'desc_quick_help_subtitle':
+              'اختر بداية سريعة لكتابة وصف أوضح وأكثر دقة.',
+          'desc_template_short': 'تنظيف / إصلاح بسيط',
+          'desc_template_medium': 'عمل متوسط',
+          'desc_template_quote': 'طلب عرض سعر',
+          'desc_template_short_text':
+              'أحتاج مساعدة في:\n- ما المطلوب بالضبط:\n- العنوان / المنطقة:\n- الوقت المناسب للوصول:\n- تفاصيل إضافية مهمة:',
+          'desc_template_medium_text':
+              'تفاصيل العمل:\n- نوع العمل:\n- الحجم / الكمية:\n- هل المواد موجودة في المكان:\n- الموقع الدقيق:\n- درجة الاستعجال أو الوقت المطلوب:',
+          'desc_template_quote_text':
+              'أرغب في الحصول على عرض سعر من أجل:\n- ما الذي يجب تنفيذه:\n- حجم العمل / الكمية:\n- العنوان أو المنطقة:\n- هل توجد صور أو تفاصيل مهمة:\n- متى يمكنكم التواصل معي:',
           'images': 'الصور (اختياري)',
+          'images_helper': 'أضف صورًا لتوضيح العمل بشكل أفضل.',
+          'add_images': 'إضافة صور',
+          'photos_count': 'صور',
           'location': 'موقع GPS',
           'loc_found': 'تم العثور على الموقع',
           'loc_not_found': 'جاري البحث عن الموقع...',
+            'loc_current_selected': 'تم اختيار موقعك الحالي',
+            'loc_map_selected': 'تم اختيار موقع من الخريطة',
+          'location_helper':
+              'سيتم إرفاق الموقع بالطلب لمساعدة العامل على فهم مكان العمل.',
+            'use_current_location': 'استخدم موقعي الحالي',
+            'choose_from_map': 'اختر من الخريطة',
           'from': 'من',
           'to': 'إلى',
+          'time_window': 'ساعات العمل',
+          'time_window_helper': 'اختر الفترة الزمنية المطلوبة للعمل.',
           'send': 'إرسال الطلب',
+          'send_cta': 'إرسال الآن',
           'req': 'مطلوب',
           'sending': 'جاري الإرسال...',
           'success': 'تم إرسال الطلب بنجاح',
           'error': 'فشل إرسال الطلب',
-          'not_pro_warning': 'هذا العامل ليس في حالة PRO. قد يكون وقت الاستجابة أبطأ.',
-          'chat_request_msg': 'لقד أرسلت لك طلب عمل بتاريخ: ',
+          'invalid_time_range': 'يجب أن يكون وقت الانتهاء بعد وقت البدء.',
+          'refresh_location': 'تحديث الموقع',
+          'ready_to_send':
+              'سيتم إرسال الطلب مع الوصف والساعات والصور والموقع إذا كان متاحًا.',
+          'chat_request_msg': 'لقد أرسلت لك طلب عمل بتاريخ: ',
           'error_not_found': 'خطأ: المستخدم غير موجود',
         };
       default:
         return {
           'title': 'Send Work Request',
+          'subtitle':
+              'Add a few details so the worker can understand the job and reply faster.',
           'worker': 'Professional:',
           'date': 'Date:',
+          'request_type': 'Request Type',
+          'my_requests': 'My Requests',
+          'extra_hours': 'Extra Hours',
+          'regular_request': 'Standard Work Request',
+          'quote_request': 'Request a Quote',
           'desc_label': 'Job Description',
           'desc_hint': 'Describe the job you need...',
+          'desc_helper':
+              'Include what needs to be done, the location, scope, and anything important.',
+          'desc_quick_help': 'Quick description help',
+          'desc_quick_help_subtitle':
+              'Choose a quick start to write a clearer, more useful work description.',
+          'desc_template_short': 'Small fix / cleaning',
+          'desc_template_medium': 'Medium job',
+          'desc_template_quote': 'Quote request',
+          'desc_template_short_text':
+              'I need help with:\n- What exactly needs to be done:\n- Address / area:\n- Best time to arrive:\n- Extra details to know:',
+          'desc_template_medium_text':
+              'Job details:\n- Type of work:\n- Size / quantity:\n- Are materials already on site:\n- Exact location:\n- Urgency or preferred time window:',
+          'desc_template_quote_text':
+              'I would like a quote for:\n- What needs to be done:\n- Job size / quantity:\n- Address or area:\n- Photos or important details:\n- Best way / time to get back to me:',
           'images': 'Images (Optional)',
+          'images_helper': 'Add photos to make the request easier to understand.',
+          'add_images': 'Add Images',
+          'photos_count': 'Photos',
           'location': 'GPS Location',
           'loc_found': 'Location found',
           'loc_not_found': 'Locating...',
+            'loc_current_selected': 'Using your current location',
+            'loc_map_selected': 'Using a map-selected location',
+          'location_helper':
+              'Your location will be attached to help the worker understand where the job is.',
+            'use_current_location': 'Use current location',
+            'choose_from_map': 'Choose from map',
           'from': 'From',
           'to': 'To',
+          'time_window': 'Time Window',
+          'time_window_helper': 'Choose the requested working hours.',
           'send': 'Send Request',
+          'send_cta': 'Send Now',
           'req': 'Required',
           'sending': 'Sending...',
           'success': 'Request sent successfully',
           'error': 'Failed to send request',
-          'not_pro_warning': 'This worker is not in PRO status. Response time might be slower.',
+          'invalid_time_range': 'End time must be after start time.',
+          'refresh_location': 'Refresh location',
+          'ready_to_send':
+              'The request will include description, hours, images, and location when available.',
           'chat_request_msg': 'I sent you a work request for: ',
           'error_not_found': 'Error: User not found',
         };
     }
   }
 
-  /// Sends a push notification via FCM directly from the app (Workaround for Cloud Functions)
-  Future<void> _sendFCMNotification(String targetToken, String title, String body) async {
-    debugPrint("FCM trigger would happen here for token: $targetToken");
+  Future<void> _sendFCMNotification(
+    String targetToken,
+    String title,
+    String body,
+  ) async {
+    debugPrint('FCM trigger would happen here for token: $targetToken');
   }
 
   String _getChatRoomId(String user1, String user2) {
-    List<String> ids = [user1, user2];
-    ids.sort();
+    final ids = [user1, user2]..sort();
     return ids.join('_');
+  }
+
+  bool _hasValidTimeRange() {
+    if (_fromTime == null || _toTime == null) return true;
+    final fromMinutes = (_fromTime!.hour * 60) + _fromTime!.minute;
+    final toMinutes = (_toTime!.hour * 60) + _toTime!.minute;
+    return toMinutes > fromMinutes;
+  }
+
+  String _formatSelectedDate() {
+    final day = widget.selectedDay.day.toString().padLeft(2, '0');
+    final month = widget.selectedDay.month.toString().padLeft(2, '0');
+    final year = widget.selectedDay.year.toString();
+    return '$day/$month/$year';
+  }
+
+  void _applyDescriptionTemplate(String template) {
+    setState(() {
+      _descriptionController.text = template;
+      _descriptionController.selection = TextSelection.fromPosition(
+        TextPosition(offset: _descriptionController.text.length),
+      );
+    });
   }
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
-    
+
+    final strings = _getLocalizedStrings(context);
+    if (!widget.isQuoteRequest && !_hasValidTimeRange()) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(strings['invalid_time_range']!)),
+      );
+      return;
+    }
+
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
     setState(() => _isLoading = true);
-    final strings = _getLocalizedStrings(context);
-    final dStr = "${widget.selectedDay.year}-${widget.selectedDay.month}-${widget.selectedDay.day}";
+    final dStr =
+        '${widget.selectedDay.year}-${widget.selectedDay.month}-${widget.selectedDay.day}';
 
     try {
-      // 1. Upload Images
-      List<String> imageUrls = [];
+      final imageUrls = <String>[];
       for (var i = 0; i < _images.length; i++) {
-        final ref = FirebaseStorage.instance.ref().child('request_images/${user.uid}_${DateTime.now().millisecondsSinceEpoch}_$i.jpg');
+        final ref = FirebaseStorage.instance.ref().child(
+          'request_images/${user.uid}_${DateTime.now().millisecondsSinceEpoch}_$i.jpg',
+        );
         await ref.putFile(_images[i]);
         imageUrls.add(await ref.getDownloadURL());
       }
 
-      // 2. Get User Info (Client) from unified 'users' collection
-      final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+      final userDoc =
+          await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
       if (!userDoc.exists) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(strings['error_not_found']!)));
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(strings['error_not_found']!)),
+          );
+        }
         return;
       }
       final userData = userDoc.data();
       final userName = userData?['name'] ?? 'Client';
       final userTown = userData?['town'];
 
-      // 3. Get Worker's Info from unified 'users' collection
-      final workerDoc = await FirebaseFirestore.instance.collection('users').doc(widget.workerId).get();
+      final workerDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.workerId)
+          .get();
       if (!workerDoc.exists) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(strings['error_not_found']!)));
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(strings['error_not_found']!)),
+          );
+        }
         return;
       }
       final workerData = workerDoc.data();
-      final String? workerFcmToken = workerData?['fcmToken'];
+      final workerFcmToken = workerData?['fcmToken'] as String?;
 
-      final fStr = _fromTime != null ? "${_fromTime!.hour.toString().padLeft(2, '0')}:${_fromTime!.minute.toString().padLeft(2, '0')}" : null;
-      final tStr = _toTime != null ? "${_toTime!.hour.toString().padLeft(2, '0')}:${_toTime!.minute.toString().padLeft(2, '0')}" : null;
+        final fStr = !widget.isQuoteRequest && _fromTime != null
+          ? '${_fromTime!.hour.toString().padLeft(2, '0')}:${_fromTime!.minute.toString().padLeft(2, '0')}'
+          : null;
+        final tStr = !widget.isQuoteRequest && _toTime != null
+          ? '${_toTime!.hour.toString().padLeft(2, '0')}:${_toTime!.minute.toString().padLeft(2, '0')}'
+          : null;
 
-      final String notifTitle = widget.isExtraHours ? 'Extra Hours Request' : 'Work Request';
-      final String notifBody = !widget.isExtraHours 
-            ? "$userName ($userTown) requested you to work on $dStr."
-            : "$userName ($userTown) requested you to work on $dStr from $fStr to $tStr.";
+        final notifTitle = widget.isQuoteRequest
+          ? 'Quote Request'
+          : widget.isExtraHours
+            ? 'Extra Hours Request'
+            : 'Work Request';
+        final notifBody = widget.isQuoteRequest
+          ? '$userName ($userTown) requested a quote for $dStr.'
+          : !widget.isExtraHours
+            ? '$userName ($userTown) requested you to work on $dStr.'
+            : '$userName ($userTown) requested you to work on $dStr from $fStr to $tStr.';
 
-      // 4. Create Notification in Firestore (for the in-app list under 'users' collection)
-      await FirebaseFirestore.instance.collection('users').doc(widget.workerId).collection('notifications').add({
-        'type': 'work_request',
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.workerId)
+          .collection('notifications')
+          .add({
+        'type': widget.isQuoteRequest ? 'quote_request' : 'work_request',
         'fromId': user.uid,
         'fromName': userName,
         'fromLocation': userTown,
         'jobDescription': _descriptionController.text.trim(),
         'images': imageUrls,
-        'latitude': _currentPosition?.latitude,
-        'longitude': _currentPosition?.longitude,
+        'latitude': widget.isQuoteRequest ? null : _selectedLocation?.latitude,
+        'longitude': widget.isQuoteRequest ? null : _selectedLocation?.longitude,
         'date': dStr,
         'requestedFrom': fStr,
         'requestedTo': tStr,
@@ -257,11 +465,15 @@ class _SendRequestPageState extends State<SendRequestPage> {
         'body': notifBody,
       });
 
-      // 5. Add message to chat room
       final chatRoomId = _getChatRoomId(user.uid, widget.workerId);
-      final chatMsg = "${strings['chat_request_msg']}$dStr\n${_descriptionController.text.trim()}";
-      
-      await FirebaseFirestore.instance.collection('chat_rooms').doc(chatRoomId).collection('messages').add({
+      final chatMsg =
+          '${strings['chat_request_msg']}$dStr\n${_descriptionController.text.trim()}';
+
+      await FirebaseFirestore.instance
+          .collection('chat_rooms')
+          .doc(chatRoomId)
+          .collection('messages')
+          .add({
         'senderId': user.uid,
         'receiverId': widget.workerId,
         'message': chatMsg,
@@ -269,29 +481,35 @@ class _SendRequestPageState extends State<SendRequestPage> {
         'isSystem': true,
       });
 
-      await FirebaseFirestore.instance.collection('chat_rooms').doc(chatRoomId).set({
-        'lastMessage': chatMsg,
-        'lastTimestamp': FieldValue.serverTimestamp(),
-        'users': [user.uid, widget.workerId],
-        'userNames': {
-          user.uid: userName,
-          widget.workerId: widget.workerName,
-        }
-      }, SetOptions(merge: true));
+      await FirebaseFirestore.instance.collection('chat_rooms').doc(chatRoomId).set(
+        {
+          'lastMessage': chatMsg,
+          'lastTimestamp': FieldValue.serverTimestamp(),
+          'users': [user.uid, widget.workerId],
+          'userNames': {
+            user.uid: userName,
+            widget.workerId: widget.workerName,
+          },
+        },
+        SetOptions(merge: true),
+      );
 
-      // 6. Send FCM Push Notification
       if (workerFcmToken != null) {
         await _sendFCMNotification(workerFcmToken, notifTitle, notifBody);
       }
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(strings['success']!)));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(strings['success']!)),
+        );
         Navigator.pop(context, true);
       }
     } catch (e) {
-      debugPrint("Submit error: $e");
+      debugPrint('Submit error: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(strings['error']!)));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(strings['error']!)),
+        );
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -303,129 +521,220 @@ class _SendRequestPageState extends State<SendRequestPage> {
     final strings = _getLocalizedStrings(context);
     final locale = Provider.of<LanguageProvider>(context).locale.languageCode;
     final isRtl = locale == 'he' || locale == 'ar';
+    final theme = Theme.of(context);
 
     return Directionality(
       textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
       child: Scaffold(
+        backgroundColor: const Color(0xFFF4FAFA),
         appBar: AppBar(
           title: Text(strings['title']!),
-          backgroundColor: const Color(0xFF1976D2),
-          foregroundColor: Colors.white,
-        ),
-        body: FutureBuilder<DocumentSnapshot>(
-          future: FirebaseFirestore.instance.collection('users').doc(widget.workerId).get(),
-          builder: (context, snapshot) {
-            bool isPro = true;
-            if (snapshot.hasData) {
-              isPro = (snapshot.data!.data() as Map<String, dynamic>?)?['isPro'] ?? false;
-            }
-
-            return _isLoading 
-              ? Center(child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const CircularProgressIndicator(),
-                    const SizedBox(height: 16),
-                    Text(strings['sending']!),
-                  ],
-                ))
-              : SingleChildScrollView(
-                  padding: const EdgeInsets.all(24),
-                  child: Form(
-                    key: _formKey,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (!isPro) ...[
-                          Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(color: Colors.amber[50], borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.amber[200]!)),
-                            child: Row(
-                              children: [
-                                const Icon(Icons.warning_amber_rounded, color: Colors.amber),
-                                const SizedBox(width: 12),
-                                Expanded(child: Text(strings['not_pro_warning']!, style: const TextStyle(fontSize: 13, color: Colors.brown))),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 24),
-                        ],
-                        _buildInfoSection(strings),
-                        const SizedBox(height: 24),
-                        
-                        Text(strings['desc_label']!, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                        const SizedBox(height: 8),
-                        TextFormField(
-                          controller: _descriptionController,
-                          maxLines: 5,
-                          decoration: InputDecoration(
-                            hintText: strings['desc_hint'],
-                            filled: true,
-                            fillColor: Colors.grey[50],
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                          ),
-                          validator: (v) => v!.isEmpty ? strings['req'] : null,
-                        ),
-                        const SizedBox(height: 24),
-
-                        _buildTimeSection(strings),
-                        const SizedBox(height: 24),
-
-                        Text(strings['images']!, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                        const SizedBox(height: 12),
-                        _buildImagePicker(),
-                        const SizedBox(height: 24),
-
-                        _buildLocationCard(strings),
-                        const SizedBox(height: 40),
-
-                        SizedBox(
-                          width: double.infinity,
-                          height: 55,
-                          child: ElevatedButton(
-                            onPressed: _submit,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF1976D2),
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                              elevation: 0,
-                            ),
-                            child: Text(strings['send']!, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                          ),
-                        ),
-                      ],
-                    ),
+          actions: [
+            IconButton(
+              tooltip: strings['my_requests'],
+              icon: const Icon(Icons.list_alt_rounded),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const MyRequestsPage(),
                   ),
                 );
-          },
+              },
+            ),
+          ],
+          elevation: 0,
+          centerTitle: true,
+          backgroundColor: Colors.transparent,
+          surfaceTintColor: Colors.transparent,
+          foregroundColor: const Color(0xFF103A44),
+        ),
+        body: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 220),
+          child: _isLoading
+              ? Center(
+                  key: const ValueKey('loading'),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const SizedBox(
+                        width: 56,
+                        height: 56,
+                        child: CircularProgressIndicator(strokeWidth: 3),
+                      ),
+                      const SizedBox(height: 18),
+                      Text(
+                        strings['sending']!,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFF103A44),
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              : SafeArea(
+                  key: const ValueKey('form'),
+                  top: false,
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
+                    child: Form(
+                      key: _formKey,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildHeroCard(strings, theme),
+                          const SizedBox(height: 16),
+                          _buildSectionCard(
+                            child: _buildInfoSection(strings),
+                          ),
+                          const SizedBox(height: 16),
+                          _buildSectionCard(
+                            child: _buildDescriptionSection(strings),
+                          ),
+                          if (!widget.isQuoteRequest) ...[
+                            const SizedBox(height: 16),
+                            _buildSectionCard(
+                              child: _buildTimeSection(strings),
+                            ),
+                          ],
+                          const SizedBox(height: 16),
+                          _buildSectionCard(
+                            child: _buildImageSection(strings),
+                          ),
+                          if (!widget.isQuoteRequest) ...[
+                            const SizedBox(height: 16),
+                            _buildSectionCard(
+                              child: _buildLocationCard(strings),
+                            ),
+                          ],
+                          const SizedBox(height: 18),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                            child: Text(
+                              widget.isQuoteRequest
+                                  ? strings['desc_helper']!
+                                  : strings['ready_to_send']!,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: const Color(0xFF5F7D83),
+                                height: 1.4,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 18),
+                          SizedBox(
+                            width: double.infinity,
+                            height: 58,
+                            child: ElevatedButton.icon(
+                              onPressed: _submit,
+                              icon: const Icon(Icons.send_rounded),
+                              label: Text(
+                                strings['send_cta']!,
+                                style: const TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF0A7E8C),
+                                foregroundColor: Colors.white,
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(18),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
         ),
       ),
     );
   }
 
-  Widget _buildInfoSection(Map<String, String> strings) {
+  Widget _buildHeroCard(Map<String, String> strings, ThemeData theme) {
     return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(color: Colors.blue[50], borderRadius: BorderRadius.circular(12)),
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        gradient: const LinearGradient(
+          colors: [Color(0xFF0A7E8C), Color(0xFF17A398)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x220A7E8C),
+            blurRadius: 24,
+            offset: Offset(0, 10),
+          ),
+        ],
+      ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const Icon(Icons.person, color: Color(0xFF1976D2)),
-              const SizedBox(width: 12),
-              Text(strings['worker']!, style: const TextStyle(color: Colors.grey)),
-              const SizedBox(width: 8),
-              Text(widget.workerName, style: const TextStyle(fontWeight: FontWeight.bold)),
+              Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.18),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: const Icon(
+                  Icons.assignment_turned_in_rounded,
+                  color: Colors.white,
+                  size: 28,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      strings['title']!,
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      strings['subtitle']!,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: Colors.white.withOpacity(0.9),
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ],
           ),
-          const SizedBox(height: 8),
-          Row(
+          const SizedBox(height: 18),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
             children: [
-              const Icon(Icons.calendar_month, color: Color(0xFF1976D2)),
-              const SizedBox(width: 12),
-              Text(strings['date']!, style: const TextStyle(color: Colors.grey)),
-              const SizedBox(width: 8),
-              Text("${widget.selectedDay.day}/${widget.selectedDay.month}/${widget.selectedDay.year}", style: const TextStyle(fontWeight: FontWeight.bold)),
+              _buildHeroChip(Icons.person_outline_rounded, widget.workerName),
+              _buildHeroChip(
+                Icons.calendar_today_rounded,
+                _formatSelectedDate(),
+              ),
+              _buildHeroChip(
+                Icons.schedule_send_rounded,
+                widget.isQuoteRequest
+                  ? strings['quote_request']!
+                  : widget.isExtraHours
+                    ? strings['extra_hours']!
+                    : strings['regular_request']!,
+              ),
             ],
           ),
         ],
@@ -433,47 +742,92 @@ class _SendRequestPageState extends State<SendRequestPage> {
     );
   }
 
-  Widget _buildTimeSection(Map<String, String> strings) {
-    return Row(
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(strings['from']!, style: const TextStyle(fontWeight: FontWeight.bold)),
-              const SizedBox(height: 8),
-              InkWell(
-                onTap: () async {
-                  final picked = await showTimePicker(context: context, initialTime: _fromTime!);
-                  if (picked != null) setState(() => _fromTime = picked);
-                },
-                child: Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(border: Border.all(color: Colors.grey[300]!), borderRadius: BorderRadius.circular(8)),
-                  child: Row(children: [const Icon(Icons.access_time, size: 18), const SizedBox(width: 8), Text(_fromTime!.format(context))]),
-                ),
-              ),
-            ],
+  Widget _buildHeroChip(IconData icon, String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.16),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white.withOpacity(0.18)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: Colors.white),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w600,
+            ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSectionCard({required Widget child}) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: const Color(0xFFE1ECEE)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0F103A44),
+            blurRadius: 18,
+            offset: Offset(0, 8),
+          ),
+        ],
+      ),
+      child: child,
+    );
+  }
+
+  Widget _buildSectionHeader({
+    required IconData icon,
+    required String title,
+    String? subtitle,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: const Color(0xFFE6F6F4),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Icon(icon, color: const Color(0xFF0A7E8C)),
         ),
-        const SizedBox(width: 16),
+        const SizedBox(width: 12),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(strings['to']!, style: const TextStyle(fontWeight: FontWeight.bold)),
-              const SizedBox(height: 8),
-              InkWell(
-                onTap: () async {
-                  final picked = await showTimePicker(context: context, initialTime: _toTime!);
-                  if (picked != null) setState(() => _toTime = picked);
-                },
-                child: Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(border: Border.all(color: Colors.grey[300]!), borderRadius: BorderRadius.circular(8)),
-                  child: Row(children: [const Icon(Icons.access_time, size: 18), const SizedBox(width: 8), Text(_toTime!.format(context))]),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF103A44),
                 ),
               ),
+              if (subtitle != null) ...[
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    height: 1.4,
+                    color: Color(0xFF6B8790),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -481,73 +835,479 @@ class _SendRequestPageState extends State<SendRequestPage> {
     );
   }
 
-  Widget _buildImagePicker() {
-    return SizedBox(
-      height: 100,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        itemCount: _images.length + 1,
-        itemBuilder: (context, index) {
-          if (index == _images.length) {
-            return InkWell(
-              onTap: _pickImages,
-              child: Container(
-                width: 100,
-                decoration: BoxDecoration(color: Colors.grey[100], borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.grey[300]!)),
-                child: const Icon(Icons.add_a_photo, color: Colors.grey, size: 32),
-              ),
-            );
-          }
-          return Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: Stack(
+  Widget _buildInfoSection(Map<String, String> strings) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionHeader(
+          icon: Icons.info_outline_rounded,
+          title: strings['request_type']!,
+        ),
+        const SizedBox(height: 14),
+        Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: [
+            _buildInfoTile(
+              icon: Icons.person_rounded,
+              label: strings['worker']!,
+              value: widget.workerName,
+            ),
+            _buildInfoTile(
+              icon: Icons.event_rounded,
+              label: strings['date']!,
+              value: _formatSelectedDate(),
+            ),
+            _buildInfoTile(
+              icon: Icons.bolt_rounded,
+              label: strings['request_type']!,
+              value: widget.isQuoteRequest
+                ? strings['quote_request']!
+                : widget.isExtraHours
+                  ? strings['extra_hours']!
+                  : strings['regular_request']!,
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildInfoTile({
+    required IconData icon,
+    required String label,
+    required String value,
+  }) {
+    return Container(
+      constraints: const BoxConstraints(minWidth: 180),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF7FBFB),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE1ECEE)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: const Color(0xFFE6F6F4),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, size: 18, color: const Color(0xFF0A7E8C)),
+          ),
+          const SizedBox(width: 12),
+          Flexible(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: Image.file(_images[index], width: 100, height: 100, fit: BoxFit.cover),
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Color(0xFF6B8790),
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-                Positioned(
-                  right: 4, top: 4,
-                  child: InkWell(
-                    onTap: () => setState(() => _images.removeAt(index)),
-                    child: Container(
-                      padding: const EdgeInsets.all(2),
-                      decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
-                      child: const Icon(Icons.close, size: 16, color: Colors.white),
-                    ),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: Color(0xFF103A44),
+                    fontWeight: FontWeight.w800,
                   ),
                 ),
               ],
             ),
-          );
-        },
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildLocationCard(Map<String, String> strings) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(border: Border.all(color: Colors.grey[300]!), borderRadius: BorderRadius.circular(12)),
-      child: Row(
-        children: [
-          Icon(Icons.location_on, color: _currentPosition != null ? Colors.green : Colors.orange),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(strings['location']!, style: const TextStyle(fontWeight: FontWeight.bold)),
-                Text(_currentPosition != null ? strings['loc_found']! : strings['loc_not_found']!, style: TextStyle(color: Colors.grey[600], fontSize: 13)),
-              ],
+  Widget _buildDescriptionSection(Map<String, String> strings) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionHeader(
+          icon: Icons.edit_note_rounded,
+          title: strings['desc_label']!,
+          subtitle: strings['desc_helper'],
+        ),
+        const SizedBox(height: 14),
+        TextFormField(
+          controller: _descriptionController,
+          minLines: 5,
+          maxLines: 6,
+          textInputAction: TextInputAction.newline,
+          decoration: InputDecoration(
+            hintText: strings['desc_hint'],
+            filled: true,
+            fillColor: const Color(0xFFF7FBFB),
+            contentPadding: const EdgeInsets.all(16),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(18),
+              borderSide: BorderSide.none,
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(18),
+              borderSide: const BorderSide(color: Color(0xFFE1ECEE)),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(18),
+              borderSide: const BorderSide(color: Color(0xFF0A7E8C), width: 1.3),
             ),
           ),
-          if (_isLocating)
-            const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-          else
-            IconButton(icon: const Icon(Icons.refresh), onPressed: _fetchLocation),
-        ],
+          validator: (value) =>
+              value == null || value.trim().isEmpty ? strings['req'] : null,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTimeSection(Map<String, String> strings) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionHeader(
+          icon: Icons.schedule_rounded,
+          title: strings['time_window']!,
+          subtitle: strings['time_window_helper'],
+        ),
+        const SizedBox(height: 14),
+        Row(
+          children: [
+            Expanded(
+              child: _buildTimePickerTile(
+                label: strings['from']!,
+                value: _fromTime!.format(context),
+                onTap: () async {
+                  final picked = await showTimePicker(
+                    context: context,
+                    initialTime: _fromTime!,
+                  );
+                  if (picked != null) {
+                    setState(() => _fromTime = picked);
+                  }
+                },
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildTimePickerTile(
+                label: strings['to']!,
+                value: _toTime!.format(context),
+                onTap: () async {
+                  final picked = await showTimePicker(
+                    context: context,
+                    initialTime: _toTime!,
+                  );
+                  if (picked != null) {
+                    setState(() => _toTime = picked);
+                  }
+                },
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTimePickerTile({
+    required String label,
+    required String value,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: const Color(0xFFF7FBFB),
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: const Color(0xFFE1ECEE)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: Color(0xFF6B8790),
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  const Icon(
+                    Icons.access_time_rounded,
+                    color: Color(0xFF0A7E8C),
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    value,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      color: Color(0xFF103A44),
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
       ),
+    );
+  }
+
+  Widget _buildImageSection(Map<String, String> strings) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionHeader(
+          icon: Icons.photo_library_outlined,
+          title: strings['images']!,
+          subtitle: strings['images_helper'],
+        ),
+        const SizedBox(height: 14),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                '${strings['photos_count']!}: ${_images.length}',
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF6B8790),
+                ),
+              ),
+            ),
+            TextButton.icon(
+              onPressed: _pickImages,
+              icon: const Icon(Icons.add_a_photo_outlined),
+              label: Text(strings['add_images']!),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        SizedBox(
+          height: 112,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: _images.length + 1,
+            separatorBuilder: (_, __) => const SizedBox(width: 10),
+            itemBuilder: (context, index) {
+              if (index == _images.length) {
+                return Material(
+                  color: const Color(0xFFF7FBFB),
+                  borderRadius: BorderRadius.circular(18),
+                  child: InkWell(
+                    onTap: _pickImages,
+                    borderRadius: BorderRadius.circular(18),
+                    child: Ink(
+                      width: 112,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(color: const Color(0xFFE1ECEE)),
+                      ),
+                      child: const Center(
+                        child: Icon(
+                          Icons.add_photo_alternate_outlined,
+                          color: Color(0xFF0A7E8C),
+                          size: 28,
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              }
+
+              return Stack(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(18),
+                    child: Image.file(
+                      _images[index],
+                      width: 112,
+                      height: 112,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                  Positioned(
+                    top: 6,
+                    right: 6,
+                    child: Material(
+                      color: Colors.black.withOpacity(0.5),
+                      shape: const CircleBorder(),
+                      child: InkWell(
+                        customBorder: const CircleBorder(),
+                        onTap: () => setState(() => _images.removeAt(index)),
+                        child: const Padding(
+                          padding: EdgeInsets.all(5),
+                          child: Icon(
+                            Icons.close,
+                            size: 16,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLocationCard(Map<String, String> strings) {
+    final hasLocation = _selectedLocation != null;
+    final isMapLocation = _locationSelectionMode == 'map';
+    final statusColor = hasLocation
+        ? const Color(0xFF246B45)
+        : const Color(0xFF8D5D13);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionHeader(
+          icon: Icons.location_on_outlined,
+          title: strings['location']!,
+          subtitle: strings['location_helper'],
+        ),
+        const SizedBox(height: 14),
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: hasLocation ? const Color(0xFFEAF8EF) : const Color(0xFFFFF7E8),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: hasLocation
+                  ? const Color(0xFFB7E4C7)
+                  : const Color(0xFFF2D28B),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.8),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Icon(
+                      hasLocation
+                          ? isMapLocation
+                              ? Icons.map_rounded
+                              : Icons.my_location_rounded
+                          : Icons.location_searching_rounded,
+                      color: hasLocation
+                          ? const Color(0xFF2D8F5B)
+                          : const Color(0xFFB7791F),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          hasLocation
+                              ? isMapLocation
+                                  ? strings['loc_map_selected']!
+                                  : strings['loc_current_selected']!
+                              : strings['loc_not_found']!,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w800,
+                            color: statusColor,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          hasLocation
+                              ? '${_selectedLocation!.latitude.toStringAsFixed(4)}, ${_selectedLocation!.longitude.toStringAsFixed(4)}'
+                              : strings['location_helper']!,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: Color(0xFF5F7D83),
+                            height: 1.35,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (_isLocating)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 10),
+                      child: SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(strokeWidth: 2.2),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: _isLocating ? null : _fetchLocation,
+                    icon: const Icon(Icons.my_location_rounded, size: 18),
+                    label: Text(strings['use_current_location']!),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF0A7E8C),
+                      side: const BorderSide(color: Color(0xFFB9D8DC)),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 12,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: _isLocating ? null : _pickLocationFromMap,
+                    icon: const Icon(Icons.map_outlined, size: 18),
+                    label: Text(strings['choose_from_map']!),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF1976D2),
+                      side: const BorderSide(color: Color(0xFFBFD7F8)),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 12,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

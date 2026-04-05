@@ -294,6 +294,7 @@ class _SchedulePageState extends State<SchedulePage> {
           'hidden_msg': 'לוח הזמנים של בעל המקצוע מוסתר',
           'request_work': 'בקש מהמקצוען לעבוד ביום זה',
           'request_hours': 'בקש שעות עבודה נוספות',
+          'request_quote': 'בקש הצעת מחיר',
           'set_vacation': 'קבע חופשה',
           'on_vacation': 'בחופשה',
           'cancel_vacation': 'בטל חופשה',
@@ -331,6 +332,7 @@ class _SchedulePageState extends State<SchedulePage> {
           'hidden_msg': 'Professional schedule is private',
           'request_work': 'Request pro to work this day',
           'request_hours': 'Request extra working hours',
+          'request_quote': 'Request Quote',
           'set_vacation': 'Set Vacation',
           'on_vacation': 'On Vacation',
           'cancel_vacation': 'Cancel Vacation',
@@ -1068,38 +1070,72 @@ class _SchedulePageState extends State<SchedulePage> {
           ),
           if (!isPast && !isVac && !isOff) ...[
             const SizedBox(height: 24),
-            ElevatedButton(
-              onPressed: () {
-                final partial = isWorking ? _partialWorkDays[dateStr] : null;
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => SendRequestPage(
-                      workerId: widget.workerId,
-                      workerName: widget.workerName,
-                      selectedDay: _selectedDay,
-                      isExtraHours: isWorking,
-                      initialFrom: partial?['from'],
-                      initialTo: partial?['to'],
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () {
+                  final partial = isWorking ? _partialWorkDays[dateStr] : null;
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => SendRequestPage(
+                        workerId: widget.workerId,
+                        workerName: widget.workerName,
+                        selectedDay: _selectedDay,
+                        isExtraHours: isWorking,
+                        initialFrom: partial?['from'],
+                        initialTo: partial?['to'],
+                      ),
                     ),
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF1976D2),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 32,
+                    vertical: 12,
                   ),
-                );
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF1976D2),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 32,
-                  vertical: 12,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
                 ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
+                child: Text(
+                  isWorking
+                      ? strings['request_hours']!
+                      : strings['request_work']!,
                 ),
               ),
-              child: Text(
-                isWorking
-                    ? strings['request_hours']!
-                    : strings['request_work']!,
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => SendRequestPage(
+                        workerId: widget.workerId,
+                        workerName: widget.workerName,
+                        selectedDay: _selectedDay,
+                        isQuoteRequest: true,
+                      ),
+                    ),
+                  );
+                },
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF1976D2),
+                  side: const BorderSide(color: Color(0xFF1976D2)),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 32,
+                    vertical: 12,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+                child: Text(strings['request_quote']!),
               ),
             ),
           ],
