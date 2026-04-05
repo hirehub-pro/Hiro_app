@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/services.dart';
 import 'package:untitled1/sign_up.dart';
 
 class SubscriptionPage extends StatefulWidget {
@@ -27,6 +29,9 @@ class SubscriptionPage extends StatefulWidget {
 
 class _SubscriptionPageState extends State<SubscriptionPage> {
   final InAppPurchase _inAppPurchase = InAppPurchase.instance;
+  static const MethodChannel _billingStatusChannel = MethodChannel(
+    'com.hirehub.app/subscription_status',
+  );
   late StreamSubscription<List<PurchaseDetails>> _subscription;
   List<ProductDetails> _products = [];
   bool _isLoading = true;
@@ -115,6 +120,7 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
       onError: (error) => debugPrint("Purchase Stream Error: $error"),
     );
     _initStoreInfo();
+    _syncSubscriptionStateFromGooglePlay();
   }
 
   @override
@@ -185,10 +191,58 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
         }
       } else if (purchaseDetails.status == PurchaseStatus.canceled) {
         if (mounted) setState(() => _isPurchasing = false);
+        _syncSubscriptionStateFromGooglePlay();
       }
       if (purchaseDetails.pendingCompletePurchase) {
         _inAppPurchase.completePurchase(purchaseDetails);
       }
+    }
+  }
+
+  Future<void> _syncSubscriptionStateFromGooglePlay() async {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;
+
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    try {
+      final dynamic response = await _billingStatusChannel.invokeMethod(
+        'getSubscriptionState',
+        {'productIds': _allowedSubscriptionIds.toList()},
+      );
+
+      if (response is! Map) return;
+
+      final Map<String, dynamic> result = Map<String, dynamic>.from(response);
+      final status = (result['status'] ?? '').toString().toLowerCase();
+
+      final firestore = FirebaseFirestore.instance;
+      if (status == 'active_renewing') {
+        await firestore.collection('users').doc(user.uid).set({
+          'isSubscribed': true,
+          'subscriptionStatus': 'active',
+          'subscriptionCanceled': false,
+          'subscriptionUpdatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      } else if (status == 'active_canceled') {
+        await firestore.collection('users').doc(user.uid).set({
+          'isSubscribed': true,
+          'subscriptionStatus': 'inactive',
+          'subscriptionCanceled': true,
+          'subscriptionUpdatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      } else if (status == 'inactive') {
+        await firestore.collection('users').doc(user.uid).set({
+          'isSubscribed': false,
+          'subscriptionStatus': 'inactive',
+          'subscriptionCanceled': true,
+          'subscriptionUpdatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
+    } on PlatformException catch (e) {
+      debugPrint('Google Play subscription status sync failed: ${e.message}');
+    } catch (e) {
+      debugPrint('Google Play subscription status sync failed: $e');
     }
   }
 
@@ -262,8 +316,9 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
         ),
       });
 
-      if (widget.pendingUserData != null)
+      if (widget.pendingUserData != null) {
         userData.addAll(widget.pendingUserData!);
+      }
 
       if (widget.pendingImage != null) {
         final storageRef = FirebaseStorage.instance.ref().child(
@@ -336,7 +391,9 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
     try {
       setState(() => _isPurchasing = true);
       await _inAppPurchase.restorePurchases();
+      await _syncSubscriptionStateFromGooglePlay();
       if (mounted) {
+        setState(() => _isPurchasing = false);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('שחזור רכישות הופעל. בודקים זכאות...')),
         );

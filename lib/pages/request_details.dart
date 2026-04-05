@@ -959,14 +959,12 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
         onPressed: clientId == null
             ? null
             : () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => ChatPage(
-                      receiverId: clientId,
-                      receiverName: clientName,
-                    ),
-                  ),
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      ChatPage(receiverId: clientId, receiverName: clientName),
                 ),
+              ),
         icon: const Icon(Icons.chat_bubble_outline_rounded),
         label: Text(
           strings['open_chat']!,
@@ -975,7 +973,9 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
         style: OutlinedButton.styleFrom(
           side: const BorderSide(color: Color(0xFF1E3A8A)),
           foregroundColor: const Color(0xFF1E3A8A),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
         ),
       ),
     );

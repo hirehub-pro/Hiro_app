@@ -74,6 +74,7 @@ flutter {
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
     implementation("androidx.browser:browser:1.5.0")
+    implementation("com.android.billingclient:billing-ktx:7.1.1")
     implementation(platform("com.google.firebase:firebase-bom:34.9.0"))
     implementation("com.google.firebase:firebase-analytics")
     implementation(platform("androidx.compose:compose-bom:2023.08.00"))

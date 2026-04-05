@@ -623,6 +623,17 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
           _initTabController();
         }
 
+        if (_isOwnProfile && _userRole == 'worker') {
+          final accessState =
+              await SubscriptionAccessService.getCurrentUserState();
+          if (mounted) {
+            setState(() {
+              _isSubscribed = accessState.isSubscribed;
+              _subscriptionStatus = accessState.subscriptionStatus;
+            });
+          }
+        }
+
         if (!_isOwnProfile) {
           _calculateDistance();
         }

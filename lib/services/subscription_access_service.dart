@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 class SubscriptionAccessState {
   final String role;
@@ -22,9 +24,23 @@ class SubscriptionAccessState {
   }
 
   bool get isUnsubscribedWorker => isWorker && !hasActiveWorkerSubscription;
+
+  bool get hasActiveRenewingSubscription {
+    if (!isWorker) return true;
+    return subscriptionStatus == 'active';
+  }
 }
 
 class SubscriptionAccessService {
+  static const MethodChannel _billingStatusChannel = MethodChannel(
+    'com.hirehub.app/subscription_status',
+  );
+
+  static const Set<String> _workerSubscriptionProductIds = {
+    'pro_worker_monthly',
+    'com-hiro-app-pro-worker-monthly',
+  };
+
   static bool hasActiveWorkerSubscriptionFromData(Map<String, dynamic>? data) {
     final role = (data?['role'] ?? 'customer').toString().toLowerCase();
     if (role != 'worker') return true;
@@ -43,20 +59,90 @@ class SubscriptionAccessService {
       );
     }
 
-    final doc = await FirebaseFirestore.instance
-        .collection('users')
-        .doc(user.uid)
-        .get();
+    final firestore = FirebaseFirestore.instance;
+    final doc = await firestore.collection('users').doc(user.uid).get();
     final data = doc.data() ?? <String, dynamic>{};
+    final role = (data['role'] ?? 'customer').toString().toLowerCase();
+
+    if (role == 'worker') {
+      final playState = await _queryGooglePlayState();
+      if (playState != null) {
+        final mapped = _mapGooglePlayToAccessState(
+          role: role,
+          playState: playState,
+        );
+
+        await firestore.collection('users').doc(user.uid).set({
+          'isSubscribed': mapped.isSubscribed,
+          'subscriptionStatus': mapped.subscriptionStatus,
+          'subscriptionCanceled': mapped.subscriptionStatus == 'inactive',
+          'subscriptionUpdatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+
+        return mapped;
+      }
+    }
+
     final isSubscribed = data['isSubscribed'] == true;
 
     return SubscriptionAccessState(
-      role: (data['role'] ?? 'customer').toString().toLowerCase(),
+      role: role,
       isSubscribed: isSubscribed,
       subscriptionStatus:
           data['subscriptionStatus']?.toString().toLowerCase() ??
           (isSubscribed ? 'active' : 'inactive'),
     );
+  }
+
+  static Future<String?> _queryGooglePlayState() async {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
+      return null;
+    }
+
+    try {
+      final dynamic response = await _billingStatusChannel.invokeMethod(
+        'getSubscriptionState',
+        {'productIds': _workerSubscriptionProductIds.toList()},
+      );
+
+      if (response is! Map) return null;
+      final result = Map<String, dynamic>.from(response);
+      final status = (result['status'] ?? '').toString().toLowerCase();
+      if (status.isEmpty) return null;
+      return status;
+    } on PlatformException catch (e) {
+      debugPrint('Google Play state read failed: ${e.message}');
+      return null;
+    } catch (e) {
+      debugPrint('Google Play state read failed: $e');
+      return null;
+    }
+  }
+
+  static SubscriptionAccessState _mapGooglePlayToAccessState({
+    required String role,
+    required String playState,
+  }) {
+    switch (playState) {
+      case 'active_renewing':
+        return SubscriptionAccessState(
+          role: role,
+          isSubscribed: true,
+          subscriptionStatus: 'active',
+        );
+      case 'active_canceled':
+        return SubscriptionAccessState(
+          role: role,
+          isSubscribed: true,
+          subscriptionStatus: 'inactive',
+        );
+      default:
+        return SubscriptionAccessState(
+          role: role,
+          isSubscribed: false,
+          subscriptionStatus: 'inactive',
+        );
+    }
   }
 
   static Scaffold buildLockedScaffold({
