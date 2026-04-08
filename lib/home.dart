@@ -43,6 +43,7 @@ class _HomePageState extends State<HomePage> {
   List<Map<String, dynamic>> _topRatedWorkers = [];
   List<Map<String, dynamic>> _newWorkers = [];
   List<Map<String, dynamic>> _popularCategories = [];
+  List<Map<String, dynamic>> _professionItems = [];
   bool _isTopRatedLoading = true;
   bool _isNewWorkersLoading = true;
   bool _isPopularLoading = true;
@@ -162,10 +163,77 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _initData() async {
     await _getCurrentLocation();
+    await _loadProfessionMetadata();
     _fetchTopRatedWorkers();
     _fetchNewWorkers();
     _fetchCurrentUserName();
     _fetchPopularCategories();
+  }
+
+  Future<void> _loadProfessionMetadata() async {
+    try {
+      final professionsDoc = await _firestore
+          .collection('metadata')
+          .doc('professions')
+          .get();
+      final items =
+          ((professionsDoc.data()?['items'] as List?) ?? const [])
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList();
+
+      if (!mounted) return;
+      setState(() {
+        _professionItems = items;
+      });
+    } catch (e) {
+      debugPrint("Profession metadata load error: $e");
+    }
+  }
+
+  Map<String, dynamic>? _findProfessionItem(String value) {
+    final normalized = value.trim().toLowerCase();
+    if (normalized.isEmpty) return null;
+
+    for (final item in _professionItems) {
+      for (final key in const ['en', 'he', 'ar', 'ru', 'am']) {
+        final candidate = item[key]?.toString().trim().toLowerCase();
+        if (candidate != null && candidate.isNotEmpty && candidate == normalized) {
+          return item;
+        }
+      }
+    }
+    return null;
+  }
+
+  String _localizedProfessionLabel(String profession, String localeCode) {
+    final item = _findProfessionItem(profession);
+    if (item == null) return profession;
+
+    final localized = item[localeCode]?.toString().trim();
+    if (localized != null && localized.isNotEmpty) {
+      return localized;
+    }
+
+    final english = item['en']?.toString().trim();
+    if (english != null && english.isNotEmpty) {
+      return english;
+    }
+
+    return profession;
+  }
+
+  String _localizedProfessionsText(dynamic professions, String localeCode) {
+    final values = (professions as List?)
+            ?.map((value) => value?.toString().trim() ?? '')
+            .where((value) => value.isNotEmpty)
+            .toList() ??
+        const <String>[];
+
+    if (values.isEmpty) return 'Service';
+    return values
+        .map((profession) => _localizedProfessionLabel(profession, localeCode))
+        .join(', ');
   }
 
   Future<void> _getCurrentLocation() async {
@@ -600,6 +668,9 @@ class _HomePageState extends State<HomePage> {
               .whereType<Map>()
               .map((e) => Map<String, dynamic>.from(e))
               .toList();
+      if (mounted && _professionItems.isEmpty) {
+        _professionItems = allProfs;
+      }
 
       List<Map<String, dynamic>> popular = [];
 
@@ -1151,17 +1222,28 @@ class _HomePageState extends State<HomePage> {
         ),
         Padding(
           padding: const EdgeInsets.only(right: 12, left: 12),
-          child: StreamBuilder<QuerySnapshot>(
+          child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
             stream: (user != null && !user.isAnonymous)
                 ? _firestore
                       .collection('users')
                       .doc(user.uid)
                       .collection('notifications')
-                      .where('status', isEqualTo: 'pending')
                       .snapshots()
                 : const Stream.empty(),
             builder: (context, snapshot) {
-              int count = snapshot.hasData ? snapshot.data!.docs.length : 0;
+              final docs = snapshot.data?.docs ?? const [];
+              final count = docs.where((doc) {
+                final data = doc.data();
+                final type = (data['type'] ?? '').toString();
+                final status = (data['status'] ?? '').toString().toLowerCase();
+                final isUnreadResponse =
+                    (type == 'request_accepted' ||
+                        type == 'request_declined' ||
+                        type == 'quote_response') &&
+                    data['isRead'] == false;
+                final isPendingRequest = status == 'pending';
+                return isUnreadResponse || isPendingRequest;
+              }).length;
               return Stack(
                 alignment: Alignment.center,
                 children: [
@@ -1664,8 +1746,13 @@ class _HomePageState extends State<HomePage> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        (worker['professions'] as List?)?.join(', ') ??
-                            'Service',
+                        _localizedProfessionsText(
+                          worker['professions'],
+                          Provider.of<LanguageProvider>(
+                            context,
+                            listen: false,
+                          ).locale.languageCode,
+                        ),
                         style: const TextStyle(
                           color: Color(0xFF64748B),
                           fontSize: 12,

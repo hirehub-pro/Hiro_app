@@ -87,6 +87,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
 
   bool _isOwnProfile = false;
   bool _isLoading = true;
+  bool _hideSchedule = false;
   String _subscriptionStatus = 'inactive';
   DateTime? _subscriptionDate;
   DateTime? _subscriptionExpiresAt;
@@ -107,6 +108,13 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
       'role': _userRole,
       'subscriptionStatus': _subscriptionStatus,
     });
+  }
+
+  bool get _shouldShowPublicScheduleSection {
+    if (_isOwnProfile) return true;
+    if (_userRole != 'worker') return false;
+    if (!_hasActiveWorkerSubscription) return false;
+    return !_hideSchedule;
   }
 
   @override
@@ -318,7 +326,12 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
   }
 
   void _initTabController() {
-    int tabCount = (_userRole == 'worker' || _isOwnProfile) ? 4 : 2;
+    int tabCount;
+    if (_userRole == 'worker' || _isOwnProfile) {
+      tabCount = _shouldShowPublicScheduleSection ? 4 : 3;
+    } else {
+      tabCount = 2;
+    }
 
     // Dispose old controller if it exists
     _tabController?.dispose();
@@ -341,8 +354,9 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
   }
 
   void _maybeScrollAboutToTools() {
-    // About tab is index 3 for workers, index 0 for non-workers.
-    final aboutIndex = (_userRole == 'worker' || _isOwnProfile) ? 3 : 0;
+    final aboutIndex = (_userRole == 'worker' || _isOwnProfile)
+        ? (_shouldShowPublicScheduleSection ? 3 : 2)
+        : 0;
     if (_tabController?.index != aboutIndex) return;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -556,6 +570,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
           _profileImageUrl = data['profileImageUrl']?.toString() ?? "";
           _viewsCount = 0;
           _userRole = data['role'] ?? 'customer';
+          _hideSchedule = data['hideSchedule'] ?? false;
           _subscriptionStatus =
               data['subscriptionStatus']?.toString().toLowerCase() ??
               'inactive';
@@ -1499,12 +1514,13 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
 
   List<Widget> _buildTabs(Map<String, String> strings) {
     if (_userRole == 'worker' || _isOwnProfile) {
-      return [
+      final tabs = <Widget>[
         Tab(text: strings['projects']),
         Tab(text: strings['reviews']),
-        Tab(text: strings['schedule']),
+        if (_shouldShowPublicScheduleSection) Tab(text: strings['schedule']),
         Tab(text: strings['about']),
       ];
+      return tabs;
     }
     return [Tab(text: strings['about']), Tab(text: "Activity")];
   }
@@ -1519,12 +1535,14 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
           const Center(child: Text("Activity Feed")),
         ];
       }
-      return [
+      final views = <Widget>[
         _buildProjectsGrid(strings),
         _buildReviewsList(strings, localeCode),
-        SchedulePage(workerId: currentUserId, workerName: _userName),
+        if (_shouldShowPublicScheduleSection)
+          SchedulePage(workerId: currentUserId, workerName: _userName),
         _buildAboutSection(strings),
       ];
+      return views;
     }
     return [
       _buildAboutSection(strings),
@@ -2626,47 +2644,168 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
         : strings['unknown'] ?? 'Unknown';
 
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFF4E5),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFFFCC80)),
+        gradient: const LinearGradient(
+          colors: [Color(0xFFFFF7ED), Color(0xFFFFFBF5)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: const Color(0xFFFED7AA)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x14F59E0B),
+            blurRadius: 18,
+            offset: Offset(0, 8),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            strings['subscription_inactive'] ?? 'Subscription is inactive',
-            style: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF8A4F00),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFEDD5),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: const Icon(
+                  Icons.workspace_premium_rounded,
+                  color: Color(0xFFEA580C),
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      strings['subscription_inactive'] ??
+                          'Subscription is inactive',
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF9A3412),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      strings['subscription_inactive_message'] ??
+                          'Renew your Pro plan to restore business tools, schedule access, and premium visibility.',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        height: 1.45,
+                        color: Color(0xFF9A3412),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.72),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: const Color(0xFFFED7AA)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${strings['subscription_expires'] ?? 'Access expires on'}: $expiryText',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF9A3412),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                _buildRenewFeatureLine(
+                  strings['subscription_feature_1'] ??
+                      'Reopen analytics, invoices, and worker tools',
+                ),
+                const SizedBox(height: 8),
+                _buildRenewFeatureLine(
+                  strings['subscription_feature_2'] ??
+                      'Appear publicly with contact and schedule access',
+                ),
+                const SizedBox(height: 8),
+                _buildRenewFeatureLine(
+                  strings['subscription_feature_3'] ??
+                      'Keep your professional profile active for customers',
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 8),
-          Text(
-            '${strings['subscription_expires'] ?? 'Access expires on'}: $expiryText',
-            style: const TextStyle(fontSize: 13, color: Color(0xFF7A4A00)),
-          ),
-          const SizedBox(height: 12),
-          ElevatedButton.icon(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => SubscriptionPage(email: _email),
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => SubscriptionPage(email: _email),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.rocket_launch_rounded),
+              label: Text(
+                strings['renew_subscription'] ?? 'Renew Subscription',
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFEA580C),
+                foregroundColor: Colors.white,
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(vertical: 15),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
                 ),
-              );
-            },
-            icon: const Icon(Icons.workspace_premium_rounded),
-            label: Text(strings['renew_subscription'] ?? 'Renew Subscription'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF1976D2),
-              foregroundColor: Colors.white,
+                textStyle: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildRenewFeatureLine(String text) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.only(top: 4),
+          child: Icon(
+            Icons.check_circle_rounded,
+            size: 16,
+            color: Color(0xFFEA580C),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            text,
+            style: const TextStyle(
+              fontSize: 13,
+              height: 1.4,
+              color: Color(0xFF7C2D12),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -2724,7 +2863,15 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
           'change_business': 'עדכן פרטי עסק',
           'renew_subscription': 'חדש מנוי',
           'subscription_inactive': 'המנוי אינו פעיל',
+          'subscription_inactive_message':
+              'חדש את מנוי ה-Pro כדי להחזיר את כלי העסק, החשיפה והגישה המלאה לפרופיל המקצועי שלך.',
           'subscription_expires': 'הגישה מסתיימת בתאריך',
+          'subscription_feature_1':
+              'החזרת גישה לאנליטיקה, חשבוניות וכלי עבודה מתקדמים',
+          'subscription_feature_2':
+              'הצגת לוח זמנים ופרטי יצירת קשר ללקוחות',
+          'subscription_feature_3':
+              'שמירה על פרופיל מקצועי פעיל וזמין ללקוחות',
           'subscription_required_title': 'הפעלת מנוי מקצועי',
           'subscription_required_message':
               'חשבון בעל המקצוע שלך מוכן. כדי להשתמש בכל הכלים המקצועיים כמו אנליטיקה, חשבוניות וכלי עסק מתקדמים, יש להפעיל מנוי מקצועי.',
@@ -2772,7 +2919,15 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
           'change_business': 'تحديث بيانات العمل',
           'renew_subscription': 'تجديد الاشتراك',
           'subscription_inactive': 'الاشتراك غير نشط',
+          'subscription_inactive_message':
+              'جدّد اشتراك Pro لاستعادة أدوات العمل والظهور والوصول الكامل إلى ملفك المهني.',
           'subscription_expires': 'تنتهي الصلاحية في',
+          'subscription_feature_1':
+              'استعادة الوصول إلى التحليلات والفواتير وأدوات العمل المتقدمة',
+          'subscription_feature_2':
+              'إظهار الجدول ووسائل التواصل للعملاء',
+          'subscription_feature_3':
+              'الحفاظ على ملفك المهني نشطاً ومتوفراً للعملاء',
           'subscription_required_title': 'تفعيل الاشتراك المهني',
           'subscription_required_message':
               'حساب العامل الخاص بك أصبح جاهزًا. لاستخدام جميع الأدوات المهنية مثل التحليلات والفواتير وميزات الأعمال المتقدمة، يرجى تفعيل اشتراك مهني.',
@@ -2820,7 +2975,15 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
           'change_business': 'Update Business',
           'renew_subscription': 'Renew Subscription',
           'subscription_inactive': 'Subscription is inactive',
+          'subscription_inactive_message':
+              'Renew your Pro plan to restore business tools, visibility, and full access to your professional profile.',
           'subscription_expires': 'Access expires on',
+          'subscription_feature_1':
+              'Restore access to analytics, invoices, and advanced worker tools',
+          'subscription_feature_2':
+              'Show your schedule and contact options to customers',
+          'subscription_feature_3':
+              'Keep your professional profile active and customer-ready',
           'subscription_required_title': 'Activate Pro Subscription',
           'subscription_required_message':
               'Your worker account is ready. To use all professional tools like analytics, invoices, and advanced business features, please activate a Pro subscription.',

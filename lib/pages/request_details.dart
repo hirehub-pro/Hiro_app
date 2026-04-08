@@ -357,6 +357,7 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
         if (desc.isNotEmpty) 'description': desc,
         'title': notifTitle,
         'body': notifBody,
+        'isRead': false,
         'timestamp': FieldValue.serverTimestamp(),
       });
       batch.update(
@@ -539,6 +540,7 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
           'fromName': user.displayName ?? 'Professional',
           'title': notifTitle,
           'body': notifBody,
+          'isRead': false,
           'timestamp': FieldValue.serverTimestamp(),
         });
       } else {
@@ -558,6 +560,7 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
           'fromName': user.displayName ?? 'Professional',
           'title': notifTitle,
           'body': notifBody,
+          'isRead': false,
           'timestamp': FieldValue.serverTimestamp(),
         });
       }

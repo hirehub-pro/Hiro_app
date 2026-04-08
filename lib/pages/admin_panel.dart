@@ -1,7 +1,9 @@
 import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -64,74 +66,230 @@ class _AdminPanelState extends State<AdminPanel> {
     return directory;
   }
 
-  final Map<String, IconData> _availableIcons = {
-    'plumbing': Icons.plumbing,
-    'electrical_services': Icons.electrical_services,
-    'carpenter': Icons.carpenter,
-    'format_paint': Icons.format_paint,
-    'vpn_key': Icons.vpn_key,
-    'park': Icons.park,
-    'ac_unit': Icons.ac_unit,
-    'cleaning_services': Icons.cleaning_services,
-    'build': Icons.build,
-    'handyman': Icons.handyman,
-    'foundation': Icons.foundation,
-    'grid_view': Icons.grid_view,
-    'settings': Icons.settings,
-    'home_repair_service': Icons.home_repair_service,
-    'computer': Icons.computer,
-    'content_cut': Icons.content_cut,
-    'checkroom': Icons.checkroom,
-    'local_shipping': Icons.local_shipping,
-    'pest_control': Icons.pest_control,
-    'solar_power': Icons.solar_power,
-    'chair': Icons.chair,
-    'format_shapes': Icons.format_shapes,
-    'architecture': Icons.architecture,
-    'school': Icons.school,
-    'child_care': Icons.child_care,
-    'photo_camera': Icons.photo_camera,
-    'music_note': Icons.music_note,
-    'face': Icons.face,
-    'medical_services': Icons.medical_services,
-    'self_improvement': Icons.self_improvement,
-    'window': Icons.window,
-    'pool': Icons.pool,
-    'fitness_center': Icons.fitness_center,
-    'pets': Icons.pets,
-    'home': Icons.home,
-    'waves': Icons.waves,
-    'dry_cleaning': Icons.dry_cleaning,
-    'event': Icons.event,
-    'restaurant': Icons.restaurant,
-    'security': Icons.security,
-    'delivery_dining': Icons.delivery_dining,
-    'local_car_wash': Icons.local_car_wash,
-    'spa': Icons.spa,
-    'restaurant_menu': Icons.restaurant_menu,
-    'flight': Icons.flight,
-    'real_estate_agent': Icons.real_estate_agent,
-    'gavel': Icons.gavel,
-    'calculate': Icons.calculate,
-    'translate': Icons.translate,
-    'format_color_fill': Icons.format_color_fill,
-    'square_foot': Icons.square_foot,
-    'videocam': Icons.videocam,
-    'public': Icons.public,
-    'psychology': Icons.psychology,
-    'add_a_photo': Icons.add_a_photo,
-    'flight_takeoff': Icons.flight_takeoff,
-    'piano': Icons.piano,
-    'language': Icons.language,
-    'functions': Icons.functions,
-    'science': Icons.science,
-    'biotech': Icons.biotech,
-    'eco': Icons.eco,
-    'history_edu': Icons.history_edu,
-    'palette': Icons.palette,
-    'pedal_bike': Icons.pedal_bike,
-    'engineering': Icons.engineering,
-  };
+  late final Map<String, IconData> _availableIcons = _buildProfessionIcons();
+
+  List<String> get _pickerIconKeys => _deduplicateIconKeys(_availableIcons);
+
+  static Map<String, IconData> _buildProfessionIcons() {
+    return {
+      'engineering': Icons.engineering,
+      'plumbing': Icons.plumbing,
+      'electrical_services': Icons.electrical_services,
+      'electric_bolt': Icons.electric_bolt,
+      'lightbulb': Icons.lightbulb,
+      'carpenter': Icons.carpenter,
+      'handyman': Icons.handyman,
+      'home_repair_service': Icons.home_repair_service,
+      'construction': Icons.construction,
+      'foundation': Icons.foundation,
+      'roofing': Icons.roofing,
+      'hardware': Icons.hardware,
+      'build': Icons.build,
+      'format_paint': Icons.format_paint,
+      'format_color_fill': Icons.format_color_fill,
+      'architecture': Icons.architecture,
+      'design_services': Icons.design_services,
+      'straighten': Icons.straighten,
+      'square_foot': Icons.square_foot,
+      'chair': Icons.chair,
+      'table_restaurant': Icons.table_restaurant,
+      'window': Icons.window,
+      'door_front_door': Icons.door_front_door,
+      'blinds': Icons.blinds,
+      'shower': Icons.shower,
+      'water_drop': Icons.water_drop,
+      'water_damage': Icons.water_damage,
+      'ac_unit': Icons.ac_unit,
+      'air': Icons.air,
+      'cleaning_services': Icons.cleaning_services,
+      'dry_cleaning': Icons.dry_cleaning,
+      'clean_hands': Icons.clean_hands,
+      'pest_control': Icons.pest_control,
+      'bug_report': Icons.bug_report,
+      'solar_power': Icons.solar_power,
+      'computer': Icons.computer,
+      'devices': Icons.devices,
+      'memory': Icons.memory,
+      'router': Icons.router,
+      'wifi': Icons.wifi,
+      'phone_android': Icons.phone_android,
+      'print': Icons.print,
+      'camera_indoor': Icons.camera_indoor,
+      'security': Icons.security,
+      'shield': Icons.shield,
+      'support_agent': Icons.support_agent,
+      'medical_services': Icons.medical_services,
+      'local_hospital': Icons.local_hospital,
+      'monitor_heart': Icons.monitor_heart,
+      'healing': Icons.healing,
+      'psychology': Icons.psychology,
+      'fitness_center': Icons.fitness_center,
+      'spa': Icons.spa,
+      'child_care': Icons.child_care,
+      'elderly': Icons.elderly,
+      'school': Icons.school,
+      'translate': Icons.translate,
+      'calculate': Icons.calculate,
+      'gavel': Icons.gavel,
+      'real_estate_agent': Icons.real_estate_agent,
+      'storefront': Icons.storefront,
+      'shopping_bag': Icons.shopping_bag,
+      'badge': Icons.badge,
+      'restaurant': Icons.restaurant,
+      'restaurant_menu': Icons.restaurant_menu,
+      'lunch_dining': Icons.lunch_dining,
+      'bakery_dining': Icons.bakery_dining,
+      'cake': Icons.cake,
+      'celebration': Icons.celebration,
+      'event': Icons.event,
+      'photo_camera': Icons.photo_camera,
+      'camera_alt': Icons.camera_alt,
+      'add_a_photo': Icons.add_a_photo,
+      'videocam': Icons.videocam,
+      'movie_creation': Icons.movie_creation,
+      'music_note': Icons.music_note,
+      'graphic_eq': Icons.graphic_eq,
+      'piano': Icons.piano,
+      'palette': Icons.palette,
+      'brush': Icons.brush,
+      'face': Icons.face,
+      'checkroom': Icons.checkroom,
+      'content_cut': Icons.content_cut,
+      'iron': Icons.iron,
+      'local_shipping': Icons.local_shipping,
+      'local_moving': Icons.moving,
+      'inventory_2': Icons.inventory_2,
+      'delivery_dining': Icons.delivery_dining,
+      'local_car_wash': Icons.local_car_wash,
+      'directions_car': Icons.directions_car,
+      'car_repair': Icons.car_repair,
+      'airport_shuttle': Icons.airport_shuttle,
+      'two_wheeler': Icons.two_wheeler,
+      'moped': Icons.moped,
+      'pedal_bike': Icons.pedal_bike,
+      'fire_truck': Icons.fire_truck,
+      'park': Icons.park,
+      'pets': Icons.pets,
+      'pool': Icons.pool,
+      'waves': Icons.waves,
+      'home': Icons.home,
+      'house': Icons.house,
+      'apartment': Icons.apartment,
+      'cabin': Icons.cabin,
+      'garage': Icons.garage,
+      'public': Icons.public,
+      'language': Icons.language,
+      'science': Icons.science,
+      'biotech': Icons.biotech,
+      'eco': Icons.eco,
+      'history_edu': Icons.history_edu,
+      'bolt': Icons.bolt,
+      'vpn_key': Icons.vpn_key,
+      'locksmith': Icons.lock_open,
+      'man': Icons.man,
+      'woman': Icons.woman,
+      'weekend': Icons.weekend,
+      'paint_rounded': Icons.format_paint_rounded,
+      'construction_rounded': Icons.construction_rounded,
+      'plumbing_rounded': Icons.plumbing_rounded,
+      'engineering_outlined': Icons.engineering_outlined,
+    };
+  }
+
+  static List<String> _deduplicateIconKeys(Map<String, IconData> icons) {
+    final uniqueKeys = <String>[];
+    final seenSignatures = <String>{};
+    for (final entry in icons.entries) {
+      final icon = entry.value;
+      final signature =
+          '${icon.fontFamily}|${icon.fontPackage}|${icon.codePoint}|${icon.matchTextDirection}';
+      if (seenSignatures.add(signature)) {
+        uniqueKeys.add(entry.key);
+      }
+    }
+    return uniqueKeys;
+  }
+
+  static const List<String> _availableProfessionColors = [
+    '#1976D2',
+    '#1565C0',
+    '#0D47A1',
+    '#1D4ED8',
+    '#2563EB',
+    '#3B82F6',
+    '#42A5F5',
+    '#60A5FA',
+    '#0284C7',
+    '#0EA5E9',
+    '#0369A1',
+    '#26C6DA',
+    '#06B6D4',
+    '#00897B',
+    '#0F766E',
+    '#14B8A6',
+    '#14B86A',
+    '#2E7D32',
+    '#43A047',
+    '#16A34A',
+    '#22C55E',
+    '#7CB342',
+    '#AFB42B',
+    '#84CC16',
+    '#65A30D',
+    '#4D7C0F',
+    '#F9A825',
+    '#FFB300',
+    '#F59E0B',
+    '#FBBF24',
+    '#FB8C00',
+    '#F57C00',
+    '#EA580C',
+    '#F97316',
+    '#E64A19',
+    '#D84315',
+    '#D32F2F',
+    '#C62828',
+    '#EF4444',
+    '#DC2626',
+    '#B91C1C',
+    '#AD1457',
+    '#C2185B',
+    '#DB2777',
+    '#EC4899',
+    '#8E24AA',
+    '#7B1FA2',
+    '#9333EA',
+    '#A855F7',
+    '#5E35B1',
+    '#4527A0',
+    '#6366F1',
+    '#4F46E5',
+    '#6D4C41',
+    '#5D4037',
+    '#8D6E63',
+    '#A1887F',
+    '#546E7A',
+    '#455A64',
+    '#37474F',
+    '#475569',
+    '#334155',
+    '#1F2937',
+    '#111827',
+    '#64748B',
+    '#9CA3AF',
+    '#6B7280',
+    '#78716C',
+    '#00838F',
+    '#00695C',
+    '#283593',
+    '#1E88E5',
+    '#039BE5',
+    '#00ACC1',
+    '#7C3AED',
+    '#C2410C',
+    '#15803D',
+    '#BE123C',
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -471,34 +629,10 @@ class _AdminPanelState extends State<AdminPanel> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => _AdminBottomSheet(
-        title: 'Profession Categories',
-        stream: _firestore
-            .collection('metadata')
-            .doc('professions')
-            .snapshots()
-            .map(
-              (s) => s.exists
-                  ? (s.data() as Map<String, dynamic>)['list'] as List
-                  : [],
-            ),
-        isListStream: true,
-        itemBuilder: (context, item) {
-          final String cat = item.toString();
-          return ListTile(
-            title: Text(cat),
-            trailing: IconButton(
-              icon: const Icon(Icons.remove_circle_outline, color: Colors.red),
-              onPressed: () => _removeCategory(cat),
-            ),
-          );
-        },
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.add_box_rounded, color: Colors.blue),
-            onPressed: () => _addCategoryDialog(context),
-          ),
-        ],
+      builder: (context) => _ProfessionCategoriesSheet(
+        firestore: _firestore,
+        availableIcons: _availableIcons,
+        onAddSingle: () => _addCategoryDialog(context),
       ),
     );
   }
@@ -1235,9 +1369,9 @@ class _AdminPanelState extends State<AdminPanel> {
                         const SliverGridDelegateWithFixedCrossAxisCount(
                           crossAxisCount: 5,
                         ),
-                    itemCount: _availableIcons.length,
+                    itemCount: _pickerIconKeys.length,
                     itemBuilder: (context, index) {
-                      String key = _availableIcons.keys.elementAt(index);
+                      final key = _pickerIconKeys[index];
                       bool isSelected = selectedIcon == key;
                       return IconButton(
                         icon: Icon(
@@ -1258,16 +1392,8 @@ class _AdminPanelState extends State<AdminPanel> {
                 const SizedBox(height: 10),
                 Wrap(
                   spacing: 10,
-                  children:
-                      [
-                        '#1976D2',
-                        '#D32F2F',
-                        '#388E3C',
-                        '#FBC02D',
-                        '#7B1FA2',
-                        '#E64A19',
-                        '#455A64',
-                      ].map((color) {
+                  runSpacing: 10,
+                  children: _availableProfessionColors.map((color) {
                         bool isSelected = selectedColor == color;
                         return GestureDetector(
                           onTap: () =>
@@ -1667,6 +1793,800 @@ class _UserManagementSheetState extends State<_UserManagementSheet> {
                       ),
                     );
                   },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProfessionCategoriesSheet extends StatefulWidget {
+  final FirebaseFirestore firestore;
+  final Map<String, IconData> availableIcons;
+  final VoidCallback onAddSingle;
+
+  const _ProfessionCategoriesSheet({
+    required this.firestore,
+    required this.availableIcons,
+    required this.onAddSingle,
+  });
+
+  @override
+  State<_ProfessionCategoriesSheet> createState() =>
+      _ProfessionCategoriesSheetState();
+}
+
+class _ProfessionCategoriesSheetState extends State<_ProfessionCategoriesSheet> {
+  bool _isUploadingImport = false;
+  List<Map<String, dynamic>> _previewItems = const [];
+  String? _previewFileName;
+
+  List<String> get _pickerIconKeys => _deduplicateIconKeys(widget.availableIcons);
+
+  static List<String> _deduplicateIconKeys(Map<String, IconData> icons) {
+    final uniqueKeys = <String>[];
+    final seenSignatures = <String>{};
+    for (final entry in icons.entries) {
+      final icon = entry.value;
+      final signature =
+          '${icon.fontFamily}|${icon.fontPackage}|${icon.codePoint}|${icon.matchTextDirection}';
+      if (seenSignatures.add(signature)) {
+        uniqueKeys.add(entry.key);
+      }
+    }
+    return uniqueKeys;
+  }
+
+  int _nextProfessionId(List<Map<String, dynamic>> items) {
+    return items.fold<int>(0, (maxId, item) {
+          final id = int.tryParse(item['id']?.toString() ?? '') ?? 0;
+          return id > maxId ? id : maxId;
+        }) +
+        1;
+  }
+
+  String _normalizeHexColor(String? value) {
+    final raw = (value ?? '').trim();
+    if (raw.isEmpty) return '#1976D2';
+    final cleaned = raw.startsWith('#') ? raw.substring(1) : raw;
+    final valid = RegExp(r'^[0-9a-fA-F]{6}$').hasMatch(cleaned);
+    return valid ? '#${cleaned.toUpperCase()}' : '#1976D2';
+  }
+
+  Color _colorFromHex(String? value) {
+    final hex = _normalizeHexColor(value).replaceFirst('#', '');
+    return Color(int.parse('0xFF$hex'));
+  }
+
+  List<Map<String, dynamic>> _itemsFromMetadata(Map<String, dynamic>? data) {
+    return ((data?['items'] as List?) ?? const [])
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
+  }
+
+  Map<String, dynamic> _normalizeImportedProfessionItem(
+    Map<String, dynamic> raw,
+    int fallbackId,
+  ) {
+    final logo = (raw['logo'] ?? raw['icon'] ?? 'engineering').toString();
+    final resolvedLogo = widget.availableIcons.containsKey(logo)
+        ? logo
+        : 'engineering';
+    return {
+      'id': int.tryParse(raw['id']?.toString() ?? '') ?? fallbackId,
+      'en': (raw['en'] ?? '').toString().trim(),
+      'he': (raw['he'] ?? '').toString().trim(),
+      'ar': (raw['ar'] ?? '').toString().trim(),
+      'ru': (raw['ru'] ?? '').toString().trim(),
+      'am': (raw['am'] ?? '').toString().trim(),
+      'logo': resolvedLogo,
+      'color': _normalizeHexColor(raw['color']?.toString()),
+      'updatedAt': Timestamp.now(),
+    };
+  }
+
+  List<Map<String, dynamic>> _parseImportedProfessionItems(String rawJson) {
+    final decoded = jsonDecode(rawJson);
+    final List<dynamic> rawItems;
+    if (decoded is List) {
+      rawItems = decoded;
+    } else if (decoded is Map && decoded['items'] is List) {
+      rawItems = List<dynamic>.from(decoded['items']);
+    } else {
+      throw const FormatException(
+        'JSON must be a list or an object with an "items" list.',
+      );
+    }
+
+    final normalized = <Map<String, dynamic>>[];
+    var fallbackId = 1;
+    for (final item in rawItems) {
+      if (item is! Map) continue;
+      final normalizedItem = _normalizeImportedProfessionItem(
+        Map<String, dynamic>.from(item),
+        fallbackId,
+      );
+      if ((normalizedItem['en'] ?? '').toString().trim().isEmpty) continue;
+      normalized.add(normalizedItem);
+      fallbackId += 1;
+    }
+    return normalized;
+  }
+
+  Future<void> _saveProfessionItems(List<Map<String, dynamic>> items) async {
+    items.sort((a, b) {
+      final aId = int.tryParse(a['id']?.toString() ?? '') ?? 1 << 30;
+      final bId = int.tryParse(b['id']?.toString() ?? '') ?? 1 << 30;
+      return aId.compareTo(bId);
+    });
+
+    await widget.firestore.collection('metadata').doc('professions').set({
+      'list': items
+          .map((item) => item['en']?.toString().trim() ?? '')
+          .where((value) => value.isNotEmpty)
+          .toList(),
+      'items': items,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+  }
+
+  Future<void> _removeCategoryByEn(String cat) async {
+    final metadataRef = widget.firestore.collection('metadata').doc('professions');
+    final snapshot = await metadataRef.get();
+    final items = _itemsFromMetadata(snapshot.data());
+    items.removeWhere(
+      (item) => item['en']?.toString().toLowerCase() == cat.toLowerCase(),
+    );
+    await _saveProfessionItems(items);
+  }
+
+  Future<void> _editExistingItem(Map<String, dynamic> item) async {
+    final enController = TextEditingController(text: item['en']?.toString() ?? '');
+    final heController = TextEditingController(text: item['he']?.toString() ?? '');
+    final arController = TextEditingController(text: item['ar']?.toString() ?? '');
+    final ruController = TextEditingController(text: item['ru']?.toString() ?? '');
+    final amController = TextEditingController(text: item['am']?.toString() ?? '');
+    final idController = TextEditingController(text: item['id']?.toString() ?? '');
+    final colorController = TextEditingController(
+      text: item['color']?.toString() ?? '#1976D2',
+    );
+    String selectedIcon = item['logo']?.toString() ?? 'engineering';
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: const Text('Edit Profession'),
+          content: SizedBox(
+            width: 560,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: idController,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(labelText: 'ID'),
+                  ),
+                  TextField(
+                    controller: enController,
+                    decoration: const InputDecoration(labelText: 'English'),
+                  ),
+                  TextField(
+                    controller: heController,
+                    decoration: const InputDecoration(labelText: 'Hebrew'),
+                  ),
+                  TextField(
+                    controller: arController,
+                    decoration: const InputDecoration(labelText: 'Arabic'),
+                  ),
+                  TextField(
+                    controller: ruController,
+                    decoration: const InputDecoration(labelText: 'Russian'),
+                  ),
+                  TextField(
+                    controller: amController,
+                    decoration: const InputDecoration(labelText: 'Amharic'),
+                  ),
+                  TextField(
+                    controller: colorController,
+                    decoration: const InputDecoration(labelText: 'Color (#RRGGBB)'),
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: _AdminPanelState._availableProfessionColors.map((color) {
+                      final isSelected =
+                          _normalizeHexColor(colorController.text) == color;
+                      return GestureDetector(
+                        onTap: () => setDialogState(() => colorController.text = color),
+                        child: Container(
+                          width: 30,
+                          height: 30,
+                          decoration: BoxDecoration(
+                            color: _colorFromHex(color),
+                            shape: BoxShape.circle,
+                            border: isSelected
+                                ? Border.all(color: Colors.black, width: 2)
+                                : null,
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      const Text(
+                        'Icon',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(width: 12),
+                      Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: _colorFromHex(colorController.text),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          widget.availableIcons[selectedIcon] ?? Icons.engineering,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    height: 180,
+                    width: double.maxFinite,
+                    child: GridView.builder(
+                      itemCount: _pickerIconKeys.length,
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 5,
+                          ),
+                      itemBuilder: (context, iconIndex) {
+                        final key = _pickerIconKeys[iconIndex];
+                        final isSelected = selectedIcon == key;
+                        return IconButton(
+                          onPressed: () => setDialogState(() => selectedIcon = key),
+                          icon: Icon(
+                            widget.availableIcons[key],
+                            color: isSelected ? Colors.red[900] : Colors.grey,
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final originalKey =
+                    item['en']?.toString().trim().toLowerCase() ?? '';
+                final updated = Map<String, dynamic>.from(item);
+                updated['id'] =
+                    int.tryParse(idController.text.trim()) ?? item['id'];
+                updated['en'] = enController.text.trim();
+                updated['he'] = heController.text.trim();
+                updated['ar'] = arController.text.trim();
+                updated['ru'] = ruController.text.trim();
+                updated['am'] = amController.text.trim();
+                updated['logo'] = selectedIcon;
+                updated['color'] = _normalizeHexColor(colorController.text);
+                updated['updatedAt'] = Timestamp.now();
+                if ((updated['en'] ?? '').toString().isEmpty) return;
+
+                final metadataRef =
+                    widget.firestore.collection('metadata').doc('professions');
+                final snapshot = await metadataRef.get();
+                final items = _itemsFromMetadata(snapshot.data());
+                final index = items.indexWhere(
+                  (entry) =>
+                      entry['en']?.toString().trim().toLowerCase() == originalKey,
+                );
+                if (index == -1) return;
+                items[index] = updated;
+                await _saveProfessionItems(items);
+                if (!mounted) return;
+                Navigator.pop(dialogContext);
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickAndPreviewJson() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const ['json'],
+        withData: true,
+      );
+      if (result == null || result.files.isEmpty) return;
+      final file = result.files.single;
+      final bytes = file.bytes;
+      String rawJson;
+      if (bytes != null) {
+        rawJson = utf8.decode(bytes);
+      } else if (file.path != null) {
+        rawJson = await File(file.path!).readAsString();
+      } else {
+        throw const FormatException('Could not read the selected JSON file.');
+      }
+
+      final parsedItems = _parseImportedProfessionItems(rawJson);
+      if (!mounted) return;
+      if (parsedItems.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No valid profession items found in JSON.')),
+        );
+        return;
+      }
+      setState(() {
+        _previewItems = parsedItems;
+        _previewFileName = file.name;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Import error: $e'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  Future<void> _editPreviewItem(int index) async {
+    final item = Map<String, dynamic>.from(_previewItems[index]);
+    final enController = TextEditingController(text: item['en']?.toString() ?? '');
+    final heController = TextEditingController(text: item['he']?.toString() ?? '');
+    final arController = TextEditingController(text: item['ar']?.toString() ?? '');
+    final ruController = TextEditingController(text: item['ru']?.toString() ?? '');
+    final amController = TextEditingController(text: item['am']?.toString() ?? '');
+    final idController = TextEditingController(text: item['id']?.toString() ?? '');
+    final colorController = TextEditingController(
+      text: item['color']?.toString() ?? '#1976D2',
+    );
+    String selectedIcon = item['logo']?.toString() ?? 'engineering';
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: const Text('Edit Imported Profession'),
+          content: SizedBox(
+            width: 560,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: idController,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(labelText: 'ID'),
+                  ),
+                  TextField(
+                    controller: enController,
+                    decoration: const InputDecoration(labelText: 'English'),
+                  ),
+                  TextField(
+                    controller: heController,
+                    decoration: const InputDecoration(labelText: 'Hebrew'),
+                  ),
+                  TextField(
+                    controller: arController,
+                    decoration: const InputDecoration(labelText: 'Arabic'),
+                  ),
+                  TextField(
+                    controller: ruController,
+                    decoration: const InputDecoration(labelText: 'Russian'),
+                  ),
+                  TextField(
+                    controller: amController,
+                    decoration: const InputDecoration(labelText: 'Amharic'),
+                  ),
+                  TextField(
+                    controller: colorController,
+                    decoration: const InputDecoration(labelText: 'Color (#RRGGBB)'),
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: _AdminPanelState._availableProfessionColors.map((color) {
+                      final isSelected =
+                          _normalizeHexColor(colorController.text) == color;
+                      return GestureDetector(
+                        onTap: () => setDialogState(() => colorController.text = color),
+                        child: Container(
+                          width: 30,
+                          height: 30,
+                          decoration: BoxDecoration(
+                            color: _colorFromHex(color),
+                            shape: BoxShape.circle,
+                            border: isSelected
+                                ? Border.all(color: Colors.black, width: 2)
+                                : null,
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      const Text(
+                        'Icon',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(width: 12),
+                      Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: _colorFromHex(colorController.text),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          widget.availableIcons[selectedIcon] ?? Icons.engineering,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    height: 180,
+                    width: double.maxFinite,
+                    child: GridView.builder(
+                      itemCount: _pickerIconKeys.length,
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 5,
+                          ),
+                      itemBuilder: (context, iconIndex) {
+                        final key = _pickerIconKeys[iconIndex];
+                        final isSelected = selectedIcon == key;
+                        return IconButton(
+                          onPressed: () => setDialogState(() => selectedIcon = key),
+                          icon: Icon(
+                            widget.availableIcons[key],
+                            color: isSelected ? Colors.red[900] : Colors.grey,
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final updated = Map<String, dynamic>.from(item);
+                updated['id'] =
+                    int.tryParse(idController.text.trim()) ?? item['id'] ?? index + 1;
+                updated['en'] = enController.text.trim();
+                updated['he'] = heController.text.trim();
+                updated['ar'] = arController.text.trim();
+                updated['ru'] = ruController.text.trim();
+                updated['am'] = amController.text.trim();
+                updated['logo'] = selectedIcon;
+                updated['color'] = _normalizeHexColor(colorController.text);
+                if ((updated['en'] ?? '').toString().isEmpty) return;
+                setState(() {
+                  _previewItems[index] = updated;
+                });
+                Navigator.pop(dialogContext);
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _uploadPreviewItems() async {
+    if (_previewItems.isEmpty) return;
+    setState(() => _isUploadingImport = true);
+    try {
+      final metadataRef = widget.firestore.collection('metadata').doc('professions');
+      final snapshot = await metadataRef.get();
+      final existingItems = _itemsFromMetadata(snapshot.data());
+      final byEn = <String, Map<String, dynamic>>{
+        for (final item in existingItems)
+          (item['en']?.toString().trim().toLowerCase() ?? ''): item,
+      };
+
+      var nextId = _nextProfessionId(existingItems);
+      for (final imported in _previewItems) {
+        final key = imported['en']?.toString().trim().toLowerCase() ?? '';
+        if (key.isEmpty) continue;
+        final merged = Map<String, dynamic>.from(imported);
+        if ((merged['id'] == null ||
+                int.tryParse(merged['id']?.toString() ?? '') == null) &&
+            byEn[key] == null) {
+          merged['id'] = nextId++;
+        } else if (byEn[key] != null) {
+          merged['id'] = merged['id'] ?? byEn[key]!['id'];
+        }
+        byEn[key] = merged;
+      }
+
+      final finalItems = byEn.values.toList();
+      await _saveProfessionItems(finalItems);
+      if (!mounted) return;
+      setState(() {
+        _previewItems = const [];
+        _previewFileName = null;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Imported professions uploaded successfully.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Upload error: $e'), backgroundColor: Colors.red),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isUploadingImport = false);
+      }
+    }
+  }
+
+  Widget _buildPreviewCard(Map<String, dynamic> item, int index) {
+    final logoKey = item['logo']?.toString() ?? 'engineering';
+    final icon = widget.availableIcons[logoKey] ?? Icons.engineering;
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                CircleAvatar(
+                  backgroundColor: _colorFromHex(item['color']?.toString()),
+                  child: Icon(icon, color: Colors.white),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item['en']?.toString() ?? '',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 16,
+                        ),
+                      ),
+                      Text('ID: ${item['id'] ?? '-'}'),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => _editPreviewItem(index),
+                  icon: const Icon(Icons.edit_outlined, color: Colors.blue),
+                ),
+                IconButton(
+                  onPressed: () {
+                    setState(() {
+                      _previewItems = List<Map<String, dynamic>>.from(_previewItems)
+                        ..removeAt(index);
+                    });
+                  },
+                  icon: const Icon(Icons.delete_outline, color: Colors.red),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _buildMetaChip('he', item['he']),
+                _buildMetaChip('ar', item['ar']),
+                _buildMetaChip('ru', item['ru']),
+                _buildMetaChip('am', item['am']),
+                _buildMetaChip('logo', logoKey),
+                _buildMetaChip('color', item['color']),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMetaChip(String label, dynamic value) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF5F5F5),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text('$label: ${value?.toString() ?? ''}'),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.9,
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              border: Border(bottom: BorderSide(color: Colors.grey[200]!)),
+            ),
+            child: Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Profession Categories',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Import JSON',
+                  onPressed: _pickAndPreviewJson,
+                  icon: const Icon(Icons.upload_file_rounded, color: Colors.deepPurple),
+                ),
+                IconButton(
+                  tooltip: 'Add manually',
+                  onPressed: widget.onAddSingle,
+                  icon: const Icon(Icons.add_box_rounded, color: Colors.blue),
+                ),
+                IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close),
+                ),
+              ],
+            ),
+          ),
+          if (_previewItems.isNotEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+              color: const Color(0xFFF8FAFC),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Import Preview${_previewFileName != null ? ' • $_previewFileName' : ''}',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 16,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'Review, edit, or delete items below. Nothing is uploaded until you press Upload Import.',
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      ElevatedButton.icon(
+                        onPressed: _isUploadingImport ? null : _uploadPreviewItems,
+                        icon: const Icon(Icons.cloud_upload_outlined),
+                        label: Text(
+                          _isUploadingImport ? 'Uploading...' : 'Upload Import',
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      TextButton(
+                        onPressed: _isUploadingImport
+                            ? null
+                            : () {
+                                setState(() {
+                                  _previewItems = const [];
+                                  _previewFileName = null;
+                                });
+                              },
+                        child: const Text('Clear Preview'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          Expanded(
+            child: StreamBuilder<DocumentSnapshot>(
+              stream: widget.firestore
+                  .collection('metadata')
+                  .doc('professions')
+                  .snapshots(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                final data =
+                    snapshot.data?.data() as Map<String, dynamic>? ?? <String, dynamic>{};
+                final items = _itemsFromMetadata(data)
+                  ..sort((a, b) {
+                    final aId = int.tryParse(a['id']?.toString() ?? '') ?? 1 << 30;
+                    final bId = int.tryParse(b['id']?.toString() ?? '') ?? 1 << 30;
+                    return aId.compareTo(bId);
+                  });
+
+                return ListView(
+                  padding: const EdgeInsets.only(bottom: 32),
+                  children: [
+                    if (_previewItems.isNotEmpty) ...[
+                      const Padding(
+                        padding: EdgeInsets.fromLTRB(16, 16, 16, 4),
+                        child: Text(
+                          'Preview Items',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                      ...List.generate(
+                        _previewItems.length,
+                        (index) => _buildPreviewCard(_previewItems[index], index),
+                      ),
+                      const Divider(height: 28),
+                    ],
+                    const Padding(
+                      padding: EdgeInsets.fromLTRB(16, 16, 16, 4),
+                      child: Text(
+                        'Current Metadata Items',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    if (items.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.all(24),
+                        child: Center(child: Text('No profession entries found')),
+                      )
+                    else
+                      ...items.map((item) {
+                        final cat = item['en']?.toString() ?? '';
+                        return ListTile(
+                          onTap: () => _editExistingItem(item),
+                          title: Text(cat),
+                          subtitle: Text(
+                            'ID ${item['id'] ?? '-'} • ${item['he'] ?? ''} • ${item['ar'] ?? ''}',
+                          ),
+                          trailing: IconButton(
+                            icon: const Icon(
+                              Icons.remove_circle_outline,
+                              color: Colors.red,
+                            ),
+                            onPressed: () => _removeCategoryByEn(cat),
+                          ),
+                        );
+                      }),
+                  ],
                 );
               },
             ),

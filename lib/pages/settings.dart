@@ -9,6 +9,7 @@ import 'package:untitled1/services/language_provider.dart';
 import 'package:untitled1/sign_in.dart';
 import 'package:untitled1/pages/about.dart';
 import 'package:untitled1/pages/account_settings.dart';
+import 'package:untitled1/pages/help_page.dart';
 import 'package:untitled1/pages/privacy_policy_page.dart';
 import 'package:untitled1/pages/terms_of_service_page.dart';
 
@@ -72,9 +73,17 @@ class _SettingsPageState extends State<SettingsPage> {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    await FirebaseFirestore.instance.collection('users').doc(user.uid).update({
-      key: value,
-    });
+    final firestore = FirebaseFirestore.instance;
+    await firestore.collection('users').doc(user.uid).update({key: value});
+
+    if (key == 'hideSchedule' || key == 'disabledDays') {
+      await firestore
+          .collection('users')
+          .doc(user.uid)
+          .collection('Schedule')
+          .doc('info')
+          .set({key: value}, SetOptions(merge: true));
+    }
   }
 
   Future<void> _toggleNotifications(bool value) async {
@@ -222,6 +231,21 @@ class _SettingsPageState extends State<SettingsPage> {
     );
 
     _loadSettings();
+  }
+
+  void _goToHelpPage() {
+    if (Platform.isIOS) {
+      Navigator.push(
+        context,
+        CupertinoPageRoute(builder: (_) => const HelpPage()),
+      );
+      return;
+    }
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const HelpPage()),
+    );
   }
 
   @override
@@ -421,7 +445,7 @@ class _SettingsPageState extends State<SettingsPage> {
                         _buildGalaxyTile(
                           Icons.help_outline_rounded,
                           strings['help']!,
-                          () {},
+                          _goToHelpPage,
                         ),
                         _buildGalaxyTile(
                           Icons.info_outline_rounded,
@@ -701,7 +725,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   ),
                   title: Text(strings['help']!),
                   trailing: const CupertinoListTileChevron(),
-                  onTap: () {},
+                  onTap: _goToHelpPage,
                 ),
                 CupertinoListTile(
                   leading: const Icon(

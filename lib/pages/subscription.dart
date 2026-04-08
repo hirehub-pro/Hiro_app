@@ -630,11 +630,6 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
                       ),
                     ),
             ),
-            const SizedBox(height: 8),
-            TextButton(
-              onPressed: _isPurchasing ? null : _restoreSubscription,
-              child: const Text('כבר רכשת? שחזור רכישה'),
-            ),
             const Text(
               'החיוב חודשי וניתן לבטל בכל עת דרך חנות האפליקציות.',
               textAlign: TextAlign.center,

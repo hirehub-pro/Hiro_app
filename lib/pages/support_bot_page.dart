@@ -786,6 +786,103 @@ class _SupportBotPageState extends State<SupportBotPage>
     );
   }
 
+  Widget _buildConversationIntro(bool isRtl) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 14, 12, 8),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFFE0F2FE), Color(0xFFF8FAFC)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: const Color(0xFFD6E8FA)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: const Color(0xFF1976D2).withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: const Icon(
+              Icons.auto_awesome_rounded,
+              color: Color(0xFF1976D2),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  isRtl ? 'עזרה מהירה במקום אחד' : 'Quick help in one place',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF0F172A),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  isRtl
+                      ? 'אפשר לשאול על בקשות, תשלומים, חשבון, אימות וחשבוניות.'
+                      : 'Ask about requests, payments, account settings, verification, and invoices.',
+                  style: const TextStyle(
+                    color: Color(0xFF475569),
+                    height: 1.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStarterTray(bool isRtl) {
+    final suggestions = _getInitialQuickReplies();
+    if (suggestions.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8, left: 4, right: 4),
+            child: Text(
+              isRtl ? 'נושאים מהירים' : 'Popular topics',
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+                color: Color(0xFF64748B),
+              ),
+            ),
+          ),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: suggestions
+                  .map(
+                    (reply) => Padding(
+                      padding: const EdgeInsetsDirectional.only(end: 8),
+                      child: _buildQuickReplyChip(reply),
+                    ),
+                  )
+                  .toList(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ── BUILD ────────────────────────────────────────────────────────
 
   @override
@@ -817,7 +914,7 @@ class _SupportBotPageState extends State<SupportBotPage>
         return Directionality(
           textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
           child: Scaffold(
-            backgroundColor: const Color(0xFFF1F5FB),
+            backgroundColor: const Color(0xFFF4F7FB),
             appBar: AppBar(
               elevation: 0,
               backgroundColor: Colors.white,
@@ -910,28 +1007,39 @@ class _SupportBotPageState extends State<SupportBotPage>
             ),
             body: Column(
               children: [
+                _buildConversationIntro(isRtl),
+                if (_messages.length <= 1 && !_isTyping) _buildStarterTray(isRtl),
                 Expanded(
-                  child: ListView.builder(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.fromLTRB(12, 16, 12, 8),
-                    itemCount: _messages.length + (_isTyping ? 1 : 0),
-                    itemBuilder: (context, index) {
-                      if (index == _messages.length) {
-                        return _buildTypingIndicator(isRtl);
-                      }
-                      final m = _messages[index];
-                      final isLastBot =
-                          m['isBot'] == true &&
-                          index ==
-                              _messages.lastIndexWhere(
-                                (msg) => msg['isBot'] == true,
-                              );
-                      return _buildBubble(
-                        m,
-                        isRtl,
-                        showQuickReplies: isLastBot,
-                      );
-                    },
+                  child: Container(
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [Color(0xFFF8FBFF), Color(0xFFF4F7FB)],
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                      ),
+                    ),
+                    child: ListView.builder(
+                      controller: _scrollController,
+                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+                      itemCount: _messages.length + (_isTyping ? 1 : 0),
+                      itemBuilder: (context, index) {
+                        if (index == _messages.length) {
+                          return _buildTypingIndicator(isRtl);
+                        }
+                        final m = _messages[index];
+                        final isLastBot =
+                            m['isBot'] == true &&
+                            index ==
+                                _messages.lastIndexWhere(
+                                  (msg) => msg['isBot'] == true,
+                                );
+                        return _buildBubble(
+                          m,
+                          isRtl,
+                          showQuickReplies: isLastBot,
+                        );
+                      },
+                    ),
                   ),
                 ),
                 _buildInputArea(isRtl),
@@ -965,8 +1073,8 @@ class _SupportBotPageState extends State<SupportBotPage>
           children: [
             if (isBot) ...[
               Container(
-                width: 28,
-                height: 28,
+                width: 30,
+                height: 30,
                 margin: const EdgeInsets.only(bottom: 4, right: 6),
                 decoration: const BoxDecoration(
                   gradient: LinearGradient(
@@ -978,7 +1086,7 @@ class _SupportBotPageState extends State<SupportBotPage>
                 ),
                 child: const Icon(
                   Icons.smart_toy,
-                  size: 14,
+                  size: 15,
                   color: Colors.white,
                 ),
               ),
@@ -993,12 +1101,14 @@ class _SupportBotPageState extends State<SupportBotPage>
                 decoration: BoxDecoration(
                   color: isBot ? Colors.white : const Color(0xFF1976D2),
                   borderRadius: BorderRadius.only(
-                    topLeft: const Radius.circular(20),
-                    topRight: const Radius.circular(20),
-                    bottomLeft: isBot ? Radius.zero : const Radius.circular(20),
+                    topLeft: const Radius.circular(22),
+                    topRight: const Radius.circular(22),
+                    bottomLeft: isBot
+                        ? const Radius.circular(8)
+                        : const Radius.circular(22),
                     bottomRight: isBot
-                        ? const Radius.circular(20)
-                        : Radius.zero,
+                        ? const Radius.circular(22)
+                        : const Radius.circular(8),
                   ),
                   boxShadow: [
                     BoxShadow(
@@ -1087,18 +1197,22 @@ class _SupportBotPageState extends State<SupportBotPage>
     return ActionChip(
       label: Text(
         label,
-        style: const TextStyle(fontSize: 12, color: Color(0xFF1976D2)),
+        style: const TextStyle(
+          fontSize: 12,
+          color: Color(0xFF1976D2),
+          fontWeight: FontWeight.w700,
+        ),
       ),
       onPressed: () {
         _addUserMessage(label);
         _processQuery(label.toLowerCase());
       },
       backgroundColor: Colors.white,
-      side: const BorderSide(color: Color(0xFF1976D2)),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      side: const BorderSide(color: Color(0xFFBFDBFE)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
       elevation: 0,
       pressElevation: 2,
-      padding: const EdgeInsets.symmetric(horizontal: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
     );
   }
 
@@ -1130,9 +1244,10 @@ class _SupportBotPageState extends State<SupportBotPage>
 
   Widget _buildInputArea(bool isRtl) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
       decoration: BoxDecoration(
         color: Colors.white,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.05),
@@ -1146,9 +1261,11 @@ class _SupportBotPageState extends State<SupportBotPage>
           children: [
             Expanded(
               child: Container(
+                padding: const EdgeInsetsDirectional.only(start: 10),
                 decoration: BoxDecoration(
                   color: const Color(0xFFF1F5F9),
                   borderRadius: BorderRadius.circular(28),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
                 ),
                 child: TextField(
                   controller: _inputController,
@@ -1156,6 +1273,11 @@ class _SupportBotPageState extends State<SupportBotPage>
                   onSubmitted: _handleManualInput,
                   textInputAction: TextInputAction.send,
                   decoration: InputDecoration(
+                    prefixIcon: const Icon(
+                      Icons.message_outlined,
+                      color: Color(0xFF94A3B8),
+                      size: 20,
+                    ),
                     hintText: isRtl ? "שאל אותי משהו..." : "Ask me anything...",
                     hintStyle: const TextStyle(
                       fontSize: 14,
@@ -1175,11 +1297,20 @@ class _SupportBotPageState extends State<SupportBotPage>
               onTap: () => _handleManualInput(_inputController.text),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
-                width: 48,
-                height: 48,
+                width: 50,
+                height: 50,
                 decoration: BoxDecoration(
                   color: _isTyping ? Colors.grey[300] : const Color(0xFF1976D2),
                   shape: BoxShape.circle,
+                  boxShadow: _isTyping
+                      ? const []
+                      : const [
+                          BoxShadow(
+                            color: Color(0x331976D2),
+                            blurRadius: 14,
+                            offset: Offset(0, 6),
+                          ),
+                        ],
                 ),
                 child: Icon(
                   Icons.send_rounded,

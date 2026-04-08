@@ -64,12 +64,10 @@ class _ChatPageState extends State<ChatPage> {
   String? _currentUserName;
   String? _currentUserPhone;
   String? _currentUserEmail;
-  late final Future<SubscriptionAccessState> _accessFuture;
 
   @override
   void initState() {
     super.initState();
-    _accessFuture = SubscriptionAccessService.getCurrentUserState();
     WidgetsBinding.instance.addObserver(_lifecycleObserver);
     _checkUserType();
     final currentUserId = _auth.currentUser!.uid;
@@ -367,25 +365,7 @@ class _ChatPageState extends State<ChatPage> {
         Provider.of<LanguageProvider>(context).locale.languageCode == 'he' ||
         Provider.of<LanguageProvider>(context).locale.languageCode == 'ar';
 
-    return FutureBuilder<SubscriptionAccessState>(
-      future: _accessFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState != ConnectionState.done) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
-        }
-
-        if (snapshot.data?.isUnsubscribedWorker == true) {
-          return SubscriptionAccessService.buildLockedScaffold(
-            title: isRtl ? 'צ׳אט' : 'Chat',
-            message: isRtl
-                ? 'צ׳אט זמין רק לבעלי מנוי Pro פעיל.'
-                : 'Chat is available only with an active Pro subscription.',
-          );
-        }
-
-        return Scaffold(
+    return Scaffold(
           appBar: AppBar(
             title: _buildChatHeaderTitle(isRtl),
             centerTitle: true,
@@ -493,8 +473,6 @@ class _ChatPageState extends State<ChatPage> {
             ],
           ),
         );
-      },
-    );
   }
 
   Widget _buildMessageBubble(

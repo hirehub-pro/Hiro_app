@@ -5,7 +5,6 @@ import 'package:provider/provider.dart';
 import 'package:untitled1/services/language_provider.dart';
 import 'package:untitled1/pages/chat_page.dart';
 import 'package:untitled1/pages/support_bot_page.dart';
-import 'package:untitled1/services/subscription_access_service.dart';
 import 'package:intl/intl.dart' as intl;
 
 class InboxPage extends StatefulWidget {
@@ -18,7 +17,6 @@ class InboxPage extends StatefulWidget {
 class _InboxPageState extends State<InboxPage> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  late final Future<SubscriptionAccessState> _accessFuture;
 
   bool _isSearching = false;
   final TextEditingController _searchController = TextEditingController();
@@ -26,7 +24,6 @@ class _InboxPageState extends State<InboxPage> {
   @override
   void initState() {
     super.initState();
-    _accessFuture = SubscriptionAccessService.getCurrentUserState();
     _searchController.addListener(() {
       setState(() {});
     });
@@ -82,204 +79,176 @@ class _InboxPageState extends State<InboxPage> {
       );
     }
 
-    return FutureBuilder<SubscriptionAccessState>(
-      future: _accessFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState != ConnectionState.done) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
-        }
-
-        if (snapshot.data?.isUnsubscribedWorker == true) {
-          return Directionality(
-            textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
-            child: SubscriptionAccessService.buildLockedScaffold(
-              title: isRtl ? 'הודעות' : 'Messages',
-              message: isRtl
-                  ? 'הודעות, צ׳אט ובוט התמיכה זמינים רק לבעלי מנוי Pro פעיל.'
-                  : 'Messages, chat, and the support bot are available only with an active Pro subscription.',
-            ),
-          );
-        }
-
-        return Directionality(
-          textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
-          child: Scaffold(
-            backgroundColor: Colors.white,
-            appBar: AppBar(
-              title: _isSearching
-                  ? TextField(
-                      controller: _searchController,
-                      autofocus: true,
-                      decoration: InputDecoration(
-                        hintText: isRtl ? 'חפש משתמש...' : 'Search user...',
-                        border: InputBorder.none,
-                        hintStyle: const TextStyle(
-                          fontSize: 18,
-                          color: Colors.grey,
-                        ),
-                      ),
-                      style: const TextStyle(fontSize: 18),
-                      textDirection: isRtl
-                          ? TextDirection.rtl
-                          : TextDirection.ltr,
-                    )
-                  : Text(
-                      isRtl ? 'הודעות' : 'Messages',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 22,
-                      ),
+    return Directionality(
+      textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        appBar: AppBar(
+          title: _isSearching
+              ? TextField(
+                  controller: _searchController,
+                  autofocus: true,
+                  decoration: InputDecoration(
+                    hintText: isRtl ? 'חפש משתמש...' : 'Search user...',
+                    border: InputBorder.none,
+                    hintStyle: const TextStyle(
+                      fontSize: 18,
+                      color: Colors.grey,
                     ),
-              backgroundColor: Colors.white,
-              foregroundColor: const Color(0xFF1976D2),
-              elevation: 0,
-              actions: [
-                IconButton(
-                  icon: Icon(
-                    _isSearching ? Icons.close : Icons.search,
-                    color: Colors.grey,
                   ),
-                  onPressed: () {
-                    setState(() {
-                      if (_isSearching) {
-                        _isSearching = false;
-                        _searchController.clear();
-                      } else {
-                        _isSearching = true;
-                      }
-                    });
-                  },
+                  style: const TextStyle(fontSize: 18),
+                  textDirection: isRtl
+                      ? TextDirection.rtl
+                      : TextDirection.ltr,
+                )
+              : Text(
+                  isRtl ? 'הודעות' : 'Messages',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 22,
+                  ),
                 ),
-              ],
+          backgroundColor: Colors.white,
+          foregroundColor: const Color(0xFF1976D2),
+          elevation: 0,
+          actions: [
+            IconButton(
+              icon: Icon(
+                _isSearching ? Icons.close : Icons.search,
+                color: Colors.grey,
+              ),
+              onPressed: () {
+                setState(() {
+                  if (_isSearching) {
+                    _isSearching = false;
+                    _searchController.clear();
+                  } else {
+                    _isSearching = true;
+                  }
+                });
+              },
             ),
-            body: Column(
-              children: [
-                _buildSupportSection(user, isRtl),
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 8,
+          ],
+        ),
+        body: Column(
+          children: [
+            _buildSupportSection(user, isRtl),
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 20,
+                vertical: 8,
+              ),
+              child: Row(
+                children: [
+                  Text(
+                    isRtl ? 'צ׳אטים אחרונים' : 'Recent Chats',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey[50],
+                      letterSpacing: 0.5,
+                    ),
                   ),
-                  child: Row(
-                    children: [
-                      Text(
-                        isRtl ? 'צ׳אטים אחרונים' : 'Recent Chats',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.grey[50],
-                          letterSpacing: 0.5,
-                        ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: StreamBuilder<QuerySnapshot>(
+                stream: _firestore
+                    .collection('chat_rooms')
+                    .where('users', arrayContains: user.uid)
+                    .orderBy('lastTimestamp', descending: true)
+                    .snapshots(),
+                builder: (context, snapshot) {
+                  if (snapshot.hasError) {
+                    debugPrint("Stream error: \\${snapshot.error}");
+                    return _buildErrorState(isRtl);
+                  }
+
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(
+                      child: CircularProgressIndicator(
+                        color: Color(0xFF1976D2),
                       ),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child: StreamBuilder<QuerySnapshot>(
-                    stream: _firestore
-                        .collection('chat_rooms')
-                        .where('users', arrayContains: user.uid)
-                        .orderBy('lastTimestamp', descending: true)
-                        .snapshots(),
-                    builder: (context, snapshot) {
-                      if (snapshot.hasError) {
-                        debugPrint("Stream error: \\${snapshot.error}");
-                        return _buildErrorState(isRtl);
-                      }
+                    );
+                  }
 
-                      if (snapshot.connectionState == ConnectionState.waiting) {
-                        return const Center(
-                          child: CircularProgressIndicator(
-                            color: Color(0xFF1976D2),
-                          ),
-                        );
-                      }
+                  var docs = (snapshot.data?.docs ?? []).where((doc) {
+                    final data = doc.data() as Map<String, dynamic>;
+                    final users = data['users'] as List<dynamic>? ?? [];
+                    return !users.contains('hiro_manager');
+                  }).toList();
 
-                      var docs = (snapshot.data?.docs ?? []).where((doc) {
-                        final data = doc.data() as Map<String, dynamic>;
-                        final users = data['users'] as List<dynamic>? ?? [];
-                        return !users.contains('hiro_manager');
-                      }).toList();
+                  if (_isSearching &&
+                      _searchController.text.trim().isNotEmpty) {
+                    final query = _searchController.text.trim().toLowerCase();
+                    docs = docs.where((doc) {
+                      final data = doc.data() as Map<String, dynamic>;
+                      final userNames =
+                          data['userNames'] as Map<String, dynamic>? ?? {};
+                      final users = data['users'] as List<dynamic>? ?? [];
+                      final String otherUserId = users.firstWhere(
+                        (id) => id != user.uid,
+                        orElse: () => "",
+                      );
+                      final String otherUserName =
+                          userNames[otherUserId]?.toString() ?? "";
+                      return otherUserName.toLowerCase().contains(query);
+                    }).toList();
+                  }
 
-                      // Filter by search
-                      if (_isSearching &&
-                          _searchController.text.trim().isNotEmpty) {
-                        final query = _searchController.text
-                            .trim()
-                            .toLowerCase();
-                        docs = docs.where((doc) {
-                          final data = doc.data() as Map<String, dynamic>;
-                          final userNames =
-                              data['userNames'] as Map<String, dynamic>? ?? {};
-                          final users = data['users'] as List<dynamic>? ?? [];
-                          final String otherUserId = users.firstWhere(
-                            (id) => id != user.uid,
-                            orElse: () => "",
-                          );
-                          final String otherUserName =
-                              userNames[otherUserId]?.toString() ?? "";
-                          return otherUserName.toLowerCase().contains(query);
-                        }).toList();
-                      }
+                  if (docs.isEmpty) {
+                    return _buildEmptyState(isRtl);
+                  }
 
-                      if (docs.isEmpty) {
-                        return _buildEmptyState(isRtl);
-                      }
+                  return ListView.separated(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    itemCount: docs.length,
+                    separatorBuilder: (context, index) => const Divider(
+                      height: 1,
+                      indent: 70,
+                      endIndent: 20,
+                      color: Color(0xFFF1F5F9),
+                    ),
+                    itemBuilder: (context, index) {
+                      final doc = docs[index];
+                      final data = doc.data() as Map<String, dynamic>;
+                      final List<dynamic> users = data['users'] ?? [];
 
-                      return ListView.separated(
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        itemCount: docs.length,
-                        separatorBuilder: (context, index) => const Divider(
-                          height: 1,
-                          indent: 70,
-                          endIndent: 20,
-                          color: Color(0xFFF1F5F9),
-                        ),
-                        itemBuilder: (context, index) {
-                          final doc = docs[index];
-                          final data = doc.data() as Map<String, dynamic>;
-                          final List<dynamic> users = data['users'] ?? [];
+                      if (users.length < 2) return const SizedBox.shrink();
 
-                          if (users.length < 2) return const SizedBox.shrink();
+                      final String otherUserId = users.firstWhere(
+                        (id) => id != user.uid,
+                        orElse: () => "",
+                      );
+                      if (otherUserId.isEmpty) return const SizedBox.shrink();
 
-                          final String otherUserId = users.firstWhere(
-                            (id) => id != user.uid,
-                            orElse: () => "",
-                          );
-                          if (otherUserId.isEmpty)
-                            return const SizedBox.shrink();
+                      final Map<String, dynamic> userNames =
+                          data['userNames'] ?? {};
+                      final String otherUserName =
+                          userNames[otherUserId] ?? "User";
 
-                          final Map<String, dynamic> userNames =
-                              data['userNames'] ?? {};
-                          final String otherUserName =
-                              userNames[otherUserId] ?? "User";
+                      final Map<String, dynamic> unreadCount =
+                          (data['unreadCount'] as Map<String, dynamic>?) ?? {};
+                      final int unread =
+                          (unreadCount[user.uid] as num?)?.toInt() ?? 0;
 
-                          final Map<String, dynamic> unreadCount =
-                              (data['unreadCount'] as Map<String, dynamic>?) ??
-                              {};
-                          final int unread =
-                              (unreadCount[user.uid] as num?)?.toInt() ?? 0;
-
-                          return _buildChatTile(
-                            context,
-                            otherUserName,
-                            data['lastMessage'] ?? "",
-                            data['lastTimestamp'],
-                            otherUserId,
-                            unread,
-                          );
-                        },
+                      return _buildChatTile(
+                        context,
+                        otherUserName,
+                        data['lastMessage'] ?? "",
+                        data['lastTimestamp'],
+                        otherUserId,
+                        unread,
                       );
                     },
-                  ),
-                ),
-              ],
+                  );
+                },
+              ),
             ),
-          ),
-        );
-      },
+          ],
+        ),
+      ),
     );
   }
 

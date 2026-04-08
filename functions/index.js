@@ -17,8 +17,16 @@ exports.sendChatPushOnNotificationCreate = onDocumentCreated(
     const userId = event.params.userId;
     const payload = snap.data() || {};
 
-    // Only send push for chat notifications.
-    if (payload.type !== "chat_message") {
+    const supportedTypes = new Set([
+      "chat_message",
+      "work_request",
+      "quote_request",
+      "request_accepted",
+      "request_declined",
+      "quote_response",
+    ]);
+
+    if (!supportedTypes.has(payload.type)) {
       return;
     }
 
@@ -34,10 +42,12 @@ exports.sendChatPushOnNotificationCreate = onDocumentCreated(
       return;
     }
 
-    const title = payload.title || "New message";
-    const body = payload.body || "You received a new message";
+    const title = payload.title || defaultTitleForType(payload.type);
+    const body = payload.body || defaultBodyForType(payload.type);
     const senderId = payload.fromId || "";
     const senderName = payload.fromName || "User";
+    const requestDate = payload.date || "";
+    const requestStatus = payload.status || "";
 
     const message = {
       token: fcmToken,
@@ -46,9 +56,11 @@ exports.sendChatPushOnNotificationCreate = onDocumentCreated(
         body,
       },
       data: {
-        type: "chat",
+        type: dataTypeForNotification(payload.type),
         senderId: String(senderId),
         senderName: String(senderName),
+        requestDate: String(requestDate),
+        requestStatus: String(requestStatus),
       },
       android: {
         priority: "high",
@@ -71,9 +83,17 @@ exports.sendChatPushOnNotificationCreate = onDocumentCreated(
 
     try {
       await admin.messaging().send(message);
-      logger.info("Chat push sent", { userId, notificationId: snap.id });
+      logger.info("Notification push sent", {
+        userId,
+        notificationId: snap.id,
+        type: payload.type,
+      });
     } catch (error) {
-      logger.error("Failed to send chat push", { userId, error });
+      logger.error("Failed to send notification push", {
+        userId,
+        type: payload.type,
+        error,
+      });
     }
   }
 );
@@ -168,4 +188,55 @@ function toDate(value) {
 
 function addDays(date, days) {
   return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
+}
+
+function defaultTitleForType(type) {
+  switch (type) {
+    case "work_request":
+      return "New work request";
+    case "quote_request":
+      return "New quote request";
+    case "request_accepted":
+      return "Request accepted";
+    case "request_declined":
+      return "Request declined";
+    case "quote_response":
+      return "New quote response";
+    case "chat_message":
+    default:
+      return "New message";
+  }
+}
+
+function defaultBodyForType(type) {
+  switch (type) {
+    case "work_request":
+      return "You received a new work request";
+    case "quote_request":
+      return "You received a new quote request";
+    case "request_accepted":
+      return "Your request was accepted";
+    case "request_declined":
+      return "Your request was declined";
+    case "quote_response":
+      return "You received a new quote response";
+    case "chat_message":
+    default:
+      return "You received a new message";
+  }
+}
+
+function dataTypeForNotification(type) {
+  switch (type) {
+    case "work_request":
+    case "quote_request":
+      return "job_request";
+    case "request_accepted":
+    case "request_declined":
+    case "quote_response":
+      return "request_update";
+    case "chat_message":
+    default:
+      return "chat";
+  }
 }

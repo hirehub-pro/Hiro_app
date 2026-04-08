@@ -529,6 +529,13 @@ class _SchedulePageState extends State<SchedulePage> {
         "${_selectedDay.year}-${_selectedDay.month}-${_selectedDay.day}";
     final isWorking = _availableDates.contains(dateStr);
 
+    if (_permanentlyDisabledDays.contains(_selectedDay.weekday)) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(strings['weekend_msg']!)));
+      return;
+    }
+
     if (_isVacation(_selectedDay)) {
       ScaffoldMessenger.of(
         context,
@@ -584,6 +591,13 @@ class _SchedulePageState extends State<SchedulePage> {
     final strings = _getLocalizedStrings(context);
     final dateStr =
         "${_selectedDay.year}-${_selectedDay.month}-${_selectedDay.day}";
+
+    if (_permanentlyDisabledDays.contains(_selectedDay.weekday)) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(strings['weekend_msg']!)));
+      return;
+    }
 
     if (_isVacation(_selectedDay)) {
       ScaffoldMessenger.of(
@@ -863,10 +877,56 @@ class _SchedulePageState extends State<SchedulePage> {
         "${_selectedDay.year}-${_selectedDay.month}-${_selectedDay.day}";
     final isWorkingDay = _availableDates.contains(dateStr);
     final onVacation = _isVacation(_selectedDay);
+    final isPermanentOff = _permanentlyDisabledDays.contains(
+      _selectedDay.weekday,
+    );
 
     return Column(
       children: [
-        _buildOwnerControls(strings, isWorkingDay, onVacation, dateStr),
+        if (isPermanentOff)
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(bottom: 16),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade200,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Icon(
+                    Icons.weekend_rounded,
+                    color: Color(0xFF475569),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    strings['permanent_off']!,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 16,
+                      color: Color(0xFF334155),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        _buildOwnerControls(
+          strings,
+          isWorkingDay,
+          onVacation,
+          dateStr,
+          isPermanentOff,
+        ),
         const SizedBox(height: 20),
         const SizedBox(height: 20),
         _buildRemindersList(strings),
@@ -880,6 +940,7 @@ class _SchedulePageState extends State<SchedulePage> {
     bool isWorking,
     bool onVac,
     String dateStr,
+    bool isPermanentOff,
   ) {
     return Container(
       padding: const EdgeInsets.all(20),
@@ -899,6 +960,7 @@ class _SchedulePageState extends State<SchedulePage> {
             isWorking,
             Colors.green,
             _toggleWorkingDay,
+            disabled: isPermanentOff,
           ),
           _controlBtn(
             Icons.more_time_rounded,
@@ -906,6 +968,7 @@ class _SchedulePageState extends State<SchedulePage> {
             _partialWorkDays.containsKey(dateStr),
             Colors.orange,
             _setPartialHours,
+            disabled: isPermanentOff,
           ),
           _controlBtn(
             Icons.beach_access_rounded,
@@ -925,25 +988,34 @@ class _SchedulePageState extends State<SchedulePage> {
     bool active,
     Color color,
     VoidCallback onTap,
+    {bool disabled = false}
   ) {
     return InkWell(
-      onTap: onTap,
+      onTap: disabled ? null : onTap,
       child: Column(
         children: [
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: active ? color : Colors.white,
+              color: disabled
+                  ? Colors.grey.shade100
+                  : (active ? color : Colors.white),
               shape: BoxShape.circle,
-              border: Border.all(color: active ? color : Colors.grey.shade200),
+              border: Border.all(
+                color: disabled
+                    ? Colors.grey.shade300
+                    : (active ? color : Colors.grey.shade200),
+              ),
               boxShadow: [
-                if (active)
+                if (active && !disabled)
                   BoxShadow(color: color.withOpacity(0.3), blurRadius: 8),
               ],
             ),
             child: Icon(
               icon,
-              color: active ? Colors.white : Colors.grey,
+              color: disabled
+                  ? Colors.grey.shade400
+                  : (active ? Colors.white : Colors.grey),
               size: 24,
             ),
           ),
@@ -953,7 +1025,9 @@ class _SchedulePageState extends State<SchedulePage> {
             style: TextStyle(
               fontSize: 10,
               fontWeight: FontWeight.bold,
-              color: active ? color : Colors.grey,
+              color: disabled
+                  ? Colors.grey.shade400
+                  : (active ? color : Colors.grey),
             ),
           ),
         ],

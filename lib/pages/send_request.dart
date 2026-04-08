@@ -438,7 +438,7 @@ class _SendRequestPageState extends State<SendRequestPage> {
             ? 'Extra Hours Request'
             : 'Work Request';
         final notifBody = widget.isQuoteRequest
-          ? '$userName ($userTown) requested a quote for $dStr.'
+          ? '$userName ($userTown) requested a quote.'
           : !widget.isExtraHours
             ? '$userName ($userTown) requested you to work on $dStr.'
             : '$userName ($userTown) requested you to work on $dStr from $fStr to $tStr.';
@@ -456,7 +456,7 @@ class _SendRequestPageState extends State<SendRequestPage> {
         'images': imageUrls,
         'latitude': widget.isQuoteRequest ? null : _selectedLocation?.latitude,
         'longitude': widget.isQuoteRequest ? null : _selectedLocation?.longitude,
-        'date': dStr,
+        'date': widget.isQuoteRequest ? null : dStr,
         'requestedFrom': fStr,
         'requestedTo': tStr,
         'timestamp': FieldValue.serverTimestamp(),
@@ -723,10 +723,11 @@ class _SendRequestPageState extends State<SendRequestPage> {
             runSpacing: 10,
             children: [
               _buildHeroChip(Icons.person_outline_rounded, widget.workerName),
-              _buildHeroChip(
-                Icons.calendar_today_rounded,
-                _formatSelectedDate(),
-              ),
+              if (!widget.isQuoteRequest)
+                _buildHeroChip(
+                  Icons.calendar_today_rounded,
+                  _formatSelectedDate(),
+                ),
               _buildHeroChip(
                 Icons.schedule_send_rounded,
                 widget.isQuoteRequest
@@ -853,11 +854,12 @@ class _SendRequestPageState extends State<SendRequestPage> {
               label: strings['worker']!,
               value: widget.workerName,
             ),
-            _buildInfoTile(
-              icon: Icons.event_rounded,
-              label: strings['date']!,
-              value: _formatSelectedDate(),
-            ),
+            if (!widget.isQuoteRequest)
+              _buildInfoTile(
+                icon: Icons.event_rounded,
+                label: strings['date']!,
+                value: _formatSelectedDate(),
+              ),
             _buildInfoTile(
               icon: Icons.bolt_rounded,
               label: strings['request_type']!,

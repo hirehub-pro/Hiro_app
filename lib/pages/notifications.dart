@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:rxdart/rxdart.dart';
+import 'package:untitled1/pages/my_requests_page.dart';
 import 'package:untitled1/pages/request_details.dart';
 import 'package:untitled1/services/language_provider.dart';
 
@@ -15,6 +16,7 @@ class NotificationsPage extends StatefulWidget {
 
 class _NotificationsPageState extends State<NotificationsPage> {
   String _selectedFilter = 'all';
+  bool _didMarkResponseNotificationsRead = false;
 
   Map<String, String> _getLocalizedStrings(BuildContext context) {
     final locale = Provider.of<LanguageProvider>(context).locale.languageCode;
@@ -80,6 +82,15 @@ class _NotificationsPageState extends State<NotificationsPage> {
         Provider.of<LanguageProvider>(context).locale.languageCode == 'he' ||
         Provider.of<LanguageProvider>(context).locale.languageCode == 'ar';
 
+    if (user != null &&
+        !user.isAnonymous &&
+        !_didMarkResponseNotificationsRead) {
+      _didMarkResponseNotificationsRead = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _markResponseNotificationsRead(user.uid);
+      });
+    }
+
     return Directionality(
       textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
       child: Scaffold(
@@ -111,6 +122,32 @@ class _NotificationsPageState extends State<NotificationsPage> {
             : _buildNotificationsBody(context, user.uid, strings, isRtl),
       ),
     );
+  }
+
+  Future<void> _markResponseNotificationsRead(String userId) async {
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .collection('notifications')
+          .where('type', whereIn: [
+            'request_accepted',
+            'request_declined',
+            'quote_response',
+          ])
+          .where('isRead', isEqualTo: false)
+          .get();
+
+      if (snapshot.docs.isEmpty) return;
+
+      final batch = FirebaseFirestore.instance.batch();
+      for (final doc in snapshot.docs) {
+        batch.update(doc.reference, {'isRead': true});
+      }
+      await batch.commit();
+    } catch (e) {
+      debugPrint('Failed to mark response notifications read: $e');
+    }
   }
 
   Widget _buildNotificationsBody(
@@ -342,9 +379,23 @@ class _NotificationsPageState extends State<NotificationsPage> {
 
     final batch = FirebaseFirestore.instance.batch();
     for (final doc in snapshots.docs) {
+      final data = doc.data();
+      if (!_canDeleteWithClearAll(data)) {
+        continue;
+      }
       batch.delete(doc.reference);
     }
     await batch.commit();
+  }
+
+  bool _canDeleteWithClearAll(Map<String, dynamic> data) {
+    final type = (data['type'] ?? '').toString();
+    final status = (data['status'] ?? '').toString().toLowerCase();
+    final isRequest = type == 'work_request' || type == 'quote_request';
+
+    if (!isRequest) return true;
+
+    return status == 'declined' || status == 'rejected';
   }
 
   bool _matchesSelectedFilter(Map<String, dynamic> data) {
@@ -493,6 +544,10 @@ class _NotificationsPageState extends State<NotificationsPage> {
   ) {
     final isActionableRequest =
         data['type'] == 'work_request' || data['type'] == 'quote_request';
+    final isResponseUpdate =
+        data['type'] == 'request_accepted' ||
+        data['type'] == 'request_declined' ||
+        data['type'] == 'quote_response';
     final isBroadcast = data['isBroadcast'] == true;
     final status = (data['status'] ?? 'none').toString();
     final title =
@@ -510,15 +565,25 @@ class _NotificationsPageState extends State<NotificationsPage> {
       color: Colors.transparent,
       child: InkWell(
         borderRadius: BorderRadius.circular(20),
-        onTap: isActionableRequest && status == 'pending'
-            ? () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) =>
-                        RequestDetailsPage(notificationId: docId, data: data),
-                  ),
-                )
-            : null,
+        onTap: () {
+          if (isActionableRequest && status == 'pending') {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) =>
+                    RequestDetailsPage(notificationId: docId, data: data),
+              ),
+            );
+            return;
+          }
+
+          if (isResponseUpdate) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const MyRequestsPage()),
+            );
+          }
+        },
         child: Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
@@ -649,7 +714,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
                         ),
                       ),
                     )
-                  else if (!isActionableRequest)
+                  else if (isResponseUpdate || !isActionableRequest)
                     Text(
                       strings['view_details']!,
                       style: const TextStyle(

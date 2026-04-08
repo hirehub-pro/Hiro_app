@@ -34,6 +34,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
 
   String? _selectedTown;
   List<String> _selectedProfessions = [];
+  List<Map<String, dynamic>> _professionItems = [];
   File? _image;
   bool _isLoading = false;
   final ImagePicker _picker = ImagePicker();
@@ -41,9 +42,6 @@ class _EditProfilePageState extends State<EditProfilePage> {
   double _workRadius = 25000.0;
   LatLng? _workCenter;
   DateTime? _dateOfBirth;
-
-  final List<String> _allProfessions =
-      ProfessionLocalization.canonicalProfessions;
 
   @override
   void initState() {
@@ -66,6 +64,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
     _selectedProfessions = List<String>.from(
       widget.userData['professions'] ?? [],
     ).map(ProfessionLocalization.toCanonical).toList();
+    _loadProfessionItems();
 
     _workRadius = (widget.userData['workRadius'] ?? 25000.0).toDouble();
     if (widget.userData['workCenterLat'] != null &&
@@ -78,6 +77,92 @@ class _EditProfilePageState extends State<EditProfilePage> {
         widget.userData['lng'] != null) {
       _workCenter = LatLng(widget.userData['lat'], widget.userData['lng']);
     }
+  }
+
+  Future<void> _loadProfessionItems() async {
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('metadata')
+          .doc('professions')
+          .get();
+      final data = snapshot.data();
+      final rawItems = data?['items'];
+      if (rawItems is! List) return;
+
+      final items = rawItems
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .where((item) => _professionCanonicalValue(item).isNotEmpty)
+          .toList()
+        ..sort((a, b) {
+          final aId = (a['id'] as num?)?.toInt() ?? 1 << 30;
+          final bId = (b['id'] as num?)?.toInt() ?? 1 << 30;
+          if (aId != bId) return aId.compareTo(bId);
+          return _professionCanonicalValue(
+            a,
+          ).compareTo(_professionCanonicalValue(b));
+        });
+
+      if (!mounted) return;
+      setState(() {
+        _professionItems = items;
+        _selectedProfessions = _selectedProfessions
+            .map(_normalizeStoredProfession)
+            .where((profession) => profession.isNotEmpty)
+            .toSet()
+            .toList();
+      });
+    } catch (e) {
+      debugPrint('Failed to load profession metadata: $e');
+    }
+  }
+
+  String _professionCanonicalValue(Map<String, dynamic> item) {
+    final english = item['en']?.toString().trim();
+    if (english != null && english.isNotEmpty) return english;
+
+    for (final key in const ['he', 'ar', 'ru', 'am']) {
+      final value = item[key]?.toString().trim();
+      if (value != null && value.isNotEmpty) return value;
+    }
+    return '';
+  }
+
+  Map<String, dynamic>? _findProfessionItem(String value) {
+    final normalized = value.trim().toLowerCase();
+    if (normalized.isEmpty) return null;
+
+    for (final item in _professionItems) {
+      for (final key in const ['en', 'he', 'ar', 'ru', 'am']) {
+        final candidate = item[key]?.toString().trim().toLowerCase();
+        if (candidate != null && candidate.isNotEmpty && candidate == normalized) {
+          return item;
+        }
+      }
+    }
+    return null;
+  }
+
+  String _normalizeStoredProfession(String value) {
+    final item = _findProfessionItem(value);
+    if (item != null) {
+      return _professionCanonicalValue(item);
+    }
+    return ProfessionLocalization.toCanonical(value);
+  }
+
+  String _professionLabel(Map<String, dynamic> item, String localeCode) {
+    final localized = item[localeCode]?.toString().trim();
+    if (localized != null && localized.isNotEmpty) return localized;
+    return _professionCanonicalValue(item);
+  }
+
+  String _labelForStoredProfession(String profession, String localeCode) {
+    final item = _findProfessionItem(profession);
+    if (item != null) {
+      return _professionLabel(item, localeCode);
+    }
+    return ProfessionLocalization.toLocalized(profession, localeCode);
   }
 
   @override
@@ -778,8 +863,13 @@ class _EditProfilePageState extends State<EditProfilePage> {
     final localeCode = Provider.of<LanguageProvider>(
       context,
     ).locale.languageCode;
-    final localizedOptions = _allProfessions
-        .map((p) => ProfessionLocalization.toLocalized(p, localeCode))
+    final options = _professionItems.isNotEmpty
+        ? _professionItems
+        : ProfessionLocalization.canonicalProfessions
+              .map((profession) => <String, dynamic>{'en': profession})
+              .toList();
+    final localizedOptions = options
+        .map((item) => _professionLabel(item, localeCode))
         .toList();
 
     return Column(
@@ -798,7 +888,10 @@ class _EditProfilePageState extends State<EditProfilePage> {
               });
             },
             onSelected: (String selection) {
-              final canonical = ProfessionLocalization.toCanonical(selection);
+              final matchedItem = _findProfessionItem(selection);
+              final canonical = matchedItem != null
+                  ? _professionCanonicalValue(matchedItem)
+                  : ProfessionLocalization.toCanonical(selection);
               setState(() {
                 if (!_selectedProfessions.contains(canonical)) {
                   _selectedProfessions.add(canonical);
@@ -852,7 +945,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
                 .map(
                   (prof) => Chip(
                     label: Text(
-                      ProfessionLocalization.toLocalized(prof, localeCode),
+                      _labelForStoredProfession(prof, localeCode),
                     ),
                     onDeleted: () {
                       setState(() {

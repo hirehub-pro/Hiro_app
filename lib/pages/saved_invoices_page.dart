@@ -23,6 +23,7 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
   String _selectedDocType = 'all';
+  DateTimeRange? _selectedDateRange;
 
   @override
   void initState() {
@@ -96,6 +97,62 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
     }
   }
 
+  Future<void> _pickDateRange(bool isRtl) async {
+    final now = DateTime.now();
+    final initialRange =
+        _selectedDateRange ??
+        DateTimeRange(
+          start: DateTime(now.year, now.month, 1),
+          end: now,
+        );
+
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(now.year + 1),
+      initialDateRange: initialRange,
+      helpText: isRtl ? 'בחר טווח תאריכים' : 'Select date range',
+      cancelText: isRtl ? 'ביטול' : 'Cancel',
+      confirmText: isRtl ? 'אישור' : 'Apply',
+      saveText: isRtl ? 'אישור' : 'Apply',
+    );
+
+    if (picked == null || !mounted) return;
+    setState(() {
+      _selectedDateRange = DateTimeRange(
+        start: DateTime(
+          picked.start.year,
+          picked.start.month,
+          picked.start.day,
+        ),
+        end: DateTime(
+          picked.end.year,
+          picked.end.month,
+          picked.end.day,
+          23,
+          59,
+          59,
+          999,
+        ),
+      );
+    });
+  }
+
+  void _clearDateRange() {
+    setState(() {
+      _selectedDateRange = null;
+    });
+  }
+
+  String _dateRangeLabel(bool isRtl) {
+    if (_selectedDateRange == null) {
+      return isRtl ? 'סנן לפי תאריך' : 'Filter by date';
+    }
+
+    final format = intl.DateFormat('dd/MM/yyyy');
+    return '${format.format(_selectedDateRange!.start)} - ${format.format(_selectedDateRange!.end)}';
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
@@ -153,6 +210,16 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
               final docType = (data['docType'] ?? '').toString();
               if (_selectedDocType != 'all' && docType != _selectedDocType) {
                 return false;
+              }
+
+              final createdAt = data['createdAt'] as Timestamp?;
+              if (_selectedDateRange != null) {
+                final createdDate = createdAt?.toDate();
+                if (createdDate == null ||
+                    createdDate.isBefore(_selectedDateRange!.start) ||
+                    createdDate.isAfter(_selectedDateRange!.end)) {
+                  return false;
+                }
               }
 
               if (query.isEmpty) return true;
@@ -263,6 +330,51 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                         ),
                       ),
                       const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () => _pickDateRange(isRtl),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: const Color(0xFF1976D2),
+                                side: const BorderSide(
+                                  color: Color(0xFFD6E4F5),
+                                ),
+                                backgroundColor: const Color(0xFFF8FAFC),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 14,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                              ),
+                              icon: const Icon(Icons.date_range_rounded),
+                              label: Align(
+                                alignment: AlignmentDirectional.centerStart,
+                                child: Text(
+                                  _dateRangeLabel(isRtl),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ),
+                          ),
+                          if (_selectedDateRange != null) ...[
+                            const SizedBox(width: 8),
+                            IconButton(
+                              tooltip: isRtl ? 'נקה תאריך' : 'Clear date filter',
+                              onPressed: _clearDateRange,
+                              style: IconButton.styleFrom(
+                                backgroundColor: const Color(0xFFF1F5F9),
+                                foregroundColor: const Color(0xFF64748B),
+                              ),
+                              icon: const Icon(Icons.close_rounded),
+                            ),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 12),
                       SizedBox(
                         height: 40,
                         child: ListView(
@@ -296,8 +408,8 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                       ? Center(
                           child: Text(
                             isRtl
-                                ? 'לא נמצאו מסמכים התואמים לחיפוש.'
-                                : 'No documents matched your search.',
+                                ? 'לא נמצאו מסמכים התואמים לחיפוש או לטווח התאריכים.'
+                                : 'No documents matched your search or date filter.',
                             style: const TextStyle(color: Colors.grey),
                           ),
                         )
