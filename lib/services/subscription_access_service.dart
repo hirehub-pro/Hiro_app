@@ -1,8 +1,10 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:crypto/crypto.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'dart:convert';
 
 class SubscriptionAccessState {
   final String role;
@@ -62,17 +64,56 @@ class SubscriptionAccessService {
     'com-hiro-app-pro-worker-monthly',
   };
 
+  static const String _subscriptionAccountTokenField =
+      'subscriptionAccountToken';
+
   static bool hasActiveWorkerSubscriptionFromData(Map<String, dynamic>? data) {
     final role = (data?['role'] ?? 'customer').toString().toLowerCase();
     if (role != 'worker') return true;
 
-    final status = (data?['subscriptionStatus'] ?? '').toString().toLowerCase();
-    return isEntitledSubscriptionStatus(status);
+    return _resolveSubscriptionStatusFromData(data) != 'inactive';
   }
 
   static bool isEntitledSubscriptionStatus(String? status) {
     final normalized = (status ?? '').toLowerCase();
     return normalized == 'active' || normalized == 'active_canceled';
+  }
+
+  static String subscriptionAccountTokenForUid(String uid) {
+    final digest = sha1.convert(utf8.encode('hirehub-subscription::$uid'));
+    final hex = digest.toString().padRight(32, '0').substring(0, 32);
+    final chars = hex.split('');
+
+    chars[12] = '5';
+    final variant = int.parse(chars[16], radix: 16);
+    chars[16] = ((variant & 0x3) | 0x8).toRadixString(16);
+
+    final normalized = chars.join();
+    return '${normalized.substring(0, 8)}-'
+        '${normalized.substring(8, 12)}-'
+        '${normalized.substring(12, 16)}-'
+        '${normalized.substring(16, 20)}-'
+        '${normalized.substring(20, 32)}';
+  }
+
+  static Future<String?> ensureCurrentUserSubscriptionAccountToken({
+    Map<String, dynamic>? existingData,
+  }) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return null;
+
+    final token = subscriptionAccountTokenForUid(user.uid);
+    final currentValue =
+        existingData?[_subscriptionAccountTokenField]?.toString().trim() ?? '';
+
+    if (currentValue == token) {
+      return token;
+    }
+
+    await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+      _subscriptionAccountTokenField: token,
+    }, SetOptions(merge: true));
+    return token;
   }
 
   static Future<bool> isCurrentGooglePlaySubscriptionLinkedToAnotherAccount() async {
@@ -107,27 +148,55 @@ class SubscriptionAccessService {
       );
     }
 
+    return refreshCurrentUserState();
+  }
+
+  static Future<SubscriptionAccessState> refreshCurrentUserState() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      return const SubscriptionAccessState(
+        role: 'guest',
+        subscriptionStatus: 'inactive',
+      );
+    }
+
     final firestore = FirebaseFirestore.instance;
     final doc = await firestore.collection('users').doc(user.uid).get();
     final data = doc.data() ?? <String, dynamic>{};
     final role = (data['role'] ?? 'customer').toString().toLowerCase();
+    await ensureCurrentUserSubscriptionAccountToken(existingData: data);
 
     if (role == 'worker') {
+      final normalizedState = await _syncExpiredSubscriptionIfNeeded(
+        userRef: doc.reference,
+        data: data,
+      );
+
       final syncedState = await syncCurrentUserWithGooglePlay(
-        existingData: data,
+        existingData: {
+          ...data,
+          'subscriptionStatus': normalizedState.subscriptionStatus,
+        },
       );
       if (syncedState != null) {
         return syncedState;
       }
-    }
 
-    final subscriptionStatus =
-        data['subscriptionStatus']?.toString().toLowerCase() ?? 'inactive';
+      return normalizedState;
+    }
 
     return SubscriptionAccessState(
       role: role,
-      subscriptionStatus: subscriptionStatus,
+      subscriptionStatus: _resolveSubscriptionStatusFromData(data),
     );
+  }
+
+  static Future<void> refreshCurrentUserStateInBackground() async {
+    try {
+      await refreshCurrentUserState();
+    } catch (e) {
+      debugPrint('Subscription refresh skipped: $e');
+    }
   }
 
   static Future<SubscriptionAccessState?> syncCurrentUserWithGooglePlay({
@@ -277,6 +346,73 @@ class SubscriptionAccessService {
           subscriptionStatus: 'inactive',
         );
     }
+  }
+
+  static Future<SubscriptionAccessState> _syncExpiredSubscriptionIfNeeded({
+    required DocumentReference<Map<String, dynamic>> userRef,
+    required Map<String, dynamic>? data,
+  }) async {
+    final role = (data?['role'] ?? 'customer').toString().toLowerCase();
+    final resolvedStatus = _resolveSubscriptionStatusFromData(data);
+
+    if (role == 'worker' && resolvedStatus == 'inactive') {
+      final storedStatus =
+          (data?['subscriptionStatus'] ?? '').toString().toLowerCase();
+      final isSubscribed = data?['isSubscribed'] == true;
+
+      if (storedStatus != 'inactive' || isSubscribed) {
+        await userRef.set({
+          'isSubscribed': false,
+          'subscriptionStatus': 'inactive',
+          'subscriptionCanceled': true,
+          'subscriptionUpdatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
+    }
+
+    return SubscriptionAccessState(
+      role: role,
+      subscriptionStatus: resolvedStatus,
+    );
+  }
+
+  static String _resolveSubscriptionStatusFromData(Map<String, dynamic>? data) {
+    final status = (data?['subscriptionStatus'] ?? '').toString().toLowerCase();
+    if (!isEntitledSubscriptionStatus(status)) {
+      return 'inactive';
+    }
+
+    final expiry = _resolveExpiryDate(data);
+    if (expiry == null) {
+      return status;
+    }
+
+    return DateTime.now().isBefore(expiry) ? status : 'inactive';
+  }
+
+  static DateTime? _resolveExpiryDate(Map<String, dynamic>? data) {
+    final directExpiry = _toDate(data?['subscriptionExpiresAt']);
+    if (directExpiry != null) {
+      return directExpiry;
+    }
+
+    final subscriptionDate = _toDate(data?['subscriptionDate']);
+    if (subscriptionDate == null) {
+      return null;
+    }
+
+    return subscriptionDate.add(const Duration(days: 30));
+  }
+
+  static DateTime? _toDate(dynamic value) {
+    if (value == null) return null;
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    if (value is String) {
+      final parsed = DateTime.tryParse(value);
+      return parsed;
+    }
+    return null;
   }
 
   static Scaffold buildLockedScaffold({

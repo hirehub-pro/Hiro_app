@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
+import 'package:in_app_purchase_android/in_app_purchase_android.dart';
+import 'package:in_app_purchase_storekit/in_app_purchase_storekit.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -277,6 +279,8 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
   Future<void> _completeSubscription({
     required PurchaseDetails purchaseDetails,
   }) async {
+    final accountToken =
+        await SubscriptionAccessService.ensureCurrentUserSubscriptionAccountToken();
     if (widget.isNewRegistration) {
       final now = DateTime.now();
       _newRegistrationSubscriptionData = {
@@ -293,6 +297,7 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
         'subscriptionPurchaseToken':
             purchaseDetails.verificationData.serverVerificationData,
         'subscriptionTransactionDate': purchaseDetails.transactionDate,
+        if (accountToken != null) 'subscriptionAccountToken': accountToken,
       };
       await _savePurchaseMetadata(purchaseDetails);
       _showSuccessDialog(isNewReg: true);
@@ -318,6 +323,8 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
       if (user == null) return false;
       final firestore = FirebaseFirestore.instance;
       final now = DateTime.now();
+      final accountToken =
+          await SubscriptionAccessService.ensureCurrentUserSubscriptionAccountToken();
 
       // Fetch existing user data from unified 'users' collection
       final userDoc = await firestore.collection('users').doc(user.uid).get();
@@ -341,6 +348,7 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
         'subscriptionExpiresAt': Timestamp.fromDate(
           now.add(const Duration(days: 30)),
         ),
+        if (accountToken != null) 'subscriptionAccountToken': accountToken,
       });
 
       if (widget.pendingUserData != null) {
@@ -372,6 +380,8 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
   Future<void> _savePurchaseMetadata(PurchaseDetails purchaseDetails) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
+    final accountToken =
+        await SubscriptionAccessService.ensureCurrentUserSubscriptionAccountToken();
 
     final firestore = FirebaseFirestore.instance;
     await firestore
@@ -386,6 +396,7 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
           'verificationSource': purchaseDetails.verificationData.source,
           'verificationToken':
               purchaseDetails.verificationData.serverVerificationData,
+          if (accountToken != null) 'subscriptionAccountToken': accountToken,
           'createdAt': FieldValue.serverTimestamp(),
         });
   }
@@ -402,7 +413,7 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
 
     setState(() => _isPurchasing = true);
     try {
-      final purchaseParam = PurchaseParam(productDetails: product);
+      final purchaseParam = await _buildPurchaseParam(product);
       await _inAppPurchase.buyNonConsumable(purchaseParam: purchaseParam);
     } catch (e) {
       if (mounted) {
@@ -419,6 +430,34 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
         }
       }
     }
+  }
+
+  Future<PurchaseParam> _buildPurchaseParam(ProductDetails product) async {
+    final user = FirebaseAuth.instance.currentUser;
+    final accountToken = user == null
+        ? null
+        : await SubscriptionAccessService.ensureCurrentUserSubscriptionAccountToken();
+
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      return GooglePlayPurchaseParam(
+        productDetails: product,
+        applicationUserName: accountToken,
+      );
+    }
+
+    if (!kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.iOS ||
+            defaultTargetPlatform == TargetPlatform.macOS)) {
+      return AppStorePurchaseParam(
+        productDetails: product,
+        applicationUserName: accountToken,
+      );
+    }
+
+    return PurchaseParam(
+      productDetails: product,
+      applicationUserName: accountToken,
+    );
   }
 
   Future<void> _restoreSubscription() async {

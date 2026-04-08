@@ -2720,14 +2720,6 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  '${strings['subscription_expires'] ?? 'Access expires on'}: $expiryText',
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF9A3412),
-                  ),
-                ),
                 const SizedBox(height: 10),
                 _buildRenewFeatureLine(
                   strings['subscription_feature_1'] ??
@@ -2865,7 +2857,6 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
           'subscription_inactive': 'המנוי אינו פעיל',
           'subscription_inactive_message':
               'חדש את מנוי ה-Pro כדי להחזיר את כלי העסק, החשיפה והגישה המלאה לפרופיל המקצועי שלך.',
-          'subscription_expires': 'הגישה מסתיימת בתאריך',
           'subscription_feature_1':
               'החזרת גישה לאנליטיקה, חשבוניות וכלי עבודה מתקדמים',
           'subscription_feature_2':
@@ -2921,7 +2912,6 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
           'subscription_inactive': 'الاشتراك غير نشط',
           'subscription_inactive_message':
               'جدّد اشتراك Pro لاستعادة أدوات العمل والظهور والوصول الكامل إلى ملفك المهني.',
-          'subscription_expires': 'تنتهي الصلاحية في',
           'subscription_feature_1':
               'استعادة الوصول إلى التحليلات والفواتير وأدوات العمل المتقدمة',
           'subscription_feature_2':
@@ -2977,7 +2967,6 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
           'subscription_inactive': 'Subscription is inactive',
           'subscription_inactive_message':
               'Renew your Pro plan to restore business tools, visibility, and full access to your professional profile.',
-          'subscription_expires': 'Access expires on',
           'subscription_feature_1':
               'Restore access to analytics, invoices, and advanced worker tools',
           'subscription_feature_2':

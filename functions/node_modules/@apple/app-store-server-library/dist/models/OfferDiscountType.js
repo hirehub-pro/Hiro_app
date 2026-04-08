@@ -1,0 +1,20 @@
+"use strict";
+// Copyright (c) 2023 Apple Inc. Licensed under MIT License.
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.OfferDiscountTypeValidator = exports.OfferDiscountType = void 0;
+const Validator_1 = require("./Validator");
+/**
+ * The payment mode you configure for an introductory offer, promotional offer, or offer code on an auto-renewable subscription.
+ *
+ * {@link https://developer.apple.com/documentation/appstoreserverapi/offerdiscounttype offerDiscountType}
+ */
+var OfferDiscountType;
+(function (OfferDiscountType) {
+    OfferDiscountType["FREE_TRIAL"] = "FREE_TRIAL";
+    OfferDiscountType["PAY_AS_YOU_GO"] = "PAY_AS_YOU_GO";
+    OfferDiscountType["PAY_UP_FRONT"] = "PAY_UP_FRONT";
+})(OfferDiscountType || (exports.OfferDiscountType = OfferDiscountType = {}));
+class OfferDiscountTypeValidator extends Validator_1.StringValidator {
+}
+exports.OfferDiscountTypeValidator = OfferDiscountTypeValidator;
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiT2ZmZXJEaXNjb3VudFR5cGUuanMiLCJzb3VyY2VSb290IjoiIiwic291cmNlcyI6WyIuLi8uLi9tb2RlbHMvT2ZmZXJEaXNjb3VudFR5cGUudHMiXSwibmFtZXMiOltdLCJtYXBwaW5ncyI6IjtBQUFBLDREQUE0RDs7O0FBRTVELDJDQUE4QztBQUU5Qzs7OztHQUlHO0FBQ0gsSUFBWSxpQkFJWDtBQUpELFdBQVksaUJBQWlCO0lBQ3pCLDhDQUF5QixDQUFBO0lBQ3pCLG9EQUErQixDQUFBO0lBQy9CLGtEQUE2QixDQUFBO0FBQ2pDLENBQUMsRUFKVyxpQkFBaUIsaUNBQWpCLGlCQUFpQixRQUk1QjtBQUVELE1BQWEsMEJBQTJCLFNBQVEsMkJBQWU7Q0FBRztBQUFsRSxnRUFBa0UiLCJzb3VyY2VzQ29udGVudCI6WyIvLyBDb3B5cmlnaHQgKGMpIDIwMjMgQXBwbGUgSW5jLiBMaWNlbnNlZCB1bmRlciBNSVQgTGljZW5zZS5cblxuaW1wb3J0IHsgU3RyaW5nVmFsaWRhdG9yIH0gZnJvbSBcIi4vVmFsaWRhdG9yXCI7XG5cbi8qKlxuICogVGhlIHBheW1lbnQgbW9kZSB5b3UgY29uZmlndXJlIGZvciBhbiBpbnRyb2R1Y3Rvcnkgb2ZmZXIsIHByb21vdGlvbmFsIG9mZmVyLCBvciBvZmZlciBjb2RlIG9uIGFuIGF1dG8tcmVuZXdhYmxlIHN1YnNjcmlwdGlvbi5cbiAqXG4gKiB7QGxpbmsgaHR0cHM6Ly9kZXZlbG9wZXIuYXBwbGUuY29tL2RvY3VtZW50YXRpb24vYXBwc3RvcmVzZXJ2ZXJhcGkvb2ZmZXJkaXNjb3VudHR5cGUgb2ZmZXJEaXNjb3VudFR5cGV9XG4gKi9cbmV4cG9ydCBlbnVtIE9mZmVyRGlzY291bnRUeXBlIHtcbiAgICBGUkVFX1RSSUFMID0gXCJGUkVFX1RSSUFMXCIsXG4gICAgUEFZX0FTX1lPVV9HTyA9IFwiUEFZX0FTX1lPVV9HT1wiLFxuICAgIFBBWV9VUF9GUk9OVCA9IFwiUEFZX1VQX0ZST05UXCJcbn1cblxuZXhwb3J0IGNsYXNzIE9mZmVyRGlzY291bnRUeXBlVmFsaWRhdG9yIGV4dGVuZHMgU3RyaW5nVmFsaWRhdG9yIHt9Il19

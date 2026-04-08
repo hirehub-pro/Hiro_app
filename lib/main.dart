@@ -217,8 +217,32 @@ class _ErrorScreen extends StatelessWidget {
 
 /// AuthWrapper manages the navigation state based on Firebase Authentication changes.
 /// It acts as the gatekeeper for the application.
-class AuthWrapper extends StatelessWidget {
+class AuthWrapper extends StatefulWidget {
   const AuthWrapper({super.key});
+
+  @override
+  State<AuthWrapper> createState() => _AuthWrapperState();
+}
+
+class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      SubscriptionAccessService.refreshCurrentUserStateInBackground();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -234,6 +258,7 @@ class AuthWrapper extends StatelessWidget {
 
         // 2. Authenticated State: Navigate to the Home Page.
         if (user != null) {
+          SubscriptionAccessService.refreshCurrentUserStateInBackground();
           NotificationService.startListening();
           return const MyHomePage();
         }
