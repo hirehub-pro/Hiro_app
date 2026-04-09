@@ -8,7 +8,6 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
-    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
@@ -18,7 +17,6 @@
     <!-- Location Permissions -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
 
     <!-- Added Billing Permission -->
     <uses-permission android:name="com.android.vending.BILLING" />
@@ -26,8 +24,7 @@
     <application
         android:label="hiro-הירו"
         android:name="${applicationName}"
-        android:icon="@mipmap/launcher_icon"
-        android:requestLegacyExternalStorage="true">
+        android:icon="@mipmap/launcher_icon">
 
         <!-- Google Maps API Key -->
         <meta-data

@@ -443,11 +443,24 @@ class _SendRequestPageState extends State<SendRequestPage> {
             ? '$userName ($userTown) requested you to work on $dStr.'
             : '$userName ($userTown) requested you to work on $dStr from $fStr to $tStr.';
 
-      await FirebaseFirestore.instance
+      final firestore = FirebaseFirestore.instance;
+      final requestId = firestore
+          .collection('users')
+          .doc(user.uid)
+          .collection('requests')
+          .doc()
+          .id;
+      final workerNotificationRef = firestore
           .collection('users')
           .doc(widget.workerId)
           .collection('notifications')
-          .add({
+          .doc();
+
+      final requestData = {
+        'requestId': requestId,
+        'workerId': widget.workerId,
+        'workerName': widget.workerName,
+        'workerNotificationId': workerNotificationRef.id,
         'type': widget.isQuoteRequest ? 'quote_request' : 'work_request',
         'fromId': user.uid,
         'fromName': userName,
@@ -463,7 +476,19 @@ class _SendRequestPageState extends State<SendRequestPage> {
         'status': 'pending',
         'title': notifTitle,
         'body': notifBody,
-      });
+      };
+
+      final batch = firestore.batch();
+      batch.set(workerNotificationRef, requestData);
+      batch.set(
+        firestore
+            .collection('users')
+            .doc(user.uid)
+            .collection('requests')
+            .doc(requestId),
+        requestData,
+      );
+      await batch.commit();
 
       final chatRoomId = _getChatRoomId(user.uid, widget.workerId);
       final chatMsg =

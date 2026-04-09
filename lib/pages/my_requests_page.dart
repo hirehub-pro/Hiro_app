@@ -363,6 +363,7 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
   Future<void> _cancelRequest(
     BuildContext context,
     DocumentReference<Map<String, dynamic>> ref,
+    Map<String, dynamic> data,
     Map<String, String> strings,
   ) async {
     final confirm = await showDialog<bool>(
@@ -386,10 +387,33 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
     if (confirm != true) return;
 
     try {
-      await ref.update({
+      final workerId = data['workerId']?.toString();
+      final workerNotificationId = data['workerNotificationId']?.toString();
+      final batch = FirebaseFirestore.instance.batch();
+
+      batch.update(ref, {
         'status': 'cancelled',
         'cancelledAt': FieldValue.serverTimestamp(),
       });
+
+      if (workerId != null &&
+          workerId.isNotEmpty &&
+          workerNotificationId != null &&
+          workerNotificationId.isNotEmpty) {
+        batch.update(
+          FirebaseFirestore.instance
+              .collection('users')
+              .doc(workerId)
+              .collection('notifications')
+              .doc(workerNotificationId),
+          {
+            'status': 'cancelled',
+            'cancelledAt': FieldValue.serverTimestamp(),
+          },
+        );
+      }
+
+      await batch.commit();
       if (context.mounted) {
         ScaffoldMessenger.of(
           context,
@@ -423,8 +447,9 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
     }
 
     final stream = FirebaseFirestore.instance
-        .collectionGroup('notifications')
-        .where('fromId', isEqualTo: user.uid)
+        .collection('users')
+        .doc(user.uid)
+        .collection('requests')
         .where('type', whereIn: ['work_request', 'quote_request'])
         .snapshots();
 
@@ -610,6 +635,7 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
                                             onPressed: () => _cancelRequest(
                                               context,
                                               doc.reference,
+                                              data,
                                               strings,
                                             ),
                                             icon: const Icon(

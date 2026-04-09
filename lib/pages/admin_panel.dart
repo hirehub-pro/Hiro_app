@@ -6,7 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import 'package:permission_handler/permission_handler.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:untitled1/ptofile.dart';
 import 'package:path_provider/path_provider.dart';
@@ -48,19 +48,8 @@ class _AdminPanelState extends State<AdminPanel> {
   }
 
   Future<Directory> _getBkmvExportDirectory() async {
-    if (Platform.isAndroid) {
-      final status = await Permission.manageExternalStorage.request();
-      if (!status.isGranted) {
-        throw Exception('Storage permission is required to save in Downloads.');
-      }
-
-      final directory = Directory('/storage/emulated/0/Download/BKMVDATA');
-      await directory.create(recursive: true);
-      return directory;
-    }
-
     final downloadsDir =
-        await getDownloadsDirectory() ?? await getApplicationDocumentsDirectory();
+        await getApplicationDocumentsDirectory();
     final directory = Directory('${downloadsDir.path}${Platform.pathSeparator}BKMVDATA');
     await directory.create(recursive: true);
     return directory;
@@ -1593,11 +1582,20 @@ VERSION=$appVersion
       final iniFile = File('${directory.path}${Platform.pathSeparator}INI.txt');
       await bkmvFile.writeAsString(bkmvContent);
       await iniFile.writeAsString(iniContent);
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [
+            XFile(bkmvFile.path),
+            XFile(iniFile.path),
+          ],
+          text: 'BKMVDATA export files',
+        ),
+      );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'BKMVDATA exports saved in: ${directory.path}',
+              'BKMVDATA exports prepared in: ${directory.path}',
             ),
           ),
         );

@@ -320,6 +320,7 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
     final clientId = widget.data['fromId'];
+    final requestId = widget.data['requestId']?.toString();
     final strings = _getLocalizedStrings(context);
     if (clientId == null) {
       ScaffoldMessenger.of(
@@ -368,6 +369,23 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
             .doc(widget.notificationId),
         {'status': 'accepted'},
       );
+      if (requestId != null && requestId.isNotEmpty) {
+        batch.set(
+          firestore
+              .collection('users')
+              .doc(clientId)
+              .collection('requests')
+              .doc(requestId),
+          {
+            'status': 'accepted',
+            'quotePrice': price,
+            if (desc.isNotEmpty) 'quoteDescription': desc,
+            'quoteSentAt': FieldValue.serverTimestamp(),
+            'updatedAt': FieldValue.serverTimestamp(),
+          },
+          SetOptions(merge: true),
+        );
+      }
       await batch.commit();
       if (clientFcmToken != null) {
         await NotificationService.sendPushNotification(
@@ -476,6 +494,7 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
     if (user == null) return;
 
     final clientId = widget.data['fromId'];
+    final requestId = widget.data['requestId']?.toString();
     final strings = _getLocalizedStrings(context);
 
     if (clientId == null) {
@@ -574,6 +593,28 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
             .doc(widget.notificationId),
         {'status': accept ? 'accepted' : 'declined'},
       );
+
+      if (requestId != null && requestId.isNotEmpty) {
+        batch.set(
+          firestore
+              .collection('users')
+              .doc(clientId)
+              .collection('requests')
+              .doc(requestId),
+          {
+            'status': accept ? 'accepted' : 'declined',
+            if (accept)
+              'acceptedWindow': {
+                'from':
+                    "${_availableFrom.hour.toString().padLeft(2, '0')}:${_availableFrom.minute.toString().padLeft(2, '0')}",
+                'to':
+                    "${_availableTo.hour.toString().padLeft(2, '0')}:${_availableTo.minute.toString().padLeft(2, '0')}",
+              },
+            'updatedAt': FieldValue.serverTimestamp(),
+          },
+          SetOptions(merge: true),
+        );
+      }
 
       await batch.commit();
 
