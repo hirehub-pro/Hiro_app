@@ -32,7 +32,7 @@ class _SchedulePageState extends State<SchedulePage> {
 
   List<String> _availableDates = [];
   List<String> _reminderDates = [];
-  Map<String, Map<String, String>> _partialWorkDays = {};
+  Map<String, List<Map<String, String>>> _partialWorkDays = {};
   List<Map<String, String>> _vacations = [];
 
   bool _isOwnSchedule = false;
@@ -87,9 +87,10 @@ class _SchedulePageState extends State<SchedulePage> {
             _reminderDates = List<String>.from(data['reminderDates']);
           }
           if (data.containsKey('partialWorkDays')) {
-            _partialWorkDays = Map<String, Map<String, String>>.from(
-              (data['partialWorkDays'] as Map).map(
-                (k, v) => MapEntry(k.toString(), Map<String, String>.from(v)),
+            _partialWorkDays = (data['partialWorkDays'] as Map).map(
+              (k, v) => MapEntry(
+                k.toString(),
+                _normalizePartialRanges(v),
               ),
             );
           }
@@ -146,7 +147,7 @@ class _SchedulePageState extends State<SchedulePage> {
     bool docChanged = false;
     List<String> newAvailableDates = List.from(_availableDates);
     List<String> newReminderDates = List.from(_reminderDates);
-    Map<String, Map<String, String>> newPartialDays = Map.from(
+    Map<String, List<Map<String, String>>> newPartialDays = Map.from(
       _partialWorkDays,
     );
     List<Map<String, String>> newVacations = List.from(_vacations);
@@ -308,6 +309,18 @@ class _SchedulePageState extends State<SchedulePage> {
           'has_reminders': 'תזכורות',
           'notes': 'הערות ליום זה',
           'notes_hint': 'כתוב הערות אישיות כאן...',
+          'invalid_hours': 'שעת הסיום חייבת להיות אחרי שעת ההתחלה.',
+          'overlap_hours': 'טווחי השעות לא יכולים לחפוף זה לזה.',
+          'add_time_range': 'הוסף טווח שעות',
+          'remove_time_range': 'הסר טווח',
+          'time_range': 'טווח שעות',
+          'multi_hours_hint': 'אפשר להוסיף כמה טווחי שעות לאותו יום.',
+          'selected_hours': 'שעות שנבחרו',
+          'edit_hours_hint': 'לחץ על "שעות עבודה חלקיות" כדי לערוך את הטווחים.',
+          'clock_hint': 'לחצו על שעת ההתחלה או הסיום כדי לפתוח את השעון.',
+          'range_count': 'טווחי שעות',
+          'hours_preview': 'תצוגה מקדימה',
+          'save_hours_failed': 'שמירת שעות העבודה נכשלה. נסו שוב.',
         };
       default:
         return {
@@ -347,8 +360,150 @@ class _SchedulePageState extends State<SchedulePage> {
           'has_reminders': 'Reminders',
           'notes': 'Daily Notes',
           'notes_hint': 'Write personal notes here...',
+          'invalid_hours': 'End time must be after start time.',
+          'overlap_hours': 'Time ranges cannot overlap each other.',
+          'add_time_range': 'Add Time Range',
+          'remove_time_range': 'Remove Range',
+          'time_range': 'Time Range',
+          'multi_hours_hint': 'You can add multiple working-hour ranges for the same day.',
+          'selected_hours': 'Selected Hours',
+          'edit_hours_hint': 'Tap "Partial Working Hours" to edit these ranges.',
+          'clock_hint': 'Choose working hours in a simple, clear way.',
+          'save_hours_failed': 'Failed to save working hours. Please try again.',
         };
     }
+  }
+
+  String _formatWorkingTime(BuildContext context, TimeOfDay time) {
+    return MaterialLocalizations.of(
+      context,
+    ).formatTimeOfDay(time, alwaysUse24HourFormat: true);
+  }
+
+  List<Map<String, String>> _normalizePartialRanges(dynamic value) {
+    if (value is List) {
+      final ranges = value
+          .map((item) => Map<String, String>.from(item as Map))
+          .where((item) => item['from'] != null && item['to'] != null)
+          .toList();
+      ranges.sort(
+        (a, b) => _compareTimeStrings(a['from']!, b['from']!),
+      );
+      return ranges;
+    }
+
+    if (value is Map) {
+      final range = Map<String, String>.from(value);
+      if (range['from'] != null && range['to'] != null) {
+        return [range];
+      }
+    }
+
+    return [];
+  }
+
+  int _compareTimeStrings(String a, String b) {
+    return _timeStringToMinutes(a).compareTo(_timeStringToMinutes(b));
+  }
+
+  int _timeToMinutes(TimeOfDay time) => (time.hour * 60) + time.minute;
+
+  int _timeStringToMinutes(String value) {
+    final parts = value.split(':');
+    return (int.parse(parts[0]) * 60) + int.parse(parts[1]);
+  }
+
+  List<Map<String, String>> _getPartialRanges(String dateStr) {
+    return List<Map<String, String>>.from(_partialWorkDays[dateStr] ?? const []);
+  }
+
+  String _formatPartialRangesText(String dateStr) {
+    final ranges = _getPartialRanges(dateStr);
+    if (ranges.isEmpty) return '';
+    return ranges
+        .map((range) => "${range['from']} - ${range['to']}")
+        .join(", ");
+  }
+
+  Map<String, String>? _getPrimaryPartialRange(String dateStr) {
+    final ranges = _getPartialRanges(dateStr);
+    if (ranges.isEmpty) return null;
+    return ranges.first;
+  }
+
+  bool _hasOverlappingRanges(List<Map<String, String>> ranges) {
+    final sorted = List<Map<String, String>>.from(ranges)
+      ..sort((a, b) => _compareTimeStrings(a['from']!, b['from']!));
+
+    for (int i = 1; i < sorted.length; i++) {
+      final previousEnd = _timeStringToMinutes(sorted[i - 1]['to']!);
+      final currentStart = _timeStringToMinutes(sorted[i]['from']!);
+      if (currentStart < previousEnd) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  Future<TimeOfDay?> _showWorkingHoursPicker({
+    required TimeOfDay initialTime,
+    required String helpText,
+  }) async {
+    final locale = Provider.of<LanguageProvider>(
+      context,
+      listen: false,
+    ).locale.languageCode;
+    final isRtl = locale == 'he' || locale == 'ar';
+
+    return showTimePicker(
+      context: context,
+      initialTime: initialTime,
+      initialEntryMode: TimePickerEntryMode.input,
+      helpText: helpText,
+      builder: (context, child) {
+        final theme = Theme.of(context);
+        return Directionality(
+          textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
+          child: MediaQuery(
+            data: MediaQuery.of(
+              context,
+            ).copyWith(alwaysUse24HourFormat: true),
+            child: Theme(
+              data: theme.copyWith(
+                colorScheme: theme.colorScheme.copyWith(
+                  primary: const Color(0xFF1976D2),
+                  surface: Colors.white,
+                ),
+                timePickerTheme: TimePickerThemeData(
+                  backgroundColor: Colors.white,
+                  dialBackgroundColor: const Color(0xFFEFF6FF),
+                  dialHandColor: const Color(0xFF1976D2),
+                  hourMinuteColor: const Color(0xFFE2E8F0),
+                  hourMinuteTextColor: const Color(0xFF0F172A),
+                  hourMinuteShape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  dayPeriodShape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  dayPeriodBorderSide: const BorderSide(
+                    color: Color(0xFFCBD5E1),
+                  ),
+                  dayPeriodColor: const Color(0xFFE2E8F0),
+                  dayPeriodTextColor: const Color(0xFF0F172A),
+                  entryModeIconColor: const Color(0xFF1976D2),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                ),
+              ),
+              child: child!,
+            ),
+          ),
+        );
+      },
+    );
   }
 
   bool _isVacation(DateTime date) {
@@ -606,80 +761,362 @@ class _SchedulePageState extends State<SchedulePage> {
       return;
     }
 
-    TimeOfDay from = const TimeOfDay(hour: 08, minute: 00);
-    TimeOfDay to = const TimeOfDay(hour: 16, minute: 00);
-
-    if (_partialWorkDays.containsKey(dateStr)) {
-      final current = _partialWorkDays[dateStr]!;
-      from = TimeOfDay(
-        hour: int.parse(current['from']!.split(':')[0]),
-        minute: int.parse(current['from']!.split(':')[1]),
-      );
-      to = TimeOfDay(
-        hour: int.parse(current['to']!.split(':')[0]),
-        minute: int.parse(current['to']!.split(':')[1]),
-      );
-    }
+    final ranges = _getPartialRanges(dateStr);
+    final editableRanges = ranges.isEmpty
+        ? [
+            {'from': '08:00', 'to': '16:00'},
+          ]
+        : ranges.map((range) => Map<String, String>.from(range)).toList();
 
     await showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: Text(strings['partial_title']!),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                title: Text("${strings['from']}: ${from.format(context)}"),
-                trailing: const Icon(Icons.access_time),
-                onTap: () async {
-                  final picked = await showTimePicker(
-                    context: context,
-                    initialTime: from,
-                  );
-                  if (picked != null) setDialogState(() => from = picked);
-                },
+        builder: (context, setDialogState) => Dialog(
+          insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 24),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(28),
+          ),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 560, maxHeight: 720),
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEFF6FF),
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        child: const Icon(
+                          Icons.schedule_rounded,
+                          color: Color(0xFF1976D2),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              strings['partial_title']!,
+                              style: const TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w800,
+                                color: Color(0xFF0F172A),
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              strings['clock_hint']!,
+                              style: const TextStyle(
+                                color: Color(0xFF64748B),
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(Icons.close_rounded),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      strings['multi_hours_hint']!,
+                      style: const TextStyle(
+                        color: Color(0xFF64748B),
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Flexible(
+                    child: SingleChildScrollView(
+                      child: Column(
+                        children: [
+                          ...List.generate(editableRanges.length, (index) {
+                            final range = editableRanges[index];
+                            final fromParts = range['from']!.split(':');
+                            final toParts = range['to']!.split(':');
+                            final from = TimeOfDay(
+                              hour: int.parse(fromParts[0]),
+                              minute: int.parse(fromParts[1]),
+                            );
+                            final to = TimeOfDay(
+                              hour: int.parse(toParts[0]),
+                              minute: int.parse(toParts[1]),
+                            );
+
+                            return Container(
+                              margin: EdgeInsets.only(
+                                bottom: index == editableRanges.length - 1 ? 0 : 14,
+                              ),
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF8FAFC),
+                                borderRadius: BorderRadius.circular(18),
+                                border: Border.all(color: const Color(0xFFE2E8F0)),
+                              ),
+                              child: Column(
+                                children: [
+                                  Row(
+                                    children: [
+                                      Text(
+                                        "${strings['time_range']} ${index + 1}",
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w700,
+                                          color: Color(0xFF334155),
+                                        ),
+                                      ),
+                                      const Spacer(),
+                                      if (editableRanges.length > 1)
+                                        IconButton(
+                                          onPressed: () {
+                                            setDialogState(
+                                              () => editableRanges.removeAt(index),
+                                            );
+                                          },
+                                          style: IconButton.styleFrom(
+                                            backgroundColor: Colors.white,
+                                            minimumSize: const Size(36, 36),
+                                            padding: EdgeInsets.zero,
+                                          ),
+                                          icon: const Icon(
+                                            Icons.delete_outline_rounded,
+                                            color: Color(0xFFDC2626),
+                                          ),
+                                          tooltip: strings['remove_time_range'],
+                                        ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 14),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: _buildPartialTimeButton(
+                                          context: context,
+                                          label: strings['from']!,
+                                          value: from,
+                                          accentColor: const Color(0xFF1976D2),
+                                          onTap: () async {
+                                            final picked = await _showWorkingHoursPicker(
+                                              initialTime: from,
+                                              helpText: strings['from']!,
+                                            );
+                                            if (picked != null) {
+                                              setDialogState(() {
+                                                editableRanges[index]['from'] =
+                                                    "${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}";
+                                              });
+                                            }
+                                          },
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      const Icon(
+                                        Icons.arrow_forward_rounded,
+                                        color: Color(0xFF94A3B8),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: _buildPartialTimeButton(
+                                          context: context,
+                                          label: strings['to']!,
+                                          value: to,
+                                          accentColor: const Color(0xFF1976D2),
+                                          onTap: () async {
+                                            final picked = await _showWorkingHoursPicker(
+                                              initialTime: to,
+                                              helpText: strings['to']!,
+                                            );
+                                            if (picked != null) {
+                                              setDialogState(() {
+                                                editableRanges[index]['to'] =
+                                                    "${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}";
+                                              });
+                                            }
+                                          },
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            );
+                          }),
+                          const SizedBox(height: 14),
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
+                              onPressed: () {
+                                setDialogState(() {
+                                  editableRanges.add({'from': '08:00', 'to': '16:00'});
+                                });
+                              },
+                              style: OutlinedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                side: const BorderSide(color: Color(0xFF1976D2)),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(18),
+                                ),
+                              ),
+                              icon: const Icon(Icons.add_rounded),
+                              label: Text(strings['add_time_range']!),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(18),
+                            ),
+                          ),
+                          child: Text(strings['cancel']!),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () async {
+                            final normalizedRanges = editableRanges
+                                .map((range) => Map<String, String>.from(range))
+                                .toList()
+                              ..sort(
+                                (a, b) => _compareTimeStrings(a['from']!, b['from']!),
+                              );
+
+                            final hasInvalidRange = normalizedRanges.any(
+                              (range) =>
+                                  _timeStringToMinutes(range['to']!) <=
+                                  _timeStringToMinutes(range['from']!),
+                            );
+
+                            if (hasInvalidRange) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text(strings['invalid_hours']!)),
+                              );
+                              return;
+                            }
+
+                            if (_hasOverlappingRanges(normalizedRanges)) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text(strings['overlap_hours']!)),
+                              );
+                              return;
+                            }
+
+                            setState(() {
+                              if (!_availableDates.contains(dateStr)) {
+                                _availableDates.add(dateStr);
+                              }
+                              _partialWorkDays[dateStr] = normalizedRanges;
+                            });
+
+                            try {
+                              await _scheduleDoc.set({
+                                'availableDates': _availableDates,
+                                'partialWorkDays': _partialWorkDays,
+                              }, SetOptions(merge: true));
+
+                              if (mounted) {
+                                Navigator.pop(context);
+                              }
+                            } catch (e) {
+                              debugPrint("Error saving partial hours: $e");
+                              if (!mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(strings['save_hours_failed']!),
+                                ),
+                              );
+                            }
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF1976D2),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(18),
+                            ),
+                          ),
+                          child: Text(strings['save']!),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
-              ListTile(
-                title: Text("${strings['to']}: ${to.format(context)}"),
-                trailing: const Icon(Icons.access_time),
-                onTap: () async {
-                  final picked = await showTimePicker(
-                    context: context,
-                    initialTime: to,
-                  );
-                  if (picked != null) setDialogState(() => to = picked);
-                },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPartialTimeButton({
+    required BuildContext context,
+    required String label,
+    required TimeOfDay value,
+    required Color accentColor,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.schedule_rounded, size: 16, color: accentColor),
+                  const SizedBox(width: 6),
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF64748B),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Text(
+                _formatWorkingTime(context, value),
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF0F172A),
+                ),
               ),
             ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text(strings['cancel']!),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                final fStr =
-                    "${from.hour.toString().padLeft(2, '0')}:${from.minute.toString().padLeft(2, '0')}";
-                final tStr =
-                    "${to.hour.toString().padLeft(2, '0')}:${to.minute.toString().padLeft(2, '0')}";
-
-                setState(() {
-                  if (!_availableDates.contains(dateStr))
-                    _availableDates.add(dateStr);
-                  _partialWorkDays[dateStr] = {'from': fStr, 'to': tStr};
-                });
-
-                _scheduleDoc.set({
-                  'availableDates': FieldValue.arrayUnion([dateStr]),
-                  'partialWorkDays.$dateStr': {'from': fStr, 'to': tStr},
-                }, SetOptions(merge: true));
-                Navigator.pop(context);
-              },
-              child: Text(strings['save']!),
-            ),
-          ],
         ),
       ),
     );
@@ -928,6 +1365,10 @@ class _SchedulePageState extends State<SchedulePage> {
           isPermanentOff,
         ),
         const SizedBox(height: 20),
+        if (_getPartialRanges(dateStr).isNotEmpty) ...[
+          _buildWorkingHoursSummary(strings, dateStr),
+          const SizedBox(height: 20),
+        ],
         const SizedBox(height: 20),
         _buildRemindersList(strings),
         _buildAddReminderInput(strings),
@@ -951,8 +1392,10 @@ class _SchedulePageState extends State<SchedulePage> {
           BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10),
         ],
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      child: Wrap(
+        alignment: WrapAlignment.center,
+        spacing: 24,
+        runSpacing: 20,
         children: [
           _controlBtn(
             Icons.work_rounded,
@@ -992,7 +1435,10 @@ class _SchedulePageState extends State<SchedulePage> {
   ) {
     return InkWell(
       onTap: disabled ? null : onTap,
-      child: Column(
+      borderRadius: BorderRadius.circular(22),
+      child: SizedBox(
+        width: 92,
+        child: Column(
         children: [
           Container(
             padding: const EdgeInsets.all(12),
@@ -1022,6 +1468,7 @@ class _SchedulePageState extends State<SchedulePage> {
           const SizedBox(height: 8),
           Text(
             label,
+            textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 10,
               fontWeight: FontWeight.bold,
@@ -1029,6 +1476,89 @@ class _SchedulePageState extends State<SchedulePage> {
                   ? Colors.grey.shade400
                   : (active ? color : Colors.grey),
             ),
+          ),
+        ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWorkingHoursSummary(Map<String, String> strings, String dateStr) {
+    final ranges = _getPartialRanges(dateStr);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEFF6FF),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(
+                  Icons.schedule_rounded,
+                  color: Color(0xFF1976D2),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      strings['selected_hours']!,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 16,
+                        color: Color(0xFF0F172A),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      strings['edit_hours_hint']!,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF64748B),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: ranges.map((range) {
+              return Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 10,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: Text(
+                  "${range['from']} - ${range['to']}",
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF334155),
+                  ),
+                ),
+              );
+            }).toList(),
           ),
         ],
       ),
@@ -1136,19 +1666,49 @@ class _SchedulePageState extends State<SchedulePage> {
                 ? strings['on_vacation']!
                 : isWorking
                 ? (_partialWorkDays.containsKey(dateStr)
-                      ? "${strings['working_hours']}: ${_partialWorkDays[dateStr]!['from']} - ${_partialWorkDays[dateStr]!['to']}"
+                      ? strings['working_hours']!
                       : strings['set_working']!)
                 : (isOff ? strings['permanent_off']! : strings['not_working']!),
             textAlign: TextAlign.center,
             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
           ),
+          if (isWorking && _getPartialRanges(dateStr).isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 10,
+              runSpacing: 10,
+              children: _getPartialRanges(dateStr).map((range) {
+                return Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: Text(
+                    "${range['from']} - ${range['to']}",
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF334155),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ],
           if (!isPast && !isVac && !isOff) ...[
             const SizedBox(height: 24),
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
                 onPressed: () {
-                  final partial = isWorking ? _partialWorkDays[dateStr] : null;
+                  final partial = isWorking
+                      ? _getPrimaryPartialRange(dateStr)
+                      : null;
                   Navigator.push(
                     context,
                     MaterialPageRoute(

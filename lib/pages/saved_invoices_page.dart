@@ -23,19 +23,40 @@ class SavedInvoicesPage extends StatefulWidget {
 class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
+  Stream<QuerySnapshot<Map<String, dynamic>>>? _savedInvoicesStream;
+  String _searchQuery = '';
   String _selectedDocType = 'all';
   DateTimeRange? _selectedDateRange;
 
   @override
   void initState() {
     super.initState();
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      _savedInvoicesStream = FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('saved_invoices')
+          .orderBy('createdAt', descending: true)
+          .snapshots();
+    }
+    _searchController.addListener(_handleSearchChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _showTourIntroIfNeeded();
     });
   }
 
+  void _handleSearchChanged() {
+    final nextQuery = _searchController.text;
+    if (_searchQuery == nextQuery) return;
+    setState(() {
+      _searchQuery = nextQuery;
+    });
+  }
+
   @override
   void dispose() {
+    _searchController.removeListener(_handleSearchChanged);
     _searchController.dispose();
     _searchFocusNode.dispose();
     super.dispose();
@@ -253,6 +274,48 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
     return '${format.format(_selectedDateRange!.start)} - ${format.format(_selectedDateRange!.end)}';
   }
 
+  String _normalizeSearchText(String value) {
+    return value
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^\w\s\u0590-\u05FF/]'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
+
+  List<String> _searchTerms(String query) {
+    final normalized = _normalizeSearchText(query);
+    if (normalized.isEmpty) return const [];
+    return normalized.split(' ').where((term) => term.isNotEmpty).toList();
+  }
+
+  bool _matchesSearch(
+    Map<String, dynamic> data,
+    List<String> terms,
+    bool isRtl,
+  ) {
+    if (terms.isEmpty) return true;
+
+    final createdAt = data['createdAt'] as Timestamp?;
+    final createdDate = createdAt?.toDate();
+    final searchableFields = [
+      data['name'],
+      data['fileName'],
+      data['clientName'],
+      data['invoiceNumber'],
+      data['docType'],
+      data['amount'],
+      _docTypeLabel((data['docType'] ?? '').toString(), isRtl),
+      if (createdDate != null) intl.DateFormat('dd/MM/yyyy').format(createdDate),
+      if (createdDate != null) intl.DateFormat('dd/MM/yyyy HH:mm').format(createdDate),
+    ];
+
+    final haystack = _normalizeSearchText(
+      searchableFields.map((e) => (e ?? '').toString()).join(' '),
+    );
+
+    return terms.every(haystack.contains);
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
@@ -275,13 +338,6 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
       );
     }
 
-    final stream = FirebaseFirestore.instance
-        .collection('users')
-        .doc(user.uid)
-        .collection('saved_invoices')
-        .orderBy('createdAt', descending: true)
-        .snapshots();
-
     return Directionality(
       textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
       child: Scaffold(
@@ -293,7 +349,7 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
           elevation: 0,
         ),
         body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-          stream: stream,
+          stream: _savedInvoicesStream,
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const Center(child: CircularProgressIndicator());
@@ -304,7 +360,8 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
               return _buildEmptyState(isRtl);
             }
 
-            final query = _searchController.text.trim().toLowerCase();
+            final query = _searchQuery.trim();
+            final searchTerms = _searchTerms(query);
             final filteredDocs = docs.where((doc) {
               final data = doc.data();
               final docType = (data['docType'] ?? '').toString();
@@ -322,17 +379,7 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                 }
               }
 
-              if (query.isEmpty) return true;
-
-              final haystack = [
-                data['name'],
-                data['fileName'],
-                data['clientName'],
-                data['invoiceNumber'],
-                data['docType'],
-              ].map((e) => (e ?? '').toString().toLowerCase()).join(' ');
-
-              return haystack.contains(query);
+              return _matchesSearch(data, searchTerms, isRtl);
             }).toList();
 
             final totalAmount = docs.fold<double>(0, (sum, doc) {
@@ -343,93 +390,60 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
             return Column(
               children: [
                 Container(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
                   decoration: const BoxDecoration(
                     color: Colors.white,
                     boxShadow: [
                       BoxShadow(
-                        color: Color(0x0F0F172A),
-                        blurRadius: 12,
-                        offset: Offset(0, 4),
+                        color: Color(0x0A0F172A),
+                        blurRadius: 10,
+                        offset: Offset(0, 3),
                       ),
                     ],
                   ),
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(20),
-                          gradient: const LinearGradient(
-                            colors: [Color(0xFF1976D2), Color(0xFF42A5F5)],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              isRtl
-                                  ? 'ארכיון המסמכים שלך'
-                                  : 'Your document archive',
-                              style: const TextStyle(
-                                color: Colors.white70,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              '${docs.length} ${isRtl ? 'מסמכים שמורים' : 'saved documents'}',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 24,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              '${isRtl ? 'סה״כ' : 'Total'} ${totalAmount.toStringAsFixed(2)} ₪',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 15,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-                      TextField(
-                        focusNode: _searchFocusNode,
-                        controller: _searchController,
-                        onChanged: (_) => setState(() {}),
-                        decoration: InputDecoration(
-                          hintText: isRtl
-                              ? 'חפש לפי לקוח, מספר או סוג מסמך'
-                              : 'Search by client, number, or document type',
-                          prefixIcon: const Icon(Icons.search_rounded),
-                          suffixIcon: _searchController.text.isEmpty
-                              ? null
-                              : IconButton(
-                                  onPressed: () {
-                                    _searchController.clear();
-                                    setState(() {});
-                                  },
-                                  icon: const Icon(Icons.close_rounded),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              focusNode: _searchFocusNode,
+                              controller: _searchController,
+                              decoration: InputDecoration(
+                                hintText: isRtl
+                                    ? 'חפש לקוח, מספר או מסמך'
+                                    : 'Search client, number, or document',
+                                prefixIcon: const Icon(Icons.search_rounded),
+                                suffixIcon: _searchController.text.isEmpty
+                                    ? null
+                                    : IconButton(
+                                        onPressed: () {
+                                          _searchController.clear();
+                                        },
+                                        icon: const Icon(Icons.close_rounded),
+                                      ),
+                                filled: true,
+                                fillColor: const Color(0xFFF8FAFC),
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 12,
                                 ),
-                          filled: true,
-                          fillColor: const Color(0xFFF8FAFC),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(16),
-                            borderSide: BorderSide.none,
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                  borderSide: BorderSide.none,
+                                ),
+                              ),
+                            ),
                           ),
-                        ),
+                          const SizedBox(width: 10),
+                          _buildSummaryBadge(
+                            isRtl: isRtl,
+                            count: docs.length,
+                            totalAmount: totalAmount,
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 10),
                       Row(
                         children: [
                           Expanded(
@@ -437,19 +451,17 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                               onPressed: () => _pickDateRange(isRtl),
                               style: OutlinedButton.styleFrom(
                                 foregroundColor: const Color(0xFF1976D2),
-                                side: const BorderSide(
-                                  color: Color(0xFFD6E4F5),
-                                ),
+                                side: const BorderSide(color: Color(0xFFD6E4F5)),
                                 backgroundColor: const Color(0xFFF8FAFC),
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 14,
-                                  vertical: 14,
+                                  vertical: 12,
                                 ),
                                 shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(16),
+                                  borderRadius: BorderRadius.circular(14),
                                 ),
                               ),
-                              icon: const Icon(Icons.date_range_rounded),
+                              icon: const Icon(Icons.date_range_rounded, size: 18),
                               label: Align(
                                 alignment: AlignmentDirectional.centerStart,
                                 child: Text(
@@ -474,9 +486,9 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                           ],
                         ],
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 10),
                       SizedBox(
-                        height: 40,
+                        height: 36,
                         child: ListView(
                           scrollDirection: Axis.horizontal,
                           children: [
@@ -500,24 +512,33 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                           ],
                         ),
                       ),
+                      if (query.isNotEmpty || _selectedDateRange != null) ...[
+                        const SizedBox(height: 10),
+                        Align(
+                          alignment: AlignmentDirectional.centerStart,
+                          child: Text(
+                            isRtl
+                                ? 'נמצאו ${filteredDocs.length} מתוך ${docs.length} מסמכים'
+                                : '${filteredDocs.length} of ${docs.length} documents found',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF64748B),
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
                 Expanded(
                   child: filteredDocs.isEmpty
-                      ? Center(
-                          child: Text(
-                            isRtl
-                                ? 'לא נמצאו מסמכים התואמים לחיפוש או לטווח התאריכים.'
-                                : 'No documents matched your search or date filter.',
-                            style: const TextStyle(color: Colors.grey),
-                          ),
-                        )
+                      ? _buildSearchEmptyState(isRtl, query.isNotEmpty)
                       : ListView.separated(
                           padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
                           itemCount: filteredDocs.length,
                           separatorBuilder: (_, __) =>
-                              const SizedBox(height: 12),
+                              const SizedBox(height: 10),
                           itemBuilder: (context, index) {
                             final data = filteredDocs[index].data();
                             final name = (data['name'] ?? 'Invoice').toString();
@@ -557,18 +578,18 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                 );
                               },
                               child: Container(
-                                padding: const EdgeInsets.all(16),
+                                padding: const EdgeInsets.all(14),
                                 decoration: BoxDecoration(
                                   color: Colors.white,
-                                  borderRadius: BorderRadius.circular(22),
+                                  borderRadius: BorderRadius.circular(20),
                                   border: Border.all(
                                     color: const Color(0xFFE2E8F0),
                                   ),
                                   boxShadow: const [
                                     BoxShadow(
-                                      color: Color(0x0D0F172A),
-                                      blurRadius: 14,
-                                      offset: Offset(0, 6),
+                                      color: Color(0x080F172A),
+                                      blurRadius: 10,
+                                      offset: Offset(0, 4),
                                     ),
                                   ],
                                 ),
@@ -580,15 +601,13 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                           CrossAxisAlignment.start,
                                       children: [
                                         Container(
-                                          width: 52,
-                                          height: 52,
+                                          width: 46,
+                                          height: 46,
                                           decoration: BoxDecoration(
                                             color: accent.withValues(
                                               alpha: 0.12,
                                             ),
-                                            borderRadius: BorderRadius.circular(
-                                              16,
-                                            ),
+                                            borderRadius: BorderRadius.circular(14),
                                           ),
                                           child: Icon(
                                             Icons.picture_as_pdf_rounded,
@@ -603,13 +622,13 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                             children: [
                                               Wrap(
                                                 spacing: 8,
-                                                runSpacing: 8,
+                                                runSpacing: 6,
                                                 children: [
                                                   Container(
                                                     padding:
                                                         const EdgeInsets.symmetric(
                                                           horizontal: 10,
-                                                          vertical: 6,
+                                                          vertical: 5,
                                                         ),
                                                     decoration: BoxDecoration(
                                                       color: accent.withValues(
@@ -627,33 +646,45 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                                       ),
                                                       style: TextStyle(
                                                         color: accent,
-                                                        fontSize: 12,
+                                                        fontSize: 11,
                                                         fontWeight:
                                                             FontWeight.w700,
                                                       ),
                                                     ),
                                                   ),
                                                   if (invoiceNumber.isNotEmpty)
-                                                    Text(
-                                                      '#$invoiceNumber',
-                                                      style: const TextStyle(
-                                                        fontSize: 12,
-                                                        fontWeight:
-                                                            FontWeight.w700,
-                                                        color: Color(
-                                                          0xFF475569,
+                                                    Container(
+                                                      padding:
+                                                          const EdgeInsets.symmetric(
+                                                            horizontal: 8,
+                                                            vertical: 5,
+                                                          ),
+                                                      decoration: BoxDecoration(
+                                                        color: const Color(0xFFF8FAFC),
+                                                        borderRadius:
+                                                            BorderRadius.circular(
+                                                              999,
+                                                            ),
+                                                      ),
+                                                      child: Text(
+                                                        '#$invoiceNumber',
+                                                        style: const TextStyle(
+                                                          fontSize: 11,
+                                                          fontWeight:
+                                                              FontWeight.w700,
+                                                          color: Color(0xFF475569),
                                                         ),
                                                       ),
                                                     ),
                                                 ],
                                               ),
-                                              const SizedBox(height: 10),
+                                              const SizedBox(height: 8),
                                               Text(
                                                 name,
-                                                maxLines: 2,
+                                                maxLines: 1,
                                                 overflow: TextOverflow.ellipsis,
                                                 style: const TextStyle(
-                                                  fontSize: 16,
+                                                  fontSize: 15,
                                                   fontWeight: FontWeight.w800,
                                                   color: Color(0xFF0F172A),
                                                 ),
@@ -663,7 +694,7 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                                 Text(
                                                   clientName,
                                                   style: const TextStyle(
-                                                    fontSize: 13,
+                                                    fontSize: 12,
                                                     color: Color(0xFF64748B),
                                                   ),
                                                 ),
@@ -678,33 +709,48 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                         ),
                                       ],
                                     ),
-                                    const SizedBox(height: 14),
-                                    Wrap(
-                                      spacing: 10,
-                                      runSpacing: 10,
+                                    const SizedBox(height: 12),
+                                    Row(
                                       children: [
-                                        _buildMetaPill(
-                                          icon: Icons.calendar_today_outlined,
-                                          text: createdText.isEmpty
-                                              ? (isRtl
-                                                    ? 'ללא תאריך'
-                                                    : 'No date')
-                                              : createdText,
-                                        ),
-                                        if (amount != null)
-                                          _buildMetaPill(
-                                            icon: Icons.payments_outlined,
-                                            text:
-                                                '${amount.toStringAsFixed(2)} ₪',
-                                            isStrong: true,
+                                        Expanded(
+                                          child: _buildMetaRow(
+                                            icon: Icons.calendar_today_outlined,
+                                            text: createdText.isEmpty
+                                                ? (isRtl
+                                                      ? 'ללא תאריך'
+                                                      : 'No date')
+                                                : createdText,
                                           ),
+                                        ),
+                                        if (amount != null) ...[
+                                          const SizedBox(width: 10),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 10,
+                                              vertical: 8,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFFEFF6FF),
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                            ),
+                                            child: Text(
+                                              '${amount.toStringAsFixed(2)} ₪',
+                                              style: const TextStyle(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w800,
+                                                color: Color(0xFF1976D2),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
                                       ],
                                     ),
                                     if (canCreateCreditNote) ...[
-                                      const SizedBox(height: 14),
-                                      SizedBox(
-                                        width: double.infinity,
-                                        child: OutlinedButton.icon(
+                                      const SizedBox(height: 12),
+                                      Align(
+                                        alignment: AlignmentDirectional.centerStart,
+                                        child: TextButton.icon(
                                           onPressed: () =>
                                               _openCreditNoteFromDocument(
                                                 data,
@@ -712,21 +758,18 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                               ),
                                           icon: const Icon(
                                             Icons.assignment_return_rounded,
+                                            size: 18,
                                           ),
                                           label: Text(
                                             isRtl
                                                 ? 'צור הודעת זיכוי'
                                                 : 'Create Credit Note',
                                           ),
-                                          style: OutlinedButton.styleFrom(
+                                          style: TextButton.styleFrom(
                                             foregroundColor: accent,
-                                            side: BorderSide(color: accent),
                                             padding: const EdgeInsets.symmetric(
-                                              vertical: 12,
-                                            ),
-                                            shape: RoundedRectangleBorder(
-                                              borderRadius:
-                                                  BorderRadius.circular(14),
+                                              horizontal: 0,
+                                              vertical: 4,
                                             ),
                                           ),
                                         ),
@@ -757,7 +800,10 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
         onSelected: (_) => setState(() => _selectedDocType = value),
         selectedColor: const Color(0xFF1976D2),
         backgroundColor: const Color(0xFFF1F5F9),
+        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        visualDensity: const VisualDensity(horizontal: -2, vertical: -3),
         labelStyle: TextStyle(
+          fontSize: 12,
           color: isSelected ? Colors.white : const Color(0xFF475569),
           fontWeight: FontWeight.w700,
         ),
@@ -767,32 +813,72 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
     );
   }
 
-  Widget _buildMetaPill({
-    required IconData icon,
-    required String text,
-    bool isStrong = false,
+  Widget _buildSummaryBadge({
+    required bool isRtl,
+    required int count,
+    required double totalAmount,
   }) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(999),
+        color: const Color(0xFFEFF6FF),
+        borderRadius: BorderRadius.circular(16),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 14, color: const Color(0xFF64748B)),
-          const SizedBox(width: 6),
           Text(
-            text,
-            style: TextStyle(
+            '$count',
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF1976D2),
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            isRtl ? 'מסמכים' : 'Docs',
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF475569),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '${totalAmount.toStringAsFixed(0)} ₪',
+            style: const TextStyle(
               fontSize: 12,
-              fontWeight: isStrong ? FontWeight.w800 : FontWeight.w600,
-              color: const Color(0xFF334155),
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF334155),
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildMetaRow({
+    required IconData icon,
+    required String text,
+  }) {
+    return Row(
+      children: [
+        Icon(icon, size: 14, color: const Color(0xFF64748B)),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF334155),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -832,6 +918,56 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                   : 'When you save an invoice, receipt, or credit note, it will appear here for quick access.',
               textAlign: TextAlign.center,
               style: const TextStyle(color: Color(0xFF64748B), height: 1.5),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSearchEmptyState(bool isRtl, bool hasQuery) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 72,
+              height: 72,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF1F5F9),
+                borderRadius: BorderRadius.circular(24),
+              ),
+              child: const Icon(
+                Icons.search_off_rounded,
+                size: 34,
+                color: Color(0xFF64748B),
+              ),
+            ),
+            const SizedBox(height: 18),
+            Text(
+              isRtl ? 'לא נמצאו מסמכים' : 'No documents found',
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                color: Color(0xFF0F172A),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              hasQuery
+                  ? (isRtl
+                        ? 'נסו לחפש לפי שם לקוח, מספר מסמך, סוג מסמך או תאריך.'
+                        : 'Try searching by client name, document number, type, or date.')
+                  : (isRtl
+                        ? 'שנו את טווח התאריכים או המסנן כדי לראות מסמכים נוספים.'
+                        : 'Adjust the date range or filter to see more documents.'),
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Color(0xFF64748B),
+                height: 1.5,
+              ),
             ),
           ],
         ),

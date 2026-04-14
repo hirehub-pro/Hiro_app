@@ -70,6 +70,35 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
     super.dispose();
   }
 
+  List<Map<String, String>> _normalizePartialRanges(dynamic value) {
+    if (value is List) {
+      final ranges = value
+          .map((item) => Map<String, String>.from(item as Map))
+          .where((item) => item['from'] != null && item['to'] != null)
+          .toList();
+      ranges.sort(
+        (a, b) => _timeStringToMinutes(
+          a['from']!,
+        ).compareTo(_timeStringToMinutes(b['from']!)),
+      );
+      return ranges;
+    }
+
+    if (value is Map) {
+      final range = Map<String, String>.from(value);
+      if (range['from'] != null && range['to'] != null) {
+        return [range];
+      }
+    }
+
+    return [];
+  }
+
+  int _timeStringToMinutes(String value) {
+    final parts = value.split(':');
+    return (int.parse(parts[0]) * 60) + int.parse(parts[1]);
+  }
+
   Map<String, String> _getLocalizedStrings(BuildContext context) {
     final locale = Provider.of<LanguageProvider>(
       context,
@@ -538,9 +567,20 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
             .collection('Schedule')
             .doc('info');
 
+        final scheduleSnapshot = await scheduleRef.get();
+        final partialWorkDays =
+            (scheduleSnapshot.data()?['partialWorkDays'] as Map?) ?? {};
+        final mergedRanges = _normalizePartialRanges(partialWorkDays[date]);
+        mergedRanges.add({'from': fStr, 'to': tStr});
+        mergedRanges.sort(
+          (a, b) => _timeStringToMinutes(
+            a['from']!,
+          ).compareTo(_timeStringToMinutes(b['from']!)),
+        );
+
         batch.set(scheduleRef, {
           'availableDates': FieldValue.arrayUnion([date]),
-          'partialWorkDays.$date': {'from': fStr, 'to': tStr},
+          'partialWorkDays.$date': mergedRanges,
         }, SetOptions(merge: true));
 
         notifTitle = strings['accept'] ?? 'Request Accepted';
