@@ -9,6 +9,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:video_player/video_player.dart';
 
 import 'package:untitled1/services/language_provider.dart';
 import 'package:untitled1/sign_in.dart';
@@ -29,8 +30,6 @@ import 'package:untitled1/pages/liked_pros_page.dart';
 import 'package:untitled1/services/location_context_service.dart';
 import 'package:untitled1/services/subscription_access_service.dart';
 import 'package:untitled1/utils/booking_mode.dart';
-
-import 'package:untitled1/widgets/cached_video_player.dart';
 
 class Profile extends StatefulWidget {
   final String? userId;
@@ -1424,10 +1423,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
                 fit: StackFit.expand,
                 children: [
                   isVideo
-                      ? CachedVideoPlayer(
-                          url: firstMedia,
-                          play: false,
-                        ) // Use cached player
+                      ? _ProjectVideoThumbnail(url: firstMedia)
                       : CachedNetworkImage(
                           imageUrl: firstMedia,
                           fit: BoxFit.cover,
@@ -1436,14 +1432,6 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
                           errorWidget: (context, url, error) =>
                               const Icon(Icons.error),
                         ),
-                  if (isVideo)
-                    const Center(
-                      child: Icon(
-                        Icons.play_circle_outline,
-                        color: Colors.white,
-                        size: 40,
-                      ),
-                    ),
                   if ((project['imageUrls'] as List?) != null &&
                       (project['imageUrls'] as List).length > 1)
                     Positioned(
@@ -2609,6 +2597,126 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
           'unknown': 'Unknown',
         };
     }
+  }
+}
+
+class _ProjectVideoThumbnail extends StatefulWidget {
+  final String url;
+
+  const _ProjectVideoThumbnail({required this.url});
+
+  @override
+  State<_ProjectVideoThumbnail> createState() => _ProjectVideoThumbnailState();
+}
+
+class _ProjectVideoThumbnailState extends State<_ProjectVideoThumbnail> {
+  VideoPlayerController? _controller;
+  bool _hasError = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _initialize();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ProjectVideoThumbnail oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.url != widget.url) {
+      _disposeController();
+      _initialize();
+    }
+  }
+
+  Future<void> _initialize() async {
+    final controller = VideoPlayerController.networkUrl(Uri.parse(widget.url));
+
+    try {
+      await controller.initialize();
+      await controller.setLooping(false);
+      await controller.setVolume(0);
+      await controller.pause();
+      await controller.seekTo(Duration.zero);
+
+      if (!mounted) {
+        await controller.dispose();
+        return;
+      }
+
+      setState(() {
+        _controller = controller;
+        _hasError = false;
+      });
+    } catch (_) {
+      await controller.dispose();
+      if (!mounted) return;
+      setState(() {
+        _controller = null;
+        _hasError = true;
+      });
+    }
+  }
+
+  Future<void> _disposeController() async {
+    final controller = _controller;
+    _controller = null;
+    if (controller != null) {
+      await controller.dispose();
+    }
+  }
+
+  @override
+  void dispose() {
+    _disposeController();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = _controller;
+    if (controller != null && controller.value.isInitialized) {
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          FittedBox(
+            fit: BoxFit.cover,
+            clipBehavior: Clip.hardEdge,
+            child: SizedBox(
+              width: controller.value.size.width,
+              height: controller.value.size.height,
+              child: VideoPlayer(controller),
+            ),
+          ),
+          Container(color: Colors.black.withOpacity(0.12)),
+          const Center(
+            child: Icon(
+              Icons.play_circle_outline,
+              color: Colors.white,
+              size: 40,
+            ),
+          ),
+        ],
+      );
+    }
+
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFF475569), Color(0xFF0F172A)],
+        ),
+      ),
+      child: Center(
+        child: _hasError
+            ? const Icon(
+                Icons.broken_image_outlined,
+                color: Colors.white,
+                size: 36,
+              )
+            : const CircularProgressIndicator(color: Colors.white),
+      ),
+    );
   }
 }
 

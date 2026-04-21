@@ -53,9 +53,8 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   Map<String, Map<String, dynamic>> _professionRatingStats = {};
   Map<String, Map<String, int>> _professionWeeklyViews = {};
   List<int> _weeklyViewCounts = List.filled(7, 0);
+  int _weeklyViewsTotalValue = 0;
   late final Future<SubscriptionAccessState> _accessFuture;
-
-  int get _weeklyViewsTotal => _sumWeekCounts(_weeklyViewCounts);
 
   String _normalizeLocaleCode(String code) {
     final normalized = code.toLowerCase();
@@ -401,6 +400,10 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     return counts.fold<int>(0, (sum, value) => sum + value);
   }
 
+  int _weekTotalFromMap(Map<String, int> map) {
+    return _sumWeekCounts(_extractWeekCounts(map));
+  }
+
   Map<String, int> _normalizeWeekData(Map<String, dynamic> data) {
     final normalized = _emptyWeekMap();
 
@@ -408,10 +411,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
       for (final day in _weekDayKeys) {
         normalized[day] = _asInt(data[day]);
       }
-      normalized['TVTW'] = _asInt(data['TVTW']);
-      if (normalized['TVTW'] == 0) {
-        normalized['TVTW'] = _sumWeekCounts(_extractWeekCounts(normalized));
-      }
+      normalized['TVTW'] = _sumWeekCounts(_extractWeekCounts(normalized));
     }
 
     return normalized;
@@ -446,12 +446,9 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
       for (final day in _weekDayKeys) {
         summed[day] = (summed[day] ?? 0) + _asInt(data[day]);
       }
-      summed['TVTW'] = (summed['TVTW'] ?? 0) + _asInt(data['TVTW']);
     }
 
-    if ((summed['TVTW'] ?? 0) == 0) {
-      summed['TVTW'] = _sumWeekCounts(_extractWeekCounts(summed));
-    }
+    summed['TVTW'] = _sumWeekCounts(_extractWeekCounts(summed));
 
     return summed;
   }
@@ -663,17 +660,20 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
 
   void _applyProfessionSelection() {
     _weeklyViewCounts = List.filled(7, 0);
+    _weeklyViewsTotalValue = 0;
 
     if (_selectedProfession != _allProfessionsKey &&
         _professionWeeklyViews.containsKey(_selectedProfession)) {
       final selectedViews = _professionWeeklyViews[_selectedProfession]!;
       _weeklyViewCounts = _extractWeekCounts(selectedViews);
+      _weeklyViewsTotalValue = _weekTotalFromMap(selectedViews);
     } else if (_professionWeeklyViews.isNotEmpty) {
       for (final map in _professionWeeklyViews.values) {
         final dayCounts = _extractWeekCounts(map);
         for (int i = 0; i < _weeklyViewCounts.length; i++) {
           _weeklyViewCounts[i] += dayCounts[i];
         }
+        _weeklyViewsTotalValue += _weekTotalFromMap(map);
       }
     }
 
@@ -908,6 +908,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
               _selectedProfession = value;
               _applyProfessionSelection();
               _performanceOverview = _buildGrowthRecommendation();
+              _generateChartData();
             });
           },
         ),
@@ -978,7 +979,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
               ),
               const SizedBox(width: 8),
               Text(
-                '${_t('views_this_week')}: $_weeklyViewsTotal',
+                '${_t('views_this_week')}: $_weeklyViewsTotalValue',
                 style: const TextStyle(
                   color: Colors.white70,
                   fontSize: 14,

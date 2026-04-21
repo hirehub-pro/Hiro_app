@@ -1,10 +1,19 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:untitled1/ptofile.dart';
 import 'package:untitled1/services/language_provider.dart';
+
+const _pageBackground = Color(0xFFF6F8FC);
+const _surfaceColor = Color(0xFFFFFFFF);
+const _primaryColor = Color(0xFF1259A7);
+const _deepColor = Color(0xFF0A2A52);
+const _softBlue = Color(0xFFE9F2FF);
+const _textPrimary = Color(0xFF10243E);
+const _textMuted = Color(0xFF6B7A90);
 
 class LikedProsPage extends StatefulWidget {
   const LikedProsPage({super.key});
@@ -63,6 +72,7 @@ class _LikedProsPageState extends State<LikedProsPage>
           'browse': 'חיפוש בעלי מקצוע',
           'empty_title_favorites': 'עדיין אין לך רשימת מועדפים',
           'empty_title_liked': 'עדיין לא אהבו אותך',
+          'guest_title': 'כדי לראות את הרשימה הזו צריך להתחבר',
         };
       case 'ar':
         return {
@@ -89,6 +99,7 @@ class _LikedProsPageState extends State<LikedProsPage>
           'browse': 'ابحث عن مهنيين',
           'empty_title_favorites': 'لا توجد مفضلة بعد',
           'empty_title_liked': 'لم يضفك أحد بعد',
+          'guest_title': 'سجّل الدخول لعرض هذه القائمة',
         };
       default:
         return {
@@ -116,6 +127,7 @@ class _LikedProsPageState extends State<LikedProsPage>
           'browse': 'Browse Pros',
           'empty_title_favorites': 'No favorites yet',
           'empty_title_liked': 'No likes yet',
+          'guest_title': 'Sign in to see this list',
         };
     }
   }
@@ -291,210 +303,184 @@ class _LikedProsPageState extends State<LikedProsPage>
     ).locale.languageCode;
     final isRtl = localeCode == 'he' || localeCode == 'ar';
     final strings = _strings(localeCode);
+    final currentUser = _currentUser;
 
     return Directionality(
       textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
       child: Scaffold(
-        backgroundColor: const Color(0xFFF4F8FC),
-        body: _currentUser == null || _currentUser!.isAnonymous
-            ? Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Text(
-                    strings['guest']!,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 16),
-                  ),
-                ),
+        backgroundColor: _pageBackground,
+        body: currentUser == null || currentUser.isAnonymous
+            ? _LikedProsGuestState(
+                title: strings['guest_title']!,
+                message: strings['guest']!,
               )
-            : Column(
+            : Stack(
                 children: [
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
-                    decoration: const BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [Color(0xFF1976D2), Color(0xFF0F4C81)],
-                      ),
-                      borderRadius: BorderRadius.only(
-                        bottomLeft: Radius.circular(28),
-                        bottomRight: Radius.circular(28),
-                      ),
-                    ),
-                    child: SafeArea(
-                      bottom: false,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              IconButton(
-                                onPressed: () => Navigator.pop(context),
-                                icon: const Icon(
-                                  Icons.arrow_back_ios_new_rounded,
-                                  color: Colors.white,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      strings['title']!,
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 25,
-                                        fontWeight: FontWeight.w800,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 6),
-                                    Text(
-                                      strings['subtitle']!,
-                                      style: const TextStyle(
-                                        color: Colors.white70,
-                                        fontSize: 14,
-                                        height: 1.35,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 18),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: _CountCard(
-                                  label: strings['saved_count']!,
-                                  icon: Icons.favorite_rounded,
-                                  stream: _firestore
-                                      .collection('users')
-                                      .doc(_currentUser!.uid)
-                                      .collection('favorites')
-                                      .snapshots(),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: _CountCard(
-                                  label: strings['incoming_count']!,
-                                  icon: Icons.favorite_border_rounded,
-                                  stream: _firestore
-                                      .collection('users')
-                                      .doc(_currentUser!.uid)
-                                      .collection('likedBy')
-                                      .snapshots(),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 18),
-                          Container(
-                            height: 52,
-                            padding: const EdgeInsets.all(4),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.14),
-                              borderRadius: BorderRadius.circular(18),
-                            ),
-                            child: TabBar(
-                              controller: _tabController,
-                              dividerColor: Colors.transparent,
-                              indicator: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                              labelColor: const Color(0xFF0F4C81),
-                              unselectedLabelColor: Colors.white,
-                              labelStyle: const TextStyle(
-                                fontWeight: FontWeight.w700,
-                              ),
-                              tabs: [
-                                Tab(text: strings['tab_favorites']),
-                                Tab(text: strings['tab_liked_me']),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 14),
-                          Container(
-                            height: 52,
-                            decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.12),
-                              borderRadius: BorderRadius.circular(18),
-                            ),
-                            child: TextField(
-                              controller: _searchController,
-                              onChanged: (value) {
-                                setState(() {
-                                  _searchQuery = value;
-                                });
-                              },
-                              style: const TextStyle(color: Colors.white),
-                              cursorColor: Colors.white,
-                              decoration: InputDecoration(
-                                border: InputBorder.none,
-                                prefixIcon: const Icon(
-                                  Icons.search_rounded,
-                                  color: Colors.white70,
-                                ),
-                                suffixIcon: _searchQuery.isEmpty
-                                    ? null
-                                    : IconButton(
-                                        onPressed: () {
-                                          _searchController.clear();
-                                          setState(() {
-                                            _searchQuery = '';
-                                          });
-                                        },
-                                        icon: const Icon(
-                                          Icons.close_rounded,
-                                          color: Colors.white70,
-                                        ),
-                                      ),
-                                hintText: strings['search_hint']!,
-                                hintStyle: const TextStyle(
-                                  color: Colors.white70,
-                                ),
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 14,
-                                  vertical: 14,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  Expanded(
-                    child: TabBarView(
-                      controller: _tabController,
+                  const _LikedProsBackground(),
+                  SafeArea(
+                    bottom: false,
+                    child: Column(
                       children: [
-                        _buildProsList(
-                          collectionName: 'favorites',
-                          emptyText: strings['empty_favorites']!,
-                          fallbackName: strings['no_name']!,
-                          strings: strings,
-                          uidResolver: (doc) => doc.id,
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                          child: _buildHeader(strings),
                         ),
-                        _buildProsList(
-                          collectionName: 'likedBy',
-                          emptyText: strings['empty_liked_me']!,
-                          fallbackName: strings['no_name']!,
-                          strings: strings,
-                          uidResolver: (doc) {
-                            final data = doc.data();
-                            return (data['sourceUserId'] ?? doc.id).toString();
-                          },
+                        Expanded(
+                          child: TabBarView(
+                            controller: _tabController,
+                            children: [
+                              _buildProsList(
+                                collectionName: 'favorites',
+                                emptyText: strings['empty_favorites']!,
+                                fallbackName: strings['no_name']!,
+                                strings: strings,
+                                uidResolver: (doc) => doc.id,
+                              ),
+                              _buildProsList(
+                                collectionName: 'likedBy',
+                                emptyText: strings['empty_liked_me']!,
+                                fallbackName: strings['no_name']!,
+                                strings: strings,
+                                uidResolver: (doc) {
+                                  final data = doc.data();
+                                  return (data['sourceUserId'] ?? doc.id)
+                                      .toString();
+                                },
+                              ),
+                            ],
+                          ),
                         ),
                       ],
                     ),
                   ),
                 ],
               ),
+      ),
+    );
+  }
+
+  Widget _buildHeader(Map<String, String> strings) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF154C8D), Color(0xFF091D39)],
+        ),
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x29091D39),
+            blurRadius: 14,
+            offset: Offset(0, 7),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              _HeaderIconButton(
+                icon: Icons.arrow_back_ios_new_rounded,
+                onTap: () => Navigator.pop(context),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      strings['title']!,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: TabBar(
+              controller: _tabController,
+              dividerColor: Colors.transparent,
+              indicator: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              labelColor: _deepColor,
+              unselectedLabelColor: Colors.white,
+              labelStyle: const TextStyle(fontWeight: FontWeight.w700),
+              tabs: [
+                Tab(text: strings['tab_favorites']),
+                Tab(text: strings['tab_liked_me']),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Container(
+            height: 52,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: TextField(
+              controller: _searchController,
+              onChanged: (value) {
+                setState(() {
+                  _searchQuery = value;
+                });
+              },
+              style: const TextStyle(
+                color: _textPrimary,
+                fontSize: 14.5,
+                fontWeight: FontWeight.w600,
+              ),
+              cursorColor: _primaryColor,
+              decoration: InputDecoration(
+                border: InputBorder.none,
+                prefixIcon: const Icon(
+                  CupertinoIcons.search,
+                  color: _primaryColor,
+                  size: 20,
+                ),
+                suffixIcon: _searchQuery.isEmpty
+                    ? null
+                    : IconButton(
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() {
+                            _searchQuery = '';
+                          });
+                        },
+                        icon: const Icon(
+                          Icons.close_rounded,
+                          color: _textMuted,
+                        ),
+                      ),
+                hintText: strings['search_hint']!,
+                hintStyle: const TextStyle(
+                  color: _textMuted,
+                  fontWeight: FontWeight.w500,
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 14,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -563,197 +549,68 @@ class _LikedProsPageState extends State<LikedProsPage>
               );
             }
 
-            return ListView.separated(
+            return CustomScrollView(
               physics: const BouncingScrollPhysics(),
-              padding: const EdgeInsets.fromLTRB(16, 18, 16, 28),
-              itemCount: entries.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 14),
-              itemBuilder: (context, index) {
-                final entry = entries[index];
-                final previewData = entry.previewData;
-                final name = (previewData['name'] ?? '').toString().trim();
-                final imageUrl = (previewData['profileImageUrl'] ?? '')
-                    .toString();
-                final professions =
-                    (previewData['professions'] as List?)
-                        ?.map((e) => e.toString())
-                        .where((e) => e.trim().isNotEmpty)
-                        .toList() ??
-                    const <String>[];
-                final addedLabel = _formatTimestamp(
-                  entry.storedData['addedAt'],
-                );
+              slivers: [
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(16, 18, 16, 28),
+                  sliver: SliverList.separated(
+                    itemCount: entries.length,
+                    itemBuilder: (context, index) {
+                      final entry = entries[index];
+                      final previewData = entry.previewData;
+                      final name = (previewData['name'] ?? '')
+                          .toString()
+                          .trim();
+                      final imageUrl = (previewData['profileImageUrl'] ?? '')
+                          .toString();
+                      final professions =
+                          (previewData['professions'] as List?)
+                              ?.map((e) => e.toString())
+                              .where((e) => e.trim().isNotEmpty)
+                              .toList() ??
+                          const <String>[];
+                      final addedLabel = _formatTimestamp(
+                        entry.storedData['addedAt'],
+                      );
 
-                return InkWell(
-                  borderRadius: BorderRadius.circular(22),
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => Profile(userId: entry.targetUid),
-                      ),
-                    );
-                  },
-                  child: Ink(
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(22),
-                      boxShadow: const [
-                        BoxShadow(
-                          color: Color(0x120F4C81),
-                          blurRadius: 18,
-                          offset: Offset(0, 8),
-                        ),
-                      ],
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Container(
-                                width: 62,
-                                height: 62,
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(18),
-                                  color: const Color(0xFFE8F1FB),
-                                ),
-                                clipBehavior: Clip.antiAlias,
-                                child: imageUrl.isNotEmpty
-                                    ? CachedNetworkImage(
-                                        imageUrl: imageUrl,
-                                        fit: BoxFit.cover,
-                                      )
-                                    : const Icon(
-                                        Icons.person_rounded,
-                                        color: Color(0xFF5E7EA6),
-                                        size: 30,
-                                      ),
-                              ),
-                              const SizedBox(width: 14),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      name.isNotEmpty ? name : fallbackName,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        fontSize: 17,
-                                        fontWeight: FontWeight.w800,
-                                        color: Color(0xFF14324A),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 6),
-                                    if (addedLabel.isNotEmpty)
-                                      Text(
-                                        '${strings['member_since']!} $addedLabel',
-                                        style: const TextStyle(
-                                          fontSize: 12.5,
-                                          color: Color(0xFF6B7A8C),
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Container(
-                                width: 40,
-                                height: 40,
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFE9F3FE),
-                                  borderRadius: BorderRadius.circular(14),
-                                ),
-                                child: const Icon(
-                                  Icons.chevron_right_rounded,
-                                  color: Color(0xFF0F4C81),
-                                ),
-                              ),
-                            ],
-                          ),
-                          if (professions.isNotEmpty) ...[
-                            const SizedBox(height: 14),
-                            Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
-                              children: professions.take(4).map((profession) {
-                                return Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 10,
-                                    vertical: 7,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFF1F7FD),
-                                    borderRadius: BorderRadius.circular(999),
-                                  ),
-                                  child: Text(
-                                    profession,
-                                    style: const TextStyle(
-                                      fontSize: 12.5,
-                                      fontWeight: FontWeight.w600,
-                                      color: Color(0xFF29557A),
-                                    ),
-                                  ),
-                                );
-                              }).toList(),
+                      return _LikedProCard(
+                        title: name.isNotEmpty ? name : fallbackName,
+                        imageUrl: imageUrl,
+                        professions: professions,
+                        addedLabel: addedLabel,
+                        memberSinceLabel: strings['member_since']!,
+                        openProfileLabel: strings['open_profile']!,
+                        onOpenProfile: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => Profile(userId: entry.targetUid),
                             ),
-                          ],
-                          const SizedBox(height: 16),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: ElevatedButton(
-                                  onPressed: () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) =>
-                                            Profile(userId: entry.targetUid),
-                                      ),
-                                    );
-                                  },
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: const Color(0xFF1976D2),
-                                    foregroundColor: Colors.white,
-                                    elevation: 0,
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 13,
-                                    ),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(14),
-                                    ),
-                                  ),
-                                  child: Text(strings['open_profile']!),
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              _FavoriteActionButton(
-                                collectionName: collectionName,
-                                currentUserId: uid,
-                                targetUid: entry.targetUid,
-                                strings: strings,
-                                isPending: _pendingFavoriteIds.contains(
-                                  entry.targetUid,
-                                ),
-                                onSetFavorite: (shouldFavorite) => _setFavorite(
-                                  targetUid: entry.targetUid,
-                                  previewData: previewData,
-                                  shouldFavorite: shouldFavorite,
-                                  strings: strings,
-                                ),
-                              ),
-                            ],
+                          );
+                        },
+                        actionButton: _FavoriteActionButton(
+                          collectionName: collectionName,
+                          currentUserId: uid,
+                          targetUid: entry.targetUid,
+                          strings: strings,
+                          isPending: _pendingFavoriteIds.contains(
+                            entry.targetUid,
                           ),
-                        ],
-                      ),
-                    ),
+                          onSetFavorite: (shouldFavorite) => _setFavorite(
+                            targetUid: entry.targetUid,
+                            previewData: previewData,
+                            shouldFavorite: shouldFavorite,
+                            strings: strings,
+                          ),
+                        ),
+                      );
+                    },
+                    separatorBuilder: (context, index) =>
+                        const SizedBox(height: 18),
                   ),
-                );
-              },
+                ),
+              ],
             );
           },
         );
@@ -798,10 +655,11 @@ class _FavoriteActionButton extends StatelessWidget {
         onPressed: isPending ? null : () => onSetFavorite(false),
         style: OutlinedButton.styleFrom(
           foregroundColor: const Color(0xFFB42318),
-          side: const BorderSide(color: Color(0xFFF1C5C5)),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+          backgroundColor: const Color(0xFFFFF5F4),
+          side: const BorderSide(color: Color(0xFFF3CAC5)),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(16),
           ),
         ),
         child: isPending
@@ -826,18 +684,16 @@ class _FavoriteActionButton extends StatelessWidget {
         return OutlinedButton(
           onPressed: isPending || isSaved ? null : () => onSetFavorite(true),
           style: OutlinedButton.styleFrom(
-            foregroundColor: isSaved
-                ? const Color(0xFF117A45)
-                : const Color(0xFF0F4C81),
+            foregroundColor: isSaved ? const Color(0xFF117A45) : _primaryColor,
             side: BorderSide(
               color: isSaved
                   ? const Color(0xFFB7E4C7)
-                  : const Color(0xFFBFD9F4),
+                  : const Color(0xFFC6D9F9),
             ),
-            backgroundColor: isSaved ? const Color(0xFFEFFAF3) : Colors.white,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+            backgroundColor: isSaved ? const Color(0xFFEFFAF3) : _softBlue,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(16),
             ),
           ),
           child: isPending
@@ -862,37 +718,37 @@ class _LikedProsLoadingList extends StatelessWidget {
       physics: const BouncingScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(16, 18, 16, 28),
       itemCount: 4,
-      separatorBuilder: (_, __) => const SizedBox(height: 14),
+      separatorBuilder: (context, index) => const SizedBox(height: 14),
       itemBuilder: (context, index) {
         return Container(
-          height: 178,
+          height: 232,
           decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(22),
+            color: _surfaceColor,
+            borderRadius: BorderRadius.circular(28),
             boxShadow: const [
               BoxShadow(
-                color: Color(0x120F4C81),
-                blurRadius: 18,
-                offset: Offset(0, 8),
+                color: Color(0x120A2A52),
+                blurRadius: 24,
+                offset: Offset(0, 12),
               ),
             ],
           ),
           child: const Padding(
-            padding: EdgeInsets.all(16),
+            padding: EdgeInsets.all(18),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
                   children: [
-                    _SkeletonBox(width: 62, height: 62, radius: 18),
+                    _SkeletonBox(width: 68, height: 68, radius: 22),
                     SizedBox(width: 14),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          _SkeletonBox(width: 140, height: 16, radius: 8),
+                          _SkeletonBox(width: 152, height: 18, radius: 10),
                           SizedBox(height: 10),
-                          _SkeletonBox(width: 110, height: 12, radius: 8),
+                          _SkeletonBox(width: 124, height: 12, radius: 8),
                         ],
                       ),
                     ),
@@ -901,23 +757,25 @@ class _LikedProsLoadingList extends StatelessWidget {
                 SizedBox(height: 16),
                 Row(
                   children: [
-                    _SkeletonBox(width: 84, height: 28, radius: 999),
+                    _SkeletonBox(width: 92, height: 30, radius: 999),
                     SizedBox(width: 8),
-                    _SkeletonBox(width: 74, height: 28, radius: 999),
+                    _SkeletonBox(width: 82, height: 30, radius: 999),
                   ],
                 ),
+                SizedBox(height: 14),
+                _SkeletonBox(width: 110, height: 12, radius: 8),
                 Spacer(),
                 Row(
                   children: [
                     Expanded(
                       child: _SkeletonBox(
                         width: double.infinity,
-                        height: 44,
-                        radius: 14,
+                        height: 48,
+                        radius: 16,
                       ),
                     ),
                     SizedBox(width: 10),
-                    _SkeletonBox(width: 96, height: 44, radius: 14),
+                    _SkeletonBox(width: 108, height: 48, radius: 16),
                   ],
                 ),
               ],
@@ -946,7 +804,7 @@ class _SkeletonBox extends StatelessWidget {
       width: width,
       height: height,
       decoration: BoxDecoration(
-        color: const Color(0xFFE8EEF5),
+        color: const Color(0xFFE6EDF7),
         borderRadius: BorderRadius.circular(radius),
       ),
     );
@@ -975,16 +833,20 @@ class _LikedProsEmptyState extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 86,
-              height: 86,
+              width: 94,
+              height: 94,
               decoration: BoxDecoration(
-                color: const Color(0xFFEAF3FD),
-                borderRadius: BorderRadius.circular(28),
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFFE7F0FF), Color(0xFFD9E8FF)],
+                ),
+                borderRadius: BorderRadius.circular(30),
               ),
               child: const Icon(
                 Icons.favorite_outline_rounded,
-                color: Color(0xFF0F4C81),
-                size: 40,
+                color: _primaryColor,
+                size: 42,
               ),
             ),
             const SizedBox(height: 18),
@@ -994,7 +856,7 @@ class _LikedProsEmptyState extends StatelessWidget {
               style: const TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.w800,
-                color: Color(0xFF14324A),
+                color: _textPrimary,
               ),
             ),
             const SizedBox(height: 10),
@@ -1003,7 +865,7 @@ class _LikedProsEmptyState extends StatelessWidget {
               textAlign: TextAlign.center,
               style: const TextStyle(
                 fontSize: 14.5,
-                color: Color(0xFF66788A),
+                color: _textMuted,
                 height: 1.45,
               ),
             ),
@@ -1012,14 +874,14 @@ class _LikedProsEmptyState extends StatelessWidget {
               ElevatedButton(
                 onPressed: onAction,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF1976D2),
+                  backgroundColor: _primaryColor,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 18,
-                    vertical: 13,
+                    horizontal: 20,
+                    vertical: 14,
                   ),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius: BorderRadius.circular(16),
                   ),
                 ),
                 child: Text(actionLabel!),
@@ -1032,71 +894,289 @@ class _LikedProsEmptyState extends StatelessWidget {
   }
 }
 
-class _CountCard extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final Stream<QuerySnapshot<Map<String, dynamic>>> stream;
+class _LikedProsBackground extends StatelessWidget {
+  const _LikedProsBackground();
 
-  const _CountCard({
-    required this.label,
-    required this.icon,
-    required this.stream,
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        Container(color: _pageBackground),
+        Align(
+          alignment: Alignment.topCenter,
+          child: Container(
+            height: 280,
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Color(0xFFD9E8FF), Color(0xFFF6F8FC)],
+              ),
+            ),
+          ),
+        ),
+        Positioned(
+          top: -70,
+          right: -40,
+          child: Container(
+            width: 190,
+            height: 190,
+            decoration: const BoxDecoration(
+              color: Color(0x30FFFFFF),
+              shape: BoxShape.circle,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _HeaderIconButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+
+  const _HeaderIconButton({required this.icon, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white.withValues(alpha: 0.14),
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: SizedBox(
+          width: 46,
+          height: 46,
+          child: Icon(icon, color: Colors.white),
+        ),
+      ),
+    );
+  }
+}
+
+class _LikedProCard extends StatelessWidget {
+  final String title;
+  final String imageUrl;
+  final List<String> professions;
+  final String addedLabel;
+  final String memberSinceLabel;
+  final String openProfileLabel;
+  final VoidCallback onOpenProfile;
+  final Widget actionButton;
+
+  const _LikedProCard({
+    required this.title,
+    required this.imageUrl,
+    required this.professions,
+    required this.addedLabel,
+    required this.memberSinceLabel,
+    required this.openProfileLabel,
+    required this.onOpenProfile,
+    required this.actionButton,
   });
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: stream,
-      builder: (context, snapshot) {
-        final count = snapshot.data?.docs.length ?? 0;
-
-        return Container(
+    return InkWell(
+      borderRadius: BorderRadius.circular(24),
+      onTap: onOpenProfile,
+      child: Ink(
+        decoration: BoxDecoration(
+          color: _surfaceColor,
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x140A2A52),
+              blurRadius: 16,
+              offset: Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Padding(
           padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.12),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: Colors.white.withOpacity(0.08)),
-          ),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.16),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Icon(icon, color: Colors.white),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 68,
+                    height: 68,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(22),
+                      gradient: const LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [Color(0xFFE8F2FF), Color(0xFFD7E8FF)],
+                      ),
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: imageUrl.isNotEmpty
+                        ? CachedNetworkImage(
+                            imageUrl: imageUrl,
+                            fit: BoxFit.cover,
+                          )
+                        : const Icon(
+                            Icons.person_rounded,
+                            color: Color(0xFF5E7EA6),
+                            size: 32,
+                          ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                            color: _textPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        if (addedLabel.isNotEmpty)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF3F7FD),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              '$memberSinceLabel $addedLabel',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: _textMuted,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '$count',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 22,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      label,
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
+              if (professions.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Text(
+                  professions.first,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: _textMuted,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
+              ],
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: onOpenProfile,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _primaryColor,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(vertical: 15),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      child: Text(openProfileLabel),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  actionButton,
+                ],
               ),
             ],
           ),
-        );
-      },
+        ),
+      ),
+    );
+  }
+}
+
+class _LikedProsGuestState extends StatelessWidget {
+  final String title;
+  final String message;
+
+  const _LikedProsGuestState({required this.title, required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        const _LikedProsBackground(),
+        Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(28),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x140A2A52),
+                    blurRadius: 28,
+                    offset: Offset(0, 12),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 72,
+                    height: 72,
+                    decoration: BoxDecoration(
+                      color: _softBlue,
+                      borderRadius: BorderRadius.circular(22),
+                    ),
+                    child: const Icon(
+                      Icons.lock_outline_rounded,
+                      color: _primaryColor,
+                      size: 34,
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  Text(
+                    title,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                      color: _textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    message,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      height: 1.45,
+                      color: _textMuted,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
