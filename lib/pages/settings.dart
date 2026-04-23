@@ -530,6 +530,14 @@ class _SettingsPageState extends State<SettingsPage> {
               backgroundColor: const Color(0xFFF2F2F7),
               elevation: 0,
               pinned: true,
+              automaticallyImplyLeading: false,
+              actions: [
+                if (Navigator.of(context).canPop())
+                  IconButton(
+                    icon: const BackButtonIcon(),
+                    onPressed: () => Navigator.maybePop(context),
+                  ),
+              ],
               flexibleSpace: FlexibleSpaceBar(
                 title: Text(
                   strings['title']!,
@@ -746,7 +754,18 @@ class _SettingsPageState extends State<SettingsPage> {
       child: CupertinoPageScaffold(
         backgroundColor: CupertinoColors.systemGroupedBackground,
         navigationBar: CupertinoNavigationBar(
+          automaticallyImplyLeading: false,
           middle: Text(strings['title']!),
+          trailing: Navigator.of(context).canPop()
+              ? CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  minimumSize: Size.zero,
+                  onPressed: () => Navigator.maybePop(context),
+                  child: Icon(
+                    isRtl ? CupertinoIcons.forward : CupertinoIcons.back,
+                  ),
+                )
+              : null,
           border: null,
         ),
         child: ListView(

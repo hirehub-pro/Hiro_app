@@ -253,10 +253,11 @@ class _AddProjectPageState extends State<AddProjectPage> {
   }
 
   Future<void> _saveProject() async {
+    final strings = _getLocalizedStrings();
     if (_mediaFiles.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('אנא בחר לפחות תמונה או סרטון אחד')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(strings['pick_one_required']!)));
       return;
     }
 
@@ -335,9 +336,9 @@ class _AddProjectPageState extends State<AddProjectPage> {
     } catch (e) {
       debugPrint("Upload error: $e");
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('העלאה נכשלה: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${strings['upload_failed']!}: $e')),
+        );
       }
     } finally {
       if (mounted) setState(() => _isUploading = false);
@@ -363,6 +364,62 @@ class _AddProjectPageState extends State<AddProjectPage> {
         'camera': 'מצלמה',
         'hint': 'ספר ללקוחות שלך על הפרויקט הזה...',
         'video_too_long': 'הסרטון ארוך מדי. המקסימום הוא דקה אחת.',
+        'pick_one_required': 'אנא בחר לפחות תמונה או סרטון אחד',
+        'upload_failed': 'העלאה נכשלה',
+      };
+    }
+    if (locale == 'ar') {
+      return {
+        'title': 'إضافة مشروع جديد',
+        'description': 'وصف المشروع',
+        'pick_media': 'اختيار الوسائط',
+        'save': 'حفظ ونشر',
+        'uploading': 'جارٍ رفع المشروع...',
+        'limit_reached': 'يمكن رفع 5 ملفات كحد أقصى',
+        'image': 'صور من المعرض',
+        'video': 'فيديو من المعرض',
+        'gallery': 'المعرض',
+        'camera': 'الكاميرا',
+        'hint': 'أخبر العملاء عن هذا المشروع...',
+        'video_too_long': 'الفيديو طويل جدًا. الحد الأقصى دقيقة واحدة.',
+        'pick_one_required': 'يرجى اختيار صورة أو فيديو واحد على الأقل',
+        'upload_failed': 'فشل الرفع',
+      };
+    }
+    if (locale == 'am') {
+      return {
+        'title': 'አዲስ ፕሮጀክት ጨምር',
+        'description': 'የፕሮጀክቱ መግለጫ',
+        'pick_media': 'ሚዲያ ይምረጡ',
+        'save': 'አስቀምጥ እና አትም',
+        'uploading': 'ፕሮጀክት በመላክ ላይ...',
+        'limit_reached': 'ከፍተኛው 5 ፋይሎች ብቻ',
+        'image': 'ከጋለሪ ምስሎች',
+        'video': 'ከጋለሪ ቪዲዮ',
+        'gallery': 'ጋለሪ',
+        'camera': 'ካሜራ',
+        'hint': 'ለደንበኞችዎ ስለዚህ ፕሮጀክት ይንገሩ...',
+        'video_too_long': 'ቪዲዮው ረጅም ነው። ከፍተኛው 1 ደቂቃ ነው።',
+        'pick_one_required': 'እባክዎ ቢያንስ አንድ ምስል ወይም ቪዲዮ ይምረጡ',
+        'upload_failed': 'መላክ አልተሳካም',
+      };
+    }
+    if (locale == 'ru') {
+      return {
+        'title': 'Добавить новый проект',
+        'description': 'Описание проекта',
+        'pick_media': 'Выбрать медиа',
+        'save': 'Сохранить и опубликовать',
+        'uploading': 'Загрузка проекта...',
+        'limit_reached': 'Можно загрузить максимум 5 файлов',
+        'image': 'Изображения из галереи',
+        'video': 'Видео из галереи',
+        'gallery': 'Галерея',
+        'camera': 'Камера',
+        'hint': 'Расскажите клиентам об этом проекте...',
+        'video_too_long': 'Видео слишком длинное. Максимум 1 минута.',
+        'pick_one_required': 'Выберите хотя бы одно изображение или видео',
+        'upload_failed': 'Ошибка загрузки',
       };
     }
     return {
@@ -378,14 +435,16 @@ class _AddProjectPageState extends State<AddProjectPage> {
       'camera': 'Camera',
       'hint': 'Tell your customers about this project...',
       'video_too_long': 'Video is too long. Maximum is 1 minute.',
+      'pick_one_required': 'Please select at least one image or video',
+      'upload_failed': 'Upload failed',
     };
   }
 
   @override
   Widget build(BuildContext context) {
     final strings = _getLocalizedStrings();
-    final isRtl =
-        Provider.of<LanguageProvider>(context).locale.languageCode == 'he';
+    final locale = Provider.of<LanguageProvider>(context).locale.languageCode;
+    final isRtl = locale == 'he' || locale == 'ar';
 
     return Directionality(
       textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,

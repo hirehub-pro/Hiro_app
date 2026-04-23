@@ -101,6 +101,62 @@ class _LikedProsPageState extends State<LikedProsPage>
           'empty_title_liked': 'لم يضفك أحد بعد',
           'guest_title': 'سجّل الدخول لعرض هذه القائمة',
         };
+      case 'am':
+        return {
+          'title': 'የወደድኳቸው ባለሙያዎች',
+          'subtitle': 'ያስቀመጧቸውን ባለሙያዎች እና እርስዎን የወደዱትን ይከታተሉ።',
+          'tab_favorites': 'እኔ የወደድኳቸው',
+          'tab_liked_me': 'እኔን የወደዱ',
+          'empty_favorites': 'እስካሁን ምንም ባለሙያ ወደ ተወዳጆች አልጨመሩም።',
+          'empty_liked_me': 'እስካሁን እርስዎን የወደዱ ባለሙያዎች የሉም።',
+          'open_profile': 'ፕሮፋይል ክፈት',
+          'no_name': 'ባለሙያ',
+          'saved_count': 'ያስቀመጧቸው',
+          'incoming_count': 'እርስዎን ወደዱ',
+          'member_since': 'የተቀመጠበት',
+          'guest': 'የወደዱትን ዝርዝር ለማየት እባክዎ ይግቡ።',
+          'retry_error': 'ውሂብ ሲጫን ችግር ተፈጥሯል።',
+          'search_hint': 'በስም ወይም በሙያ ፈልግ',
+          'no_results': 'ለፍለጋዎ የሚዛመዱ ውጤቶች አልተገኙም።',
+          'remove': 'አስወግድ',
+          'removed': 'ከተወዳጆች ተወግዷል',
+          'like_back': 'እኔም እወዳለሁ',
+          'liked': 'ተቀምጧል',
+          'saved_now': 'ወደ ተወዳጆች ተጨምሯል',
+          'browse': 'ባለሙያዎችን ፈልግ',
+          'empty_title_favorites': 'ገና ተወዳጆች የሉም',
+          'empty_title_liked': 'ገና ወደዶች የሉም',
+          'guest_title': 'ይህን ዝርዝር ለማየት ይግቡ',
+        };
+      case 'ru':
+        return {
+          'title': 'Понравившиеся специалисты',
+          'subtitle':
+              'Следите за специалистами, которых вы сохранили, и теми, кто отметил вас.',
+          'tab_favorites': 'Я отметил',
+          'tab_liked_me': 'Отметили меня',
+          'empty_favorites': 'Вы еще не добавили специалистов в избранное.',
+          'empty_liked_me': 'Пока никто не добавил вас в избранное.',
+          'open_profile': 'Открыть профиль',
+          'no_name': 'Специалист',
+          'saved_count': 'Сохранено',
+          'incoming_count': 'Отметили вас',
+          'member_since': 'Сохранено',
+          'guest':
+              'Войдите, чтобы посмотреть список понравившихся специалистов.',
+          'retry_error': 'Произошла ошибка при загрузке данных.',
+          'search_hint': 'Поиск по имени или профессии',
+          'no_results': 'По вашему запросу ничего не найдено.',
+          'remove': 'Удалить',
+          'removed': 'Удалено из избранного',
+          'like_back': 'Отметить в ответ',
+          'liked': 'Сохранено',
+          'saved_now': 'Добавлено в избранное',
+          'browse': 'Найти специалистов',
+          'empty_title_favorites': 'Пока нет избранного',
+          'empty_title_liked': 'Пока нет отметок',
+          'guest_title': 'Войдите, чтобы увидеть этот список',
+        };
       default:
         return {
           'title': 'Liked Pros',

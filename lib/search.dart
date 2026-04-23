@@ -54,6 +54,110 @@ class _SearchPageState extends State<SearchPage> {
     'am',
   ];
 
+  bool _isRtl(String locale) => locale == 'he' || locale == 'ar';
+
+  String _t(String key, String locale) {
+    const en = <String, String>{
+      'search_worker_hint': 'Search by name or city...',
+      'search_prof_hint': 'Search profession...',
+      'no_professions': 'No professions found',
+      'no_workers': 'No available workers at the moment',
+      'pull_more': 'Pull up to load more',
+      'worker_fallback': 'Worker',
+      'available_now': 'Available now',
+      'not_available_now': 'Not available now',
+      'rating_for_service': 'Rating for service',
+      'new_badge': 'NEW',
+      'filter_radius_title': 'Filter by Work Radius',
+      'filter_radius_subtitle': 'Show only workers who serve your area',
+      'sort_rating': 'Rating',
+      'sort_nearest': 'Nearest to Me',
+      'sort_name': 'Name',
+    };
+    const he = <String, String>{
+      'search_worker_hint': 'חפש לפי שם או עיר...',
+      'search_prof_hint': 'חפש מקצוע...',
+      'no_professions': 'לא נמצאו מקצועות',
+      'no_workers': 'אין עובדים זמינים כרגע',
+      'pull_more': 'משוך למעלה לעוד',
+      'worker_fallback': 'בעל מקצוע',
+      'available_now': 'זמין עכשיו',
+      'not_available_now': 'לא זמין עכשיו',
+      'rating_for_service': 'דירוג לשירות זה',
+      'new_badge': 'חדש',
+      'filter_radius_title': 'סנן לפי רדיוס עבודה',
+      'filter_radius_subtitle': 'הצג רק עובדים שמגיעים אליך',
+      'sort_rating': 'דירוג',
+      'sort_nearest': 'הכי קרוב אלי',
+      'sort_name': 'שם',
+    };
+    const ar = <String, String>{
+      'search_worker_hint': 'ابحث حسب الاسم أو المدينة...',
+      'search_prof_hint': 'ابحث عن مهنة...',
+      'no_professions': 'لم يتم العثور على مهن',
+      'no_workers': 'لا يوجد عمّال متاحون الآن',
+      'pull_more': 'اسحب للأعلى للمزيد',
+      'worker_fallback': 'عامل',
+      'available_now': 'متاح الآن',
+      'not_available_now': 'غير متاح الآن',
+      'rating_for_service': 'تقييم لهذه الخدمة',
+      'new_badge': 'جديد',
+      'filter_radius_title': 'تصفية حسب نطاق العمل',
+      'filter_radius_subtitle': 'اعرض فقط العمال الذين يصلون إلى منطقتك',
+      'sort_rating': 'التقييم',
+      'sort_nearest': 'الأقرب إلي',
+      'sort_name': 'الاسم',
+    };
+    const am = <String, String>{
+      'search_worker_hint': 'በስም ወይም ከተማ ፈልግ...',
+      'search_prof_hint': 'ሙያ ፈልግ...',
+      'no_professions': 'ሙያዎች አልተገኙም',
+      'no_workers': 'አሁን የሚገኙ ሰራተኞች የሉም',
+      'pull_more': 'ለተጨማሪ ወደ ላይ ይጎትቱ',
+      'worker_fallback': 'ሰራተኛ',
+      'available_now': 'አሁን ይገኛል',
+      'not_available_now': 'አሁን አይገኝም',
+      'rating_for_service': 'ለዚህ አገልግሎት ደረጃ',
+      'new_badge': 'አዲስ',
+      'filter_radius_title': 'በስራ ራዲየስ ማጣራት',
+      'filter_radius_subtitle': 'ወደ አካባቢዎ የሚመጡ ሰራተኞችን ብቻ አሳይ',
+      'sort_rating': 'ደረጃ',
+      'sort_nearest': 'በጣም ቅርብ',
+      'sort_name': 'ስም',
+    };
+    const ru = <String, String>{
+      'search_worker_hint': 'Поиск по имени или городу...',
+      'search_prof_hint': 'Поиск профессии...',
+      'no_professions': 'Профессии не найдены',
+      'no_workers': 'Сейчас нет доступных специалистов',
+      'pull_more': 'Потяните вверх, чтобы загрузить еще',
+      'worker_fallback': 'Специалист',
+      'available_now': 'Сейчас доступен',
+      'not_available_now': 'Сейчас недоступен',
+      'rating_for_service': 'Рейтинг по этой услуге',
+      'new_badge': 'НОВЫЙ',
+      'filter_radius_title': 'Фильтр по радиусу работы',
+      'filter_radius_subtitle':
+          'Показывать только специалистов, работающих в вашем районе',
+      'sort_rating': 'Рейтинг',
+      'sort_nearest': 'Ближе всего ко мне',
+      'sort_name': 'Имя',
+    };
+
+    switch (locale) {
+      case 'he':
+        return he[key] ?? en[key] ?? key;
+      case 'ar':
+        return ar[key] ?? en[key] ?? key;
+      case 'am':
+        return am[key] ?? en[key] ?? key;
+      case 'ru':
+        return ru[key] ?? en[key] ?? key;
+      default:
+        return en[key] ?? key;
+    }
+  }
+
   String _normalizeSearchText(String value) {
     return value.toLowerCase().trim();
   }
@@ -887,10 +991,8 @@ class _SearchPageState extends State<SearchPage> {
             fontSize: 14,
           ),
           hintText: _showWorkerList
-              ? (locale == 'he'
-                    ? 'חפש לפי שם או עיר...'
-                    : 'Search by name or city...')
-              : (locale == 'he' ? 'חפש מקצוע...' : 'Search profession...'),
+              ? _t('search_worker_hint', locale)
+              : _t('search_prof_hint', locale),
           prefixIcon: Icon(Icons.search_rounded, color: Colors.white70),
           border: InputBorder.none,
           contentPadding: const EdgeInsets.symmetric(vertical: 10),
@@ -908,11 +1010,7 @@ class _SearchPageState extends State<SearchPage> {
           children: [
             SizedBox(
               height: MediaQuery.of(context).size.height * 0.55,
-              child: Center(
-                child: Text(
-                  locale == 'he' ? 'לא נמצאו מקצועות' : 'No professions found',
-                ),
-              ),
+              child: Center(child: Text(_t('no_professions', locale))),
             ),
           ],
         ),
@@ -1017,9 +1115,7 @@ class _SearchPageState extends State<SearchPage> {
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    locale == 'he'
-                        ? 'אין עובדים זמינים כרגע'
-                        : 'No available workers at the moment',
+                    _t('no_workers', locale),
                     style: const TextStyle(color: Colors.grey),
                   ),
                 ],
@@ -1053,9 +1149,7 @@ class _SearchPageState extends State<SearchPage> {
                             size: 20,
                           ),
                           Text(
-                            locale == 'he'
-                                ? 'משוך למעלה לעוד'
-                                : 'Pull up to load more',
+                            _t('pull_more', locale),
                             style: const TextStyle(
                               color: Colors.grey,
                               fontSize: 12,
@@ -1153,7 +1247,7 @@ class _SearchPageState extends State<SearchPage> {
                     children: [
                       Flexible(
                         child: Text(
-                          w['name'] ?? 'Worker',
+                          w['name'] ?? _t('worker_fallback', locale),
                           style: const TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 17,
@@ -1236,13 +1330,9 @@ class _SearchPageState extends State<SearchPage> {
                             borderRadius: BorderRadius.circular(999),
                           ),
                           child: Text(
-                            locale == 'he'
-                                ? (isAvailableNow
-                                      ? 'זמין עכשיו'
-                                      : 'לא זמין עכשיו')
-                                : (isAvailableNow
-                                      ? 'Available now'
-                                      : 'Not available now'),
+                            isAvailableNow
+                                ? _t('available_now', locale)
+                                : _t('not_available_now', locale),
                             style: TextStyle(
                               color: isAvailableNow ? Colors.green : Colors.red,
                               fontSize: 11,
@@ -1277,9 +1367,7 @@ class _SearchPageState extends State<SearchPage> {
                           FittedBox(
                             fit: BoxFit.scaleDown,
                             child: Text(
-                              locale == 'he'
-                                  ? 'דירוג לשירות זה'
-                                  : 'Rating for service',
+                              _t('rating_for_service', locale),
                               style: TextStyle(
                                 fontSize: 8,
                                 color: themeColor,
@@ -1351,8 +1439,8 @@ class _SearchPageState extends State<SearchPage> {
                 if (isNew)
                   Positioned(
                     top: 8,
-                    left: locale == 'he' ? null : 8,
-                    right: locale == 'he' ? 8 : null,
+                    right: _isRtl(locale) ? 8 : null,
+                    left: _isRtl(locale) ? null : 8,
                     child: Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 6,
@@ -1363,7 +1451,7 @@ class _SearchPageState extends State<SearchPage> {
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
-                        locale == 'he' ? 'חדש' : 'NEW',
+                        _t('new_badge', locale),
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 9,
@@ -1392,16 +1480,8 @@ class _SearchPageState extends State<SearchPage> {
           mainAxisSize: MainAxisSize.min,
           children: [
             SwitchListTile(
-              title: Text(
-                locale == 'he'
-                    ? 'סנן לפי רדיוס עבודה'
-                    : 'Filter by Work Radius',
-              ),
-              subtitle: Text(
-                locale == 'he'
-                    ? 'הצג רק עובדים שמגיעים אליך'
-                    : 'Show only workers who serve your area',
-              ),
+              title: Text(_t('filter_radius_title', locale)),
+              subtitle: Text(_t('filter_radius_subtitle', locale)),
               value: _filterByRadius,
               onChanged: (val) {
                 setState(() => _filterByRadius = val);
@@ -1417,7 +1497,7 @@ class _SearchPageState extends State<SearchPage> {
             const Divider(),
             ListTile(
               leading: const Icon(Icons.star_rounded, color: Colors.amber),
-              title: Text(locale == 'he' ? 'דירוג' : 'Rating'),
+              title: Text(_t('sort_rating', locale)),
               trailing: _sortBy == 'rating'
                   ? Icon(Icons.check_circle, color: themeColor)
                   : null,
@@ -1429,7 +1509,7 @@ class _SearchPageState extends State<SearchPage> {
             ),
             ListTile(
               leading: Icon(Icons.my_location, color: themeColor),
-              title: Text(locale == 'he' ? 'הכי קרוב אלי' : 'Nearest to Me'),
+              title: Text(_t('sort_nearest', locale)),
               trailing: _sortBy == 'distance'
                   ? Icon(Icons.check_circle, color: themeColor)
                   : null,
@@ -1440,7 +1520,7 @@ class _SearchPageState extends State<SearchPage> {
             ),
             ListTile(
               leading: Icon(Icons.sort_by_alpha_rounded, color: themeColor),
-              title: Text(locale == 'he' ? 'שם' : 'Name'),
+              title: Text(_t('sort_name', locale)),
               trailing: _sortBy == 'name'
                   ? Icon(Icons.check_circle, color: themeColor)
                   : null,

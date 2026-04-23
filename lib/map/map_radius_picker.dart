@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:provider/provider.dart';
+import 'package:untitled1/services/language_provider.dart';
 import 'dart:math';
 
 class MapRadiusPicker extends StatefulWidget {
@@ -24,6 +26,80 @@ class _MapRadiusPickerState extends State<MapRadiusPicker> {
   Set<Circle> _circles = {};
   Set<Marker> _markers = {};
   bool _isLoading = false;
+
+  String _t(String key) {
+    final code = Provider.of<LanguageProvider>(
+      context,
+      listen: false,
+    ).locale.languageCode;
+    const en = <String, String>{
+      'work_area': 'Work Area',
+      'save': 'Save',
+      'work_radius': 'Work Radius',
+      'instruction': 'Tap the map or drag the marker within Israel',
+      'stay_within_israel': 'Please stay within Israel bounds',
+      'location_services_disabled': 'Location services are disabled.',
+      'location_permissions_denied': 'Location permissions are denied.',
+      'location_permissions_permanently_denied':
+          'Location permissions are permanently denied.',
+    };
+    const he = <String, String>{
+      'work_area': 'אזור עבודה',
+      'save': 'שמור',
+      'work_radius': 'רדיוס עבודה',
+      'instruction': 'הקשו על המפה או גררו את הסמן בתוך ישראל',
+      'stay_within_israel': 'נא להישאר בתוך גבולות ישראל',
+      'location_services_disabled': 'שירותי המיקום כבויים.',
+      'location_permissions_denied': 'הרשאות המיקום נדחו.',
+      'location_permissions_permanently_denied': 'הרשאות המיקום נדחו לצמיתות.',
+    };
+    const ar = <String, String>{
+      'work_area': 'منطقة العمل',
+      'save': 'حفظ',
+      'work_radius': 'نطاق العمل',
+      'instruction': 'اضغط على الخريطة أو اسحب العلامة داخل إسرائيل',
+      'stay_within_israel': 'يرجى البقاء داخل حدود إسرائيل',
+      'location_services_disabled': 'خدمات الموقع غير مفعلة.',
+      'location_permissions_denied': 'تم رفض أذونات الموقع.',
+      'location_permissions_permanently_denied':
+          'تم رفض أذونات الموقع بشكل دائم.',
+    };
+    const am = <String, String>{
+      'work_area': 'የስራ አካባቢ',
+      'save': 'አስቀምጥ',
+      'work_radius': 'የስራ ራዲየስ',
+      'instruction': 'በካርታው ላይ ይጫኑ ወይም ማርከሩን በእስራኤል ውስጥ ይጎትቱ',
+      'stay_within_israel': 'እባክዎ በእስራኤል ድንበር ውስጥ ይቆዩ',
+      'location_services_disabled': 'የአካባቢ አገልግሎቶች ተዘግተዋል።',
+      'location_permissions_denied': 'የአካባቢ ፍቃድ ተከልክሏል።',
+      'location_permissions_permanently_denied': 'የአካባቢ ፍቃድ ለዘላለም ተከልክሏል።',
+    };
+    const ru = <String, String>{
+      'work_area': 'Рабочая зона',
+      'save': 'Сохранить',
+      'work_radius': 'Рабочий радиус',
+      'instruction':
+          'Нажмите на карту или перетащите маркер в пределах Израиля',
+      'stay_within_israel': 'Пожалуйста, оставайтесь в пределах Израиля',
+      'location_services_disabled': 'Службы геолокации отключены.',
+      'location_permissions_denied': 'Доступ к геолокации запрещен.',
+      'location_permissions_permanently_denied':
+          'Доступ к геолокации навсегда запрещен.',
+    };
+
+    switch (code) {
+      case 'he':
+        return he[key] ?? en[key] ?? key;
+      case 'ar':
+        return ar[key] ?? en[key] ?? key;
+      case 'am':
+        return am[key] ?? en[key] ?? key;
+      case 'ru':
+        return ru[key] ?? en[key] ?? key;
+      default:
+        return en[key] ?? key;
+    }
+  }
 
   // Exact bounds for Israel to lock the map
   final LatLngBounds _israelBounds = LatLngBounds(
@@ -56,19 +132,19 @@ class _MapRadiusPickerState extends State<MapRadiusPicker> {
 
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
-        throw 'Location services are disabled.';
+        throw _t('location_services_disabled');
       }
 
       LocationPermission permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
         if (permission == LocationPermission.denied) {
-          throw 'Location permissions are denied.';
+          throw _t('location_permissions_denied');
         }
       }
 
       if (permission == LocationPermission.deniedForever) {
-        throw 'Location permissions are permanently denied.';
+        throw _t('location_permissions_permanently_denied');
       }
 
       Position position = await Geolocator.getCurrentPosition(
@@ -135,11 +211,9 @@ class _MapRadiusPickerState extends State<MapRadiusPicker> {
               _center = newPosition;
             } else {
               // If dragged out, snap back to a valid position near the edge or keep old center
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text("Please stay within Israel bounds"),
-                ),
-              );
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(SnackBar(content: Text(_t('stay_within_israel'))));
             }
             _updateMapElements();
           },
@@ -163,9 +237,12 @@ class _MapRadiusPickerState extends State<MapRadiusPicker> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'Work Area',
-          style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
+        title: Text(
+          _t('work_area'),
+          style: const TextStyle(
+            color: Colors.black,
+            fontWeight: FontWeight.bold,
+          ),
         ),
         backgroundColor: Colors.white,
         elevation: 0,
@@ -181,8 +258,8 @@ class _MapRadiusPickerState extends State<MapRadiusPicker> {
                     'radius': _radius,
                   });
                 },
-                child: const Text(
-                  'Save',
+                child: Text(
+                  _t('save'),
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 16,
@@ -289,8 +366,8 @@ class _MapRadiusPickerState extends State<MapRadiusPicker> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text(
-                        'Work Radius',
+                      Text(
+                        _t('work_radius'),
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
@@ -345,14 +422,21 @@ class _MapRadiusPickerState extends State<MapRadiusPicker> {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  const Row(
+                  Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.info_outline, size: 14, color: Colors.grey),
-                      SizedBox(width: 4),
+                      const Icon(
+                        Icons.info_outline,
+                        size: 14,
+                        color: Colors.grey,
+                      ),
+                      const SizedBox(width: 4),
                       Text(
-                        'Tap the map or drag the marker within Israel',
-                        style: TextStyle(fontSize: 12, color: Colors.grey),
+                        _t('instruction'),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey,
+                        ),
                       ),
                     ],
                   ),

@@ -16,12 +16,37 @@ class InboxPage extends StatefulWidget {
 class _InboxPageState extends State<InboxPage> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  Stream<QuerySnapshot>? _chatRoomsStream;
+  String? _chatRoomsStreamUserId;
 
   bool _isSearching = false;
   bool _isResolvingPhoneSearch = false;
   final TextEditingController _searchController = TextEditingController();
   final Map<String, Set<String>> _phoneSearchTokensByUserId = {};
   final Set<String> _phoneFetchInProgressIds = {};
+  Set<String>? _currentUserPhoneTokens;
+
+  String _t(
+    String localeCode, {
+    required String en,
+    required String he,
+    required String ar,
+    String? am,
+    String? ru,
+  }) {
+    switch (localeCode) {
+      case 'he':
+        return he;
+      case 'ar':
+        return ar;
+      case 'am':
+        return am ?? en;
+      case 'ru':
+        return ru ?? en;
+      default:
+        return en;
+    }
+  }
 
   @override
   void initState() {
@@ -48,7 +73,7 @@ class _InboxPageState extends State<InboxPage> {
         backgroundColor: Colors.grey[50],
         appBar: AppBar(
           title: Text(
-            isRtl ? 'הודעות' : 'Messages',
+            _t(locale, en: 'Messages', he: 'הודעות', ar: 'الرسائل'),
             style: const TextStyle(fontWeight: FontWeight.bold),
           ),
           backgroundColor: const Color(0xFF1976D2),
@@ -64,9 +89,14 @@ class _InboxPageState extends State<InboxPage> {
                 Icon(Icons.lock_outline, size: 80, color: Colors.grey[300]),
                 const SizedBox(height: 24),
                 Text(
-                  isRtl
-                      ? 'אנא התחבר כדי לצפות בהודעות'
-                      : 'Please log in to view messages',
+                  _t(
+                    locale,
+                    en: 'Please log in to view messages',
+                    he: 'אנא התחבר כדי לצפות בהודעות',
+                    ar: 'يرجى تسجيل الدخول لعرض الرسائل',
+                    am: 'መልዕክቶችን ለማየት እባክዎ ይግቡ',
+                    ru: 'Войдите, чтобы просмотреть сообщения',
+                  ),
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 18,
@@ -91,7 +121,14 @@ class _InboxPageState extends State<InboxPage> {
                   controller: _searchController,
                   autofocus: true,
                   decoration: InputDecoration(
-                    hintText: isRtl ? 'חפש משתמש...' : 'Search user...',
+                    hintText: _t(
+                      locale,
+                      en: 'Search user...',
+                      he: 'חפש משתמש...',
+                      ar: 'ابحث عن مستخدم...',
+                      am: 'ተጠቃሚ ፈልግ...',
+                      ru: 'Поиск пользователя...',
+                    ),
                     border: InputBorder.none,
                     hintStyle: const TextStyle(
                       fontSize: 18,
@@ -102,7 +139,7 @@ class _InboxPageState extends State<InboxPage> {
                   textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
                 )
               : Text(
-                  isRtl ? 'הודעות' : 'Messages',
+                  _t(locale, en: 'Messages', he: 'הודעות', ar: 'الرسائل'),
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 22,
@@ -137,7 +174,14 @@ class _InboxPageState extends State<InboxPage> {
               child: Row(
                 children: [
                   Text(
-                    isRtl ? 'צ׳אטים אחרונים' : 'Recent Chats',
+                    _t(
+                      locale,
+                      en: 'Recent Chats',
+                      he: 'צ׳אטים אחרונים',
+                      ar: 'المحادثات الأخيرة',
+                      am: 'የቅርብ ጊዜ ቻቶች',
+                      ru: 'Недавние чаты',
+                    ),
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.bold,
@@ -150,18 +194,15 @@ class _InboxPageState extends State<InboxPage> {
             ),
             Expanded(
               child: StreamBuilder<QuerySnapshot>(
-                stream: _firestore
-                    .collection('chat_rooms')
-                    .where('users', arrayContains: user.uid)
-                    .orderBy('lastTimestamp', descending: true)
-                    .snapshots(),
+                stream: _getChatRoomsStream(user.uid),
                 builder: (context, snapshot) {
                   if (snapshot.hasError) {
                     debugPrint("Stream error: \\${snapshot.error}");
-                    return _buildErrorState(isRtl);
+                    return _buildErrorState(locale);
                   }
 
-                  if (snapshot.connectionState == ConnectionState.waiting) {
+                  if (snapshot.connectionState == ConnectionState.waiting &&
+                      !snapshot.hasData) {
                     return const Center(
                       child: CircularProgressIndicator(
                         color: Color(0xFF1976D2),
@@ -220,7 +261,7 @@ class _InboxPageState extends State<InboxPage> {
                         query: _searchController.text.trim(),
                       );
                     }
-                    return _buildEmptyState(isRtl);
+                    return _buildEmptyState(locale);
                   }
 
                   return ListView.separated(
@@ -248,7 +289,15 @@ class _InboxPageState extends State<InboxPage> {
                       final Map<String, dynamic> userNames =
                           data['userNames'] ?? {};
                       final String otherUserName =
-                          userNames[otherUserId] ?? "User";
+                          userNames[otherUserId] ??
+                          _t(
+                            locale,
+                            en: 'User',
+                            he: 'משתמש',
+                            ar: 'مستخدم',
+                            am: 'ተጠቃሚ',
+                            ru: 'Пользователь',
+                          );
 
                       final Map<String, dynamic> unreadCount =
                           (data['unreadCount'] as Map<String, dynamic>?) ?? {};
@@ -371,7 +420,7 @@ class _InboxPageState extends State<InboxPage> {
     );
   }
 
-  Widget _buildEmptyState(bool isRtl) {
+  Widget _buildEmptyState(String localeCode) {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -390,7 +439,14 @@ class _InboxPageState extends State<InboxPage> {
           ),
           const SizedBox(height: 20),
           Text(
-            isRtl ? 'אין הודעות עדיין' : 'No messages yet',
+            _t(
+              localeCode,
+              en: 'No messages yet',
+              he: 'אין הודעות עדיין',
+              ar: 'لا توجد رسائل بعد',
+              am: 'እስካሁን መልዕክቶች የሉም',
+              ru: 'Пока нет сообщений',
+            ),
             style: TextStyle(
               color: Colors.grey[400],
               fontSize: 18,
@@ -399,9 +455,14 @@ class _InboxPageState extends State<InboxPage> {
           ),
           const SizedBox(height: 8),
           Text(
-            isRtl
-                ? 'ההודעות שלך יופיעו כאן'
-                : 'Your conversations will appear here',
+            _t(
+              localeCode,
+              en: 'Your conversations will appear here',
+              he: 'ההודעות שלך יופיעו כאן',
+              ar: 'ستظهر محادثاتك هنا',
+              am: 'ውይይቶችዎ እዚህ ይታያሉ',
+              ru: 'Ваши диалоги появятся здесь',
+            ),
             style: TextStyle(color: Colors.grey[400], fontSize: 14),
           ),
         ],
@@ -414,21 +475,30 @@ class _InboxPageState extends State<InboxPage> {
     required String query,
   }) {
     final isRtl = localeCode == 'he' || localeCode == 'ar';
-    final title = localeCode == 'he'
-        ? 'לא נמצא משתמש'
-        : localeCode == 'ar'
-        ? 'تعذّر العثور على المستخدم'
-        : "Can't find the user";
-    final subtitle = localeCode == 'he'
-        ? 'לא נמצא משתמש ברשימת השיחות לפי השם או המספר שחיפשת.'
-        : localeCode == 'ar'
-        ? 'لا يوجد مستخدم في قائمة المحادثات بالاسم أو الرقم الذي بحثت عنه.'
-        : 'No user in your inbox list matches that name or phone number.';
-    final buttonLabel = localeCode == 'he'
-        ? 'חפש משתמש לפי מספר'
-        : localeCode == 'ar'
-        ? 'ابحث عن المستخدم بالرقم'
-        : 'Search user by phone number';
+    final title = _t(
+      localeCode,
+      en: "Can't find the user",
+      he: 'לא נמצא משתמש',
+      ar: 'تعذّر العثور على المستخدم',
+      am: 'ተጠቃሚውን ማግኘት አልተቻለም',
+      ru: 'Не удалось найти пользователя',
+    );
+    final subtitle = _t(
+      localeCode,
+      en: 'No user in your inbox list matches that name or phone number.',
+      he: 'לא נמצא משתמש ברשימת השיחות לפי השם או המספר שחיפשת.',
+      ar: 'لا يوجد مستخدم في قائمة المحادثات بالاسم أو الرقم الذي بحثت عنه.',
+      am: 'በውይይት ዝርዝርዎ ውስጥ በስም ወይም ቁጥር የሚዛመድ ተጠቃሚ የለም።',
+      ru: 'В списке чатов нет пользователя с таким именем или номером.',
+    );
+    final buttonLabel = _t(
+      localeCode,
+      en: 'Search user by phone number',
+      he: 'חפש משתמש לפי מספר',
+      ar: 'ابحث عن المستخدم بالرقم',
+      am: 'በስልክ ቁጥር ተጠቃሚ ፈልግ',
+      ru: 'Найти по номеру телефона',
+    );
 
     return Center(
       child: Padding(
@@ -459,19 +529,10 @@ class _InboxPageState extends State<InboxPage> {
               child: FilledButton.icon(
                 onPressed: _isResolvingPhoneSearch
                     ? null
-                    : () {
-                        if (_looksLikePhoneQuery(query)) {
-                          _handleSearchSubmit(query, localeCode);
-                          return;
-                        }
-                        _showPhoneSearchMessage(
-                          localeCode == 'he'
-                              ? 'כדי לחפש לפי מספר, הזן מספר טלפון.'
-                              : localeCode == 'ar'
-                              ? 'للبحث بالرقم، أدخل رقم هاتف.'
-                              : 'To search by phone, enter a phone number.',
-                        );
-                      },
+                    : () => _openPhoneInputAndSearch(
+                        localeCode: localeCode,
+                        initialValue: _looksLikePhoneQuery(query) ? query : '',
+                      ),
                 icon: _isResolvingPhoneSearch
                     ? const SizedBox(
                         width: 16,
@@ -491,7 +552,7 @@ class _InboxPageState extends State<InboxPage> {
     );
   }
 
-  Widget _buildErrorState(bool isRtl) {
+  Widget _buildErrorState(String localeCode) {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -499,7 +560,14 @@ class _InboxPageState extends State<InboxPage> {
           const Icon(Icons.error_outline, color: Colors.redAccent, size: 48),
           const SizedBox(height: 16),
           Text(
-            isRtl ? 'שגיאה בטעינת הודעות' : 'Error loading messages',
+            _t(
+              localeCode,
+              en: 'Error loading messages',
+              he: 'שגיאה בטעינת הודעות',
+              ar: 'خطأ في تحميل الرسائل',
+              am: 'መልዕክቶች በመጫን ላይ ስህተት',
+              ru: 'Ошибка загрузки сообщений',
+            ),
             style: const TextStyle(
               color: Colors.redAccent,
               fontWeight: FontWeight.bold,
@@ -507,7 +575,16 @@ class _InboxPageState extends State<InboxPage> {
           ),
           TextButton(
             onPressed: () => setState(() {}),
-            child: Text(isRtl ? 'נסה שוב' : 'Try Again'),
+            child: Text(
+              _t(
+                localeCode,
+                en: 'Try Again',
+                he: 'נסה שוב',
+                ar: 'حاول مرة أخرى',
+                am: 'እንደገና ሞክር',
+                ru: 'Повторить',
+              ),
+            ),
           ),
         ],
       ),
@@ -526,6 +603,19 @@ class _InboxPageState extends State<InboxPage> {
       return intl.DateFormat('dd/MM/yy').format(date);
     }
     return "";
+  }
+
+  Stream<QuerySnapshot> _getChatRoomsStream(String userId) {
+    if (_chatRoomsStream != null && _chatRoomsStreamUserId == userId) {
+      return _chatRoomsStream!;
+    }
+    _chatRoomsStreamUserId = userId;
+    _chatRoomsStream = _firestore
+        .collection('chat_rooms')
+        .where('users', arrayContains: userId)
+        .orderBy('lastTimestamp', descending: true)
+        .snapshots();
+    return _chatRoomsStream!;
   }
 
   String _digitsOnly(String input) {
@@ -628,6 +718,25 @@ class _InboxPageState extends State<InboxPage> {
 
     setState(() => _isResolvingPhoneSearch = true);
     try {
+      final isOwnPhone = await _isCurrentUserPhoneQuery(
+        query: query,
+        currentUserId: currentUser.uid,
+      );
+      if (!mounted) return;
+      if (isOwnPhone) {
+        _showPhoneSearchMessage(
+          _t(
+            localeCode,
+            en: 'This is your phone number.',
+            he: 'זה מספר הטלפון שלך.',
+            ar: 'هذا رقم هاتفك.',
+            am: 'ይህ የእርስዎ ስልክ ቁጥር ነው።',
+            ru: 'Это ваш номер телефона.',
+          ),
+        );
+        return;
+      }
+
       final match = await _findUserByPhone(
         rawPhoneQuery: query,
         currentUserId: currentUser.uid,
@@ -636,11 +745,14 @@ class _InboxPageState extends State<InboxPage> {
       if (!mounted) return;
       if (match == null) {
         _showPhoneSearchMessage(
-          localeCode == 'he'
-              ? 'אין משתמש עם מספר הטלפון הזה.'
-              : localeCode == 'ar'
-              ? 'لا يوجد مستخدم بهذا الرقم.'
-              : 'There is no user with this phone number.',
+          _t(
+            localeCode,
+            en: 'There is no user with this phone number.',
+            he: 'אין משתמש עם מספר הטלפון הזה.',
+            ar: 'لا يوجد مستخدم بهذا الرقم.',
+            am: 'በዚህ ስልክ ቁጥር ተጠቃሚ የለም።',
+            ru: 'Пользователь с таким номером не найден.',
+          ),
         );
         return;
       }
@@ -746,47 +858,208 @@ class _InboxPageState extends State<InboxPage> {
     return null;
   }
 
+  Future<bool> _isCurrentUserPhoneQuery({
+    required String query,
+    required String currentUserId,
+  }) async {
+    _currentUserPhoneTokens ??= await _loadCurrentUserPhoneTokens(
+      currentUserId,
+    );
+    final ownTokens = _currentUserPhoneTokens ?? {};
+    if (ownTokens.isEmpty) return false;
+
+    final queryTokens = _phoneMatchTokens(query);
+    if (queryTokens.isEmpty) return false;
+
+    for (final q in queryTokens) {
+      if (ownTokens.contains(q)) return true;
+      for (final own in ownTokens) {
+        if (own.contains(q) || q.contains(own)) return true;
+      }
+    }
+    return false;
+  }
+
+  Future<Set<String>> _loadCurrentUserPhoneTokens(String currentUserId) async {
+    final tokens = <String>{};
+    final authPhone = _auth.currentUser?.phoneNumber?.trim() ?? '';
+    if (authPhone.isNotEmpty) {
+      tokens.addAll(_phoneMatchTokens(authPhone));
+    }
+
+    try {
+      final doc = await _firestore.collection('users').doc(currentUserId).get();
+      if (doc.exists) {
+        final data = doc.data() ?? {};
+        final profilePhone = (data['phone'] ?? data['phoneNumber'] ?? '')
+            .toString()
+            .trim();
+        if (profilePhone.isNotEmpty) {
+          tokens.addAll(_phoneMatchTokens(profilePhone));
+        }
+      }
+    } catch (e) {
+      debugPrint('Failed to load current user phone: $e');
+    }
+
+    return tokens;
+  }
+
   void _showPhoneSearchMessage(String message) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _openPhoneInputAndSearch({
+    required String localeCode,
+    String initialValue = '',
+  }) async {
+    final title = _t(
+      localeCode,
+      en: 'Search by phone number',
+      he: 'חיפוש לפי מספר טלפון',
+      ar: 'البحث برقم الهاتف',
+      am: 'በስልክ ቁጥር ፈልግ',
+      ru: 'Поиск по номеру телефона',
+    );
+    final hint = _t(
+      localeCode,
+      en: 'Enter phone number',
+      he: 'הזן מספר טלפון',
+      ar: 'أدخل رقم الهاتف',
+      am: 'የስልክ ቁጥር ያስገቡ',
+      ru: 'Введите номер телефона',
+    );
+    final searchLabel = _t(
+      localeCode,
+      en: 'Search',
+      he: 'חפש',
+      ar: 'بحث',
+      am: 'ፈልግ',
+      ru: 'Поиск',
+    );
+
+    if (!mounted) return;
+    var phoneInput = initialValue;
+    final submittedPhone = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: SingleChildScrollView(
+            padding: EdgeInsets.fromLTRB(
+              16,
+              16,
+              16,
+              16 + MediaQuery.of(sheetContext).viewInsets.bottom,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  initialValue: initialValue,
+                  autofocus: true,
+                  keyboardType: TextInputType.phone,
+                  textInputAction: TextInputAction.search,
+                  onChanged: (value) => phoneInput = value,
+                  onFieldSubmitted: (value) =>
+                      Navigator.pop(sheetContext, value),
+                  decoration: InputDecoration(
+                    hintText: hint,
+                    border: const OutlineInputBorder(),
+                    prefixIcon: const Icon(Icons.phone_outlined),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: () =>
+                        Navigator.pop(sheetContext, phoneInput.trim()),
+                    icon: const Icon(Icons.person_search_rounded),
+                    label: Text(searchLabel),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (!mounted) return;
+    final phone = submittedPhone?.trim() ?? '';
+    if (phone.isEmpty) return;
+    _searchController.text = phone;
+    await _handleSearchSubmit(phone, localeCode);
   }
 
   Future<bool> _showUserCardBeforeChat({
     required Map<String, dynamic> match,
     required String localeCode,
   }) async {
-    final isRtl = localeCode == 'he' || localeCode == 'ar';
-    final title = localeCode == 'he'
-        ? 'משתמש נמצא'
-        : localeCode == 'ar'
-        ? 'تم العثور على المستخدم'
-        : 'User found';
-    final openChat = localeCode == 'he'
-        ? 'פתח צ׳אט'
-        : localeCode == 'ar'
-        ? 'فتح الدردشة'
-        : 'Open chat';
-    final cancel = localeCode == 'he'
-        ? 'ביטול'
-        : localeCode == 'ar'
-        ? 'إلغاء'
-        : 'Cancel';
-    final roleLabel = localeCode == 'he'
-        ? 'תפקיד'
-        : localeCode == 'ar'
-        ? 'الدور'
-        : 'Role';
-    final cityLabel = localeCode == 'he'
-        ? 'עיר'
-        : localeCode == 'ar'
-        ? 'المدينة'
-        : 'City';
-    final phoneLabel = localeCode == 'he'
-        ? 'טלפון'
-        : localeCode == 'ar'
-        ? 'الهاتف'
-        : 'Phone';
+    final title = _t(
+      localeCode,
+      en: 'User found',
+      he: 'משתמש נמצא',
+      ar: 'تم العثور على المستخدم',
+      am: 'ተጠቃሚ ተገኝቷል',
+      ru: 'Пользователь найден',
+    );
+    final openChat = _t(
+      localeCode,
+      en: 'Open chat',
+      he: 'פתח צ׳אט',
+      ar: 'فتح الدردشة',
+      am: 'ቻት ክፈት',
+      ru: 'Открыть чат',
+    );
+    final cancel = _t(
+      localeCode,
+      en: 'Cancel',
+      he: 'ביטול',
+      ar: 'إلغاء',
+      am: 'ሰርዝ',
+      ru: 'Отмена',
+    );
+    final roleLabel = _t(
+      localeCode,
+      en: 'Role',
+      he: 'תפקיד',
+      ar: 'الدور',
+      am: 'ሚና',
+      ru: 'Роль',
+    );
+    final cityLabel = _t(
+      localeCode,
+      en: 'City',
+      he: 'עיר',
+      ar: 'المدينة',
+      am: 'ከተማ',
+      ru: 'Город',
+    );
+    final phoneLabel = _t(
+      localeCode,
+      en: 'Phone',
+      he: 'טלפון',
+      ar: 'الهاتف',
+      am: 'ስልክ',
+      ru: 'Телефон',
+    );
 
     final result = await showModalBottomSheet<bool>(
       context: context,
@@ -799,79 +1072,76 @@ class _InboxPageState extends State<InboxPage> {
         final phone = (match['phone'] ?? '').toString();
         final role = (match['role'] ?? '').toString();
         final city = (match['city'] ?? '').toString();
-        return Directionality(
-          textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
-          child: SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w800,
-                    ),
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
                   ),
-                  const SizedBox(height: 14),
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: CircleAvatar(
-                      radius: 24,
-                      backgroundColor: const Color(
-                        0xFF1976D2,
-                      ).withValues(alpha: 0.12),
-                      child: Text(
-                        name.isNotEmpty ? name[0].toUpperCase() : '?',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w800,
-                          color: Color(0xFF1976D2),
-                        ),
+                ),
+                const SizedBox(height: 14),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: CircleAvatar(
+                    radius: 24,
+                    backgroundColor: const Color(
+                      0xFF1976D2,
+                    ).withValues(alpha: 0.12),
+                    child: Text(
+                      name.isNotEmpty ? name[0].toUpperCase() : '?',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF1976D2),
                       ),
                     ),
-                    title: Text(
-                      name,
-                      style: const TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                    subtitle: Text(
-                      '$phoneLabel: ${phone.isNotEmpty ? phone : '-'}',
-                    ),
                   ),
-                  if (role.isNotEmpty)
-                    Text(
-                      '$roleLabel: $role',
+                  title: Text(
+                    name,
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  subtitle: Text(
+                    '$phoneLabel: ${phone.isNotEmpty ? phone : '-'}',
+                  ),
+                ),
+                if (role.isNotEmpty)
+                  Text(
+                    '$roleLabel: $role',
+                    style: const TextStyle(color: Color(0xFF475569)),
+                  ),
+                if (city.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      '$cityLabel: $city',
                       style: const TextStyle(color: Color(0xFF475569)),
                     ),
-                  if (city.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Text(
-                        '$cityLabel: $city',
-                        style: const TextStyle(color: Color(0xFF475569)),
+                  ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.pop(sheetContext, false),
+                        child: Text(cancel),
                       ),
                     ),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: () => Navigator.pop(sheetContext, false),
-                          child: Text(cancel),
-                        ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: () => Navigator.pop(sheetContext, true),
+                        child: Text(openChat),
                       ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: FilledButton(
-                          onPressed: () => Navigator.pop(sheetContext, true),
-                          child: Text(openChat),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
         );

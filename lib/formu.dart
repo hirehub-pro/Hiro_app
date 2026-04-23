@@ -317,240 +317,573 @@ class _BlogPageState extends State<BlogPage> {
     ).locale.languageCode;
     switch (locale) {
       case 'he':
-        return {
-          'title': 'קהילה ודרושים',
-          'search_hint': 'חפש בפוסטים...',
-          'create_post': 'פרסם בקהילה',
-          'edit_post': 'ערוך פוסט',
-          'post_title': 'כותרת',
-          'post_category': 'סוג הפוסט',
-          'post_content': 'מה תרצה לשתף?',
-          'publish': 'פרסם',
-          'update': 'עדכן',
-          'cancel': 'ביטול',
-          'categories': [
-            'הכל',
-            'שאלה',
-            'טיפ',
-            'דרוש בעל מקצוע',
-            'המלצה',
-            'אחר',
-          ],
-          'upload_photo': 'הוסף תמונות',
-          'no_posts': 'אין פוסטים עדיין',
-          'delete': 'מחק',
-          'share': 'שתף',
-          'report': 'דווח',
-          'hide': 'הסתר',
-          'edit': 'ערוך',
-          'comments': 'תגובות / הצעות',
-          'add_comment': 'הוסף תגובה או הצעה...',
-          'bid_price': 'מחיר מוצע',
-          'bid_price_hint': 'למשל 350',
-          'send_bid': 'שלח הצעת מחיר',
-          'update_bid': 'עדכן הצעת מחיר',
-          'edit_your_bid': 'ניתן לעדכן את ההצעה הקיימת שלכם.',
-          'choose_worker': 'בחר בעל מקצוע',
-          'confirm_choose_worker_title': 'לבחור בעל מקצוע זה?',
-          'confirm_choose_worker_body':
-              'הבחירה תסמן את בעל המקצוע כהצעה שנבחרה עבור הבקשה הזו.',
-          'selected_worker': 'בעל מקצוע נבחר',
-          'selected_offer': 'הצעה נבחרה',
-          'offer_price': 'מחיר מוצע',
-          'workers_can_offer':
-              'בעלי מקצוע יכולים להציע מחיר, ואתם יכולים לבחור את המתאים לכם.',
-          'job_request_comment_restriction':
-              'רק בעלי מקצוע עם מנוי פעיל יכולים להגיב לבקשות עבודה.',
-          'rating': 'דירוג',
-          'reviews': 'ביקורות',
-          'author': 'מפרסם',
-          'posted': 'פורסם',
-          'sort': 'מיין לפי',
-          'newest': 'הכי חדש',
-          'most_liked': 'הכי הרבה לייקים',
-          'guest_msg': 'עליך להירשם כדי לבצע פעולה זו',
-          'login': 'התחברות',
-          'error': 'שגיאה: חסרה הרשאה או בעיית תקשורת',
-          'empty_fields': 'נא למלא כותרת ותוכן',
-          'location': 'מיקום (עיר/אזור)',
-          'job_request': 'דרוש בעל מקצוע',
-          'profession': 'מקצוע',
-          'profession_hint': 'בחר בעל מקצוע נדרש',
-          'profession_required': 'נא לבחור מקצוע',
-          'use_current_location': 'השתמש במיקום נוכחי',
-          'choose_from_map': 'בחר מהמפה',
-          'selected_location': 'המיקום שנבחר',
-          'change_location': 'שנה מיקום',
-          'location_loading': 'מאתר מיקום...',
-          'date_from': 'מתאריך',
-          'date_to': 'עד תאריך',
-          'date_anytime': 'אם לא תבחר תאריכים, הבקשה תיחשב לכל זמן',
-          'select_date': 'בחר תאריך',
-          'time_from': 'משעה',
-          'time_to': 'עד שעה',
-          'time_anytime': 'אם לא תבחר שעות, הבקשה תיחשב לכל שעה',
-          'add_video': 'הוסף וידאו',
-          'media_limit': 'ניתן להעלות עד 5 תמונות/סרטונים',
-          'gallery': 'גלריה',
-          'camera': 'מצלמה',
-          'guide_title': 'איך זה עובד?',
-          'guide_content':
-              '• שתפו שאלות, טיפים והמלצות.\n• צריכים עבודה? פרסמו "דרוש בעל מקצוע".\n• בעלי מקצוע? הציעו שירות בתגובות.\n• סננו לפי קטגוריה או מיין לפי פופולריות.',
-          'featured_articles': 'מדריכים ומאמרים',
-          'articles': [
-            {
-              'title': 'איך להשיג יותר לקוחות',
-              'subtitle': 'אסטרטגיות לבעלי מקצוע',
-              'icon': Icons.trending_up,
-              'color': Colors.green,
-              'content':
-                  '1. תמונת פרופיל ברורה ומקצועית.\n2. העלאת פרויקטים איכותיים (לפני ואחרי).\n3. מענה מהיר (פחות מ-15 דקות משפר המרה ב-40%).\n4. בקשו ביקורות בסיום כל עבודה.',
-            },
-            {
-              'title': 'בחירת בעל מקצוע נכון',
-              'subtitle': 'טיפים ללקוחות',
-              'icon': Icons.verified_user,
-              'color': Colors.blue,
-              'content':
-                  '1. חפשו את תג "עסק מאומת".\n2. קראו ביקורות עדכניות.\n3. השוו מחירים אך אל תבחרו רק לפי המחיר הזול ביותר.\n4. ודאו שיש ביטוח בתוקף.',
-            },
-            {
-              'title': 'כתיבת פוסט מוצלח',
-              'subtitle': 'לקבלת תוצאות טובות',
-              'icon': Icons.edit_note,
-              'color': Colors.orange,
-              'content':
-                  'כותרת: ציינו את סוג העבודה.\nתוכן: ציינו מיקום ולו"ז.\nתמונות: צלמו את אזור העבודה באור יום.',
-            },
-            {
-              'title': 'היתרון של עסק מאומת',
-              'subtitle': 'למה כדאי לאמת?',
-              'icon': Icons.verified,
-              'color': Colors.indigo,
-              'content':
-                  'עסקים מאומתים זוכים ליותר חשיפה ב-300% ומקבלים תג כחול שמעניק ביטחון ללקוחות. האימות כולל בדיקת תעודת זהות ורישום עסק.',
-            },
-          ],
-        };
+        return _hebrewStrings();
+      case 'ar':
+        return _arabicStrings();
+      case 'am':
+        return _amharicStrings();
+      case 'ru':
+        return _russianStrings();
       default:
-        return {
-          'title': 'Community & Jobs',
-          'search_hint': 'Search posts...',
-          'create_post': 'Post to Community',
-          'edit_post': 'Edit Post',
-          'post_title': 'Title',
-          'post_category': 'Category',
-          'post_content': 'What\'s on your mind?',
-          'publish': 'Publish',
-          'update': 'Update',
-          'cancel': 'Cancel',
-          'categories': [
-            'All',
-            'Question',
-            'Tip',
-            'Job Request',
-            'Recommendation',
-            'Other',
-          ],
-          'upload_photo': 'Add Photos',
-          'no_posts': 'No posts yet',
-          'delete': 'Delete',
-          'share': 'Share',
-          'report': 'Report',
-          'hide': 'Hide',
-          'edit': 'Edit',
-          'comments': 'Comments / Offers',
-          'add_comment': 'Add a comment or offer...',
-          'bid_price': 'Bid Price',
-          'bid_price_hint': 'For example 350',
-          'send_bid': 'Send Bid',
-          'update_bid': 'Update Bid',
-          'edit_your_bid': 'You can update your existing bid.',
-          'choose_worker': 'Choose Worker',
-          'confirm_choose_worker_title': 'Choose this worker?',
-          'confirm_choose_worker_body':
-              'This will mark the worker as the selected offer for this job request.',
-          'selected_worker': 'Selected Worker',
-          'selected_offer': 'Selected Offer',
-          'offer_price': 'Offered Price',
-          'workers_can_offer':
-              'Workers can place bids here, and you can choose the one you want.',
-          'job_request_comment_restriction':
-              'Only workers with an active subscription can comment on job requests.',
-          'rating': 'Rating',
-          'reviews': 'Reviews',
-          'author': 'Author',
-          'posted': 'Posted',
-          'sort': 'Sort by',
-          'newest': 'Newest',
-          'most_liked': 'Most Liked',
-          'guest_msg': 'You must sign up to perform this action',
-          'login': 'Sign In',
-          'error': 'Error: Permission denied or connection issue',
-          'empty_fields': 'Please fill both title and content',
-          'location': 'Location (City/Area)',
-          'job_request': 'Job Request',
-          'profession': 'Profession',
-          'profession_hint': 'Choose the profession you need',
-          'profession_required': 'Please choose a profession',
-          'use_current_location': 'Use current location',
-          'choose_from_map': 'Choose from map',
-          'selected_location': 'Selected location',
-          'change_location': 'Change location',
-          'location_loading': 'Getting location...',
-          'date_from': 'From date',
-          'date_to': 'To date',
-          'date_anytime':
-              'If you do not choose dates, the request will be considered anytime',
-          'select_date': 'Select date',
-          'time_from': 'From hour',
-          'time_to': 'To hour',
-          'time_anytime':
-              'If you do not choose hours, the request will be considered anytime',
-          'add_video': 'Add Video',
-          'media_limit': 'You can upload up to 5 photos/videos',
-          'gallery': 'Gallery',
-          'camera': 'Camera',
-          'guide_title': 'How it works?',
-          'guide_content':
-              '• Share questions, tips, and recommendations.\n• Need a pro? Post a "Job Request".\n• Professionals? Offer your services in the comments.\n• Filter by category or sort by popularity.',
-          'featured_articles': 'Guides & Articles',
-          'articles': [
-            {
-              'title': 'Maximizing your earnings',
-              'subtitle': 'Strategies for professionals',
-              'icon': Icons.trending_up,
-              'color': Colors.green,
-              'content':
-                  '1. Clear & professional profile photo.\n2. High-quality project photos (before/after).\n3. Fast response time (under 15 mins increases conversion by 40%).\n4. Ask for reviews after every successful job.',
-            },
-            {
-              'title': 'Choosing the right pro',
-              'subtitle': 'Tips for customers',
-              'icon': Icons.verified_user,
-              'color': Colors.blue,
-              'content':
-                  '1. Look for the "Verified Business" badge.\n2. Read recent reviews, not just the rating.\n3. Compare quotes but avoid "too good to be true" prices.\n4. Confirm insurance coverage for major tasks.',
-            },
-            {
-              'title': 'Writing a great job post',
-              'subtitle': 'To get accurate quotes',
-              'icon': Icons.edit_note,
-              'color': Colors.orange,
-              'content':
-                  'Title: Mention the core task.\nContent: Include location and your preferred schedule.\nPhotos: Take clear photos of the area in daylight.',
-            },
-            {
-              'title': 'Business Verification',
-              'subtitle': 'Why get verified?',
-              'icon': Icons.verified,
-              'color': Colors.indigo,
-              'content':
-                  'Verified businesses get 300% more visibility and a blue badge that builds trust. Verification involves ID and registration checks.',
-            },
-          ],
-        };
+        return _englishStrings();
     }
+  }
+
+  Map<String, dynamic> _hebrewStrings() {
+    final strings = _englishStrings();
+    strings.addAll({
+      'title': 'קהילה ודרושים',
+      'search_hint': 'חפש בפוסטים...',
+      'create_post': 'פרסם בקהילה',
+      'edit_post': 'ערוך פוסט',
+      'post_title': 'כותרת',
+      'post_category': 'סוג הפוסט',
+      'post_content': 'מה תרצה לשתף?',
+      'publish': 'פרסם',
+      'update': 'עדכן',
+      'cancel': 'ביטול',
+      'categories': ['הכל', 'שאלה', 'טיפ', 'דרוש בעל מקצוע', 'המלצה', 'אחר'],
+      'upload_photo': 'הוסף תמונות',
+      'no_posts': 'אין פוסטים עדיין',
+      'delete': 'מחק',
+      'share': 'שתף',
+      'report': 'דווח',
+      'hide': 'הסתר',
+      'edit': 'ערוך',
+      'comments': 'תגובות / הצעות',
+      'add_comment': 'הוסף תגובה או הצעה...',
+      'bid_price': 'מחיר מוצע',
+      'bid_price_hint': 'למשל 350',
+      'send_bid': 'שלח הצעת מחיר',
+      'update_bid': 'עדכן הצעת מחיר',
+      'edit_your_bid': 'ניתן לעדכן את ההצעה הקיימת שלכם.',
+      'choose_worker': 'בחר בעל מקצוע',
+      'confirm_choose_worker_title': 'לבחור בעל מקצוע זה?',
+      'confirm_choose_worker_body':
+          'הבחירה תסמן את בעל המקצוע כהצעה שנבחרה עבור הבקשה הזו.',
+      'selected_worker': 'בעל מקצוע נבחר',
+      'selected_offer': 'הצעה נבחרה',
+      'offer_price': 'מחיר מוצע',
+      'workers_can_offer':
+          'בעלי מקצוע יכולים להציע מחיר, ואתם יכולים לבחור את המתאים לכם.',
+      'job_request_comment_restriction':
+          'רק בעלי מקצוע עם מנוי פעיל יכולים להגיב לבקשות עבודה.',
+      'rating': 'דירוג',
+      'reviews': 'ביקורות',
+      'author': 'מפרסם',
+      'posted': 'פורסם',
+      'sort': 'מיין לפי',
+      'newest': 'הכי חדש',
+      'most_liked': 'הכי הרבה לייקים',
+      'guest_msg': 'עליך להירשם כדי לבצע פעולה זו',
+      'login': 'התחברות',
+      'error': 'שגיאה: חסרה הרשאה או בעיית תקשורת',
+      'empty_fields': 'נא למלא כותרת ותוכן',
+      'location': 'מיקום (עיר/אזור)',
+      'job_request': 'דרוש בעל מקצוע',
+      'profession': 'מקצוע',
+      'profession_hint': 'בחר בעל מקצוע נדרש',
+      'profession_required': 'נא לבחור מקצוע',
+      'use_current_location': 'השתמש במיקום נוכחי',
+      'choose_from_map': 'בחר מהמפה',
+      'selected_location': 'המיקום שנבחר',
+      'change_location': 'שנה מיקום',
+      'location_loading': 'מאתר מיקום...',
+      'date_from': 'מתאריך',
+      'date_to': 'עד תאריך',
+      'date_anytime': 'אם לא תבחר תאריכים, הבקשה תיחשב לכל זמן',
+      'select_date': 'בחר תאריך',
+      'time_from': 'משעה',
+      'time_to': 'עד שעה',
+      'time_anytime': 'אם לא תבחר שעות, הבקשה תיחשב לכל שעה',
+      'add_video': 'הוסף וידאו',
+      'media_limit': 'ניתן להעלות עד 5 תמונות/סרטונים',
+      'gallery': 'גלריה',
+      'camera': 'מצלמה',
+      'guide_title': 'איך זה עובד?',
+      'guide_content':
+          '• שתפו שאלות, טיפים והמלצות.\n• צריכים עבודה? פרסמו "דרוש בעל מקצוע".\n• בעלי מקצוע? הציעו שירות בתגובות.\n• סננו לפי קטגוריה או מיין לפי פופולריות.',
+      'featured_articles': 'מדריכים ומאמרים',
+      'share_article': 'שתף מאמר',
+      'anonymous': 'אנונימי',
+      'user_fallback': 'משתמש',
+      'user_not_signed_in': 'המשתמש אינו מחובר',
+      'location_services_disabled': 'שירותי המיקום כבויים.',
+      'location_permissions_denied': 'הרשאות המיקום נדחו.',
+      'location_permissions_permanently_denied': 'הרשאות המיקום נדחו לצמיתות.',
+      'generic_error_prefix': 'שגיאה',
+      'articles': [
+        {
+          'title': 'איך להשיג יותר לקוחות',
+          'subtitle': 'אסטרטגיות לבעלי מקצוע',
+          'icon': Icons.trending_up,
+          'color': Colors.green,
+          'content':
+              '1. תמונת פרופיל ברורה ומקצועית.\n2. העלאת פרויקטים איכותיים (לפני ואחרי).\n3. מענה מהיר (פחות מ-15 דקות משפר המרה ב-40%).\n4. בקשו ביקורות בסיום כל עבודה.',
+        },
+        {
+          'title': 'בחירת בעל מקצוע נכון',
+          'subtitle': 'טיפים ללקוחות',
+          'icon': Icons.verified_user,
+          'color': Colors.blue,
+          'content':
+              '1. חפשו את תג "עסק מאומת".\n2. קראו ביקורות עדכניות.\n3. השוו מחירים אך אל תבחרו רק לפי המחיר הזול ביותר.\n4. ודאו שיש ביטוח בתוקף.',
+        },
+        {
+          'title': 'כתיבת פוסט מוצלח',
+          'subtitle': 'לקבלת תוצאות טובות',
+          'icon': Icons.edit_note,
+          'color': Colors.orange,
+          'content':
+              'כותרת: ציינו את סוג העבודה.\nתוכן: ציינו מיקום ולו"ז.\nתמונות: צלמו את אזור העבודה באור יום.',
+        },
+        {
+          'title': 'היתרון של עסק מאומת',
+          'subtitle': 'למה כדאי לאמת?',
+          'icon': Icons.verified,
+          'color': Colors.indigo,
+          'content':
+              'עסקים מאומתים זוכים ליותר חשיפה ב-300% ומקבלים תג כחול שמעניק ביטחון ללקוחות. האימות כולל בדיקת תעודת זהות ורישום עסק.',
+        },
+      ],
+    });
+    return strings;
+  }
+
+  Map<String, dynamic> _arabicStrings() {
+    final strings = _englishStrings();
+    strings.addAll({
+      'title': 'المجتمع والوظائف',
+      'search_hint': 'ابحث في المنشورات...',
+      'create_post': 'انشر في المجتمع',
+      'edit_post': 'تعديل المنشور',
+      'post_title': 'العنوان',
+      'post_category': 'نوع المنشور',
+      'post_content': 'ماذا تريد أن تشارك؟',
+      'publish': 'نشر',
+      'update': 'تحديث',
+      'cancel': 'إلغاء',
+      'categories': ['الكل', 'سؤال', 'نصيحة', 'طلب عامل', 'توصية', 'أخرى'],
+      'upload_photo': 'إضافة صور',
+      'no_posts': 'لا توجد منشورات بعد',
+      'delete': 'حذف',
+      'share': 'مشاركة',
+      'hide': 'إخفاء',
+      'comments': 'تعليقات / عروض',
+      'add_comment': 'أضف تعليقًا أو عرضًا...',
+      'bid_price': 'السعر المقترح',
+      'bid_price_hint': 'مثال: 350',
+      'send_bid': 'إرسال عرض السعر',
+      'update_bid': 'تحديث عرض السعر',
+      'edit_your_bid': 'يمكنك تحديث عرض السعر الحالي.',
+      'choose_worker': 'اختر عاملًا',
+      'confirm_choose_worker_title': 'اختيار هذا العامل؟',
+      'confirm_choose_worker_body':
+          'سيتم تحديد هذا العامل كالعرض المختار لهذا الطلب.',
+      'selected_worker': 'العامل المختار',
+      'selected_offer': 'العرض المختار',
+      'offer_price': 'السعر المعروض',
+      'workers_can_offer':
+          'يمكن للعمال تقديم عروض سعر هنا، ويمكنك اختيار الأنسب لك.',
+      'job_request_comment_restriction':
+          'يمكن فقط للعمال أصحاب الاشتراك النشط التعليق على طلبات العمل.',
+      'author': 'الناشر',
+      'posted': 'تاريخ النشر',
+      'newest': 'الأحدث',
+      'most_liked': 'الأكثر إعجابًا',
+      'login': 'تسجيل الدخول',
+      'empty_fields': 'يرجى تعبئة العنوان والمحتوى',
+      'location': 'الموقع (المدينة/المنطقة)',
+      'profession': 'المهنة',
+      'profession_hint': 'اختر المهنة المطلوبة',
+      'profession_required': 'يرجى اختيار مهنة',
+      'use_current_location': 'استخدم الموقع الحالي',
+      'choose_from_map': 'اختر من الخريطة',
+      'selected_location': 'الموقع المختار',
+      'date_from': 'من تاريخ',
+      'date_to': 'إلى تاريخ',
+      'time_from': 'من ساعة',
+      'time_to': 'إلى ساعة',
+      'add_video': 'إضافة فيديو',
+      'gallery': 'المعرض',
+      'camera': 'الكاميرا',
+      'guide_title': 'كيف يعمل؟',
+      'guide_content':
+          '• شارك الأسئلة والنصائح والتوصيات.\n• تحتاج إلى مختص؟ انشر "طلب عامل".\n• هل أنت صاحب مهنة؟ قدّم خدمتك في التعليقات.\n• صفِّ حسب الفئة أو رتّب حسب الشعبية.',
+      'featured_articles': 'أدلة ومقالات',
+      'share_article': 'مشاركة المقال',
+      'anonymous': 'مجهول',
+      'user_fallback': 'مستخدم',
+      'user_not_signed_in': 'المستخدم غير مسجل الدخول',
+      'location_services_disabled': 'خدمات الموقع غير مفعلة.',
+      'location_permissions_denied': 'تم رفض أذونات الموقع.',
+      'location_permissions_permanently_denied':
+          'تم رفض أذونات الموقع بشكل دائم.',
+      'generic_error_prefix': 'خطأ',
+      'articles': [
+        {
+          'title': 'زيادة أرباحك',
+          'subtitle': 'استراتيجيات لأصحاب المهن',
+          'icon': Icons.trending_up,
+          'color': Colors.green,
+          'content':
+              '1. صورة شخصية واضحة واحترافية.\n2. صور مشاريع عالية الجودة (قبل/بعد).\n3. سرعة الرد (أقل من 15 دقيقة ترفع التحويل بنسبة 40%).\n4. اطلب تقييمًا بعد كل عمل ناجح.',
+        },
+        {
+          'title': 'اختيار المهني المناسب',
+          'subtitle': 'نصائح للعملاء',
+          'icon': Icons.verified_user,
+          'color': Colors.blue,
+          'content':
+              '1. ابحث عن شارة "نشاط موثّق".\n2. اقرأ التقييمات الحديثة وليس الرقم فقط.\n3. قارن الأسعار وتجنب العروض غير المنطقية.\n4. تأكد من وجود تأمين في الأعمال الكبيرة.',
+        },
+        {
+          'title': 'كتابة منشور ممتاز',
+          'subtitle': 'للحصول على عروض دقيقة',
+          'icon': Icons.edit_note,
+          'color': Colors.orange,
+          'content':
+              'العنوان: اذكر المهمة الأساسية.\nالمحتوى: أضف الموقع والوقت المناسب لك.\nالصور: التقط صورًا واضحة للمكان في ضوء النهار.',
+        },
+        {
+          'title': 'توثيق النشاط التجاري',
+          'subtitle': 'لماذا التوثيق مهم؟',
+          'icon': Icons.verified,
+          'color': Colors.indigo,
+          'content':
+              'النشاطات الموثقة تحصل على ظهور أعلى بنسبة 300% وشارة زرقاء تعزز الثقة. يشمل التوثيق فحص الهوية والتسجيل التجاري.',
+        },
+      ],
+    });
+    return strings;
+  }
+
+  Map<String, dynamic> _amharicStrings() {
+    final strings = _englishStrings();
+    strings.addAll({
+      'title': 'ማህበረሰብ እና ስራዎች',
+      'search_hint': 'ፖስቶችን ፈልግ...',
+      'create_post': 'በማህበረሰብ ውስጥ ፖስት አድርግ',
+      'edit_post': 'ፖስት አርትዕ',
+      'post_title': 'ርዕስ',
+      'post_category': 'ምድብ',
+      'post_content': 'ምን ማጋራት ትፈልጋለህ?',
+      'publish': 'አትም',
+      'update': 'አዘምን',
+      'cancel': 'ሰርዝ',
+      'categories': ['ሁሉም', 'ጥያቄ', 'ምክር', 'የስራ ጥያቄ', 'ምክር ሰጪ', 'ሌላ'],
+      'upload_photo': 'ፎቶ ጨምር',
+      'no_posts': 'እስካሁን ፖስቶች የሉም',
+      'delete': 'ሰርዝ',
+      'share': 'አጋራ',
+      'hide': 'ደብቅ',
+      'comments': 'አስተያየቶች / ቅናሾች',
+      'add_comment': 'አስተያየት ወይም ቅናሽ ጨምር...',
+      'bid_price': 'የቅናሽ ዋጋ',
+      'send_bid': 'ቅናሽ ላክ',
+      'update_bid': 'ቅናሽ አዘምን',
+      'edit_your_bid': 'ያለዎትን ቅናሽ ማዘምን ይችላሉ።',
+      'choose_worker': 'ሰራተኛ ምረጥ',
+      'confirm_choose_worker_title': 'ይህን ሰራተኛ ይምረጡ?',
+      'confirm_choose_worker_body':
+          'ይህ ሰራተኛ ለዚህ የስራ ጥያቄ የተመረጠ ቅናሽ እንዲሆን ያደርጋል።',
+      'selected_worker': 'የተመረጠ ሰራተኛ',
+      'selected_offer': 'የተመረጠ ቅናሽ',
+      'offer_price': 'የቀረበ ዋጋ',
+      'workers_can_offer': 'ሰራተኞች እዚህ ዋጋ ማቅረብ ይችላሉ፣ እርስዎም የሚስማማውን መምረጥ ይችላሉ።',
+      'job_request_comment_restriction':
+          'በንቁ ምዝገባ ያላቸው ሰራተኞች ብቻ በስራ ጥያቄዎች ላይ አስተያየት ሊሰጡ ይችላሉ።',
+      'bid_price_hint': 'ለምሳሌ 350',
+      'location': 'አካባቢ (ከተማ/አካባቢ)',
+      'profession': 'ሙያ',
+      'date_from': 'ከቀን',
+      'time_from': 'ከሰዓት',
+      'author': 'አታሚ',
+      'posted': 'ታተመ',
+      'newest': 'አዲስ',
+      'most_liked': 'ብዙ የተወደደ',
+      'login': 'ግባ',
+      'guide_title': 'እንዴት ይሰራል?',
+      'guide_content':
+          '• ጥያቄዎችን፣ ምክሮችን እና ማስተላለፊያዎችን ያጋሩ።\n• ባለሙያ ያስፈልጋል? "የስራ ጥያቄ" ያትሙ።\n• ባለሙያ ነህ? አገልግሎትህን በአስተያየቶች ውስጥ አቅርብ።\n• በምድብ ማጣራት ወይም በታዋቂነት መደርደር ትችላለህ።',
+      'featured_articles': 'መመሪያዎች እና ጽሑፎች',
+      'share_article': 'ጽሑፍ አጋራ',
+      'anonymous': 'ስም የሌለው',
+      'user_fallback': 'ተጠቃሚ',
+      'user_not_signed_in': 'ተጠቃሚው አልገባም',
+      'location_services_disabled': 'የአካባቢ አገልግሎቶች ተዘግተዋል።',
+      'location_permissions_denied': 'የአካባቢ ፍቃድ ተከልክሏል።',
+      'location_permissions_permanently_denied': 'የአካባቢ ፍቃድ ለዘላለም ተከልክሏል።',
+      'generic_error_prefix': 'ስህተት',
+      'articles': [
+        {
+          'title': 'ገቢዎን እንዴት መጨመር',
+          'subtitle': 'ለባለሙያዎች ስትራቴጂ',
+          'icon': Icons.trending_up,
+          'color': Colors.green,
+          'content':
+              '1. ግልጽ እና ሙያዊ ፕሮፋይል ፎቶ ይጠቀሙ።\n2. ከፍተኛ ጥራት ያላቸው የፕሮጀክት ፎቶዎች (በፊት/በኋላ) ያቅርቡ።\n3. ፈጣን ምላሽ ይስጡ (ከ15 ደቂቃ በታች 40% የለውጥ መጠን ያሻሽላል)።\n4. ስራ ከተጠናቀቀ በኋላ ግምገማ ይጠይቁ።',
+        },
+        {
+          'title': 'ትክክለኛ ባለሙያ መምረጥ',
+          'subtitle': 'ለደንበኞች ምክሮች',
+          'icon': Icons.verified_user,
+          'color': Colors.blue,
+          'content':
+              '1. "የተረጋገጠ ንግድ" ምልክት ይፈልጉ።\n2. የቅርብ ጊዜ ግምገማዎችን ያንብቡ።\n3. ዋጋዎችን ያነጻጽሩ ነገር ግን በጣም ዝቅተኛ ዋጋ ብቻ አትመርጡ።\n4. ለትልቅ ስራዎች ኢንሹራንስ እንዳለ ያረጋግጡ።',
+        },
+        {
+          'title': 'ጥሩ የስራ ፖስት መፃፍ',
+          'subtitle': 'ትክክለኛ ቅናሾች ለማግኘት',
+          'icon': Icons.edit_note,
+          'color': Colors.orange,
+          'content':
+              'ርዕስ: ዋናውን ተግባር ይግለጹ።\nይዘት: ቦታ እና የሚመችዎትን ጊዜ ያካትቱ።\nፎቶ: ቦታውን በቀን ብርሃን ግልጽ ፎቶ ያንሱ።',
+        },
+        {
+          'title': 'የንግድ ማረጋገጫ',
+          'subtitle': 'ለምን መረጋገጥ ይጠቅማል?',
+          'icon': Icons.verified,
+          'color': Colors.indigo,
+          'content':
+              'የተረጋገጡ ንግዶች 300% ተጨማሪ ታይነት ያገኛሉ እና የደንበኛ እምነት የሚያጠናክር ሰማያዊ ምልክት ይቀበላሉ። ማረጋገጫው የመታወቂያ እና የንግድ ምዝገባ ምርመራ ያካትታል።',
+        },
+      ],
+    });
+    return strings;
+  }
+
+  Map<String, dynamic> _russianStrings() {
+    final strings = _englishStrings();
+    strings.addAll({
+      'title': 'Сообщество и заказы',
+      'search_hint': 'Поиск по публикациям...',
+      'create_post': 'Опубликовать',
+      'edit_post': 'Редактировать публикацию',
+      'post_title': 'Заголовок',
+      'post_category': 'Категория',
+      'post_content': 'Чем хотите поделиться?',
+      'publish': 'Опубликовать',
+      'update': 'Обновить',
+      'cancel': 'Отмена',
+      'categories': [
+        'Все',
+        'Вопрос',
+        'Совет',
+        'Запрос на работу',
+        'Рекомендация',
+        'Другое',
+      ],
+      'upload_photo': 'Добавить фото',
+      'no_posts': 'Публикаций пока нет',
+      'delete': 'Удалить',
+      'share': 'Поделиться',
+      'hide': 'Скрыть',
+      'comments': 'Комментарии / Предложения',
+      'add_comment': 'Добавить комментарий или предложение...',
+      'bid_price': 'Цена предложения',
+      'send_bid': 'Отправить предложение',
+      'update_bid': 'Обновить предложение',
+      'edit_your_bid': 'Вы можете обновить ваше текущее предложение.',
+      'choose_worker': 'Выбрать специалиста',
+      'confirm_choose_worker_title': 'Выбрать этого специалиста?',
+      'confirm_choose_worker_body':
+          'Этот специалист будет отмечен как выбранное предложение для этого запроса.',
+      'selected_worker': 'Выбранный специалист',
+      'selected_offer': 'Выбранное предложение',
+      'offer_price': 'Предложенная цена',
+      'workers_can_offer':
+          'Специалисты могут оставлять здесь предложения, а вы можете выбрать подходящее.',
+      'job_request_comment_restriction':
+          'Только специалисты с активной подпиской могут комментировать запросы на работу.',
+      'bid_price_hint': 'Например, 350',
+      'location': 'Местоположение (город/район)',
+      'profession': 'Профессия',
+      'date_from': 'С даты',
+      'time_from': 'С времени',
+      'author': 'Автор',
+      'posted': 'Опубликовано',
+      'newest': 'Новые',
+      'most_liked': 'Популярные',
+      'login': 'Войти',
+      'guide_title': 'Как это работает?',
+      'guide_content':
+          '• Делитесь вопросами, советами и рекомендациями.\n• Нужен специалист? Опубликуйте "Запрос на работу".\n• Вы специалист? Предлагайте услуги в комментариях.\n• Фильтруйте по категории или сортируйте по популярности.',
+      'featured_articles': 'Гайды и статьи',
+      'share_article': 'Поделиться статьей',
+      'anonymous': 'Аноним',
+      'user_fallback': 'Пользователь',
+      'user_not_signed_in': 'Пользователь не вошел в систему',
+      'location_services_disabled': 'Службы геолокации отключены.',
+      'location_permissions_denied': 'Доступ к геолокации запрещен.',
+      'location_permissions_permanently_denied':
+          'Доступ к геолокации навсегда запрещен.',
+      'generic_error_prefix': 'Ошибка',
+      'articles': [
+        {
+          'title': 'Как увеличить доход',
+          'subtitle': 'Стратегии для специалистов',
+          'icon': Icons.trending_up,
+          'color': Colors.green,
+          'content':
+              '1. Четкое и профессиональное фото профиля.\n2. Качественные фото проектов (до/после).\n3. Быстрый ответ (менее 15 минут повышает конверсию на 40%).\n4. Просите отзывы после каждого успешно завершенного заказа.',
+        },
+        {
+          'title': 'Как выбрать подходящего специалиста',
+          'subtitle': 'Советы для клиентов',
+          'icon': Icons.verified_user,
+          'color': Colors.blue,
+          'content':
+              '1. Ищите значок "Проверенный бизнес".\n2. Читайте свежие отзывы, а не только рейтинг.\n3. Сравнивайте цены, но избегайте подозрительно дешевых предложений.\n4. Для крупных работ уточняйте наличие страховки.',
+        },
+        {
+          'title': 'Как написать хороший пост',
+          'subtitle': 'Чтобы получать точные предложения',
+          'icon': Icons.edit_note,
+          'color': Colors.orange,
+          'content':
+              'Заголовок: укажите основную задачу.\nОписание: добавьте локацию и удобные сроки.\nФото: сделайте четкие снимки места при дневном свете.',
+        },
+        {
+          'title': 'Проверка бизнеса',
+          'subtitle': 'Зачем проходить верификацию?',
+          'icon': Icons.verified,
+          'color': Colors.indigo,
+          'content':
+              'Проверенные компании получают на 300% больше видимости и синий значок, который повышает доверие клиентов. Верификация включает проверку личности и регистрации бизнеса.',
+        },
+      ],
+    });
+    return strings;
+  }
+
+  Map<String, dynamic> _englishStrings() {
+    return {
+      'title': 'Community & Jobs',
+      'search_hint': 'Search posts...',
+      'create_post': 'Post to Community',
+      'edit_post': 'Edit Post',
+      'post_title': 'Title',
+      'post_category': 'Category',
+      'post_content': 'What\'s on your mind?',
+      'publish': 'Publish',
+      'update': 'Update',
+      'cancel': 'Cancel',
+      'categories': [
+        'All',
+        'Question',
+        'Tip',
+        'Job Request',
+        'Recommendation',
+        'Other',
+      ],
+      'upload_photo': 'Add Photos',
+      'no_posts': 'No posts yet',
+      'delete': 'Delete',
+      'share': 'Share',
+      'report': 'Report',
+      'hide': 'Hide',
+      'edit': 'Edit',
+      'comments': 'Comments / Offers',
+      'add_comment': 'Add a comment or offer...',
+      'bid_price': 'Bid Price',
+      'bid_price_hint': 'For example 350',
+      'send_bid': 'Send Bid',
+      'update_bid': 'Update Bid',
+      'edit_your_bid': 'You can update your existing bid.',
+      'choose_worker': 'Choose Worker',
+      'confirm_choose_worker_title': 'Choose this worker?',
+      'confirm_choose_worker_body':
+          'This will mark the worker as the selected offer for this job request.',
+      'selected_worker': 'Selected Worker',
+      'selected_offer': 'Selected Offer',
+      'offer_price': 'Offered Price',
+      'workers_can_offer':
+          'Workers can place bids here, and you can choose the one you want.',
+      'job_request_comment_restriction':
+          'Only workers with an active subscription can comment on job requests.',
+      'rating': 'Rating',
+      'reviews': 'Reviews',
+      'author': 'Author',
+      'posted': 'Posted',
+      'sort': 'Sort by',
+      'newest': 'Newest',
+      'most_liked': 'Most Liked',
+      'guest_msg': 'You must sign up to perform this action',
+      'login': 'Sign In',
+      'error': 'Error: Permission denied or connection issue',
+      'empty_fields': 'Please fill both title and content',
+      'location': 'Location (City/Area)',
+      'job_request': 'Job Request',
+      'profession': 'Profession',
+      'profession_hint': 'Choose the profession you need',
+      'profession_required': 'Please choose a profession',
+      'use_current_location': 'Use current location',
+      'choose_from_map': 'Choose from map',
+      'selected_location': 'Selected location',
+      'change_location': 'Change location',
+      'location_loading': 'Getting location...',
+      'date_from': 'From date',
+      'date_to': 'To date',
+      'date_anytime':
+          'If you do not choose dates, the request will be considered anytime',
+      'select_date': 'Select date',
+      'time_from': 'From hour',
+      'time_to': 'To hour',
+      'time_anytime':
+          'If you do not choose hours, the request will be considered anytime',
+      'add_video': 'Add Video',
+      'media_limit': 'You can upload up to 5 photos/videos',
+      'gallery': 'Gallery',
+      'camera': 'Camera',
+      'guide_title': 'How it works?',
+      'guide_content':
+          '• Share questions, tips, and recommendations.\n• Need a pro? Post a "Job Request".\n• Professionals? Offer your services in the comments.\n• Filter by category or sort by popularity.',
+      'featured_articles': 'Guides & Articles',
+      'share_article': 'Share Article',
+      'anonymous': 'Anonymous',
+      'user_fallback': 'User',
+      'user_not_signed_in': 'User not signed in',
+      'location_services_disabled': 'Location services are disabled.',
+      'location_permissions_denied': 'Location permissions are denied.',
+      'location_permissions_permanently_denied':
+          'Location permissions are permanently denied.',
+      'generic_error_prefix': 'Error',
+      'articles': [
+        {
+          'title': 'Maximizing your earnings',
+          'subtitle': 'Strategies for professionals',
+          'icon': Icons.trending_up,
+          'color': Colors.green,
+          'content':
+              '1. Clear & professional profile photo.\n2. High-quality project photos (before/after).\n3. Fast response time (under 15 mins increases conversion by 40%).\n4. Ask for reviews after every successful job.',
+        },
+        {
+          'title': 'Choosing the right pro',
+          'subtitle': 'Tips for customers',
+          'icon': Icons.verified_user,
+          'color': Colors.blue,
+          'content':
+              '1. Look for the "Verified Business" badge.\n2. Read recent reviews, not just the rating.\n3. Compare quotes but avoid "too good to be true" prices.\n4. Confirm insurance coverage for major tasks.',
+        },
+        {
+          'title': 'Writing a great job post',
+          'subtitle': 'To get accurate quotes',
+          'icon': Icons.edit_note,
+          'color': Colors.orange,
+          'content':
+              'Title: Mention the core task.\nContent: Include location and your preferred schedule.\nPhotos: Take clear photos of the area in daylight.',
+        },
+        {
+          'title': 'Business Verification',
+          'subtitle': 'Why get verified?',
+          'icon': Icons.verified,
+          'color': Colors.indigo,
+          'content':
+              'Verified businesses get 300% more visibility and a blue badge that builds trust. Verification involves ID and registration checks.',
+        },
+      ],
+    };
   }
 
   bool _isGuest() {
@@ -723,19 +1056,19 @@ class _BlogPageState extends State<BlogPage> {
       try {
         final serviceEnabled = await Geolocator.isLocationServiceEnabled();
         if (!serviceEnabled) {
-          throw 'Location services are disabled.';
+          throw strings['location_services_disabled'];
         }
 
         var permission = await Geolocator.checkPermission();
         if (permission == LocationPermission.denied) {
           permission = await Geolocator.requestPermission();
           if (permission == LocationPermission.denied) {
-            throw 'Location permissions are denied.';
+            throw strings['location_permissions_denied'];
           }
         }
 
         if (permission == LocationPermission.deniedForever) {
-          throw 'Location permissions are permanently denied.';
+          throw strings['location_permissions_permanently_denied'];
         }
 
         final position = await Geolocator.getCurrentPosition();
@@ -883,7 +1216,7 @@ class _BlogPageState extends State<BlogPage> {
                     ),
                   ),
                   items: (strings['categories'] as List)
-                      .where((cat) => cat != 'All' && cat != 'הכל')
+                      .skip(1)
                       .map(
                         (cat) => DropdownMenuItem(
                           value: cat.toString(),
@@ -905,7 +1238,8 @@ class _BlogPageState extends State<BlogPage> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                if (selectedCategory == strings['job_request']) ...[
+                if (_isJobRequestCategoryValue(selectedCategory) ||
+                    selectedCategory == strings['job_request']) ...[
                   DropdownButtonFormField<String>(
                     value: selectedProfession,
                     decoration: InputDecoration(
@@ -1375,7 +1709,8 @@ class _BlogPageState extends State<BlogPage> {
                             return;
                           }
 
-                          if (selectedCategory == strings['job_request'] &&
+                          if ((_isJobRequestCategoryValue(selectedCategory) ||
+                                  selectedCategory == strings['job_request']) &&
                               (selectedProfession == null ||
                                   selectedProfession!.trim().isEmpty)) {
                             ScaffoldMessenger.of(context).showSnackBar(
@@ -1390,9 +1725,10 @@ class _BlogPageState extends State<BlogPage> {
                           try {
                             final user = FirebaseAuth.instance.currentUser;
                             if (user == null)
-                              throw Exception("User not signed in");
+                              throw Exception(strings['user_not_signed_in']);
 
-                            String authorName = user.displayName ?? "User";
+                            String authorName =
+                                user.displayName ?? strings['user_fallback'];
                             if (user.displayName == null ||
                                 user.displayName!.isEmpty) {
                               try {
@@ -1402,7 +1738,8 @@ class _BlogPageState extends State<BlogPage> {
                                     .get();
                                 if (userDoc.exists) {
                                   authorName =
-                                      userDoc.data()?['name'] ?? "User";
+                                      userDoc.data()?['name'] ??
+                                      strings['user_fallback'];
                                 }
                               } catch (_) {}
                             }
@@ -1478,6 +1815,9 @@ class _BlogPageState extends State<BlogPage> {
                               'likes': existingPost?['likes'] ?? 0,
                               'likedBy': existingPost?['likedBy'] ?? {},
                               'isJobRequest':
+                                  _isJobRequestCategoryValue(
+                                    selectedCategory,
+                                  ) ||
                                   selectedCategory == strings['job_request'],
                               'isPinned': existingPost?['isPinned'] ?? false,
                             };
@@ -1496,7 +1836,11 @@ class _BlogPageState extends State<BlogPage> {
                           } catch (e) {
                             if (mounted)
                               ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text("Error: $e")),
+                                SnackBar(
+                                  content: Text(
+                                    '${strings['generic_error_prefix']}: $e',
+                                  ),
+                                ),
                               );
                           } finally {
                             if (mounted)
@@ -1673,7 +2017,7 @@ class _BlogPageState extends State<BlogPage> {
                 width: 220,
                 margin: const EdgeInsets.only(right: 16),
                 child: InkWell(
-                  onTap: () => _showArticleSheet(art),
+                  onTap: () => _showArticleSheet(art, strings),
                   borderRadius: BorderRadius.circular(20),
                   child: Container(
                     padding: const EdgeInsets.all(16),
@@ -1731,7 +2075,10 @@ class _BlogPageState extends State<BlogPage> {
     );
   }
 
-  void _showArticleSheet(Map<String, dynamic> art) {
+  void _showArticleSheet(
+    Map<String, dynamic> art,
+    Map<String, dynamic> strings,
+  ) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1797,7 +2144,7 @@ class _BlogPageState extends State<BlogPage> {
                     onPressed: () =>
                         Share.share("${art['title']}\n\n${art['content']}"),
                     icon: const Icon(Icons.share),
-                    label: const Text("Share Article"),
+                    label: Text(strings['share_article']),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: art['color'],
                       foregroundColor: Colors.white,
@@ -2080,7 +2427,9 @@ class _BlogCard extends StatelessWidget {
         isLiked = likedByData.contains(user.uid);
     }
 
-    final isJobRequest = post['isJobRequest'] == true;
+    final isJobRequest =
+        post['isJobRequest'] == true ||
+        _isJobRequestCategoryValue((post['category'] ?? '').toString());
     final isPinned = post['isPinned'] == true;
     final mediaUrls = post['imageUrls'] != null
         ? List<String>.from(post['imageUrls'])
@@ -2100,6 +2449,10 @@ class _BlogCard extends StatelessWidget {
         : postedAt != null
         ? intl.DateFormat('dd/MM/yyyy').format(postedAt)
         : null;
+    final categoryLabel = _localizedCategoryValueForMap(
+      (post['category'] ?? '').toString(),
+      localizedStrings,
+    );
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -2197,7 +2550,7 @@ class _BlogCard extends StatelessWidget {
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(
-                          post['category'] ?? '',
+                          categoryLabel,
                           style: TextStyle(
                             color: isJobRequest
                                 ? Colors.orange.shade800
@@ -2312,7 +2665,7 @@ class _BlogCard extends StatelessWidget {
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        post['authorName'] ?? 'Anonymous',
+                        post['authorName'] ?? localizedStrings['anonymous'],
                         style: const TextStyle(
                           color: Color(0xFF64748B),
                           fontSize: 13,
@@ -2398,6 +2751,59 @@ DateTime? _blogCardDate(dynamic value) {
   if (value is DateTime) return value;
   if (value is String) return DateTime.tryParse(value);
   return null;
+}
+
+bool _isJobRequestCategoryValue(String raw) {
+  final normalized = raw.trim().toLowerCase();
+  if (normalized.isEmpty) return false;
+
+  const aliases = <String>{
+    'job request',
+    'דרוש בעל מקצוע',
+    'طلب عامل',
+    'የስራ ጥያቄ',
+    'запрос на работу',
+  };
+  return aliases.contains(normalized);
+}
+
+String _localizedCategoryValueForMap(
+  String raw,
+  Map<String, dynamic> localizedStrings,
+) {
+  final normalized = raw.trim().toLowerCase();
+  if (normalized.isEmpty) return raw;
+
+  const categoryAliases = <List<String>>[
+    ['all', 'הכל', 'الكل', 'ሁሉም', 'все'],
+    ['question', 'שאלה', 'سؤال', 'ጥያቄ', 'вопрос'],
+    ['tip', 'טיפ', 'نصيحة', 'ምክር', 'совет'],
+    [
+      'job request',
+      'דרוש בעל מקצוע',
+      'طلب عامل',
+      'የስራ ጥያቄ',
+      'запрос на работу',
+    ],
+    ['recommendation', 'המלצה', 'توصية', 'ምክር ሰጪ', 'рекомендация'],
+    ['other', 'אחר', 'أخرى', 'ሌላ', 'другое'],
+  ];
+
+  int categoryIndex = -1;
+  for (var i = 0; i < categoryAliases.length; i++) {
+    if (categoryAliases[i].contains(normalized)) {
+      categoryIndex = i;
+      break;
+    }
+  }
+
+  if (categoryIndex == -1) return raw;
+
+  final categories = localizedStrings['categories'];
+  if (categories is List && categoryIndex < categories.length) {
+    return categories[categoryIndex].toString();
+  }
+  return raw;
 }
 
 class PostDetailPage extends StatefulWidget {
@@ -2537,7 +2943,9 @@ class _PostDetailPageState extends State<PostDetailPage> {
       widget.onGuestDialog();
       return;
     }
-    final isJobRequest = widget.post['isJobRequest'] == true;
+    final isJobRequest =
+        widget.post['isJobRequest'] == true ||
+        _isJobRequestCategoryValue((widget.post['category'] ?? '').toString());
     final isAuthor = widget.post['authorUid'] == user.uid;
     final text = _commentController.text.trim();
     final canCommentOnJobRequest =
@@ -2569,7 +2977,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
     setState(() => _isSubmittingComment = true);
     final commentData = {
       'text': text,
-      'authorName': user.displayName ?? 'Anonymous',
+      'authorName': user.displayName ?? widget.localizedStrings['anonymous'],
       'authorUid': user.uid,
       'authorRole': _currentUserRole,
       'bidPrice': isWorkerBid ? bidPrice : null,
@@ -2651,6 +3059,17 @@ class _PostDetailPageState extends State<PostDetailPage> {
     return null;
   }
 
+  String _localizedCategoryLabel(String raw) {
+    return _localizedCategoryValueForMap(raw, widget.localizedStrings);
+  }
+
+  String _localizedProfessionLabel(String raw, String localeCode) {
+    final normalized = raw.trim();
+    if (normalized.isEmpty) return '';
+    final canonical = ProfessionLocalization.toCanonical(normalized);
+    return ProfessionLocalization.toLocalized(canonical, localeCode);
+  }
+
   Widget _buildInfoCard({
     required IconData icon,
     required String label,
@@ -2726,8 +3145,14 @@ class _PostDetailPageState extends State<PostDetailPage> {
 
   @override
   Widget build(BuildContext context) {
+    final localeCode = Provider.of<LanguageProvider>(
+      context,
+      listen: false,
+    ).locale.languageCode;
     final user = FirebaseAuth.instance.currentUser;
-    final isJobRequest = widget.post['isJobRequest'] == true;
+    final isJobRequest =
+        widget.post['isJobRequest'] == true ||
+        _isJobRequestCategoryValue((widget.post['category'] ?? '').toString());
     final isAuthor = user != null && widget.post['authorUid'] == user.uid;
     final canCommentOnJobRequest =
         isJobRequest &&
@@ -2751,10 +3176,14 @@ class _PostDetailPageState extends State<PostDetailPage> {
     final selectedBidPrice =
         widget.post['selectedBidPrice']?.toString().trim() ?? '';
     final location = widget.post['location']?.toString().trim() ?? '';
-    final profession =
+    final professionRaw =
         (widget.post['professionLabel'] ?? widget.post['profession'] ?? '')
             .toString()
             .trim();
+    final profession = _localizedProfessionLabel(professionRaw, localeCode);
+    final category = _localizedCategoryLabel(
+      (widget.post['category'] ?? '').toString(),
+    );
     final requestDateFrom = _postDate(widget.post['requestDateFrom']);
     final requestDateTo = _postDate(widget.post['requestDateTo']);
     final requestTimeFrom =
@@ -2855,7 +3284,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: Text(
-                                widget.post['category'] ?? '',
+                                category,
                                 style: const TextStyle(
                                   color: Color(0xFF4F46E5),
                                   fontWeight: FontWeight.bold,
@@ -3112,7 +3541,8 @@ class _PostDetailPageState extends State<PostDetailPage> {
                                           children: [
                                             Text(
                                               comment['authorName'] ??
-                                                  'Anonymous',
+                                                  widget
+                                                      .localizedStrings['anonymous'],
                                               style: const TextStyle(
                                                 fontWeight: FontWeight.bold,
                                                 fontSize: 13,

@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:untitled1/pages/my_request_details_page.dart';
 import 'package:untitled1/services/language_provider.dart';
 
 class MyRequestsPage extends StatefulWidget {
@@ -87,6 +88,76 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
           'close': 'إغلاق',
           'ok': 'تأكيد',
         };
+      case 'am':
+        return {
+          'title': 'ጥያቄዎቼ',
+          'empty': 'የላኩት ጥያቄዎች አልተገኙም',
+          'request': 'ጥያቄ',
+          'request_type': 'የጥያቄ አይነት',
+          'work_request': 'የስራ ጥያቄ',
+          'quote_request': 'የዋጋ ቅናሽ ጥያቄ',
+          'date': 'ቀን',
+          'hours': 'ሰዓታት',
+          'location': 'አካባቢ',
+          'service_location': 'የአገልግሎት ቦታ',
+          'service_at_provider': 'እኔ ወደ ባለሙያው እሄዳለሁ',
+          'service_at_customer': 'ባለሙያው ወደ እኔ ይመጣል',
+          'service_online': 'ኦንላይን ስብሰባ',
+          'description': 'መግለጫ',
+          'created_at': 'የተፈጠረበት',
+          'additional_details': 'ተጨማሪ ዝርዝሮች',
+          'status': 'ሁኔታ',
+          'waiting_for_approval': 'ማጽደቅ በመጠባበቅ',
+          'accepted': 'ተቀባ',
+          'rejected': 'ተቀባይነት አላገኘም',
+          'cancelled': 'ተሰርዟል',
+          'all': 'ሁሉም',
+          'details': 'የጥያቄ ዝርዝሮች',
+          'no_items_for_filter': 'በዚህ ሁኔታ ምንም ጥያቄዎች የሉም',
+          'tap_for_details': 'ለዝርዝሮች ይጫኑ',
+          'cancel': 'ጥያቄ ሰርዝ',
+          'cancel_success': 'ጥያቄው ተሰርዟል',
+          'cancel_error': 'ጥያቄውን ማሰረዝ አልተሳካም',
+          'confirm_title': 'ይህን ጥያቄ ልሰርዝ?',
+          'confirm_body': 'ይህ የጥያቄውን ሁኔታ ወደ ተሰረዘ ያዘምናል።',
+          'close': 'ዝጋ',
+          'ok': 'እሺ',
+        };
+      case 'ru':
+        return {
+          'title': 'Мои запросы',
+          'empty': 'Отправленные вами запросы не найдены',
+          'request': 'Запрос',
+          'request_type': 'Тип запроса',
+          'work_request': 'Рабочий запрос',
+          'quote_request': 'Запрос предложения',
+          'date': 'Дата',
+          'hours': 'Часы',
+          'location': 'Локация',
+          'service_location': 'Место оказания услуги',
+          'service_at_provider': 'Я еду к специалисту',
+          'service_at_customer': 'Специалист приезжает ко мне',
+          'service_online': 'Онлайн-сессия',
+          'description': 'Описание',
+          'created_at': 'Создано',
+          'additional_details': 'Дополнительные детали',
+          'status': 'Статус',
+          'waiting_for_approval': 'Ожидает подтверждения',
+          'accepted': 'Принято',
+          'rejected': 'Отклонено',
+          'cancelled': 'Отменено',
+          'all': 'Все',
+          'details': 'Детали запроса',
+          'no_items_for_filter': 'Нет запросов с таким статусом',
+          'tap_for_details': 'Нажмите, чтобы посмотреть детали',
+          'cancel': 'Отменить запрос',
+          'cancel_success': 'Запрос отменен',
+          'cancel_error': 'Не удалось отменить запрос',
+          'confirm_title': 'Отменить этот запрос?',
+          'confirm_body': 'Статус запроса будет изменен на "отменен".',
+          'close': 'Закрыть',
+          'ok': 'ОК',
+        };
       default:
         return {
           'title': 'My Requests',
@@ -150,183 +221,6 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
     }).toList();
   }
 
-  Future<void> _showRequestDetails(
-    BuildContext context,
-    Map<String, dynamic> data,
-    String normalizedStatus,
-    Map<String, String> strings,
-  ) async {
-    final date = (data['date'] ?? '-').toString();
-    final from = data['requestedFrom']?.toString();
-    final to = data['requestedTo']?.toString();
-    final body = (data['jobDescription'] ?? '').toString();
-    final location = (data['locationName'] ?? '-').toString();
-    final serviceLocationType =
-        (data['serviceLocationType'] ?? 'provider_travels').toString();
-    final requestType = _requestTypeLabel(
-      (data['type'] ?? 'work_request').toString(),
-      strings,
-    );
-    final createdAt = data['timestamp'] is Timestamp
-        ? (data['timestamp'] as Timestamp).toDate().toString()
-        : '-';
-    final color = _statusColor(normalizedStatus);
-    final hiddenKeys = <String>{
-      'fromId',
-      'status',
-      'timestamp',
-      'jobDescription',
-      'requestedFrom',
-      'requestedTo',
-      'date',
-      'locationName',
-      'type',
-      'serviceLocationType',
-      'images',
-      'image',
-      'imageUrl',
-      'imageURL',
-      'latitude',
-      'longitude',
-      'lat',
-      'lng',
-      'long',
-    };
-    final extraEntries =
-        data.entries
-            .where(
-              (entry) => !hiddenKeys.contains(entry.key) && entry.value != null,
-            )
-            .toList()
-          ..sort((a, b) => a.key.compareTo(b.key));
-
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) {
-        return SafeArea(
-          child: Container(
-            margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                maxHeight: MediaQuery.of(ctx).size.height * 0.85,
-              ),
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(_statusIcon(normalizedStatus), color: color),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            strings['details']!,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w800,
-                              fontSize: 16,
-                            ),
-                          ),
-                        ),
-                        TextButton(
-                          onPressed: () => Navigator.pop(ctx),
-                          child: Text(strings['close']!),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    _detailRow(strings['request_type']!, requestType),
-                    _detailRow(strings['date']!, date),
-                    if (from != null && to != null)
-                      _detailRow(strings['hours']!, '$from - $to'),
-                    _detailRow(
-                      strings['service_location']!,
-                      _serviceLocationLabel(serviceLocationType, strings),
-                    ),
-                    _detailRow(strings['location']!, location),
-                    _detailRow(
-                      strings['status']!,
-                      _statusLabel(normalizedStatus, strings),
-                    ),
-                    _detailRow(strings['created_at']!, createdAt),
-                    const SizedBox(height: 12),
-                    Text(
-                      strings['description']!,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF0F172A),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      body.isEmpty ? '-' : body,
-                      style: const TextStyle(
-                        color: Color(0xFF334155),
-                        height: 1.35,
-                      ),
-                    ),
-                    if (extraEntries.isNotEmpty) ...[
-                      const SizedBox(height: 14),
-                      Text(
-                        strings['additional_details']!,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFF0F172A),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      ...extraEntries.map(
-                        (entry) => _detailRow(
-                          entry.key,
-                          entry.value is Timestamp
-                              ? (entry.value as Timestamp).toDate().toString()
-                              : entry.value.toString(),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _detailRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 120,
-            child: Text(
-              '$label:',
-              style: const TextStyle(
-                fontWeight: FontWeight.w700,
-                color: Color(0xFF334155),
-              ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(color: Color(0xFF0F172A)),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   String _requestTypeLabel(String type, Map<String, String> strings) {
     switch (type) {
       case 'quote_request':
@@ -334,18 +228,6 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
       case 'work_request':
       default:
         return strings['work_request']!;
-    }
-  }
-
-  String _serviceLocationLabel(String type, Map<String, String> strings) {
-    switch (type.trim().toLowerCase()) {
-      case 'customer_travels':
-        return strings['service_at_provider']!;
-      case 'online':
-        return strings['service_online']!;
-      case 'provider_travels':
-      default:
-        return strings['service_at_customer']!;
     }
   }
 
@@ -389,6 +271,22 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
       default:
         return const Color(0xFFB7791F);
     }
+  }
+
+  int _countByStatus(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+    String status,
+  ) {
+    if (status == 'all') return docs.length;
+    return docs
+        .where(
+          (doc) =>
+              _normalizeStatus(
+                (doc.data()['status'] ?? 'pending').toString(),
+              ) ==
+              status,
+        )
+        .length;
   }
 
   Future<void> _cancelRequest(
@@ -489,6 +387,7 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
           title: Text(strings['title']!),
           backgroundColor: Colors.white,
           foregroundColor: const Color(0xFF1976D2),
+          elevation: 0,
         ),
         body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
           stream: stream,
@@ -515,181 +414,287 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
             }
 
             final filteredDocs = _applyFilter(docs);
+            final waitingCount = _countByStatus(docs, 'waiting_for_approval');
+            final acceptedCount = _countByStatus(docs, 'accepted');
+            final rejectedCount = _countByStatus(docs, 'rejected');
+            final cancelledCount = _countByStatus(docs, 'cancelled');
+            final allCount = docs.length;
 
-            return Column(
-              children: [
-                SizedBox(
-                  height: 56,
-                  child: ListView(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
+            return RefreshIndicator(
+              onRefresh: () async {
+                setState(() {});
+                await Future<void>.delayed(const Duration(milliseconds: 250));
+              },
+              child: Column(
+                children: [
+                  Container(
+                    margin: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
                     ),
-                    scrollDirection: Axis.horizontal,
-                    children: [
-                      _buildFilterChip(strings['all']!, 'all'),
-                      _buildFilterChip(
-                        strings['waiting_for_approval']!,
-                        'waiting_for_approval',
-                      ),
-                      _buildFilterChip(strings['accepted']!, 'accepted'),
-                      _buildFilterChip(strings['rejected']!, 'rejected'),
-                      _buildFilterChip(strings['cancelled']!, 'cancelled'),
-                    ],
+                    child: Row(
+                      children: [
+                        _countBadge(
+                          label: strings['all']!,
+                          value: allCount,
+                          color: const Color(0xFF0369A1),
+                        ),
+                        const SizedBox(width: 8),
+                        _countBadge(
+                          label: strings['waiting_for_approval']!,
+                          value: waitingCount,
+                          color: const Color(0xFFB7791F),
+                        ),
+                        const SizedBox(width: 8),
+                        _countBadge(
+                          label: strings['accepted']!,
+                          value: acceptedCount,
+                          color: const Color(0xFF2D8F5B),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                Expanded(
-                  child: filteredDocs.isEmpty
-                      ? Center(child: Text(strings['no_items_for_filter']!))
-                      : ListView.separated(
-                          padding: const EdgeInsets.all(16),
-                          itemCount: filteredDocs.length,
-                          separatorBuilder: (_, __) =>
-                              const SizedBox(height: 10),
-                          itemBuilder: (context, index) {
-                            final doc = filteredDocs[index];
-                            final data = doc.data();
-                            final status = _normalizeStatus(
-                              (data['status'] ?? 'pending').toString(),
-                            );
-                            final type = (data['type'] ?? 'work_request')
-                                .toString();
-                            final date = (data['date'] ?? '-').toString();
-                            final from = data['requestedFrom']?.toString();
-                            final to = data['requestedTo']?.toString();
-                            final body = (data['jobDescription'] ?? '')
-                                .toString();
-                            final statusColor = _statusColor(status);
-
-                            return Card(
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
+                  Container(
+                    alignment: Alignment.centerLeft,
+                    margin: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+                    child: Text(
+                      '${strings['rejected']!}: $rejectedCount   ${strings['cancelled']!}: $cancelledCount',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF64748B),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  SizedBox(
+                    height: 56,
+                    child: ListView(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      scrollDirection: Axis.horizontal,
+                      children: [
+                        _buildFilterChip(strings['all']!, 'all'),
+                        _buildFilterChip(
+                          strings['waiting_for_approval']!,
+                          'waiting_for_approval',
+                        ),
+                        _buildFilterChip(strings['accepted']!, 'accepted'),
+                        _buildFilterChip(strings['rejected']!, 'rejected'),
+                        _buildFilterChip(strings['cancelled']!, 'cancelled'),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: filteredDocs.isEmpty
+                        ? ListView(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            children: [
+                              const SizedBox(height: 80),
+                              Icon(
+                                Icons.inbox_outlined,
+                                size: 54,
+                                color: Colors.blueGrey.shade200,
                               ),
-                              elevation: 0,
-                              color: Colors.white,
-                              child: InkWell(
-                                borderRadius: BorderRadius.circular(16),
-                                onTap: () => _showRequestDetails(
-                                  context,
-                                  data,
-                                  status,
-                                  strings,
-                                ),
-                                child: Padding(
-                                  padding: const EdgeInsets.all(14),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          Expanded(
-                                            child: Text(
-                                              '${strings['request']!}: ${_requestTypeLabel(type, strings)}',
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: const TextStyle(
-                                                fontWeight: FontWeight.w800,
-                                              ),
-                                            ),
-                                          ),
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 10,
-                                              vertical: 5,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: statusColor.withOpacity(
-                                                0.12,
-                                              ),
-                                              borderRadius:
-                                                  BorderRadius.circular(999),
-                                            ),
-                                            child: Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                Icon(
-                                                  _statusIcon(status),
-                                                  color: statusColor,
-                                                  size: 14,
-                                                ),
-                                                const SizedBox(width: 4),
-                                                Text(
-                                                  _statusLabel(status, strings),
-                                                  style: TextStyle(
-                                                    color: statusColor,
-                                                    fontWeight: FontWeight.w700,
-                                                    fontSize: 12,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 8),
-                                      Text('${strings['date']!}: $date'),
-                                      if (from != null && to != null)
-                                        Text(
-                                          '${strings['hours']!}: $from - $to',
-                                        ),
-                                      if (body.isNotEmpty) ...[
-                                        const SizedBox(height: 8),
-                                        Text(
-                                          body,
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
-                                            color: Color(0xFF4B5563),
-                                          ),
-                                        ),
-                                      ],
-                                      const SizedBox(height: 10),
-                                      Text(
-                                        strings['tap_for_details']!,
-                                        style: const TextStyle(
-                                          color: Color(0xFF64748B),
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                      if (status == 'waiting_for_approval') ...[
-                                        const SizedBox(height: 12),
-                                        Align(
-                                          alignment: isRtl
-                                              ? Alignment.centerLeft
-                                              : Alignment.centerRight,
-                                          child: OutlinedButton.icon(
-                                            onPressed: () => _cancelRequest(
-                                              context,
-                                              doc.reference,
-                                              data,
-                                              strings,
-                                            ),
-                                            icon: const Icon(
-                                              Icons.cancel_outlined,
-                                            ),
-                                            label: Text(strings['cancel']!),
-                                            style: OutlinedButton.styleFrom(
-                                              foregroundColor: const Color(
-                                                0xFFC0392B,
-                                              ),
-                                              side: const BorderSide(
-                                                color: Color(0xFFC0392B),
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ],
+                              const SizedBox(height: 12),
+                              Center(
+                                child: Text(
+                                  strings['no_items_for_filter']!,
+                                  style: const TextStyle(
+                                    color: Color(0xFF475569),
+                                    fontWeight: FontWeight.w600,
                                   ),
                                 ),
                               ),
-                            );
-                          },
-                        ),
-                ),
-              ],
+                            ],
+                          )
+                        : ListView.separated(
+                            padding: const EdgeInsets.all(16),
+                            itemCount: filteredDocs.length,
+                            separatorBuilder: (_, __) =>
+                                const SizedBox(height: 12),
+                            itemBuilder: (context, index) {
+                              final doc = filteredDocs[index];
+                              final data = doc.data();
+                              final status = _normalizeStatus(
+                                (data['status'] ?? 'pending').toString(),
+                              );
+                              final type = (data['type'] ?? 'work_request')
+                                  .toString();
+                              final date = (data['date'] ?? '-').toString();
+                              final from = data['requestedFrom']?.toString();
+                              final to = data['requestedTo']?.toString();
+                              final body = (data['jobDescription'] ?? '')
+                                  .toString();
+                              final statusColor = _statusColor(status);
+
+                              return Material(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(18),
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(18),
+                                  onTap: () => Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => MyRequestDetailsPage(
+                                        requestRef: doc.reference,
+                                        initialData: data,
+                                      ),
+                                    ),
+                                  ),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(14),
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(18),
+                                      border: Border.all(
+                                        color: const Color(0xFFE2E8F0),
+                                      ),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.black.withValues(
+                                            alpha: 0.02,
+                                          ),
+                                          blurRadius: 8,
+                                          offset: const Offset(0, 4),
+                                        ),
+                                      ],
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Container(
+                                              width: 34,
+                                              height: 34,
+                                              decoration: BoxDecoration(
+                                                color: statusColor.withValues(
+                                                  alpha: 0.12,
+                                                ),
+                                                borderRadius:
+                                                    BorderRadius.circular(10),
+                                              ),
+                                              child: Icon(
+                                                _statusIcon(status),
+                                                color: statusColor,
+                                                size: 18,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 10),
+                                            Expanded(
+                                              child: Text(
+                                                '${strings['request']!}: ${_requestTypeLabel(type, strings)}',
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.w800,
+                                                  fontSize: 15,
+                                                ),
+                                              ),
+                                            ),
+                                            Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 10,
+                                                    vertical: 5,
+                                                  ),
+                                              decoration: BoxDecoration(
+                                                color: statusColor.withValues(
+                                                  alpha: 0.12,
+                                                ),
+                                                borderRadius:
+                                                    BorderRadius.circular(999),
+                                              ),
+                                              child: Text(
+                                                _statusLabel(status, strings),
+                                                style: TextStyle(
+                                                  color: statusColor,
+                                                  fontWeight: FontWeight.w700,
+                                                  fontSize: 12,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 10),
+                                        Text(
+                                          '${strings['date']!}: $date',
+                                          style: const TextStyle(
+                                            color: Color(0xFF334155),
+                                          ),
+                                        ),
+                                        if (from != null && to != null)
+                                          Text(
+                                            '${strings['hours']!}: $from - $to',
+                                            style: const TextStyle(
+                                              color: Color(0xFF334155),
+                                            ),
+                                          ),
+                                        if (body.isNotEmpty) ...[
+                                          const SizedBox(height: 8),
+                                          Text(
+                                            body,
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              color: Color(0xFF475569),
+                                              height: 1.35,
+                                            ),
+                                          ),
+                                        ],
+                                        const SizedBox(height: 10),
+                                        Text(
+                                          strings['tap_for_details']!,
+                                          style: const TextStyle(
+                                            color: Color(0xFF64748B),
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                        if (status ==
+                                            'waiting_for_approval') ...[
+                                          const SizedBox(height: 12),
+                                          Align(
+                                            alignment: isRtl
+                                                ? Alignment.centerLeft
+                                                : Alignment.centerRight,
+                                            child: OutlinedButton.icon(
+                                              onPressed: () => _cancelRequest(
+                                                context,
+                                                doc.reference,
+                                                data,
+                                                strings,
+                                              ),
+                                              icon: const Icon(
+                                                Icons.cancel_outlined,
+                                              ),
+                                              label: Text(strings['cancel']!),
+                                              style: OutlinedButton.styleFrom(
+                                                foregroundColor: const Color(
+                                                  0xFFC0392B,
+                                                ),
+                                                side: const BorderSide(
+                                                  color: Color(0xFFC0392B),
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
             );
           },
         ),
@@ -716,6 +721,46 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
         labelStyle: TextStyle(
           color: selected ? const Color(0xFF0369A1) : const Color(0xFF334155),
           fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+
+  Widget _countBadge({
+    required String label,
+    required int value,
+    required Color color,
+  }) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              '$value',
+              style: TextStyle(
+                color: color,
+                fontWeight: FontWeight.w900,
+                fontSize: 15,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: color,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
         ),
       ),
     );

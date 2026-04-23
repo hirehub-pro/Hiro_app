@@ -672,9 +672,9 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
     Future<void> pickImages(StateSetter setDialogState) async {
       if (attachments.length >= maxAttachments) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('You can attach up to 5 files only.')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(strings['attach_limit']!)));
         return;
       }
 
@@ -695,20 +695,18 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
       });
 
       if (pickedFiles.length > remainingSlots && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Only 5 total attachments are allowed.'),
-          ),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(strings['attach_total_limit']!)));
       }
     }
 
     Future<void> pickVideo(StateSetter setDialogState) async {
       if (attachments.length >= maxAttachments) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('You can attach up to 5 files only.')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(strings['attach_limit']!)));
         return;
       }
 
@@ -772,12 +770,12 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
                 ),
                 const SizedBox(height: 10),
                 Text(
-                  'Attachments (images/videos)',
+                  strings['attachments_title']!,
                   style: Theme.of(context).textTheme.titleSmall,
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '${attachments.length}/$maxAttachments selected',
+                  '${attachments.length}/$maxAttachments ${strings['attachments_selected']!}',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
                 const SizedBox(height: 8),
@@ -788,12 +786,12 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
                     OutlinedButton.icon(
                       onPressed: () => pickImages(setDialogState),
                       icon: const Icon(Icons.photo_library_outlined),
-                      label: const Text('Add Images'),
+                      label: Text(strings['add_images']!),
                     ),
                     OutlinedButton.icon(
                       onPressed: () => pickVideo(setDialogState),
                       icon: const Icon(Icons.video_library_outlined),
-                      label: const Text('Add Video'),
+                      label: Text(strings['add_video']!),
                     ),
                   ],
                 ),
@@ -920,7 +918,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
             return PopScope(
               canPop: false,
               child: AlertDialog(
-                title: Text(strings['report'] ?? 'Sending report'),
+                title: Text(strings['sending_report']!),
                 content: ValueListenableBuilder<double>(
                   valueListenable: progress,
                   builder: (context, value, _) {
@@ -959,7 +957,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
         'reporterId': reporterId,
         'reportedId': widget.userId,
         'subject': selectedSubject,
-        'reason': reason.isEmpty ? 'General issue' : reason,
+        'reason': reason.isEmpty ? strings['general_issue'] : reason,
         'details': details,
         'attachments': uploadedAttachments,
         'status': 'open',
@@ -1168,9 +1166,9 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
       } catch (e) {
         debugPrint("Upgrade error: $e");
         if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text('Upgrade failed: $e')));
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('${strings['upgrade_failed']!}: $e')),
+          );
         }
       } finally {
         if (mounted) setState(() => _isLoading = false);
@@ -1347,8 +1345,8 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
                   const SizedBox(height: 16),
                   Text(
                     isRtl
-                        ? 'יש להתחבר כדי לצפות בפרופיל'
-                        : 'Please sign in to view your profile',
+                        ? strings['signin_prompt']!
+                        : strings['signin_prompt']!,
                     textAlign: TextAlign.center,
                     style: const TextStyle(
                       fontSize: 18,
@@ -1373,7 +1371,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
                           borderRadius: BorderRadius.circular(12),
                         ),
                       ),
-                      child: Text(isRtl ? 'להתחברות' : 'Go to Sign In'),
+                      child: Text(strings['go_to_signin']!),
                     ),
                   ),
                 ],
@@ -1752,7 +1750,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
       ];
       return tabs;
     }
-    return [Tab(text: strings['about']), Tab(text: "Activity")];
+    return [Tab(text: strings['about']), Tab(text: strings['activity'])];
   }
 
   List<Widget> _buildTabViews(Map<String, String> strings, String localeCode) {
@@ -1762,7 +1760,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
       if (currentUserId == null) {
         return [
           _buildAboutSection(strings),
-          const Center(child: Text("Activity Feed")),
+          Center(child: Text(strings['activity_feed']!)),
         ];
       }
       final views = <Widget>[
@@ -1781,7 +1779,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
     }
     return [
       _buildAboutSection(strings),
-      const Center(child: Text("Activity Feed")),
+      Center(child: Text(strings['activity_feed']!)),
     ];
   }
 
@@ -1989,22 +1987,24 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
 
   Future<void> _confirmDeleteProject(Map<String, dynamic> project) async {
     if (!_isOwnProfile) return;
+    final strings = _getLocalizedStrings(context);
 
     bool? confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete Project?'),
-        content: const Text(
-          'Are you sure you want to remove this project from your profile?',
-        ),
+        title: Text(strings['delete_project_title']!),
+        content: Text(strings['delete_project_message']!),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+            child: Text(strings['cancel']!),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: Text('Delete', style: TextStyle(color: Colors.red)),
+            child: Text(
+              strings['delete']!,
+              style: const TextStyle(color: Colors.red),
+            ),
           ),
         ],
       ),
@@ -2042,9 +2042,9 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
       } catch (e) {
         debugPrint("Delete project error: $e");
         if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text("Error deleting project: $e")));
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('${strings['delete_project_error']!}: $e')),
+          );
         }
       }
     }
@@ -2140,7 +2140,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            review['userName'] ?? 'User',
+                            review['userName'] ?? strings['user_default']!,
                             style: const TextStyle(
                               fontWeight: FontWeight.bold,
                               fontSize: 16,
@@ -2310,11 +2310,11 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
             if (_altPhoneNumber.isNotEmpty)
               _buildInfoRow(
                 Icons.phone_iphone_rounded,
-                "Secondary",
+                strings['secondary']!,
                 _altPhoneNumber,
               ),
-            _buildInfoRow(Icons.email_rounded, "Email", _email),
-            _buildInfoRow(Icons.location_city_rounded, "Town", _town),
+            _buildInfoRow(Icons.email_rounded, strings['email']!, _email),
+            _buildInfoRow(Icons.location_city_rounded, strings['town']!, _town),
             if (age != null)
               _buildInfoRow(
                 Icons.cake_outlined,
@@ -2322,7 +2322,11 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
                 age.toString(),
               ),
             if (_distanceStr.isNotEmpty)
-              _buildInfoRow(Icons.straighten_rounded, "Distance", _distanceStr),
+              _buildInfoRow(
+                Icons.straighten_rounded,
+                strings['distance']!,
+                _distanceStr,
+              ),
           ]),
 
           if (_isOwnProfile) ...[
@@ -2481,9 +2485,9 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
             ),
           ),
           const SizedBox(height: 12),
-          const _UpgradeFeatureLine('Dashboard מקצועי לעסק שלך'),
-          const _UpgradeFeatureLine('קבלת פניות והזדמנויות מלקוחות'),
-          const _UpgradeFeatureLine('גישה לכלי ניהול מתקדמים'),
+          _UpgradeFeatureLine(strings['upgrade_feature_1']!),
+          _UpgradeFeatureLine(strings['upgrade_feature_2']!),
+          _UpgradeFeatureLine(strings['upgrade_feature_3']!),
           const SizedBox(height: 14),
           SizedBox(
             width: double.infinity,
@@ -2614,6 +2618,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
   }
 
   Widget _buildInfoRow(IconData icon, String label, String value) {
+    final strings = _getLocalizedStrings(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
       child: Row(
@@ -2640,7 +2645,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
                   ),
                 ),
                 Text(
-                  value.isNotEmpty ? value : 'N/A',
+                  value.isNotEmpty ? value : strings['not_available']!,
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 15,
@@ -2969,6 +2974,35 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
               'חשבון בעל המקצוע שלך מוכן. כדי להשתמש בכל הכלים המקצועיים כמו אנליטיקה, חשבוניות וכלי עסק מתקדמים, יש להפעיל מנוי מקצועי.',
           'go_to_subscription': 'מעבר למנוי',
           'later': 'אחר כך',
+          'guest_title': 'נדרשת התחברות',
+          'guest_msg': 'יש להתחבר כדי להשתמש בפעולה זו.',
+          'login': 'התחברות',
+          'signin_prompt': 'יש להתחבר כדי לצפות בפרופיל שלך',
+          'go_to_signin': 'מעבר להתחברות',
+          'attachments_title': 'קבצים מצורפים (תמונות/וידאו)',
+          'attachments_selected': 'נבחרו',
+          'add_images': 'הוסף תמונות',
+          'add_video': 'הוסף וידאו',
+          'attach_limit': 'ניתן לצרף עד 5 קבצים בלבד.',
+          'attach_total_limit': 'מותר עד 5 קבצים בסך הכל.',
+          'sending_report': 'שולח דיווח',
+          'general_issue': 'בעיה כללית',
+          'activity': 'פעילות',
+          'activity_feed': 'פיד פעילות',
+          'delete_project_title': 'למחוק את הפרויקט?',
+          'delete_project_message': 'האם להסיר את הפרויקט מהפרופיל שלך?',
+          'delete': 'מחק',
+          'delete_project_error': 'שגיאה במחיקת הפרויקט',
+          'user_default': 'משתמש',
+          'secondary': 'נוסף',
+          'email': 'אימייל',
+          'town': 'עיר',
+          'distance': 'מרחק',
+          'upgrade_feature_1': 'לוח ניהול מקצועי לעסק שלך',
+          'upgrade_feature_2': 'קבלת פניות והזדמנויות מלקוחות',
+          'upgrade_feature_3': 'גישה לכלי ניהול מתקדמים',
+          'upgrade_failed': 'השדרוג נכשל',
+          'not_available': 'לא זמין',
           'unknown': 'לא ידוע',
         };
       case 'ar':
@@ -3039,7 +3073,227 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
               'حساب العامل الخاص بك أصبح جاهزًا. لاستخدام جميع الأدوات المهنية مثل التحليلات والفواتير وميزات الأعمال المتقدمة، يرجى تفعيل اشتراك مهني.',
           'go_to_subscription': 'الانتقال إلى الاشتراك',
           'later': 'لاحقًا',
+          'guest_title': 'تسجيل الدخول مطلوب',
+          'guest_msg': 'يرجى تسجيل الدخول لاستخدام هذه الميزة.',
+          'login': 'تسجيل الدخول',
+          'signin_prompt': 'يرجى تسجيل الدخول لعرض ملفك الشخصي',
+          'go_to_signin': 'الانتقال إلى تسجيل الدخول',
+          'attachments_title': 'المرفقات (صور/فيديو)',
+          'attachments_selected': 'تم الاختيار',
+          'add_images': 'إضافة صور',
+          'add_video': 'إضافة فيديو',
+          'attach_limit': 'يمكنك إرفاق حتى 5 ملفات فقط.',
+          'attach_total_limit': 'المسموح 5 مرفقات كحد أقصى.',
+          'sending_report': 'جاري إرسال البلاغ',
+          'general_issue': 'مشكلة عامة',
+          'activity': 'النشاط',
+          'activity_feed': 'موجز النشاط',
+          'delete_project_title': 'حذف المشروع؟',
+          'delete_project_message': 'هل تريد إزالة هذا المشروع من ملفك الشخصي؟',
+          'delete': 'حذف',
+          'delete_project_error': 'خطأ أثناء حذف المشروع',
+          'user_default': 'مستخدم',
+          'secondary': 'ثانوي',
+          'email': 'البريد الإلكتروني',
+          'town': 'المدينة',
+          'distance': 'المسافة',
+          'upgrade_feature_1': 'لوحة تحكم احترافية لعملك',
+          'upgrade_feature_2': 'استقبال طلبات وفرص من العملاء',
+          'upgrade_feature_3': 'الوصول إلى أدوات إدارة متقدمة',
+          'upgrade_failed': 'فشل الترقية',
+          'not_available': 'غير متاح',
           'unknown': 'غير معروف',
+        };
+      case 'am':
+        return {
+          'title': 'መገለጫ',
+          'user_name': _userName.isNotEmpty ? _userName : 'የተጠቃሚ ስም',
+          'edit_profile': 'መገለጫ አርትዕ',
+          'projects': 'ፕሮጀክቶች',
+          'reviews': 'ግምገማዎች',
+          'schedule': 'መርሃ ግብር',
+          'about': 'ስለ',
+          'bio_title': 'መግለጫ',
+          'bio': _bio.isNotEmpty ? _bio : 'ገለፃ አልተገኘም።',
+          'contact_info': 'የመገናኛ መረጃ',
+          'age': 'ዕድሜ',
+          'call': 'ይደውሉ',
+          'message': 'መልእክት',
+          'share_profile': 'መገለጫ አጋራ',
+          'write_review': 'ግምገማ ጻፍ',
+          'edit_review': 'ግምገማ አርትዕ',
+          'no_projects': 'የሚታዩ ፕሮጀክቶች የሉም።',
+          'no_reviews': 'ግምገማዎች አልተገኙም።',
+          'add': 'ጨምር',
+          'add_project': 'ፕሮጀክት ጨምር',
+          'verified_id': 'የተረጋገጠ መታወቂያ',
+          'verified_biz': 'የተረጋገጠ ንግድ',
+          'insured': 'ዋስትና ያለው',
+          'views': 'እይታዎች',
+          'rating': 'ደረጃ',
+          'upgrade_worker': 'ወደ ሰራተኛ አካውንት ያሻሽሉ',
+          'upgrade_msg': 'ወደ ሰራተኛ አካውንት መሻሻል ይፈልጋሉ?',
+          'confirm': 'አረጋግጥ',
+          'cancel': 'ሰርዝ',
+          'report': 'ሪፖርት',
+          'report_user_title': 'ተጠቃሚን ሪፖርት አድርግ',
+          'report_subject': 'ርዕስ',
+          'report_subject_harassment': 'ትንኮሳ ወይም ጥላቻ ንግግር',
+          'report_subject_spam': 'ስፓም ወይም ያልተፈለጉ መልእክቶች',
+          'report_subject_impersonation': 'መለያ ማስመሰል',
+          'report_subject_scam': 'ማጭበርበር',
+          'report_subject_inappropriate': 'ያልተገባ ይዘት',
+          'report_subject_abuse': 'አሳዛኝ ባህሪ',
+          'report_subject_fake_profile': 'የውሸት መገለጫ',
+          'report_subject_other': 'ሌላ',
+          'report_reason': 'ምክንያት',
+          'report_details': 'ዝርዝር',
+          'report_hint': 'ምን እንደተከሰተ ይግለጹ...',
+          'report_sent': 'ሪፖርቱ ተልኳል',
+          'report_failed': 'ሪፖርት መላክ አልተሳካም',
+          'business_tools': 'የንግድ መሳሪያዎች',
+          'analytics': 'ትንታኔ',
+          'invoice_builder': 'ደረሰኝ ፈጣሪ',
+          'saved_invoices': 'የተቀመጡ ደረሰኞች',
+          'verify_business': 'ንግድ ያረጋግጡ',
+          'change_business': 'የንግድ መረጃ አዘምን',
+          'renew_subscription': 'ምዝገባን እንደገና አድስ',
+          'subscription_inactive': 'ምዝገባው ንቁ አይደለም',
+          'subscription_inactive_message': 'የPro ምዝገባዎን እንደገና ያድሱ።',
+          'subscription_feature_1': 'ትንታኔ እና መሳሪያዎችን እንደገና ያግኙ',
+          'subscription_feature_2': 'ለደንበኞች መርሃ ግብር እና መገናኛ አሳይ',
+          'subscription_feature_3': 'ሙያዊ መገለጫዎን ንቁ ያድርጉ',
+          'subscription_required_title': 'Pro ምዝገባ አንቃ',
+          'subscription_required_message':
+              'ሁሉንም የሙያ መሳሪያዎች ለመጠቀም Pro ምዝገባ ያስፈልጋል።',
+          'go_to_subscription': 'ወደ ምዝገባ ሂድ',
+          'later': 'በኋላ',
+          'guest_title': 'መግባት ያስፈልጋል',
+          'guest_msg': 'ይህን ባህሪ ለመጠቀም እባክዎ ይግቡ።',
+          'login': 'ግባ',
+          'signin_prompt': 'መገለጫዎን ለማየት እባክዎ ይግቡ',
+          'go_to_signin': 'ወደ መግቢያ ሂድ',
+          'attachments_title': 'ተያያዥ ፋይሎች (ምስሎች/ቪዲዮ)',
+          'attachments_selected': 'ተመርጠዋል',
+          'add_images': 'ምስሎች ጨምር',
+          'add_video': 'ቪዲዮ ጨምር',
+          'attach_limit': 'ከፍተኛው 5 ፋይሎች ብቻ ማከል ይችላሉ።',
+          'attach_total_limit': 'በአጠቃላይ 5 አባሪዎች ብቻ ይፈቀዳሉ።',
+          'sending_report': 'ሪፖርት በመላክ ላይ',
+          'general_issue': 'አጠቃላይ ችግር',
+          'activity': 'እንቅስቃሴ',
+          'activity_feed': 'የእንቅስቃሴ ፊድ',
+          'delete_project_title': 'ፕሮጀክት ሰርዝ?',
+          'delete_project_message': 'ይህን ፕሮጀክት ከመገለጫዎ ማስወገድ ይፈልጋሉ?',
+          'delete': 'ሰርዝ',
+          'delete_project_error': 'ፕሮጀክቱን ማጥፋት ላይ ስህተት',
+          'user_default': 'ተጠቃሚ',
+          'secondary': 'ሁለተኛ',
+          'email': 'ኢሜል',
+          'town': 'ከተማ',
+          'distance': 'ርቀት',
+          'upgrade_feature_1': 'ለንግድዎ ሙያዊ ዳሽቦርድ',
+          'upgrade_feature_2': 'ከደንበኞች ጥያቄዎችን እና እድሎችን ይቀበሉ',
+          'upgrade_feature_3': 'የላቁ የአስተዳደር መሳሪያዎች ይድረሱ',
+          'upgrade_failed': 'ማሻሻሉ አልተሳካም',
+          'not_available': 'አይገኝም',
+          'unknown': 'ያልታወቀ',
+        };
+      case 'ru':
+        return {
+          'title': 'Профиль',
+          'user_name': _userName.isNotEmpty ? _userName : 'Имя пользователя',
+          'edit_profile': 'Редактировать профиль',
+          'projects': 'Проекты',
+          'reviews': 'Отзывы',
+          'schedule': 'Расписание',
+          'about': 'О себе',
+          'bio_title': 'Биография',
+          'bio': _bio.isNotEmpty ? _bio : 'Описание пока недоступно.',
+          'contact_info': 'Контактная информация',
+          'age': 'Возраст',
+          'call': 'Позвонить',
+          'message': 'Сообщение',
+          'share_profile': 'Поделиться профилем',
+          'write_review': 'Написать отзыв',
+          'edit_review': 'Изменить отзыв',
+          'no_projects': 'Нет проектов.',
+          'no_reviews': 'Пока нет отзывов.',
+          'add': 'Добавить',
+          'add_project': 'Добавить проект',
+          'verified_id': 'Проверенный ID',
+          'verified_biz': 'Проверенный бизнес',
+          'insured': 'Застрахован',
+          'views': 'Просмотры',
+          'rating': 'Рейтинг',
+          'upgrade_worker': 'Перейти на аккаунт специалиста',
+          'upgrade_msg': 'Хотите перейти на аккаунт специалиста?',
+          'confirm': 'Подтвердить',
+          'cancel': 'Отмена',
+          'report': 'Пожаловаться',
+          'report_user_title': 'Пожаловаться на пользователя',
+          'report_subject': 'Тема',
+          'report_subject_harassment': 'Домогательства или язык ненависти',
+          'report_subject_spam': 'Спам или нежелательные сообщения',
+          'report_subject_impersonation': 'Выдача себя за другого',
+          'report_subject_scam': 'Мошенничество',
+          'report_subject_inappropriate': 'Неприемлемый контент',
+          'report_subject_abuse': 'Оскорбительное поведение',
+          'report_subject_fake_profile': 'Фейковый профиль',
+          'report_subject_other': 'Другое',
+          'report_reason': 'Причина',
+          'report_details': 'Подробности',
+          'report_hint': 'Опишите, что произошло...',
+          'report_sent': 'Жалоба успешно отправлена.',
+          'report_failed': 'Не удалось отправить жалобу.',
+          'business_tools': 'Инструменты бизнеса',
+          'analytics': 'Аналитика',
+          'invoice_builder': 'Создание счетов',
+          'saved_invoices': 'Сохраненные счета',
+          'verify_business': 'Подтвердить бизнес',
+          'change_business': 'Обновить данные бизнеса',
+          'renew_subscription': 'Продлить подписку',
+          'subscription_inactive': 'Подписка неактивна',
+          'subscription_inactive_message':
+              'Продлите Pro для восстановления всех инструментов.',
+          'subscription_feature_1': 'Доступ к аналитике, счетам и инструментам',
+          'subscription_feature_2': 'Показывать график и контакты клиентам',
+          'subscription_feature_3': 'Поддерживать профиль активным',
+          'subscription_required_title': 'Активируйте Pro-подписку',
+          'subscription_required_message':
+              'Для использования профессиональных инструментов активируйте Pro.',
+          'go_to_subscription': 'Перейти к подписке',
+          'later': 'Позже',
+          'guest_title': 'Требуется вход',
+          'guest_msg': 'Пожалуйста, войдите, чтобы использовать эту функцию.',
+          'login': 'Войти',
+          'signin_prompt': 'Войдите, чтобы просмотреть профиль',
+          'go_to_signin': 'Перейти ко входу',
+          'attachments_title': 'Вложения (фото/видео)',
+          'attachments_selected': 'выбрано',
+          'add_images': 'Добавить фото',
+          'add_video': 'Добавить видео',
+          'attach_limit': 'Можно прикрепить не более 5 файлов.',
+          'attach_total_limit': 'Допускается максимум 5 вложений.',
+          'sending_report': 'Отправка жалобы',
+          'general_issue': 'Общая проблема',
+          'activity': 'Активность',
+          'activity_feed': 'Лента активности',
+          'delete_project_title': 'Удалить проект?',
+          'delete_project_message': 'Удалить этот проект из вашего профиля?',
+          'delete': 'Удалить',
+          'delete_project_error': 'Ошибка удаления проекта',
+          'user_default': 'Пользователь',
+          'secondary': 'Дополнительный',
+          'email': 'Email',
+          'town': 'Город',
+          'distance': 'Расстояние',
+          'upgrade_feature_1': 'Профессиональная панель для вашего бизнеса',
+          'upgrade_feature_2': 'Получайте запросы и возможности от клиентов',
+          'upgrade_feature_3': 'Доступ к расширенным инструментам управления',
+          'upgrade_failed': 'Не удалось выполнить обновление',
+          'not_available': 'Недоступно',
+          'unknown': 'Неизвестно',
         };
       default:
         return {
@@ -3110,6 +3364,36 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
               'Your worker account is ready. To use all professional tools like analytics, invoices, and advanced business features, please activate a Pro subscription.',
           'go_to_subscription': 'Go to Subscription',
           'later': 'Later',
+          'guest_title': 'Login Required',
+          'guest_msg': 'Please login to use this feature.',
+          'login': 'Login',
+          'signin_prompt': 'Please sign in to view your profile',
+          'go_to_signin': 'Go to Sign In',
+          'attachments_title': 'Attachments (images/videos)',
+          'attachments_selected': 'selected',
+          'add_images': 'Add Images',
+          'add_video': 'Add Video',
+          'attach_limit': 'You can attach up to 5 files only.',
+          'attach_total_limit': 'Only 5 total attachments are allowed.',
+          'sending_report': 'Sending report',
+          'general_issue': 'General issue',
+          'activity': 'Activity',
+          'activity_feed': 'Activity Feed',
+          'delete_project_title': 'Delete Project?',
+          'delete_project_message':
+              'Are you sure you want to remove this project from your profile?',
+          'delete': 'Delete',
+          'delete_project_error': 'Error deleting project',
+          'user_default': 'User',
+          'secondary': 'Secondary',
+          'email': 'Email',
+          'town': 'Town',
+          'distance': 'Distance',
+          'upgrade_feature_1': 'Professional dashboard for your business',
+          'upgrade_feature_2': 'Get customer inquiries and opportunities',
+          'upgrade_feature_3': 'Access advanced management tools',
+          'upgrade_failed': 'Upgrade failed',
+          'not_available': 'N/A',
           'unknown': 'Unknown',
         };
     }

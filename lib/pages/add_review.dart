@@ -333,10 +333,11 @@ class _AddReviewPageState extends State<AddReviewPage> {
   }
 
   Future<void> _submitReview() async {
+    final strings = _getLocalizedStrings();
     if (_commentController.text.trim().isEmpty) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('אנא כתוב תגובה')));
+      ).showSnackBar(SnackBar(content: Text(strings['comment_required']!)));
       return;
     }
 
@@ -408,9 +409,9 @@ class _AddReviewPageState extends State<AddReviewPage> {
     } catch (e) {
       debugPrint("Review upload error: $e");
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('הגשת הביקורת נכשלה: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${strings['submit_failed']!}: $e')),
+        );
       }
     } finally {
       if (mounted) setState(() => _isUploading = false);
@@ -434,6 +435,64 @@ class _AddReviewPageState extends State<AddReviewPage> {
         'submit': widget.existingReview != null ? 'עדכן ביקורת' : 'שלח ביקורת',
         'uploading': 'שולח ביקורת...',
         'rating_summary': 'איך הייתה החוויה שלך?',
+        'comment_required': 'אנא כתוב תגובה',
+        'submit_failed': 'הגשת הביקורת נכשלה',
+      };
+    }
+    if (locale == 'ar') {
+      return {
+        'title': widget.existingReview != null
+            ? 'تعديل التقييم'
+            : 'كتابة تقييم',
+        'profession_label': 'اختر المهنة:',
+        'price_rating': 'تقييم السعر',
+        'work_rating': 'جودة العمل',
+        'professionalism': 'الاحترافية',
+        'comment_hint': 'أخبرنا عن تجربتك...',
+        'add_images': 'إضافة صور',
+        'submit': widget.existingReview != null
+            ? 'تحديث التقييم'
+            : 'إرسال التقييم',
+        'uploading': 'جارٍ إرسال التقييم...',
+        'rating_summary': 'كيف كانت تجربتك؟',
+        'comment_required': 'يرجى كتابة تعليق',
+        'submit_failed': 'فشل إرسال التقييم',
+      };
+    }
+    if (locale == 'am') {
+      return {
+        'title': widget.existingReview != null ? 'ግምገማ አርትዕ' : 'ግምገማ ጻፍ',
+        'profession_label': 'ሙያ ይምረጡ:',
+        'price_rating': 'የዋጋ ደረጃ',
+        'work_rating': 'የስራ ጥራት',
+        'professionalism': 'ሙያዊነት',
+        'comment_hint': 'ስለ ተሞክሮዎ ይንገሩን...',
+        'add_images': 'ምስሎች ጨምር',
+        'submit': widget.existingReview != null ? 'ግምገማ አዘምን' : 'ግምገማ ላክ',
+        'uploading': 'ግምገማ በመላክ ላይ...',
+        'rating_summary': 'ተሞክሮዎ እንዴት ነበር?',
+        'comment_required': 'እባክዎ አስተያየት ይጻፉ',
+        'submit_failed': 'ግምገማ መላክ አልተሳካም',
+      };
+    }
+    if (locale == 'ru') {
+      return {
+        'title': widget.existingReview != null
+            ? 'Изменить отзыв'
+            : 'Написать отзыв',
+        'profession_label': 'Выберите профессию:',
+        'price_rating': 'Оценка цены',
+        'work_rating': 'Качество работы',
+        'professionalism': 'Профессионализм',
+        'comment_hint': 'Расскажите о вашем опыте...',
+        'add_images': 'Добавить изображения',
+        'submit': widget.existingReview != null
+            ? 'Обновить отзыв'
+            : 'Отправить отзыв',
+        'uploading': 'Отправка отзыва...',
+        'rating_summary': 'Какой был ваш опыт?',
+        'comment_required': 'Пожалуйста, напишите комментарий',
+        'submit_failed': 'Не удалось отправить отзыв',
       };
     }
     return {
@@ -449,6 +508,8 @@ class _AddReviewPageState extends State<AddReviewPage> {
           : 'Submit Review',
       'uploading': 'Submitting review...',
       'rating_summary': 'How was your experience?',
+      'comment_required': 'Please write a comment',
+      'submit_failed': 'Failed to submit review',
     };
   }
 
@@ -495,8 +556,8 @@ class _AddReviewPageState extends State<AddReviewPage> {
   @override
   Widget build(BuildContext context) {
     final strings = _getLocalizedStrings();
-    final isRtl =
-        Provider.of<LanguageProvider>(context).locale.languageCode == 'he';
+    final locale = Provider.of<LanguageProvider>(context).locale.languageCode;
+    final isRtl = locale == 'he' || locale == 'ar';
 
     return Directionality(
       textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,

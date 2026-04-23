@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:provider/provider.dart';
 import 'package:untitled1/map/location_picker.dart';
+import 'package:untitled1/services/language_provider.dart';
 import 'package:untitled1/services/location_context_service.dart';
 
 class LocationManagerPage extends StatefulWidget {
@@ -16,6 +18,159 @@ class _LocationManagerPageState extends State<LocationManagerPage> {
   List<AppLocation> _saved = [];
   AppLocation? _currentDeviceLocation;
 
+  Map<String, String> _strings(BuildContext context) {
+    final code = Provider.of<LanguageProvider>(
+      context,
+      listen: false,
+    ).locale.languageCode;
+    switch (code) {
+      case 'he':
+        return {
+          'delete_location': 'מחיקת מיקום',
+          'remove_saved': 'להסיר את "{label}" מהמיקומים השמורים?',
+          'cancel': 'ביטול',
+          'delete': 'מחק',
+          'current_prefix': 'נוכחי',
+          'map_prefix': 'מפה',
+          'edit_location': 'עריכת מיקום',
+          'name': 'שם',
+          'name_hint': 'בית, עבודה, הורים...',
+          'choose_coordinates': 'בחרו קואורדינטות',
+          'current': 'נוכחי',
+          'choose_from_map': 'בחר מהמפה',
+          'validation': 'נא להזין שם ולבחור קואורדינטות.',
+          'save_changes': 'שמירת שינויים',
+          'no_coordinates': 'לא נבחרו קואורדינטות עדיין',
+          'add_new_location': 'הוספת מיקום חדש',
+          'save_location': 'שמור מיקום',
+          'my_locations': 'המיקומים שלי',
+          'add_location': 'הוסף מיקום',
+          'distance_source': 'מקור מרחק',
+          'current_location': 'מיקום נוכחי',
+          'unavailable': 'לא זמין',
+          'saved_locations': 'מיקומים שמורים',
+          'no_saved':
+              'אין עדיין מיקומים שמורים.\nהקשו על הוספת מיקום כדי לשמור בית, עבודה וכו׳.',
+          'active': 'פעיל',
+        };
+      case 'ar':
+        return {
+          'delete_location': 'حذف الموقع',
+          'remove_saved': 'إزالة "{label}" من المواقع المحفوظة؟',
+          'cancel': 'إلغاء',
+          'delete': 'حذف',
+          'current_prefix': 'الحالي',
+          'map_prefix': 'الخريطة',
+          'edit_location': 'تعديل الموقع',
+          'name': 'الاسم',
+          'name_hint': 'المنزل، العمل، الأهل...',
+          'choose_coordinates': 'اختر الإحداثيات',
+          'current': 'الحالي',
+          'choose_from_map': 'اختر من الخريطة',
+          'validation': 'يرجى إدخال اسم واختيار الإحداثيات.',
+          'save_changes': 'حفظ التغييرات',
+          'no_coordinates': 'لم يتم اختيار الإحداثيات بعد',
+          'add_new_location': 'إضافة موقع جديد',
+          'save_location': 'حفظ الموقع',
+          'my_locations': 'مواقعي',
+          'add_location': 'إضافة موقع',
+          'distance_source': 'مصدر المسافة',
+          'current_location': 'الموقع الحالي',
+          'unavailable': 'غير متاح',
+          'saved_locations': 'المواقع المحفوظة',
+          'no_saved':
+              'لا توجد مواقع محفوظة بعد.\nاضغط إضافة موقع لحفظ المنزل، العمل، وغيرها.',
+          'active': 'نشط',
+        };
+      case 'am':
+        return {
+          'delete_location': 'ቦታ ሰርዝ',
+          'remove_saved': '"{label}" ከተቀመጡ ቦታዎች ማስወገድ?',
+          'cancel': 'ሰርዝ',
+          'delete': 'ሰርዝ',
+          'current_prefix': 'አሁን',
+          'map_prefix': 'ካርታ',
+          'edit_location': 'ቦታ አርትዕ',
+          'name': 'ስም',
+          'name_hint': 'ቤት፣ ስራ፣ ወላጆች...',
+          'choose_coordinates': 'ኮኦርዲኔቶችን ይምረጡ',
+          'current': 'አሁን',
+          'choose_from_map': 'ከካርታ ምረጥ',
+          'validation': 'እባክዎ ስም ያስገቡ እና ኮኦርዲኔት ይምረጡ።',
+          'save_changes': 'ለውጦችን አስቀምጥ',
+          'no_coordinates': 'ኮኦርዲኔት ገና አልተመረጠም',
+          'add_new_location': 'አዲስ ቦታ ጨምር',
+          'save_location': 'ቦታ አስቀምጥ',
+          'my_locations': 'የእኔ ቦታዎች',
+          'add_location': 'ቦታ ጨምር',
+          'distance_source': 'የርቀት ምንጭ',
+          'current_location': 'የአሁኑ ቦታ',
+          'unavailable': 'አይገኝም',
+          'saved_locations': 'የተቀመጡ ቦታዎች',
+          'no_saved': 'እስካሁን የተቀመጡ ቦታዎች የሉም።\nቤት፣ ስራ ወዘተ ለማስቀመጥ ቦታ ጨምር ይጫኑ።',
+          'active': 'ንቁ',
+        };
+      case 'ru':
+        return {
+          'delete_location': 'Удалить локацию',
+          'remove_saved': 'Удалить "{label}" из сохраненных локаций?',
+          'cancel': 'Отмена',
+          'delete': 'Удалить',
+          'current_prefix': 'Текущая',
+          'map_prefix': 'Карта',
+          'edit_location': 'Изменить локацию',
+          'name': 'Название',
+          'name_hint': 'Дом, работа, родители...',
+          'choose_coordinates': 'Выберите координаты',
+          'current': 'Текущая',
+          'choose_from_map': 'Выбрать на карте',
+          'validation': 'Введите название и выберите координаты.',
+          'save_changes': 'Сохранить изменения',
+          'no_coordinates': 'Координаты еще не выбраны',
+          'add_new_location': 'Добавить новую локацию',
+          'save_location': 'Сохранить локацию',
+          'my_locations': 'Мои локации',
+          'add_location': 'Добавить локацию',
+          'distance_source': 'Источник расстояния',
+          'current_location': 'Текущее местоположение',
+          'unavailable': 'Недоступно',
+          'saved_locations': 'Сохраненные локации',
+          'no_saved':
+              'Пока нет сохраненных локаций.\nНажмите "Добавить локацию", чтобы сохранить Дом, Работу и т.д.',
+          'active': 'Активно',
+        };
+      default:
+        return {
+          'delete_location': 'Delete Location',
+          'remove_saved': 'Remove "{label}" from saved locations?',
+          'cancel': 'Cancel',
+          'delete': 'Delete',
+          'current_prefix': 'Current',
+          'map_prefix': 'Map',
+          'edit_location': 'Edit Location',
+          'name': 'Name',
+          'name_hint': 'Home, Work, Parents...',
+          'choose_coordinates': 'Choose coordinates',
+          'current': 'Current',
+          'choose_from_map': 'Choose from Map',
+          'validation': 'Please enter a name and choose coordinates.',
+          'save_changes': 'Save Changes',
+          'no_coordinates': 'No coordinates selected yet',
+          'add_new_location': 'Add New Location',
+          'save_location': 'Save Location',
+          'my_locations': 'My Locations',
+          'add_location': 'Add Location',
+          'distance_source': 'Distance Source',
+          'current_location': 'Current Location',
+          'unavailable': 'Unavailable',
+          'saved_locations': 'Saved Locations',
+          'no_saved':
+              'No saved locations yet.\nTap Add Location to save Home, Work, etc.',
+          'active': 'Active',
+        };
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -23,18 +178,35 @@ class _LocationManagerPageState extends State<LocationManagerPage> {
   }
 
   Future<void> _load() async {
-    setState(() => _isLoading = true);
-    final activeId = await LocationContextService.getActiveLocationId();
-    final saved = await LocationContextService.getSavedLocations();
-    final currentDeviceLocation =
-        await LocationContextService.getCurrentDeviceLocation();
+    // Show blocking loader only for initial empty state; keep UI responsive
+    // during refreshes triggered by add/edit/delete actions.
+    final shouldShowBlockingLoader = _saved.isEmpty && !_isLoading;
+    if (shouldShowBlockingLoader) {
+      setState(() => _isLoading = true);
+    }
+
+    final results = await Future.wait<dynamic>([
+      LocationContextService.getActiveLocationId(),
+      LocationContextService.getSavedLocations(),
+    ]);
 
     if (!mounted) return;
     setState(() {
-      _activeId = activeId;
-      _saved = saved;
-      _currentDeviceLocation = currentDeviceLocation;
+      _activeId = results[0] as String;
+      _saved = results[1] as List<AppLocation>;
       _isLoading = false;
+    });
+
+    // Do not block page appearance on GPS/permission delays.
+    _loadCurrentDeviceLocation();
+  }
+
+  Future<void> _loadCurrentDeviceLocation() async {
+    final currentDeviceLocation =
+        await LocationContextService.getCurrentDeviceLocation();
+    if (!mounted) return;
+    setState(() {
+      _currentDeviceLocation = currentDeviceLocation;
     });
   }
 
@@ -46,20 +218,23 @@ class _LocationManagerPageState extends State<LocationManagerPage> {
   }
 
   Future<void> _delete(AppLocation location) async {
+    final strings = _strings(context);
     final shouldDelete = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete Location'),
-        content: Text('Remove "${location.label}" from saved locations?'),
+        title: Text(strings['delete_location']!),
+        content: Text(
+          strings['remove_saved']!.replaceFirst('{label}', location.label),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+            child: Text(strings['cancel']!),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Delete'),
+            child: Text(strings['delete']!),
           ),
         ],
       ),
@@ -72,6 +247,7 @@ class _LocationManagerPageState extends State<LocationManagerPage> {
   }
 
   Future<void> _openEditDialog(AppLocation location) async {
+    final strings = _strings(context);
     final nameController = TextEditingController(text: location.label);
     LatLng? selectedPoint = LatLng(location.latitude, location.longitude);
     String selectedSource =
@@ -85,7 +261,7 @@ class _LocationManagerPageState extends State<LocationManagerPage> {
       setDialogState(() {
         selectedPoint = LatLng(current.latitude, current.longitude);
         selectedSource =
-            'Current: ${current.latitude.toStringAsFixed(5)}, ${current.longitude.toStringAsFixed(5)}';
+            '${strings['current_prefix']}: ${current.latitude.toStringAsFixed(5)}, ${current.longitude.toStringAsFixed(5)}';
       });
     }
 
@@ -100,7 +276,7 @@ class _LocationManagerPageState extends State<LocationManagerPage> {
         setDialogState(() {
           selectedPoint = result;
           selectedSource =
-              'Map: ${result.latitude.toStringAsFixed(5)}, ${result.longitude.toStringAsFixed(5)}';
+              '${strings['map_prefix']}: ${result.latitude.toStringAsFixed(5)}, ${result.longitude.toStringAsFixed(5)}';
         });
       }
     }
@@ -115,14 +291,20 @@ class _LocationManagerPageState extends State<LocationManagerPage> {
             final canSave = hasName && hasPoint && !isSaving;
 
             return AlertDialog(
-              title: const Row(
+              title: Row(
                 children: [
-                  Icon(
+                  const Icon(
                     Icons.edit_location_alt_outlined,
                     color: Color(0xFF1976D2),
                   ),
-                  SizedBox(width: 8),
-                  Text('Edit Location'),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      strings['edit_location']!,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
                 ],
               ),
               content: SingleChildScrollView(
@@ -135,15 +317,15 @@ class _LocationManagerPageState extends State<LocationManagerPage> {
                       autofocus: true,
                       textInputAction: TextInputAction.done,
                       onChanged: (_) => setDialogState(() {}),
-                      decoration: const InputDecoration(
-                        labelText: 'Name',
-                        hintText: 'Home, Work, Parents...',
-                        prefixIcon: Icon(Icons.label_outline),
+                      decoration: InputDecoration(
+                        labelText: strings['name'],
+                        hintText: strings['name_hint'],
+                        prefixIcon: const Icon(Icons.label_outline),
                       ),
                     ),
                     const SizedBox(height: 12),
-                    const Text(
-                      'Choose coordinates',
+                    Text(
+                      strings['choose_coordinates']!,
                       style: TextStyle(
                         color: Color(0xFF64748B),
                         fontSize: 12,
@@ -157,7 +339,7 @@ class _LocationManagerPageState extends State<LocationManagerPage> {
                           child: OutlinedButton.icon(
                             onPressed: () => fillFromCurrent(setDialogState),
                             icon: const Icon(Icons.my_location),
-                            label: const Text('Current'),
+                            label: Text(strings['current']!),
                           ),
                         ),
                         const SizedBox(width: 10),
@@ -165,7 +347,7 @@ class _LocationManagerPageState extends State<LocationManagerPage> {
                           child: OutlinedButton.icon(
                             onPressed: () => pickFromMap(setDialogState),
                             icon: const Icon(Icons.map_outlined),
-                            label: const Text('Choose from Map'),
+                            label: Text(strings['choose_from_map']!),
                           ),
                         ),
                       ],
@@ -192,8 +374,8 @@ class _LocationManagerPageState extends State<LocationManagerPage> {
                     ),
                     if (showValidation && !canSave) ...[
                       const SizedBox(height: 10),
-                      const Text(
-                        'Please enter a name and choose coordinates.',
+                      Text(
+                        strings['validation']!,
                         style: TextStyle(
                           color: Colors.red,
                           fontSize: 12,
@@ -207,7 +389,7 @@ class _LocationManagerPageState extends State<LocationManagerPage> {
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(context, false),
-                  child: const Text('Cancel'),
+                  child: Text(strings['cancel']!),
                 ),
                 ElevatedButton(
                   onPressed: canSave
@@ -236,7 +418,7 @@ class _LocationManagerPageState extends State<LocationManagerPage> {
                           height: 18,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Text('Save Changes'),
+                      : Text(strings['save_changes']!),
                 ),
               ],
             );
@@ -251,9 +433,10 @@ class _LocationManagerPageState extends State<LocationManagerPage> {
   }
 
   Future<void> _openAddDialog() async {
+    final strings = _strings(context);
     final nameController = TextEditingController();
     LatLng? selectedPoint;
-    String selectedSource = 'No coordinates selected yet';
+    String selectedSource = strings['no_coordinates']!;
     bool isSaving = false;
     bool showValidation = false;
 
@@ -263,7 +446,7 @@ class _LocationManagerPageState extends State<LocationManagerPage> {
       setDialogState(() {
         selectedPoint = LatLng(current.latitude, current.longitude);
         selectedSource =
-            'Current: ${current.latitude.toStringAsFixed(5)}, ${current.longitude.toStringAsFixed(5)}';
+            '${strings['current_prefix']}: ${current.latitude.toStringAsFixed(5)}, ${current.longitude.toStringAsFixed(5)}';
       });
     }
 
@@ -278,7 +461,7 @@ class _LocationManagerPageState extends State<LocationManagerPage> {
         setDialogState(() {
           selectedPoint = result;
           selectedSource =
-              'Map: ${result.latitude.toStringAsFixed(5)}, ${result.longitude.toStringAsFixed(5)}';
+              '${strings['map_prefix']}: ${result.latitude.toStringAsFixed(5)}, ${result.longitude.toStringAsFixed(5)}';
         });
       }
     }
@@ -293,14 +476,20 @@ class _LocationManagerPageState extends State<LocationManagerPage> {
             final canSave = hasName && hasPoint && !isSaving;
 
             return AlertDialog(
-              title: const Row(
+              title: Row(
                 children: [
-                  Icon(
+                  const Icon(
                     Icons.add_location_alt_outlined,
                     color: Color(0xFF1976D2),
                   ),
-                  SizedBox(width: 8),
-                  Text('Add New Location'),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      strings['add_new_location']!,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
                 ],
               ),
               content: SingleChildScrollView(
@@ -313,15 +502,15 @@ class _LocationManagerPageState extends State<LocationManagerPage> {
                       autofocus: true,
                       textInputAction: TextInputAction.done,
                       onChanged: (_) => setDialogState(() {}),
-                      decoration: const InputDecoration(
-                        labelText: 'Name',
-                        hintText: 'Home, Work, Parents...',
-                        prefixIcon: Icon(Icons.label_outline),
+                      decoration: InputDecoration(
+                        labelText: strings['name'],
+                        hintText: strings['name_hint'],
+                        prefixIcon: const Icon(Icons.label_outline),
                       ),
                     ),
                     const SizedBox(height: 12),
-                    const Text(
-                      'Choose coordinates',
+                    Text(
+                      strings['choose_coordinates']!,
                       style: TextStyle(
                         color: Color(0xFF64748B),
                         fontSize: 12,
@@ -335,7 +524,7 @@ class _LocationManagerPageState extends State<LocationManagerPage> {
                           child: OutlinedButton.icon(
                             onPressed: () => fillFromCurrent(setDialogState),
                             icon: const Icon(Icons.my_location),
-                            label: const Text('Current'),
+                            label: Text(strings['current']!),
                           ),
                         ),
                         const SizedBox(width: 10),
@@ -343,7 +532,7 @@ class _LocationManagerPageState extends State<LocationManagerPage> {
                           child: OutlinedButton.icon(
                             onPressed: () => pickFromMap(setDialogState),
                             icon: const Icon(Icons.map_outlined),
-                            label: const Text('Choose from Map'),
+                            label: Text(strings['choose_from_map']!),
                           ),
                         ),
                       ],
@@ -370,8 +559,8 @@ class _LocationManagerPageState extends State<LocationManagerPage> {
                     ),
                     if (showValidation && !canSave) ...[
                       const SizedBox(height: 10),
-                      const Text(
-                        'Please enter a name and choose coordinates.',
+                      Text(
+                        strings['validation']!,
                         style: TextStyle(
                           color: Colors.red,
                           fontSize: 12,
@@ -385,7 +574,7 @@ class _LocationManagerPageState extends State<LocationManagerPage> {
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(context, false),
-                  child: const Text('Cancel'),
+                  child: Text(strings['cancel']!),
                 ),
                 ElevatedButton(
                   onPressed: canSave
@@ -415,7 +604,7 @@ class _LocationManagerPageState extends State<LocationManagerPage> {
                           height: 18,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Text('Save Location'),
+                      : Text(strings['save_location']!),
                 ),
               ],
             );
@@ -431,12 +620,13 @@ class _LocationManagerPageState extends State<LocationManagerPage> {
 
   @override
   Widget build(BuildContext context) {
+    final strings = _strings(context);
     final theme = Theme.of(context);
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
-        title: const Text('My Locations'),
+        title: Text(strings['my_locations']!),
         actions: [
           IconButton(icon: const Icon(Icons.refresh), onPressed: _load),
         ],
@@ -444,7 +634,7 @@ class _LocationManagerPageState extends State<LocationManagerPage> {
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _openAddDialog,
         icon: const Icon(Icons.add),
-        label: const Text('Add Location'),
+        label: Text(strings['add_location']!),
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -452,7 +642,7 @@ class _LocationManagerPageState extends State<LocationManagerPage> {
               padding: const EdgeInsets.fromLTRB(16, 14, 16, 100),
               children: [
                 Text(
-                  'Distance Source',
+                  strings['distance_source']!,
                   style: theme.textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w700,
                   ),
@@ -460,16 +650,16 @@ class _LocationManagerPageState extends State<LocationManagerPage> {
                 const SizedBox(height: 8),
                 _buildLocationCard(
                   icon: Icons.my_location,
-                  title: 'Current Location',
+                  title: strings['current_location']!,
                   subtitle: _currentDeviceLocation == null
-                      ? 'Unavailable'
+                      ? strings['unavailable']!
                       : '${_currentDeviceLocation!.latitude.toStringAsFixed(5)}, ${_currentDeviceLocation!.longitude.toStringAsFixed(5)}',
                   isActive: _activeId == AppLocation.currentId,
                   onTap: () => _select(AppLocation.currentId),
                 ),
                 const SizedBox(height: 18),
                 Text(
-                  'Saved Locations',
+                  strings['saved_locations']!,
                   style: theme.textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w700,
                   ),
@@ -483,18 +673,18 @@ class _LocationManagerPageState extends State<LocationManagerPage> {
                       borderRadius: BorderRadius.circular(14),
                       border: Border.all(color: const Color(0xFFE2E8F0)),
                     ),
-                    child: const Column(
+                    child: Column(
                       children: [
-                        Icon(
+                        const Icon(
                           Icons.place_outlined,
                           color: Color(0xFF94A3B8),
                           size: 34,
                         ),
-                        SizedBox(height: 8),
+                        const SizedBox(height: 8),
                         Text(
-                          'No saved locations yet.\nTap Add Location to save Home, Work, etc.',
+                          strings['no_saved']!,
                           textAlign: TextAlign.center,
-                          style: TextStyle(color: Color(0xFF64748B)),
+                          style: const TextStyle(color: Color(0xFF64748B)),
                         ),
                       ],
                     ),
@@ -593,8 +783,8 @@ class _LocationManagerPageState extends State<LocationManagerPage> {
                             color: const Color(0xFFE0F2FE),
                             borderRadius: BorderRadius.circular(20),
                           ),
-                          child: const Text(
-                            'Active',
+                          child: Text(
+                            _strings(context)['active']!,
                             style: TextStyle(
                               color: Color(0xFF0369A1),
                               fontSize: 11,

@@ -19,6 +19,8 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:http/http.dart' as http;
 import 'package:untitled1/ptofile.dart';
 import 'package:untitled1/services/subscription_access_service.dart';
+import 'package:untitled1/pages/my_request_details_page.dart';
+import 'package:untitled1/pages/request_details.dart';
 
 import '../widgets/cached_video_player.dart';
 import '../widgets/zoomable_image_viewer.dart';
@@ -75,6 +77,31 @@ class _ChatPageState extends State<ChatPage> {
   String? _currentUserName;
   String? _currentUserPhone;
   String? _currentUserEmail;
+
+  String _t({
+    required String en,
+    String? he,
+    String? ar,
+    String? am,
+    String? ru,
+  }) {
+    final locale = Provider.of<LanguageProvider>(
+      context,
+      listen: false,
+    ).locale.languageCode;
+    switch (locale) {
+      case 'he':
+        return he ?? en;
+      case 'ar':
+        return ar ?? en;
+      case 'am':
+        return am ?? en;
+      case 'ru':
+        return ru ?? en;
+      default:
+        return en;
+    }
+  }
 
   @override
   void initState() {
@@ -488,7 +515,13 @@ class _ChatPageState extends State<ChatPage> {
         actions: [
           if (_canCreateInvoices)
             IconButton(
-              tooltip: isRtl ? "הפק חשבונית" : "Create Invoice",
+              tooltip: _t(
+                en: "Create Invoice",
+                he: "הפק חשבונית",
+                ar: "إنشاء فاتورة",
+                am: "ደረሰኝ ፍጠር",
+                ru: "Создать счет",
+              ),
               icon: const Icon(Icons.receipt_long_rounded, size: 22),
               onPressed: () async {
                 final receiverDoc = await _getUserDoc(widget.receiverId);
@@ -548,7 +581,13 @@ class _ChatPageState extends State<ChatPage> {
                 if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
                   return Center(
                     child: Text(
-                      isRtl ? "אין הודעות עדיין" : "No messages yet",
+                      _t(
+                        en: "No messages yet",
+                        he: "אין הודעות עדיין",
+                        ar: "لا توجد رسائل بعد",
+                        am: "እስካሁን መልዕክቶች የሉም",
+                        ru: "Пока нет сообщений",
+                      ),
                       style: TextStyle(color: Colors.grey[400]),
                     ),
                   );
@@ -631,6 +670,8 @@ class _ChatPageState extends State<ChatPage> {
           _openReportFromMessage(message);
         } else if (type == 'report_resolved') {
           _openReportFromMessage(message);
+        } else if (type == 'request_link') {
+          _openRequestFromMessage(message);
         }
       },
       child: Container(
@@ -671,6 +712,8 @@ class _ChatPageState extends State<ChatPage> {
                 _buildReportReferenceBubble(message, isMe)
               else if (type == 'report_resolved')
                 _buildReportResolvedBubble(message, isMe)
+              else if (type == 'request_link')
+                _buildRequestLinkBubble(message, isMe)
               else if (type == 'image')
                 _buildImageAttachment(url, fileName)
               else if (type == 'video')
@@ -928,7 +971,17 @@ class _ChatPageState extends State<ChatPage> {
     if (reportId.isEmpty) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Report reference is missing an ID.')),
+        SnackBar(
+          content: Text(
+            _t(
+              en: 'Report reference is missing an ID.',
+              he: 'להפניה לדיווח חסר מזהה.',
+              ar: 'مرجع البلاغ يفتقد إلى معرّف.',
+              am: 'የሪፖርት ማጣቀሻ መለያ የለውም።',
+              ru: 'В ссылке на жалобу отсутствует ID.',
+            ),
+          ),
+        ),
       );
       return;
     }
@@ -938,6 +991,213 @@ class _ChatPageState extends State<ChatPage> {
       context,
       MaterialPageRoute(
         builder: (_) => ChatReportDetailsPage(reportId: reportId),
+      ),
+    );
+  }
+
+  Future<void> _openRequestFromMessage(Map<String, dynamic> message) async {
+    final requestId = (message['requestId'] ?? '').toString().trim();
+    if (requestId.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _t(
+              en: 'Request reference is missing an ID.',
+              he: 'להפניית הבקשה חסר מזהה.',
+              ar: 'مرجع الطلب يفتقد إلى معرّف.',
+              am: 'የጥያቄ ማጣቀሻ መለያ የለውም።',
+              ru: 'В ссылке на запрос отсутствует ID.',
+            ),
+          ),
+        ),
+      );
+      return;
+    }
+
+    final currentUser = _auth.currentUser;
+    if (currentUser == null) return;
+
+    final requestOwnerId = (message['requestOwnerId'] ?? '').toString().trim();
+    final isOwner =
+        requestOwnerId.isNotEmpty && requestOwnerId == currentUser.uid;
+
+    if (isOwner) {
+      final requestDoc = await _firestore
+          .collection('users')
+          .doc(currentUser.uid)
+          .collection('requests')
+          .doc(requestId)
+          .get();
+      if (!requestDoc.exists) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              _t(
+                en: 'Request details were not found.',
+                he: 'פרטי הבקשה לא נמצאו.',
+                ar: 'لم يتم العثور على تفاصيل الطلب.',
+                am: 'የጥያቄው ዝርዝሮች አልተገኙም።',
+                ru: 'Детали запроса не найдены.',
+              ),
+            ),
+          ),
+        );
+        return;
+      }
+
+      if (!mounted) return;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => MyRequestDetailsPage(
+            requestRef: requestDoc.reference,
+            initialData: requestDoc.data() ?? const <String, dynamic>{},
+          ),
+        ),
+      );
+      return;
+    }
+
+    final workerNotificationId = (message['workerNotificationId'] ?? '')
+        .toString()
+        .trim();
+    DocumentSnapshot<Map<String, dynamic>>? notificationDoc;
+
+    if (workerNotificationId.isNotEmpty) {
+      final direct = await _firestore
+          .collection('users')
+          .doc(currentUser.uid)
+          .collection('notifications')
+          .doc(workerNotificationId)
+          .get();
+      if (direct.exists) {
+        notificationDoc = direct;
+      }
+    }
+
+    if (notificationDoc == null) {
+      final query = await _firestore
+          .collection('users')
+          .doc(currentUser.uid)
+          .collection('notifications')
+          .where('requestId', isEqualTo: requestId)
+          .limit(1)
+          .get();
+      if (query.docs.isNotEmpty) {
+        notificationDoc = query.docs.first;
+      }
+    }
+
+    if (notificationDoc == null || !notificationDoc.exists) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _t(
+              en: 'Request details were not found.',
+              he: 'פרטי הבקשה לא נמצאו.',
+              ar: 'لم يتم العثور على تفاصيل الطلب.',
+              am: 'የጥያቄው ዝርዝሮች አልተገኙም።',
+              ru: 'Детали запроса не найдены.',
+            ),
+          ),
+        ),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => RequestDetailsPage(
+          notificationId: notificationDoc!.id,
+          data: notificationDoc.data() ?? const <String, dynamic>{},
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRequestLinkBubble(Map<String, dynamic> message, bool isMe) {
+    final requestId = (message['requestId'] ?? '').toString().trim();
+    final text = _resolveMessageText(message);
+
+    return Container(
+      constraints: const BoxConstraints(minWidth: 220),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: isMe ? Colors.white12 : const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isMe ? Colors.white24 : const Color(0xFFE2E8F0),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.description_outlined,
+                size: 18,
+                color: isMe ? Colors.white : const Color(0xFF1976D2),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                _t(
+                  en: 'Request Link',
+                  he: 'קישור לבקשה',
+                  ar: 'رابط الطلب',
+                  am: 'የጥያቄ አገናኝ',
+                  ru: 'Ссылка на запрос',
+                ),
+                style: TextStyle(
+                  color: isMe ? Colors.white : Colors.black87,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          if (text.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              text,
+              style: TextStyle(color: isMe ? Colors.white : Colors.black87),
+            ),
+          ],
+          if (requestId.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              '${_t(en: 'Request ID', he: 'מזהה בקשה', ar: 'معرّف الطلب', am: 'የጥያቄ መለያ', ru: 'ID запроса')}: $requestId',
+              style: TextStyle(
+                fontSize: 12,
+                color: isMe ? Colors.white70 : Colors.black54,
+              ),
+            ),
+          ],
+          const SizedBox(height: 8),
+          TextButton.icon(
+            onPressed: () => _openRequestFromMessage(message),
+            icon: const Icon(Icons.open_in_new, size: 16),
+            label: Text(
+              _t(
+                en: 'Open Request',
+                he: 'פתח בקשה',
+                ar: 'افتح الطلب',
+                am: 'ጥያቄውን ክፈት',
+                ru: 'Открыть запрос',
+              ),
+            ),
+            style: TextButton.styleFrom(
+              foregroundColor: isMe ? Colors.white : const Color(0xFF1976D2),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -968,7 +1228,13 @@ class _ChatPageState extends State<ChatPage> {
               ),
               const SizedBox(width: 6),
               Text(
-                'Report Update',
+                _t(
+                  en: 'Report Update',
+                  he: 'עדכון דיווח',
+                  ar: 'تحديث البلاغ',
+                  am: 'የሪፖርት ዝማኔ',
+                  ru: 'Обновление жалобы',
+                ),
                 style: TextStyle(
                   color: isMe ? Colors.white : Colors.black87,
                   fontWeight: FontWeight.w700,
@@ -986,7 +1252,7 @@ class _ChatPageState extends State<ChatPage> {
           if (reportId.isNotEmpty) ...[
             const SizedBox(height: 8),
             Text(
-              'Report ID: $reportId',
+              '${_t(en: 'Report ID', he: 'מזהה דיווח', ar: 'معرّف البلاغ', am: 'የሪፖርት መለያ', ru: 'ID жалобы')}: $reportId',
               style: TextStyle(
                 fontSize: 12,
                 color: isMe ? Colors.white70 : Colors.black54,
@@ -997,7 +1263,15 @@ class _ChatPageState extends State<ChatPage> {
           TextButton.icon(
             onPressed: () => _openReportFromMessage(message),
             icon: const Icon(Icons.open_in_new, size: 16),
-            label: const Text('View Report'),
+            label: Text(
+              _t(
+                en: 'View Report',
+                he: 'צפה בדיווח',
+                ar: 'عرض البلاغ',
+                am: 'ሪፖርት አሳይ',
+                ru: 'Открыть жалобу',
+              ),
+            ),
             style: TextButton.styleFrom(
               foregroundColor: isMe ? Colors.white : const Color(0xFF1976D2),
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -1013,7 +1287,15 @@ class _ChatPageState extends State<ChatPage> {
   Widget _buildReportResolvedBubble(Map<String, dynamic> message, bool isMe) {
     final reportId = (message['reportId'] ?? '').toString().trim();
     final text = _resolveMessageText(message);
-    final content = text.isNotEmpty ? text : 'הדיווח שלך טופל.';
+    final content = text.isNotEmpty
+        ? text
+        : _t(
+            en: 'Your report has been handled.',
+            he: 'הדיווח שלך טופל.',
+            ar: 'تمت معالجة بلاغك.',
+            am: 'ሪፖርትዎ ተስተናግዷል።',
+            ru: 'Ваша жалоба обработана.',
+          );
 
     return Container(
       constraints: const BoxConstraints(minWidth: 220),
@@ -1037,7 +1319,13 @@ class _ChatPageState extends State<ChatPage> {
               ),
               const SizedBox(width: 6),
               Text(
-                'הדיווח טופל',
+                _t(
+                  en: 'Report handled',
+                  he: 'הדיווח טופל',
+                  ar: 'تمت معالجة البلاغ',
+                  am: 'ሪፖርቱ ተስተናግዷል',
+                  ru: 'Жалоба обработана',
+                ),
                 style: TextStyle(
                   color: isMe ? Colors.white : Colors.black87,
                   fontWeight: FontWeight.w700,
@@ -1053,7 +1341,7 @@ class _ChatPageState extends State<ChatPage> {
           if (reportId.isNotEmpty) ...[
             const SizedBox(height: 8),
             Text(
-              'Report ID: $reportId',
+              '${_t(en: 'Report ID', he: 'מזהה דיווח', ar: 'معرّف البلاغ', am: 'የሪፖርት መለያ', ru: 'ID жалобы')}: $reportId',
               style: TextStyle(
                 fontSize: 12,
                 color: isMe ? Colors.white70 : Colors.black54,
@@ -1063,7 +1351,15 @@ class _ChatPageState extends State<ChatPage> {
             TextButton.icon(
               onPressed: () => _openReportFromMessage(message),
               icon: const Icon(Icons.open_in_new, size: 16),
-              label: const Text('View Report'),
+              label: Text(
+                _t(
+                  en: 'View Report',
+                  he: 'צפה בדיווח',
+                  ar: 'عرض البلاغ',
+                  am: 'ሪፖርት አሳይ',
+                  ru: 'Открыть жалобу',
+                ),
+              ),
               style: TextButton.styleFrom(
                 foregroundColor: isMe ? Colors.white : const Color(0xFF1976D2),
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -1403,7 +1699,14 @@ class _ChatPageState extends State<ChatPage> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    fileName ?? "File",
+                    fileName ??
+                        _t(
+                          en: "File",
+                          he: "קובץ",
+                          ar: "ملف",
+                          am: "ፋይል",
+                          ru: "Файл",
+                        ),
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: isMe ? Colors.white : Colors.black87,
@@ -2163,7 +2466,17 @@ class _ChatPageState extends State<ChatPage> {
       if (localPath == null) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to download file.')),
+          SnackBar(
+            content: Text(
+              _t(
+                en: 'Failed to download file.',
+                he: 'הורדת הקובץ נכשלה.',
+                ar: 'فشل تنزيل الملف.',
+                am: 'ፋይሉን ማውረድ አልተሳካም።',
+                ru: 'Не удалось скачать файл.',
+              ),
+            ),
+          ),
         );
         return;
       }
@@ -2202,6 +2515,32 @@ class ChatReportDetailsPage extends StatelessWidget {
 
   const ChatReportDetailsPage({super.key, required this.reportId});
 
+  String _t(
+    BuildContext context, {
+    required String en,
+    String? he,
+    String? ar,
+    String? am,
+    String? ru,
+  }) {
+    final locale = Provider.of<LanguageProvider>(
+      context,
+      listen: false,
+    ).locale.languageCode;
+    switch (locale) {
+      case 'he':
+        return he ?? en;
+      case 'ar':
+        return ar ?? en;
+      case 'am':
+        return am ?? en;
+      case 'ru':
+        return ru ?? en;
+      default:
+        return en;
+    }
+  }
+
   String _formatTimestamp(Timestamp? ts) {
     if (ts == null) return 'Unknown time';
     return intl.DateFormat('yyyy-MM-dd HH:mm').format(ts.toDate());
@@ -2223,7 +2562,18 @@ class ChatReportDetailsPage extends StatelessWidget {
     final currentUserId = FirebaseAuth.instance.currentUser?.uid;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Report Details')),
+      appBar: AppBar(
+        title: Text(
+          _t(
+            context,
+            en: 'Report Details',
+            he: 'פרטי דיווח',
+            ar: 'تفاصيل البلاغ',
+            am: 'የሪፖርት ዝርዝሮች',
+            ru: 'Детали жалобы',
+          ),
+        ),
+      ),
       body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
         stream: FirebaseFirestore.instance
             .collection('reports')
@@ -2231,13 +2581,35 @@ class ChatReportDetailsPage extends StatelessWidget {
             .snapshots(),
         builder: (context, snapshot) {
           if (snapshot.hasError) {
-            return const Center(child: Text('Could not load this report.'));
+            return Center(
+              child: Text(
+                _t(
+                  context,
+                  en: 'Could not load this report.',
+                  he: 'לא ניתן לטעון את הדיווח.',
+                  ar: 'تعذّر تحميل هذا البلاغ.',
+                  am: 'ይህን ሪፖርት መጫን አልተቻለም።',
+                  ru: 'Не удалось загрузить эту жалобу.',
+                ),
+              ),
+            );
           }
           if (!snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
           if (!snapshot.data!.exists) {
-            return const Center(child: Text('This report no longer exists.'));
+            return Center(
+              child: Text(
+                _t(
+                  context,
+                  en: 'This report no longer exists.',
+                  he: 'הדיווח הזה כבר לא קיים.',
+                  ar: 'هذا البلاغ لم يعد موجودًا.',
+                  am: 'ይህ ሪፖርት ከእንግዲህ የለም።',
+                  ru: 'Эта жалоба больше не существует.',
+                ),
+              ),
+            );
           }
 
           final data = snapshot.data!.data() ?? <String, dynamic>{};
@@ -2251,16 +2623,35 @@ class ChatReportDetailsPage extends StatelessWidget {
                   currentUserId == resolvedBy);
 
           if (!isAllowed) {
-            return const Center(
+            return Center(
               child: Padding(
-                padding: EdgeInsets.all(24),
-                child: Text('You do not have access to this report.'),
+                padding: const EdgeInsets.all(24),
+                child: Text(
+                  _t(
+                    context,
+                    en: 'You do not have access to this report.',
+                    he: 'אין לך גישה לדיווח הזה.',
+                    ar: 'ليس لديك صلاحية الوصول لهذا البلاغ.',
+                    am: 'ይህን ሪፖርት ለማየት ፍቃድ የለዎትም።',
+                    ru: 'У вас нет доступа к этой жалобе.',
+                  ),
+                ),
               ),
             );
           }
 
-          final subject = (data['subject'] ?? data['reason'] ?? 'General issue')
-              .toString();
+          final subject =
+              (data['subject'] ??
+                      data['reason'] ??
+                      _t(
+                        context,
+                        en: 'General issue',
+                        he: 'בעיה כללית',
+                        ar: 'مشكلة عامة',
+                        am: 'አጠቃላይ ችግር',
+                        ru: 'Общая проблема',
+                      ))
+                  .toString();
           final reason = (data['reason'] ?? '').toString();
           final details = (data['details'] ?? '').toString();
           final status = (data['status'] ?? 'open').toString();
@@ -2293,16 +2684,28 @@ class ChatReportDetailsPage extends StatelessWidget {
                           spacing: 8,
                           runSpacing: 8,
                           children: [
-                            Chip(label: Text('Status: $status')),
                             Chip(
                               label: Text(
-                                'Created: ${_formatTimestamp(createdAt)}',
+                                '${_t(context, en: 'Status', he: 'סטטוס', ar: 'الحالة', am: 'ሁኔታ', ru: 'Статус')}: $status',
+                              ),
+                            ),
+                            Chip(
+                              label: Text(
+                                '${_t(context, en: 'Created', he: 'נוצר', ar: 'تم الإنشاء', am: 'የተፈጠረ', ru: 'Создано')}: ${_formatTimestamp(createdAt)}',
                               ),
                             ),
                             if (source.isNotEmpty)
-                              Chip(label: Text('Source: $source')),
+                              Chip(
+                                label: Text(
+                                  '${_t(context, en: 'Source', he: 'מקור', ar: 'المصدر', am: 'ምንጭ', ru: 'Источник')}: $source',
+                                ),
+                              ),
                             if (reportType.isNotEmpty)
-                              Chip(label: Text('Type: $reportType')),
+                              Chip(
+                                label: Text(
+                                  '${_t(context, en: 'Type', he: 'סוג', ar: 'النوع', am: 'አይነት', ru: 'Тип')}: $reportType',
+                                ),
+                              ),
                           ],
                         ),
                       ],
@@ -2317,13 +2720,17 @@ class ChatReportDetailsPage extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Report ID: $reportId'),
+                        Text(
+                          '${_t(context, en: 'Report ID', he: 'מזהה דיווח', ar: 'معرّف البلاغ', am: 'የሪፖርት መለያ', ru: 'ID жалобы')}: $reportId',
+                        ),
                         const SizedBox(height: 6),
                         FutureBuilder<String>(
                           future: _userNameFromId(reporterId),
                           builder: (context, snapshot) {
                             final reporterName = snapshot.data ?? '-';
-                            return Text('Reporter: $reporterName');
+                            return Text(
+                              '${_t(context, en: 'Reporter', he: 'מדווח', ar: 'المبلّغ', am: 'ሪፖርተር', ru: 'Заявитель')}: $reporterName',
+                            );
                           },
                         ),
                         const SizedBox(height: 6),
@@ -2331,18 +2738,24 @@ class ChatReportDetailsPage extends StatelessWidget {
                           future: _userNameFromId(reportedId),
                           builder: (context, snapshot) {
                             final reportedName = snapshot.data ?? '-';
-                            return Text('Reported User: $reportedName');
+                            return Text(
+                              '${_t(context, en: 'Reported User', he: 'משתמש מדווח', ar: 'المستخدم المُبلّغ عنه', am: 'የተሪፖርተ ተጠቃሚ', ru: 'Пользователь, на которого пожаловались')}: $reportedName',
+                            );
                           },
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          'Resolved By: ${resolvedBy.isEmpty ? '-' : resolvedBy}',
+                          '${_t(context, en: 'Resolved By', he: 'טופל על ידי', ar: 'تمت المعالجة بواسطة', am: 'የተፈታ በ', ru: 'Решено пользователем')}: ${resolvedBy.isEmpty ? '-' : resolvedBy}',
                         ),
                         const SizedBox(height: 6),
-                        Text('Resolved At: ${_formatTimestamp(resolvedAt)}'),
+                        Text(
+                          '${_t(context, en: 'Resolved At', he: 'טופל בתאריך', ar: 'تمت المعالجة في', am: 'የተፈታበት ጊዜ', ru: 'Решено в')}: ${_formatTimestamp(resolvedAt)}',
+                        ),
                         if (reason.isNotEmpty) ...[
                           const SizedBox(height: 10),
-                          Text('Reason: $reason'),
+                          Text(
+                            '${_t(context, en: 'Reason', he: 'סיבה', ar: 'السبب', am: 'ምክንያት', ru: 'Причина')}: $reason',
+                          ),
                         ],
                       ],
                     ),
@@ -2357,8 +2770,15 @@ class ChatReportDetailsPage extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
-                            'Details',
+                          Text(
+                            _t(
+                              context,
+                              en: 'Details',
+                              he: 'פרטים',
+                              ar: 'التفاصيل',
+                              am: 'ዝርዝሮች',
+                              ru: 'Подробности',
+                            ),
                             style: TextStyle(
                               fontWeight: FontWeight.w700,
                               fontSize: 15,

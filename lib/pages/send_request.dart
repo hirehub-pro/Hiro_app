@@ -677,6 +677,10 @@ class _SendRequestPageState extends State<SendRequestPage> {
             'senderId': user.uid,
             'receiverId': widget.workerId,
             'message': chatMsg,
+            'type': 'request_link',
+            'requestId': requestId,
+            'requestOwnerId': user.uid,
+            'workerNotificationId': workerNotificationRef.id,
             'timestamp': FieldValue.serverTimestamp(),
             'isSystem': true,
           });

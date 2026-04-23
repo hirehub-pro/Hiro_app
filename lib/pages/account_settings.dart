@@ -73,6 +73,49 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
           'phone_updated': 'تم تحديث رقم الهاتف بنجاح',
           'delete_account': 'حذف الحساب',
           'change_business': 'تحديث بيانات العمل',
+          'na': 'غير متوفر',
+          'firestore_error': 'خطأ أثناء تحديث البيانات',
+          'delete_url_error': 'تعذر فتح رابط حذف الحساب',
+        };
+      case 'am':
+        return {
+          'title': 'መለያ',
+          'edit_profile': 'ፕሮፋይል አርትዕ',
+          'personal_info': 'የግል መረጃ',
+          'email': 'ኢሜይል',
+          'phone': 'ስልክ',
+          'town': 'ከተማ',
+          'user_type': 'የተጠቃሚ አይነት',
+          'worker': 'ባለሙያ',
+          'client': 'ደንበኛ',
+          'admin': 'አስተዳዳሪ',
+          'change_phone': 'የስልክ ቁጥር ቀይር',
+          'phone_updated': 'የስልክ ቁጥር በተሳካ ሁኔታ ተዘምኗል',
+          'delete_account': 'መለያ ሰርዝ',
+          'change_business': 'የንግድ መረጃ አዘምን',
+          'na': 'አይገኝም',
+          'firestore_error': 'ውሂብ ሲዘምን ስህተት ተፈጥሯል',
+          'delete_url_error': 'የመለያ ሰርዝ ሊንኩን መክፈት አልተቻለም',
+        };
+      case 'ru':
+        return {
+          'title': 'Аккаунт',
+          'edit_profile': 'Редактировать профиль',
+          'personal_info': 'Личная информация',
+          'email': 'Электронная почта',
+          'phone': 'Телефон',
+          'town': 'Город',
+          'user_type': 'Тип пользователя',
+          'worker': 'Специалист',
+          'client': 'Клиент',
+          'admin': 'Администратор',
+          'change_phone': 'Изменить номер телефона',
+          'phone_updated': 'Номер телефона успешно обновлен',
+          'delete_account': 'Удалить аккаунт',
+          'change_business': 'Обновить данные бизнеса',
+          'na': 'Недоступно',
+          'firestore_error': 'Ошибка при обновлении данных',
+          'delete_url_error': 'Не удалось открыть ссылку удаления аккаунта',
         };
       default:
         return {
@@ -90,6 +133,9 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
           'phone_updated': 'Phone number updated successfully',
           'delete_account': 'Delete Account',
           'change_business': 'Update Business Info',
+          'na': 'N/A',
+          'firestore_error': 'Error updating Firestore',
+          'delete_url_error': 'Could not launch delete account URL',
         };
     }
   }
@@ -102,7 +148,7 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
             .collection('users')
             .doc(user.uid)
             .update({'phone': newPhone});
-            
+
         setState(() {
           _currentPhone = newPhone;
         });
@@ -115,9 +161,10 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text("Error updating Firestore: $e")));
+        final strings = _getLocalizedStrings(context, listen: false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${strings['firestore_error']!}: $e')),
+        );
       }
     }
   }
@@ -130,9 +177,7 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
           isReauth: true,
           onVerified: (newPhone) {
             _updatePhoneInFirestore(newPhone);
-            Navigator.pop(
-              context,
-            ); 
+            Navigator.pop(context);
           },
         ),
       ),
@@ -142,7 +187,11 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
   Future<void> _launchDeleteUrl() async {
     final Uri url = Uri.parse('https://hire-hub-fe6c4.web.app/delete-account');
     if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
-      debugPrint('Could not launch delete account URL');
+      if (!mounted) return;
+      final strings = _getLocalizedStrings(context, listen: false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(strings['delete_url_error']!)));
     }
   }
 
@@ -153,9 +202,9 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
         Provider.of<LanguageProvider>(context).locale.languageCode == 'he' ||
         Provider.of<LanguageProvider>(context).locale.languageCode == 'ar';
 
-    final email = widget.userData['email'] ?? 'N/A';
-    final town = widget.userData['town'] ?? 'N/A';
-    
+    final email = widget.userData['email'] ?? strings['na'];
+    final town = widget.userData['town'] ?? strings['na'];
+
     String userType = strings['client']!;
     if (_userRole == 'worker') {
       userType = strings['worker']!;
@@ -205,15 +254,20 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
                     onTap: _onChangePhone,
                   ),
                   if (_userRole == 'worker' && _isBusinessVerified)
-                  CupertinoListTile(
-                    leading: const Icon(
-                      CupertinoIcons.briefcase,
-                      color: CupertinoColors.systemIndigo,
+                    CupertinoListTile(
+                      leading: const Icon(
+                        CupertinoIcons.briefcase,
+                        color: CupertinoColors.systemIndigo,
+                      ),
+                      title: Text(strings['change_business']!),
+                      trailing: const CupertinoListTileChevron(),
+                      onTap: () => Navigator.push(
+                        context,
+                        CupertinoPageRoute(
+                          builder: (_) => const VerifyBusinessPage(),
+                        ),
+                      ),
                     ),
-                    title: Text(strings['change_business']!),
-                    trailing: const CupertinoListTileChevron(),
-                    onTap: () => Navigator.push(context, CupertinoPageRoute(builder: (_) => const VerifyBusinessPage())),
-                  ),
                   CupertinoListTile(
                     leading: const Icon(
                       CupertinoIcons.person_badge_minus,
@@ -221,7 +275,9 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
                     ),
                     title: Text(
                       strings['delete_account']!,
-                      style: const TextStyle(color: CupertinoColors.destructiveRed),
+                      style: const TextStyle(
+                        color: CupertinoColors.destructiveRed,
+                      ),
                     ),
                     trailing: const CupertinoListTileChevron(),
                     onTap: _launchDeleteUrl,
@@ -275,7 +331,7 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
                   MaterialPageRoute(
                     builder: (_) => EditProfilePage(
                       userData: {
-                        ...widget.userData, 
+                        ...widget.userData,
                         'phone': _currentPhone,
                         'role': _userRole,
                       },
@@ -294,7 +350,12 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
                 _buildTile(
                   Icons.business_center_outlined,
                   strings['change_business']!,
-                  () => Navigator.push(context, MaterialPageRoute(builder: (_) => const VerifyBusinessPage())),
+                  () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const VerifyBusinessPage(),
+                    ),
+                  ),
                 ),
               ],
               const Divider(height: 1, indent: 50),
@@ -354,15 +415,17 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
     );
   }
 
-  Widget _buildTile(IconData icon, String title, VoidCallback onTap, {Color? color}) {
+  Widget _buildTile(
+    IconData icon,
+    String title,
+    VoidCallback onTap, {
+    Color? color,
+  }) {
     return ListTile(
       leading: Icon(icon, color: color ?? const Color(0xFF1976D2)),
       title: Text(
-        title, 
-        style: TextStyle(
-          fontWeight: FontWeight.w500,
-          color: color,
-        )
+        title,
+        style: TextStyle(fontWeight: FontWeight.w500, color: color),
       ),
       trailing: const Icon(Icons.chevron_right, size: 20),
       onTap: onTap,

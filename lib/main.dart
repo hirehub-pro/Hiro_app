@@ -206,12 +206,35 @@ class _MyAppState extends State<MyApp> {
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1976D2)),
       ),
       navigatorObservers: [AnalyticsService.observer],
-      home: _isInitializing
-          ? const SplashScreen()
-          : _isFirebaseInitialized
-          ? const AuthWrapper()
-          : _ErrorScreen(error: _initializationError),
+      home: _StartupGate(
+        isInitializing: _isInitializing,
+        isFirebaseInitialized: _isFirebaseInitialized,
+        initializationError: _initializationError,
+      ),
     );
+  }
+}
+
+class _StartupGate extends StatelessWidget {
+  final bool isInitializing;
+  final bool isFirebaseInitialized;
+  final Object? initializationError;
+
+  const _StartupGate({
+    required this.isInitializing,
+    required this.isFirebaseInitialized,
+    required this.initializationError,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (isInitializing) {
+      return const SplashScreen();
+    }
+    if (isFirebaseInitialized) {
+      return const AuthWrapper();
+    }
+    return _ErrorScreen(error: initializationError);
   }
 }
 

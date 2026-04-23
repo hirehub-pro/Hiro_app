@@ -89,19 +89,20 @@ class _EditProfilePageState extends State<EditProfilePage> {
       final rawItems = data?['items'];
       if (rawItems is! List) return;
 
-      final items = rawItems
-          .whereType<Map>()
-          .map((item) => Map<String, dynamic>.from(item))
-          .where((item) => _professionCanonicalValue(item).isNotEmpty)
-          .toList()
-        ..sort((a, b) {
-          final aId = (a['id'] as num?)?.toInt() ?? 1 << 30;
-          final bId = (b['id'] as num?)?.toInt() ?? 1 << 30;
-          if (aId != bId) return aId.compareTo(bId);
-          return _professionCanonicalValue(
-            a,
-          ).compareTo(_professionCanonicalValue(b));
-        });
+      final items =
+          rawItems
+              .whereType<Map>()
+              .map((item) => Map<String, dynamic>.from(item))
+              .where((item) => _professionCanonicalValue(item).isNotEmpty)
+              .toList()
+            ..sort((a, b) {
+              final aId = (a['id'] as num?)?.toInt() ?? 1 << 30;
+              final bId = (b['id'] as num?)?.toInt() ?? 1 << 30;
+              if (aId != bId) return aId.compareTo(bId);
+              return _professionCanonicalValue(
+                a,
+              ).compareTo(_professionCanonicalValue(b));
+            });
 
       if (!mounted) return;
       setState(() {
@@ -135,7 +136,9 @@ class _EditProfilePageState extends State<EditProfilePage> {
     for (final item in _professionItems) {
       for (final key in const ['en', 'he', 'ar', 'ru', 'am']) {
         final candidate = item[key]?.toString().trim().toLowerCase();
-        if (candidate != null && candidate.isNotEmpty && candidate == normalized) {
+        if (candidate != null &&
+            candidate.isNotEmpty &&
+            candidate == normalized) {
           return item;
         }
       }
@@ -186,23 +189,24 @@ class _EditProfilePageState extends State<EditProfilePage> {
   }
 
   Future<void> _getCurrentLocation() async {
+    final strings = _getLocalizedStrings();
     setState(() => _isLoading = true);
     try {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
-        throw 'Location services are disabled.';
+        throw strings['location_services_disabled']!;
       }
 
       LocationPermission permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
         if (permission == LocationPermission.denied) {
-          throw 'Location permissions are denied';
+          throw strings['location_permissions_denied']!;
         }
       }
 
       if (permission == LocationPermission.deniedForever) {
-        throw 'Location permissions are permanently denied.';
+        throw strings['location_permissions_denied_forever']!;
       }
 
       Position position = await Geolocator.getCurrentPosition();
@@ -244,6 +248,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
   }
 
   Future<void> _saveProfile() async {
+    final strings = _getLocalizedStrings();
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
@@ -308,9 +313,13 @@ class _EditProfilePageState extends State<EditProfilePage> {
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error saving profile: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              strings['error_saving_profile']!.replaceFirst('{error}', '$e'),
+            ),
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -345,6 +354,102 @@ class _EditProfilePageState extends State<EditProfilePage> {
           'current_loc': 'השתמש במיקום נוכחי',
           'pick_map': 'בחר מהמפה',
           'location_info': 'מיקום מדויק עוזר למצוא אותך בקלות',
+          'location_services_disabled': 'שירותי המיקום כבויים.',
+          'location_permissions_denied': 'הרשאות המיקום נדחו.',
+          'location_permissions_denied_forever': 'הרשאות המיקום נדחו לצמיתות.',
+          'error_saving_profile': 'שגיאה בשמירת הפרופיל: {error}',
+        };
+      case 'ar':
+        return {
+          'title': 'تعديل الملف الشخصي',
+          'basic_info': 'المعلومات الأساسية',
+          'service_details': 'تفاصيل الخدمة',
+          'about_you': 'نبذة عنك',
+          'name': 'الاسم الكامل',
+          'email': 'البريد الإلكتروني',
+          'dob': 'تاريخ الميلاد',
+          'dob_hint': 'اختر تاريخ الميلاد',
+          'dob_required': 'تاريخ الميلاد مطلوب',
+          'phone': 'رقم الهاتف',
+          'town': 'المدينة',
+          'professions': 'اختر المهن',
+          'alt_phone': 'هاتف إضافي (اختياري)',
+          'desc': 'الوصف (اختياري)',
+          'save': 'حفظ التغييرات',
+          'req': 'حقل مطلوب',
+          'search': 'بحث...',
+          'work_radius': 'نطاق العمل',
+          'select_radius': 'اختر النطاق على الخريطة',
+          'radius_val': 'النطاق: {val} كم',
+          'current_loc': 'استخدام الموقع الحالي',
+          'pick_map': 'اختيار من الخريطة',
+          'location_info': 'الموقع الدقيق يساعد الآخرين في العثور عليك بسهولة',
+          'location_services_disabled': 'خدمات الموقع معطلة.',
+          'location_permissions_denied': 'تم رفض أذونات الموقع.',
+          'location_permissions_denied_forever':
+              'تم رفض أذونات الموقع بشكل دائم.',
+          'error_saving_profile': 'حدث خطأ أثناء حفظ الملف الشخصي: {error}',
+        };
+      case 'am':
+        return {
+          'title': 'መገለጫ አርትዕ',
+          'basic_info': 'መሰረታዊ መረጃ',
+          'service_details': 'የአገልግሎት ዝርዝሮች',
+          'about_you': 'ስለ እርስዎ',
+          'name': 'ሙሉ ስም',
+          'email': 'ኢሜይል',
+          'dob': 'የልደት ቀን',
+          'dob_hint': 'የልደት ቀን ይምረጡ',
+          'dob_required': 'የልደት ቀን አስፈላጊ ነው',
+          'phone': 'የስልክ ቁጥር',
+          'town': 'ከተማ',
+          'professions': 'ሙያዎችን ይምረጡ',
+          'alt_phone': 'ተጨማሪ ስልክ (አማራጭ)',
+          'desc': 'መግለጫ (አማራጭ)',
+          'save': 'ለውጦችን አስቀምጥ',
+          'req': 'አስፈላጊ',
+          'search': 'ፈልግ...',
+          'work_radius': 'የስራ ክልል',
+          'select_radius': 'ክልሉን በካርታ ላይ ይምረጡ',
+          'radius_val': 'ክልል: {val} ኪ.ሜ',
+          'current_loc': 'አሁን ያለውን አካባቢ ይጠቀሙ',
+          'pick_map': 'ከካርታ ላይ ይምረጡ',
+          'location_info': 'ትክክለኛ አካባቢ ሰዎች በቀላሉ እንዲያገኙዎ ያግዛል',
+          'location_services_disabled': 'የአካባቢ አገልግሎቶች ጠፍተዋል።',
+          'location_permissions_denied': 'የአካባቢ ፍቃዶች ተከልክለዋል።',
+          'location_permissions_denied_forever': 'የአካባቢ ፍቃዶች ለዘላለም ተከልክለዋል።',
+          'error_saving_profile': 'መገለጫን ሲያስቀምጡ ስህተት ተፈጥሯል: {error}',
+        };
+      case 'ru':
+        return {
+          'title': 'Редактировать профиль',
+          'basic_info': 'Основная информация',
+          'service_details': 'Детали услуги',
+          'about_you': 'О вас',
+          'name': 'Полное имя',
+          'email': 'Эл. почта',
+          'dob': 'Дата рождения',
+          'dob_hint': 'Выберите дату рождения',
+          'dob_required': 'Дата рождения обязательна',
+          'phone': 'Номер телефона',
+          'town': 'Город',
+          'professions': 'Выберите профессии',
+          'alt_phone': 'Доп. телефон (необязательно)',
+          'desc': 'Описание (необязательно)',
+          'save': 'Сохранить изменения',
+          'req': 'Обязательное поле',
+          'search': 'Поиск...',
+          'work_radius': 'Радиус работы',
+          'select_radius': 'Выбрать радиус на карте',
+          'radius_val': 'Радиус: {val} км',
+          'current_loc': 'Использовать текущее местоположение',
+          'pick_map': 'Выбрать на карте',
+          'location_info': 'Точное местоположение помогает быстрее вас найти',
+          'location_services_disabled': 'Службы геолокации отключены.',
+          'location_permissions_denied': 'Доступ к геолокации запрещен.',
+          'location_permissions_denied_forever':
+              'Доступ к геолокации запрещен навсегда.',
+          'error_saving_profile': 'Ошибка при сохранении профиля: {error}',
         };
       default:
         return {
@@ -371,6 +476,11 @@ class _EditProfilePageState extends State<EditProfilePage> {
           'current_loc': 'Use Current Location',
           'pick_map': 'Select on Map',
           'location_info': 'Precise location helps others find you easily',
+          'location_services_disabled': 'Location services are disabled.',
+          'location_permissions_denied': 'Location permissions are denied.',
+          'location_permissions_denied_forever':
+              'Location permissions are permanently denied.',
+          'error_saving_profile': 'Error saving profile: {error}',
         };
     }
   }
@@ -620,10 +730,9 @@ class _EditProfilePageState extends State<EditProfilePage> {
             ],
           ),
           const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final radiusText = Text(
                 strings['radius_val']!.replaceFirst(
                   '{val}',
                   (_workRadius / 1000).toStringAsFixed(1),
@@ -632,8 +741,9 @@ class _EditProfilePageState extends State<EditProfilePage> {
                   fontSize: 15,
                   fontWeight: FontWeight.bold,
                 ),
-              ),
-              ElevatedButton.icon(
+              );
+
+              final pickRadiusButton = ElevatedButton.icon(
                 onPressed: () async {
                   final result = await Navigator.push(
                     context,
@@ -664,8 +774,28 @@ class _EditProfilePageState extends State<EditProfilePage> {
                     vertical: 8,
                   ),
                 ),
-              ),
-            ],
+              );
+
+              final isNarrow = constraints.maxWidth < 340;
+              if (isNarrow) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    radiusText,
+                    const SizedBox(height: 8),
+                    pickRadiusButton,
+                  ],
+                );
+              }
+
+              return Row(
+                children: [
+                  Expanded(child: radiusText),
+                  const SizedBox(width: 12),
+                  pickRadiusButton,
+                ],
+              );
+            },
           ),
         ],
       ),
@@ -727,7 +857,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
               ),
               boxShadow: [
                 BoxShadow(
-                  color: const Color(0xFF1E3A8A).withOpacity(0.2),
+                  color: const Color(0xFF1E3A8A).withValues(alpha: 0.2),
                   blurRadius: 20,
                   offset: const Offset(0, 8),
                 ),
@@ -835,7 +965,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
         border: Border.all(color: const Color(0xFFE5EAF2)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
+            color: Colors.black.withValues(alpha: 0.03),
             blurRadius: 12,
             offset: const Offset(0, 6),
           ),
@@ -944,9 +1074,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
             children: _selectedProfessions
                 .map(
                   (prof) => Chip(
-                    label: Text(
-                      _labelForStoredProfession(prof, localeCode),
-                    ),
+                    label: Text(_labelForStoredProfession(prof, localeCode)),
                     onDeleted: () {
                       setState(() {
                         _selectedProfessions.remove(prof);
@@ -972,7 +1100,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF1E3A8A).withOpacity(0.25),
+            color: const Color(0xFF1E3A8A).withValues(alpha: 0.25),
             blurRadius: 14,
             offset: const Offset(0, 6),
           ),

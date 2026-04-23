@@ -45,6 +45,89 @@ class _NotificationsPageState extends State<NotificationsPage> {
           'deleted': 'ההתראה נמחקה',
           'open_request': 'פתח בקשה',
           'view_details': 'צפה בפרטים',
+          'hub_title': 'מרכז ההתראות שלך',
+          'notification_fallback': 'התראה',
+        };
+      case 'ar':
+        return {
+          'title': 'الإشعارات',
+          'empty': 'لا توجد إشعارات جديدة',
+          'clear': 'مسح الكل',
+          'accept': 'قبول',
+          'decline': 'رفض',
+          'accepted': 'تم القبول',
+          'declined': 'تم الرفض',
+          'call': 'اتصال',
+          'details': 'التفاصيل',
+          'broadcast': 'إعلان نظام',
+          'all': 'الكل',
+          'requests': 'الطلبات',
+          'updates': 'التحديثات',
+          'broadcasts': 'النظام',
+          'signed_out': 'يرجى تسجيل الدخول لعرض الإشعارات.',
+          'personal_count': 'شخصية',
+          'system_count': 'النظام',
+          'pending_count': 'معلّقة',
+          'swipe_delete': 'اسحب للحذف',
+          'deleted': 'تم حذف الإشعار',
+          'open_request': 'فتح الطلب',
+          'view_details': 'عرض التفاصيل',
+          'hub_title': 'مركز الإشعارات الخاص بك',
+          'notification_fallback': 'إشعار',
+        };
+      case 'am':
+        return {
+          'title': 'ማሳወቂያዎች',
+          'empty': 'አዲስ ማሳወቂያ የለም',
+          'clear': 'ሁሉን አጽዳ',
+          'accept': 'ተቀበል',
+          'decline': 'እምቢ',
+          'accepted': 'ተቀባ',
+          'declined': 'ተከለከለ',
+          'call': 'ደውል',
+          'details': 'ዝርዝሮች',
+          'broadcast': 'የስርዓት ማስታወቂያ',
+          'all': 'ሁሉም',
+          'requests': 'ጥያቄዎች',
+          'updates': 'ማዘመኛዎች',
+          'broadcasts': 'ስርዓት',
+          'signed_out': 'ማሳወቂያዎችን ለማየት እባክዎ ይግቡ።',
+          'personal_count': 'የግል',
+          'system_count': 'ስርዓት',
+          'pending_count': 'በመጠባበቅ',
+          'swipe_delete': 'ለመሰረዝ ያንሸራትቱ',
+          'deleted': 'ማሳወቂያው ተሰርዟል',
+          'open_request': 'ጥያቄ ክፈት',
+          'view_details': 'ዝርዝር እይ',
+          'hub_title': 'የእርስዎ ማሳወቂያ ማዕከል',
+          'notification_fallback': 'ማሳወቂያ',
+        };
+      case 'ru':
+        return {
+          'title': 'Уведомления',
+          'empty': 'Новых уведомлений нет',
+          'clear': 'Очистить все',
+          'accept': 'Принять',
+          'decline': 'Отклонить',
+          'accepted': 'Принято',
+          'declined': 'Отклонено',
+          'call': 'Позвонить',
+          'details': 'Детали',
+          'broadcast': 'Системное объявление',
+          'all': 'Все',
+          'requests': 'Запросы',
+          'updates': 'Обновления',
+          'broadcasts': 'Система',
+          'signed_out': 'Войдите, чтобы просмотреть уведомления.',
+          'personal_count': 'Личные',
+          'system_count': 'Система',
+          'pending_count': 'В ожидании',
+          'swipe_delete': 'Смахните для удаления',
+          'deleted': 'Уведомление удалено',
+          'open_request': 'Открыть запрос',
+          'view_details': 'Посмотреть детали',
+          'hub_title': 'Ваш центр уведомлений',
+          'notification_fallback': 'Уведомление',
         };
       default:
         return {
@@ -70,6 +153,8 @@ class _NotificationsPageState extends State<NotificationsPage> {
           'deleted': 'Notification deleted',
           'open_request': 'Open request',
           'view_details': 'View details',
+          'hub_title': 'Your notification hub',
+          'notification_fallback': 'Notification',
         };
     }
   }
@@ -130,11 +215,10 @@ class _NotificationsPageState extends State<NotificationsPage> {
           .collection('users')
           .doc(userId)
           .collection('notifications')
-          .where('type', whereIn: [
-            'request_accepted',
-            'request_declined',
-            'quote_response',
-          ])
+          .where(
+            'type',
+            whereIn: ['request_accepted', 'request_declined', 'quote_response'],
+          )
           .where('isRead', isEqualTo: false)
           .get();
 
@@ -163,7 +247,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
             .doc(userId)
             .collection('notifications')
             .snapshots(),
-        FirebaseFirestore.instance.collection('system_announcements').snapshots(),
+        FirebaseFirestore.instance
+            .collection('system_announcements')
+            .snapshots(),
         (QuerySnapshot personal, QuerySnapshot system) {
           final all = <Map<String, dynamic>>[];
 
@@ -216,9 +302,12 @@ class _NotificationsPageState extends State<NotificationsPage> {
             .where((n) => n['isBroadcast'] == true)
             .length;
         final pendingCount = notifications
-            .where((n) =>
-                (n['type'] == 'work_request' || n['type'] == 'quote_request') &&
-                (n['status'] ?? 'pending') == 'pending')
+            .where(
+              (n) =>
+                  (n['type'] == 'work_request' ||
+                      n['type'] == 'quote_request') &&
+                  (n['status'] ?? 'pending') == 'pending',
+            )
             .length;
 
         return Column(
@@ -253,7 +342,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          isRtl ? 'מרכז ההתראות שלך' : 'Your notification hub',
+                          strings['hub_title']!,
                           style: const TextStyle(
                             color: Colors.white70,
                             fontWeight: FontWeight.w600,
@@ -369,23 +458,56 @@ class _NotificationsPageState extends State<NotificationsPage> {
   }
 
   Future<void> _clearAllNotifications(String userId) async {
-    final snapshots = await FirebaseFirestore.instance
+    final firestore = FirebaseFirestore.instance;
+    final notificationsSnapshot = await firestore
         .collection('users')
         .doc(userId)
         .collection('notifications')
         .get();
 
-    if (snapshots.docs.isEmpty) return;
-
-    final batch = FirebaseFirestore.instance.batch();
-    for (final doc in snapshots.docs) {
+    final notificationDocsToDelete =
+        <DocumentReference<Map<String, dynamic>>>[];
+    for (final doc in notificationsSnapshot.docs) {
       final data = doc.data();
       if (!_canDeleteWithClearAll(data)) {
         continue;
       }
-      batch.delete(doc.reference);
+      notificationDocsToDelete.add(doc.reference);
     }
-    await batch.commit();
+
+    final requestsSnapshot = await firestore
+        .collection('users')
+        .doc(userId)
+        .collection('requests')
+        .get();
+
+    final declinedRequestDocsToDelete =
+        <DocumentReference<Map<String, dynamic>>>[];
+    for (final doc in requestsSnapshot.docs) {
+      final status = (doc.data()['status'] ?? '').toString().toLowerCase();
+      if (status == 'declined' || status == 'rejected') {
+        declinedRequestDocsToDelete.add(doc.reference);
+      }
+    }
+
+    final docsToDelete = <DocumentReference<Map<String, dynamic>>>[
+      ...notificationDocsToDelete,
+      ...declinedRequestDocsToDelete,
+    ];
+
+    if (docsToDelete.isEmpty) return;
+
+    const chunkSize = 400;
+    for (var i = 0; i < docsToDelete.length; i += chunkSize) {
+      final end = (i + chunkSize < docsToDelete.length)
+          ? i + chunkSize
+          : docsToDelete.length;
+      final batch = firestore.batch();
+      for (final ref in docsToDelete.sublist(i, end)) {
+        batch.delete(ref);
+      }
+      await batch.commit();
+    }
   }
 
   bool _canDeleteWithClearAll(Map<String, dynamic> data) {
@@ -413,6 +535,24 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'all':
       default:
         return true;
+    }
+  }
+
+  String _normalizeRequestStatus(dynamic raw) {
+    final status = (raw ?? '').toString().trim().toLowerCase();
+    switch (status) {
+      case 'pending':
+      case 'waiting_for_approval':
+        return 'pending';
+      case 'accepted':
+        return 'accepted';
+      case 'declined':
+      case 'rejected':
+        return 'declined';
+      case 'cancelled':
+        return 'cancelled';
+      default:
+        return status;
     }
   }
 
@@ -549,24 +689,27 @@ class _NotificationsPageState extends State<NotificationsPage> {
         data['type'] == 'request_declined' ||
         data['type'] == 'quote_response';
     final isBroadcast = data['isBroadcast'] == true;
-    final status = (data['status'] ?? 'none').toString();
+    final normalizedStatus = _normalizeRequestStatus(data['status']);
+    final canOpenRequest = isActionableRequest;
     final title =
         (data['title'] ??
-                (isBroadcast ? strings['broadcast']! : 'Notification'))
+                (isBroadcast
+                    ? strings['broadcast']!
+                    : strings['notification_fallback']!))
             .toString();
     final body = (data['body'] ?? data['message'] ?? '').toString();
     final accent = isBroadcast
         ? const Color(0xFF1D4ED8)
         : isActionableRequest
-            ? const Color(0xFF0F766E)
-            : const Color(0xFF1976D2);
+        ? const Color(0xFF0F766E)
+        : const Color(0xFF1976D2);
 
     return Material(
       color: Colors.transparent,
       child: InkWell(
         borderRadius: BorderRadius.circular(20),
         onTap: () {
-          if (isActionableRequest && status == 'pending') {
+          if (canOpenRequest) {
             Navigator.push(
               context,
               MaterialPageRoute(
@@ -619,8 +762,8 @@ class _NotificationsPageState extends State<NotificationsPage> {
                       isBroadcast
                           ? Icons.campaign_rounded
                           : (isActionableRequest
-                              ? Icons.assignment_turned_in_outlined
-                              : Icons.notifications_active_outlined),
+                                ? Icons.assignment_turned_in_outlined
+                                : Icons.notifications_active_outlined),
                       color: accent,
                     ),
                   ),
@@ -646,8 +789,8 @@ class _NotificationsPageState extends State<NotificationsPage> {
                                 isBroadcast
                                     ? strings['broadcast']!
                                     : isActionableRequest
-                                        ? strings['requests']!
-                                        : strings['updates']!,
+                                    ? strings['requests']!
+                                    : strings['updates']!,
                                 style: TextStyle(
                                   color: accent,
                                   fontSize: 12,
@@ -655,8 +798,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
                                 ),
                               ),
                             ),
-                            if (isActionableRequest && status != 'pending')
-                              _buildStatusBadge(status, strings),
+                            if (isActionableRequest &&
+                                normalizedStatus != 'pending')
+                              _buildStatusBadge(normalizedStatus, strings),
                           ],
                         ),
                         const SizedBox(height: 10),
@@ -695,7 +839,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
                       ),
                     ),
                   ),
-                  if (isActionableRequest && status == 'pending')
+                  if (isActionableRequest && normalizedStatus == 'pending')
                     Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 12,
@@ -714,7 +858,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
                         ),
                       ),
                     )
-                  else if (isResponseUpdate || !isActionableRequest)
+                  else if (isResponseUpdate ||
+                      !isActionableRequest ||
+                      canOpenRequest)
                     Text(
                       strings['view_details']!,
                       style: const TextStyle(
@@ -733,7 +879,8 @@ class _NotificationsPageState extends State<NotificationsPage> {
   }
 
   Widget _buildStatusBadge(String status, Map<String, String> strings) {
-    final isAccepted = status == 'accepted';
+    final normalized = _normalizeRequestStatus(status);
+    final isAccepted = normalized == 'accepted';
     final bg = isAccepted ? const Color(0xFFDCFCE7) : const Color(0xFFFEE2E2);
     final fg = isAccepted ? const Color(0xFF15803D) : const Color(0xFFB91C1C);
     return Container(
@@ -744,11 +891,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       ),
       child: Text(
         isAccepted ? strings['accepted']! : strings['declined']!,
-        style: TextStyle(
-          color: fg,
-          fontSize: 12,
-          fontWeight: FontWeight.w700,
-        ),
+        style: TextStyle(color: fg, fontSize: 12, fontWeight: FontWeight.w700),
       ),
     );
   }

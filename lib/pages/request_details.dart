@@ -102,6 +102,24 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
     return (int.parse(parts[0]) * 60) + int.parse(parts[1]);
   }
 
+  String _normalizeRequestStatus(dynamic raw) {
+    final status = (raw ?? '').toString().trim().toLowerCase();
+    switch (status) {
+      case 'waiting_for_approval':
+      case 'pending':
+        return 'pending';
+      case 'accepted':
+        return 'accepted';
+      case 'declined':
+      case 'rejected':
+        return 'declined';
+      case 'cancelled':
+        return 'cancelled';
+      default:
+        return status;
+    }
+  }
+
   Map<String, String> _getLocalizedStrings(BuildContext context) {
     final locale = Provider.of<LanguageProvider>(
       context,
@@ -144,6 +162,10 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
           'quote_sent': 'הצעת המחיר נשלחה בהצלחה',
           'quote_description_hint': 'הוסף הערה ללקוח (אופציונלי)...',
           'open_chat': 'פתח צ\'אט',
+          'unknown': 'לא ידוע',
+          'not_specified': 'לא צוין',
+          'no_description': 'לא סופק תיאור',
+          'error_prefix': 'שגיאה: {error}',
         };
       case 'ar':
         return {
@@ -181,6 +203,96 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
           'quote_sent': 'تم إرسال عرض السعر بنجاح',
           'quote_description_hint': 'أضف ملاحظة للعميل (اختياري)...',
           'open_chat': 'فتح المحادثة',
+          'unknown': 'غير معروف',
+          'not_specified': 'غير محدد',
+          'no_description': 'لم يتم تقديم وصف',
+          'error_prefix': 'خطأ: {error}',
+        };
+      case 'am':
+        return {
+          'title': 'የስራ ጥያቄ ዝርዝሮች',
+          'summary': 'የጥያቄ ማጠቃለያ',
+          'client': 'ደንበኛ:',
+          'location': 'አካባቢ:',
+          'date': 'ቀን:',
+          'requested_hours': 'የተጠየቁ ሰዓቶች:',
+          'job_description': 'የስራ መግለጫ:',
+          'images': 'የተያያዙ ምስሎች:',
+          'my_arrival': 'መቼ መድረስ እችላለሁ?',
+          'arrival_hint': 'የመድረሻ ሰዓቶችን በመጫን ዝግጁነትዎን ያዘምኑ',
+          'from': 'ከ',
+          'to': 'እስከ',
+          'accept': 'ተቀበል እና ወደ መርሃ ግብር አክል',
+          'decline': 'ጥያቄውን አትቀበል',
+          'confirm_accept_title': 'ይህን ጥያቄ ልቀበል?',
+          'confirm_accept_body': 'ጥያቄው ይፀድቃል እና ወደ መርሃ ግብርዎ ይጨምራል።',
+          'confirm_decline_title': 'ይህን ጥያቄ ልክድ?',
+          'confirm_decline_body': 'ደንበኛው ጥያቄው መተዉን ይቀበላል።',
+          'success': 'ጥያቄው በተሳካ ሁኔታ ተቀባ',
+          'declined': 'ጥያቄው ተከልክሏል',
+          'view_map': 'አካባቢን በካርታ ላይ ክፈት',
+          'close': 'ዝጋ',
+          'confirm': 'እሺ',
+          'error_missing_id': 'ስህተት: የደንበኛ መለያ የለም',
+          'error_not_found': 'ስህተት: ተጠቃሚው አልተገኘም',
+          'quote_price_label': 'የእርስዎ ዋጋ:',
+          'quote_price_hint': 'ዋጋ ያስገቡ...',
+          'price_required': 'እባክዎ ዋጋ ያስገቡ',
+          'send_quote': 'የዋጋ ቅናሽ ላክ',
+          'confirm_send_quote_title': 'ይህን ዋጋ ልላክ?',
+          'confirm_send_quote_body': 'ደንበኛው የእርስዎን የዋጋ ቅናሽ ይቀበላል።',
+          'quote_sent': 'የዋጋ ቅናሹ በተሳካ ሁኔታ ተልኳል',
+          'quote_description_hint': 'ለደንበኛው ማስታወሻ ያክሉ (አማራጭ)...',
+          'open_chat': 'ቻት ክፈት',
+          'unknown': 'ያልታወቀ',
+          'not_specified': 'አልተገለጸም',
+          'no_description': 'ምንም መግለጫ አልተሰጠም',
+          'error_prefix': 'ስህተት: {error}',
+        };
+      case 'ru':
+        return {
+          'title': 'Детали запроса',
+          'summary': 'Сводка запроса',
+          'client': 'Клиент:',
+          'location': 'Локация:',
+          'date': 'Дата:',
+          'requested_hours': 'Запрошенные часы:',
+          'job_description': 'Описание работы:',
+          'images': 'Прикрепленные изображения:',
+          'my_arrival': 'Когда я могу приехать?',
+          'arrival_hint':
+              'Нажмите на время прибытия, чтобы обновить доступность',
+          'from': 'С',
+          'to': 'До',
+          'accept': 'Принять и добавить в расписание',
+          'decline': 'Отклонить запрос',
+          'confirm_accept_title': 'Принять этот запрос?',
+          'confirm_accept_body':
+              'Запрос будет принят и добавлен в ваше расписание.',
+          'confirm_decline_title': 'Отклонить этот запрос?',
+          'confirm_decline_body':
+              'Клиент получит уведомление, что вы отклонили запрос.',
+          'success': 'Запрос успешно принят',
+          'declined': 'Запрос отклонен',
+          'view_map': 'Открыть локацию на карте',
+          'close': 'Закрыть',
+          'confirm': 'Подтвердить',
+          'error_missing_id': 'Ошибка: отсутствует ID клиента',
+          'error_not_found': 'Ошибка: пользователь не найден',
+          'quote_price_label': 'Ваше предложение:',
+          'quote_price_hint': 'Введите цену...',
+          'price_required': 'Пожалуйста, укажите цену',
+          'send_quote': 'Отправить предложение',
+          'confirm_send_quote_title': 'Отправить это предложение?',
+          'confirm_send_quote_body': 'Клиент получит ваше ценовое предложение.',
+          'quote_sent': 'Предложение успешно отправлено',
+          'quote_description_hint':
+              'Добавьте заметку для клиента (необязательно)...',
+          'open_chat': 'Открыть чат',
+          'unknown': 'Неизвестно',
+          'not_specified': 'Не указано',
+          'no_description': 'Описание не предоставлено',
+          'error_prefix': 'Ошибка: {error}',
         };
       default:
         return {
@@ -221,6 +333,10 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
           'quote_sent': 'Quote sent successfully',
           'quote_description_hint': 'Add a note to the client (optional)...',
           'open_chat': 'Open Chat',
+          'unknown': 'Unknown',
+          'not_specified': 'Not specified',
+          'no_description': 'No description provided',
+          'error_prefix': 'Error: {error}',
         };
     }
   }
@@ -435,9 +551,13 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
     } catch (e) {
       debugPrint("FIRESTORE ERROR: $e");
       if (mounted)
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text("Error: $e")));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              strings['error_prefix']!.replaceFirst('{error}', e.toString()),
+            ),
+          ),
+        );
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -757,9 +877,14 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
     } catch (e) {
       debugPrint("FIRESTORE ERROR: $e");
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text("Error: $e")));
+        final strings = _getLocalizedStrings(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              strings['error_prefix']!.replaceFirst('{error}', e.toString()),
+            ),
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -773,6 +898,7 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
     final locale = Provider.of<LanguageProvider>(context).locale.languageCode;
     final isRtl = locale == 'he' || locale == 'ar';
     final isQuoteRequest = data['type'] == 'quote_request';
+    final isPending = _normalizeRequestStatus(data['status']) == 'pending';
 
     return Directionality(
       textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
@@ -792,7 +918,7 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _buildInfoCard(strings, data),
-                  if (isQuoteRequest) ...[
+                  if (isQuoteRequest && isPending) ...[
                     const SizedBox(height: 14),
                     _buildPriceInput(strings),
                   ],
@@ -825,16 +951,18 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
                             ),
                           ),
                           const SizedBox(height: 14),
-                          _buildTimePickers(strings),
+                          _buildTimePickers(strings, enabled: isPending),
                         ],
                       ),
                     ),
                   ],
                   const SizedBox(height: 14),
                   _buildOpenChatButton(strings),
-                  const SizedBox(height: 20),
-                  _buildActionButtons(strings),
-                  const SizedBox(height: 16),
+                  if (isPending) ...[
+                    const SizedBox(height: 20),
+                    _buildActionButtons(strings),
+                    const SizedBox(height: 16),
+                  ],
                 ],
               ),
             ),
@@ -882,13 +1010,13 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
             _buildInfoRow(
               Icons.person,
               strings['client']!,
-              data['fromName'] ?? 'Unknown',
+              data['fromName'] ?? strings['unknown']!,
             ),
             const Divider(height: 20),
             _buildInfoRow(
               Icons.location_on,
               strings['location']!,
-              data['fromLocation'] ?? 'Not specified',
+              data['fromLocation'] ?? strings['not_specified']!,
             ),
             if (hasMap) ...[
               const SizedBox(height: 8),
@@ -919,7 +1047,7 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
             _buildInfoRow(
               Icons.description,
               strings['job_description']!,
-              data['jobDescription'] ?? 'No description provided',
+              data['jobDescription'] ?? strings['no_description']!,
             ),
             if (imageUrls.isNotEmpty) ...[
               const Divider(height: 20),
@@ -1032,7 +1160,7 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
     );
   }
 
-  Widget _buildTimePickers(Map<String, String> strings) {
+  Widget _buildTimePickers(Map<String, String> strings, {bool enabled = true}) {
     return Row(
       children: [
         Expanded(
@@ -1040,6 +1168,7 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
             icon: Icons.login_rounded,
             label: strings['from']!,
             time: _availableFrom,
+            enabled: enabled,
             onPick: (time) => setState(() => _availableFrom = time),
           ),
         ),
@@ -1049,6 +1178,7 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
             icon: Icons.logout_rounded,
             label: strings['to']!,
             time: _availableTo,
+            enabled: enabled,
             onPick: (time) => setState(() => _availableTo = time),
           ),
         ),
@@ -1060,20 +1190,23 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
     required IconData icon,
     required String label,
     required TimeOfDay time,
+    bool enabled = true,
     required Function(TimeOfDay) onPick,
   }) {
     return Material(
-      color: const Color(0xFFF8FAFC),
+      color: enabled ? const Color(0xFFF8FAFC) : const Color(0xFFF1F5F9),
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
-        onTap: () async {
-          final picked = await showTimePicker(
-            context: context,
-            initialTime: time,
-          );
-          if (picked != null) onPick(picked);
-        },
+        onTap: enabled
+            ? () async {
+                final picked = await showTimePicker(
+                  context: context,
+                  initialTime: time,
+                );
+                if (picked != null) onPick(picked);
+              }
+            : null,
         child: Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
