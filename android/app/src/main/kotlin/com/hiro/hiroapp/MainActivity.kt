@@ -1,4 +1,4 @@
-package com.hirehub.app
+package com.hiro.hiroapp
 
 import com.android.billingclient.api.BillingClient
 import com.android.billingclient.api.BillingClientStateListener
@@ -10,7 +10,7 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
-	private val billingStatusChannel = "com.hirehub.app/subscription_status"
+	private val billingStatusChannel = "com.hiro.hiroapp/subscription_status"
 
 	override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
 		super.configureFlutterEngine(flutterEngine)

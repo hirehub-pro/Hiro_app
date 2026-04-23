@@ -8,9 +8,9 @@
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:29257648718:android:1222d1575ee74fa7b8111f",
+        "mobilesdk_app_id": "1:29257648718:android:e89f9a18d21f507db8111f",
         "android_client_info": {
-          "package_name": "com.hirehub.app"
+          "package_name": "com.hiro.hiroapp"
         }
       },
       "oauth_client": [
@@ -20,6 +20,9 @@
         }
       ],
       "api_key": [
+        {
+          "current_key": "AIzaSyCL9zie59-f_Hiyqj_dYtaMziReezcd6fU"
+        },
         {
           "current_key": "AIzaSyB1CWooXT-Gxc4q1q4XmYGSE4Rixyp1EXk"
         }
@@ -35,7 +38,46 @@
               "client_id": "29257648718-qclvt36de5i6j9p20s8ljklp770suejn.apps.googleusercontent.com",
               "client_type": 2,
               "ios_info": {
-                "bundle_id": "com.example.untitled1"
+                "bundle_id": "com.hiro.hiroapp"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:29257648718:android:93df85e5e5d6e621b8111f",
+        "android_client_info": {
+          "package_name": "com.hiro.hiroapp"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "29257648718-5k3hlt1g4nob51l84abm25c1gkksgfs2.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCL9zie59-f_Hiyqj_dYtaMziReezcd6fU"
+        },
+        {
+          "current_key": "AIzaSyB1CWooXT-Gxc4q1q4XmYGSE4Rixyp1EXk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "29257648718-5k3hlt1g4nob51l84abm25c1gkksgfs2.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "29257648718-qclvt36de5i6j9p20s8ljklp770suejn.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.hiro.hiroapp"
               }
             }
           ]

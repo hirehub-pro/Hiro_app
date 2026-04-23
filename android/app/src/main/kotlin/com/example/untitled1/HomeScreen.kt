@@ -1,6 +1,6 @@
 package com.example.untitled1
 
-import com.hirehub.app.R
+import com.hiro.hiroapp.R
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells

@@ -34,6 +34,17 @@
 	<string>We need access to your microphone for recording videos of your projects.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>We need access to your photo library to let you upload project photos to your profile.</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.29257648718-qclvt36de5i6j9p20s8ljklp770suejn</string>
+			</array>
+		</dict>
+	</array>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UIBackgroundModes</key>

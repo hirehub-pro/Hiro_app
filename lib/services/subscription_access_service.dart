@@ -56,7 +56,7 @@ class GooglePlaySubscriptionSnapshot {
 
 class SubscriptionAccessService {
   static const MethodChannel _billingStatusChannel = MethodChannel(
-    'com.hirehub.app/subscription_status',
+    'com.hiro.hiroapp/subscription_status',
   );
 
   static const Set<String> _workerSubscriptionProductIds = {

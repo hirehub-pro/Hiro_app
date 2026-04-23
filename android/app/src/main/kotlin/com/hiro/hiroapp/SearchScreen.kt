@@ -1,4 +1,4 @@
-package com.hirehub.app
+package com.hiro.hiroapp
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*

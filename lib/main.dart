@@ -86,23 +86,25 @@ class _MyAppState extends State<MyApp> {
       );
       debugPrint('Startup: Firebase.initializeApp completed');
 
+      try {
+        await FirebaseAppCheck.instance.activate(
+          // Use debug providers on non-release builds to avoid local
+          // attestation failures (especially iOS profile/dev runs).
+          providerAndroid: !kReleaseMode
+              ? const AndroidDebugProvider()
+              : const AndroidPlayIntegrityProvider(),
+          providerApple: !kReleaseMode
+              ? const AppleDebugProvider()
+              : const AppleAppAttestWithDeviceCheckFallbackProvider(),
+        );
+      } catch (e) {
+        debugPrint('App Check activation warning: $e');
+      }
+
       if (isIos) {
         debugPrint(
-          'iOS diagnostic mode: skipping App Check and notification init during startup.',
+          'iOS diagnostic mode: skipping notification init during startup.',
         );
-      } else {
-        try {
-          await FirebaseAppCheck.instance.activate(
-            androidProvider: kDebugMode
-                ? AndroidProvider.debug
-                : AndroidProvider.playIntegrity,
-            appleProvider: kDebugMode
-                ? AppleProvider.debug
-                : AppleProvider.appAttestWithDeviceCheckFallback,
-          );
-        } catch (e) {
-          debugPrint('App Check activation warning: $e');
-        }
       }
 
       if (!kIsWeb &&

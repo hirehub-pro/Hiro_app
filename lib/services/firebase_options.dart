@@ -40,10 +40,10 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions ios = FirebaseOptions(
     apiKey: 'AIzaSyDh5ZzwkafsDkup9k2sKMkykr5Ukra9xQA',
-    appId: '1:29257648718:ios:82a8ae77ecea922fb8111f',
+    appId: '1:29257648718:ios:6ef27488d62e3fb9b8111f',
     messagingSenderId: '29257648718',
     projectId: 'hire-hub-fe6c4',
     storageBucket: 'hire-hub-fe6c4.firebasestorage.app',
-    iosBundleId: 'com.hirehub.app',
+    iosBundleId: 'com.hiro.hiroapp',
   );
 }

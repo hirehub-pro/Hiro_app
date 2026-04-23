@@ -1013,25 +1013,27 @@ class LanguageDropDown extends StatelessWidget {
     else if (locale.languageCode == 'am')
       current = 'አማርኛ';
 
-    return PopupMenuButton<String>(
-      onSelected: (code) {
-        Provider.of<LanguageProvider>(context, listen: false).setLocale(code);
-      },
-
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(current, style: const TextStyle(color: Colors.grey)),
-          const Icon(Icons.arrow_drop_down, color: Colors.grey),
+    return Material(
+      type: MaterialType.transparency,
+      child: PopupMenuButton<String>(
+        onSelected: (code) {
+          Provider.of<LanguageProvider>(context, listen: false).setLocale(code);
+        },
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(current, style: const TextStyle(color: Colors.grey)),
+            const Icon(Icons.arrow_drop_down, color: Colors.grey),
+          ],
+        ),
+        itemBuilder: (context) => [
+          const PopupMenuItem(value: 'en', child: Text('English')),
+          const PopupMenuItem(value: 'he', child: Text('עברית')),
+          const PopupMenuItem(value: 'ar', child: Text('عربي')),
+          const PopupMenuItem(value: 'ru', child: Text('Русский')),
+          const PopupMenuItem(value: 'am', child: Text('አማርኛ')),
         ],
       ),
-      itemBuilder: (context) => [
-        const PopupMenuItem(value: 'en', child: Text('English')),
-        const PopupMenuItem(value: 'he', child: Text('עברית')),
-        const PopupMenuItem(value: 'ar', child: Text('عربي')),
-        const PopupMenuItem(value: 'ru', child: Text('Русский')),
-        const PopupMenuItem(value: 'am', child: Text('አማርኛ')),
-      ],
     );
   }
 }

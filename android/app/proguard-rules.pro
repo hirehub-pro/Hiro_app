@@ -31,7 +31,7 @@
 -dontwarn com.facebook.**
 
 # App-specific (keeping your native Kotlin code)
--keep class com.hirehub.app.** { *; }
+-keep class com.hiro.hiroapp.** { *; }
 -keep class com.example.untitled1.** { *; }
 
 # Suppress warnings from common libraries
