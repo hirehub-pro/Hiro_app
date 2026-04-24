@@ -327,7 +327,10 @@ class _EditProfilePageState extends State<EditProfilePage> {
   }
 
   Map<String, String> _getLocalizedStrings() {
-    final locale = Provider.of<LanguageProvider>(context).locale.languageCode;
+    final locale = Provider.of<LanguageProvider>(
+      context,
+      listen: false,
+    ).locale.languageCode;
     switch (locale) {
       case 'he':
         return {

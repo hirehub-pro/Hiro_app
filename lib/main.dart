@@ -90,10 +90,10 @@ class _MyAppState extends State<MyApp> {
         await FirebaseAppCheck.instance.activate(
           // Use debug providers on non-release builds to avoid local
           // attestation failures (especially iOS profile/dev runs).
-          providerAndroid: !kReleaseMode
+          providerAndroid: kDebugMode
               ? const AndroidDebugProvider()
               : const AndroidPlayIntegrityProvider(),
-          providerApple: !kReleaseMode
+          providerApple: kDebugMode
               ? const AppleDebugProvider()
               : const AppleAppAttestWithDeviceCheckFallbackProvider(),
         );
@@ -207,7 +207,9 @@ class _MyAppState extends State<MyApp> {
         primaryColor: const Color(0xFF1976D2),
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1976D2)),
       ),
-      navigatorObservers: [AnalyticsService.observer],
+      navigatorObservers: _isFirebaseInitialized
+          ? [AnalyticsService.observer]
+          : const <NavigatorObserver>[],
       home: _StartupGate(
         isInitializing: _isInitializing,
         isFirebaseInitialized: _isFirebaseInitialized,
