@@ -75,10 +75,7 @@ class _MyAppState extends State<MyApp> {
     final isIos = !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
 
     try {
-      debugPrint('Startup: begin Firebase.initializeApp');
-      await Firebase.initializeApp(
-        options: DefaultFirebaseOptions.currentPlatform,
-      ).timeout(
+      await _ensureFirebaseInitialized().timeout(
         const Duration(seconds: 12),
         onTimeout: () {
           throw Exception('Firebase.initializeApp timed out on startup.');
@@ -148,6 +145,28 @@ class _MyAppState extends State<MyApp> {
       _isFirebaseInitialized = firebaseInitialized;
       _initializationError = initializationError;
     });
+  }
+
+  Future<void> _ensureFirebaseInitialized() async {
+    if (Firebase.apps.isNotEmpty) {
+      debugPrint('Startup: Firebase app already initialized');
+      return;
+    }
+
+    debugPrint('Startup: begin Firebase.initializeApp');
+    try {
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+    } on FirebaseException catch (e) {
+      if (e.code != 'duplicate-app') {
+        rethrow;
+      }
+
+      // Android can already have the default app from google-services.json.
+      Firebase.app();
+      debugPrint('Startup: reused existing default Firebase app');
+    }
   }
 
   void _attachNotificationTapListener() {
