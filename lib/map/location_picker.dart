@@ -17,7 +17,6 @@ class _LocationPickerState extends State<LocationPicker> {
   LatLng? _selectedLocation;
   GoogleMapController? _mapController;
   bool _isLoading = false;
-
   String _t(String key) {
     final code = Provider.of<LanguageProvider>(
       context,
