@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
@@ -30,7 +31,8 @@ class SubscriptionPage extends StatefulWidget {
   State<SubscriptionPage> createState() => _SubscriptionPageState();
 }
 
-class _SubscriptionPageState extends State<SubscriptionPage> {
+class _SubscriptionPageState extends State<SubscriptionPage>
+    with TickerProviderStateMixin {
   final InAppPurchase _inAppPurchase = InAppPurchase.instance;
   late StreamSubscription<List<PurchaseDetails>> _subscription;
   List<ProductDetails> _products = [];
@@ -39,6 +41,36 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
   bool _isPurchasing = false;
   String? _storeNotice;
   Map<String, dynamic>? _newRegistrationSubscriptionData;
+
+  AnimationController? _introController;
+  AnimationController? _backgroundController;
+
+  AnimationController get _introAnimationController {
+    final controller = _introController;
+    if (controller != null) return controller;
+    final created = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1100),
+    )..forward();
+    _introController = created;
+    return created;
+  }
+
+  AnimationController get _backgroundAnimationController {
+    final controller = _backgroundController;
+    if (controller != null) return controller;
+    final created = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 9),
+    )..repeat(reverse: true);
+    _backgroundController = created;
+    return created;
+  }
+
+  void _ensureAnimationControllers() {
+    _introAnimationController;
+    _backgroundAnimationController;
+  }
 
   static const String _proProductId = 'pro_worker_monthly';
   static const String _backwardsCompatibleId =
@@ -112,6 +144,7 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
   @override
   void initState() {
     super.initState();
+    _ensureAnimationControllers();
     final Stream<List<PurchaseDetails>> purchaseUpdated =
         _inAppPurchase.purchaseStream;
     _subscription = purchaseUpdated.listen(
@@ -125,6 +158,8 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
 
   @override
   void dispose() {
+    _introController?.dispose();
+    _backgroundController?.dispose();
     _subscription.cancel();
     super.dispose();
   }
@@ -539,83 +574,284 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
 
   @override
   Widget build(BuildContext context) {
+    _ensureAnimationControllers();
+    final backgroundController = _backgroundAnimationController;
+
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        backgroundColor: const Color(0xFFF4F8FF),
-        appBar: AppBar(
-          title: const Text(
-            'מנוי Pro',
-            style: TextStyle(fontWeight: FontWeight.bold),
-          ),
-          centerTitle: true,
-          elevation: 0,
-          backgroundColor: Colors.transparent,
-          flexibleSpace: Container(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Color(0xFF1976D2), Color(0xFF42A5F5)],
-                begin: Alignment.topRight,
-                end: Alignment.bottomLeft,
-              ),
-            ),
-          ),
-          actions: [
-            IconButton(
-              tooltip: 'רענן',
-              onPressed: _isLoading ? null : _initStoreInfo,
-              icon: const Icon(Icons.refresh_rounded),
-            ),
-          ],
-        ),
-        bottomNavigationBar: _buildBottomActionBar(),
-        body: _isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : SingleChildScrollView(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 24, 24, 140),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _buildHeaderHero(),
-                      const SizedBox(height: 14),
-                      _buildQuickValueChips(),
-                      const SizedBox(height: 24),
-                      const Text(
-                        'שדרג את החשבון שלך',
-                        style: TextStyle(
-                          fontSize: 28,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black87,
+        backgroundColor: const Color(0xFFF7FBFF),
+        body: LayoutBuilder(
+          builder: (context, constraints) {
+            final horizontalPadding = constraints.maxWidth < 420 ? 20.0 : 28.0;
+            final verticalPadding = 28.0;
+
+            return Stack(
+              children: [
+                Positioned.fill(
+                  child: AnimatedBuilder(
+                    animation: backgroundController,
+                    builder: (context, _) {
+                      return CustomPaint(
+                        painter: _SubscriptionBackgroundPainter(
+                          backgroundController.value,
                         ),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 12),
-                      const Text(
-                        'קבל יותר עבודות ולידים עם מנוי המקצוענים שלנו. הצטרף לקהילת המומחים המובילה!',
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: Colors.black54,
-                          height: 1.5,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 40),
-                      _buildCard(),
-                      const SizedBox(height: 28),
-                      if (_storeNotice != null) ...[
-                        _buildStoreNotice(_storeNotice!),
-                        const SizedBox(height: 22),
-                      ],
-                      _buildHowItWorks(),
-                      const SizedBox(height: 24),
-                      _buildProCapabilitiesSection(),
-                      const SizedBox(height: 24),
-                      _buildGrowthStats(),
-                    ],
+                      );
+                    },
                   ),
                 ),
+                SafeArea(
+                  child: SingleChildScrollView(
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        minHeight: math.max(
+                          0,
+                          constraints.maxHeight -
+                              MediaQuery.paddingOf(context).vertical,
+                        ),
+                      ),
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: horizontalPadding,
+                          vertical: verticalPadding,
+                        ),
+                        child: Center(
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 1440),
+                            child: _isLoading
+                                ? Center(
+                                    child: Column(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: const [
+                                        SizedBox(height: 80),
+                                        CircularProgressIndicator(),
+                                        SizedBox(height: 80),
+                                      ],
+                                    ),
+                                  )
+                                : _buildContentColumn(),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  child: _buildBottomActionBar(),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildContentColumn() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildAnimatedEntry(
+          delay: 0.0,
+          child: _buildHeaderPill(),
+        ),
+        const SizedBox(height: 28),
+        _buildAnimatedEntry(
+          delay: 0.08,
+          child: _buildMainHeading(),
+        ),
+        const SizedBox(height: 32),
+        _buildAnimatedEntry(
+          delay: 0.14,
+          child: _buildPricingCard(),
+        ),
+        const SizedBox(height: 28),
+        if (_storeNotice != null) ...[
+          _buildAnimatedEntry(
+            delay: 0.20,
+            child: _buildStoreNotice(_storeNotice!),
+          ),
+          const SizedBox(height: 22),
+        ],
+        _buildAnimatedEntry(
+          delay: 0.26,
+          child: _buildProCapabilitiesSection(),
+        ),
+        const SizedBox(height: 28),
+        _buildAnimatedEntry(
+          delay: 0.32,
+          child: _buildHowItWorks(),
+        ),
+        const SizedBox(height: 28),
+        _buildAnimatedEntry(
+          delay: 0.38,
+          child: _buildGrowthStats(),
+        ),
+        const SizedBox(height: 140),
+      ],
+    );
+  }
+
+  Widget _buildAnimatedEntry({
+    required Widget child,
+    double delay = 0,
+    Offset begin = const Offset(0, 0.08),
+  }) {
+    final start = delay.clamp(0.0, 0.9).toDouble();
+    final animation = CurvedAnimation(
+      parent: _introAnimationController,
+      curve: Interval(start, 1, curve: Curves.easeOutCubic),
+    );
+
+    return FadeTransition(
+      opacity: animation,
+      child: SlideTransition(
+        position: Tween<Offset>(
+          begin: begin,
+          end: Offset.zero,
+        ).animate(animation),
+        child: child,
+      ),
+    );
+  }
+
+  Widget _buildHeaderPill() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.88),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF1976D2).withValues(alpha: 0.08),
+            blurRadius: 24,
+            offset: const Offset(0, 12),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.auto_awesome_rounded,
+            color: Color(0xFF1976D2),
+            size: 18,
+          ),
+          const SizedBox(width: 10),
+          Text(
+            'מסלול Pro'.toUpperCase(),
+            style: const TextStyle(
+              color: Color(0xFF1976D2),
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 4,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMainHeading() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Text(
+          'שדרג לעובד Pro',
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            color: Color(0xFF070B18),
+            fontSize: 42,
+            height: 1,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 20),
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520),
+          child: const Text(
+            'קבל יותר עבודות ולידים עם מנוי המקצוענים שלנו. כלים מקצועיים לניהול עסק ותקשורת עם לקוחות במקום אחד.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Color(0xFF6B7280),
+              fontSize: 18,
+              height: 1.45,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPricingCard() {
+    return Container(
+      padding: const EdgeInsets.all(32),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.93),
+        borderRadius: BorderRadius.circular(34),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.95),
+          width: 1.4,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.13),
+            blurRadius: 48,
+            offset: const Offset(0, 28),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text(
+            'מסלול PRO WORKER',
+            style: TextStyle(
+              color: Color(0xFF6B7280),
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 1.5,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Text(
+                _monthlyPriceLabel.split(' ')[0],
+                style: const TextStyle(
+                  color: Color(0xFF070B18),
+                  fontSize: 56,
+                  fontWeight: FontWeight.w900,
+                  height: 1,
+                ),
               ),
+              const SizedBox(width: 10),
+              const Text(
+                '₪ / חודש',
+                style: TextStyle(
+                  color: Color(0xFF6B7280),
+                  fontSize: 18,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 32),
+          const Divider(color: Color(0xFFE5E7EB), height: 1),
+          const SizedBox(height: 32),
+          _buildFeatureRow('קבלת פניות (לידים) ללא הגבלה'),
+          _buildFeatureRow('תג "מקצוען" מוצמד לפרופיל'),
+          _buildFeatureRow('גישה לכלי ניהול מתקדמים'),
+          _buildFeatureRow('תמיכה טכנית מועדפת (VIP)'),
+        ],
       ),
     );
   }
@@ -624,55 +860,84 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
     return SafeArea(
       minimum: const EdgeInsets.fromLTRB(16, 8, 16, 12),
       child: Container(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
+          color: Colors.white.withValues(alpha: 0.95),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.9),
+            width: 1,
+          ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.08),
-              blurRadius: 22,
-              offset: const Offset(0, 6),
+              color: Colors.black.withValues(alpha: 0.12),
+              blurRadius: 28,
+              offset: const Offset(0, 18),
             ),
           ],
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ElevatedButton(
-              onPressed: (!_storeAvailable || _isPurchasing)
-                  ? null
-                  : () {
-                      _buySubscription();
-                    },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF0D47A1),
-                minimumSize: const Size.fromHeight(52),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
+            SizedBox(
+              width: double.infinity,
+              height: 56,
+              child: ElevatedButton(
+                onPressed: (!_storeAvailable || _isPurchasing)
+                    ? null
+                    : _buySubscription,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF1976D2),
+                  disabledBackgroundColor: const Color(0xFF8ABCEA),
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  shadowColor: Colors.transparent,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 220),
+                  child: _isPurchasing
+                      ? const SizedBox(
+                          key: ValueKey('loading'),
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : FittedBox(
+                          key: ValueKey('purchase'),
+                          fit: BoxFit.scaleDown,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.shopping_cart_outlined, size: 20),
+                              const SizedBox(width: 10),
+                              Text(
+                                'הצטרפות ל-Pro · $_monthlyPriceLabel',
+                                style: const TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                 ),
               ),
-              child: _isPurchasing
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.4,
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                      ),
-                    )
-                  : Text(
-                      'הצטרפות ל-Pro · $_monthlyPriceLabel',
-                      style: const TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
             ),
+            const SizedBox(height: 12),
             const Text(
               'החיוב חודשי וניתן לבטל בכל עת דרך חנות האפליקציות.',
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 12, color: Colors.grey),
+              style: TextStyle(
+                fontSize: 12,
+                color: Color(0xFF9CA3AF),
+                height: 1.4,
+              ),
             ),
           ],
         ),
@@ -680,88 +945,27 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
     );
   }
 
-  Widget _buildHeaderHero() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
-        gradient: const LinearGradient(
-          colors: [Color(0xFF0B4FC2), Color(0xFF1E88E5), Color(0xFF48B3FF)],
-          begin: Alignment.topRight,
-          end: Alignment.bottomLeft,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.blue.withOpacity(0.28),
-            blurRadius: 24,
-            offset: const Offset(0, 14),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: const [
-          Row(
-            children: [
-              Icon(Icons.auto_awesome_rounded, color: Colors.white, size: 26),
-              SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  'הירו פרו לעסקים שרוצים לגדול',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          SizedBox(height: 14),
-          Text(
-            'המסלול שמעניק לך כלים מקצועיים לניהול עבודה, לקוחות והכנסות במקום אחד.',
-            style: TextStyle(color: Colors.white, fontSize: 15, height: 1.5),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildQuickValueChips() {
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      alignment: WrapAlignment.center,
-      children: const [
-        _ChipLabel(text: 'Dashboard מתקדם'),
-        _ChipLabel(text: 'מערכת הזמנות'),
-        _ChipLabel(text: 'ניהול לידים'),
-        _ChipLabel(text: 'דוחות ביצועים'),
-      ],
-    );
-  }
-
   Widget _buildStoreNotice(String message) {
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: const Color(0xFFFFF4E5),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFFFD08A)),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFFFD08A), width: 1.2),
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.info_outline, color: Color(0xFF8A5A00)),
-          const SizedBox(width: 10),
+          const Icon(Icons.info_outline, color: Color(0xFF8A5A00), size: 20),
+          const SizedBox(width: 12),
           Expanded(
             child: Text(
               message,
               style: const TextStyle(
                 color: Color(0xFF734800),
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                height: 1.4,
               ),
             ),
           ),
@@ -772,10 +976,21 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
 
   Widget _buildHowItWorks() {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: const Color(0xFFEFF4FF),
-        borderRadius: BorderRadius.circular(18),
+        color: Colors.white.withValues(alpha: 0.85),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.9),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+        ],
       ),
       child: const Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -785,10 +1000,10 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
             style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.w800,
-              color: Color(0xFF10336F),
+              color: Color(0xFF0F2E67),
             ),
           ),
-          SizedBox(height: 10),
+          SizedBox(height: 16),
           _FlowLine(
             title: 'נרשמים למסלול Pro',
             subtitle: 'הפעלה מהירה מתוך האפליקציה.',
@@ -803,77 +1018,6 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildCard() {
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        Container(
-          padding: const EdgeInsets.fromLTRB(24, 40, 24, 32),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFF0D47A1), Color(0xFF1976D2)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(30),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.blue.withOpacity(0.4),
-                blurRadius: 25,
-                offset: const Offset(0, 15),
-              ),
-            ],
-          ),
-          child: Column(
-            children: [
-              const Text(
-                'מסלול PRO WORKER',
-                style: TextStyle(
-                  color: Colors.white70,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 1.5,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.baseline,
-                textBaseline: TextBaseline.alphabetic,
-                children: [
-                  Text(
-                    _products.isNotEmpty
-                        ? _products.first.price.split(' ')[0]
-                        : '99.90',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 48,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  const Text(
-                    '₪ / חודש',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ),
-              const Divider(color: Colors.white24, height: 48, thickness: 1),
-              _buildFeatureRow('קבלת פניות (לידים) ללא הגבלה'),
-              _buildFeatureRow('תג "מקצוען" מוצמד לפרופיל'),
-              _buildFeatureRow('גישה לכלי ניהול מתקדמים'),
-              _buildFeatureRow('תמיכה טכנית מועדפת (VIP)'),
-            ],
-          ),
-        ),
-      ],
     );
   }
 
@@ -1139,5 +1283,82 @@ class _ChipLabel extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class _SubscriptionBackgroundPainter extends CustomPainter {
+  const _SubscriptionBackgroundPainter(this.progress);
+
+  final double progress;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = Offset.zero & size;
+    final eased = Curves.easeInOut.transform(progress);
+    final begin = Alignment.lerp(Alignment.topLeft, Alignment.topRight, eased)!;
+    final end = Alignment.lerp(
+      Alignment.bottomRight,
+      Alignment.bottomLeft,
+      eased,
+    )!;
+
+    final basePaint = Paint()
+      ..shader = LinearGradient(
+        begin: begin,
+        end: end,
+        colors: const [
+          Color(0xFFFDFEFF),
+          Color(0xFFEAF5FF),
+          Color(0xFFF7FBFF),
+          Color(0xFFE3F8FF),
+        ],
+        stops: const [0, 0.38, 0.68, 1],
+      ).createShader(rect);
+    canvas.drawRect(rect, basePaint);
+
+    final width = size.width;
+    final height = size.height;
+    final phase = progress * math.pi * 2;
+
+    final highlightPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeWidth = math.max(120, size.shortestSide * 0.18)
+      ..color = const Color(0xFF1976D2).withValues(alpha: 0.055)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 54);
+    final path = Path()
+      ..moveTo(-width * 0.2, height * (0.22 + math.sin(phase) * 0.03))
+      ..cubicTo(
+        width * 0.24,
+        height * (0.02 + math.cos(phase) * 0.04),
+        width * 0.58,
+        height * (0.54 + math.sin(phase) * 0.03),
+        width * 1.2,
+        height * (0.25 + math.cos(phase) * 0.03),
+      );
+    canvas.drawPath(path, highlightPaint);
+
+    final lowerPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeWidth = math.max(90, size.shortestSide * 0.13)
+      ..color = const Color(0xFF62D6E8).withValues(alpha: 0.05)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 46);
+    final lowerPath = Path()
+      ..moveTo(width * 0.36, height * 1.12)
+      ..cubicTo(
+        width * (0.46 + math.sin(phase) * 0.04),
+        height * 0.78,
+        width * (0.72 + math.cos(phase) * 0.03),
+        height * 0.95,
+        width * 1.16,
+        height * (0.65 + math.sin(phase) * 0.04),
+      );
+    canvas.drawPath(lowerPath, lowerPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _SubscriptionBackgroundPainter oldDelegate) {
+    return oldDelegate.progress != progress;
   }
 }
