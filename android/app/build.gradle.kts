@@ -16,7 +16,7 @@ if (keystorePropertiesFile.exists()) {
 }
 
 android {
-    namespace = "com.hiro.hiroapp"
+    namespace = "com.hirehub.app"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -31,7 +31,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.hiro.hiroapp"
+        applicationId = "com.hirehub.app"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
@@ -53,7 +53,7 @@ android {
             if (releaseConfig.storeFile?.exists() == true) {
                 signingConfig = releaseConfig
             } else {
-                signingConfig = signingConfigs.getByName("debug")
+                throw GradleException("Release keystore not found. Expected android/app/upload-keystore.jks from android/key.properties.")
             }
 
             isMinifyEnabled = true

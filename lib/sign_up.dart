@@ -1,10 +1,11 @@
 import 'dart:io';
+import 'dart:math' as math;
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:geocoding/geocoding.dart';
@@ -41,7 +42,7 @@ enum SignUpStep { profile, phone }
 
 enum UserType { normal, worker }
 
-class _SignUpPageState extends State<SignUpPage> {
+class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
   static const List<int> _displayWeekdayOrder = [7, 1, 2, 3, 4, 5, 6];
   final _formKey = GlobalKey<FormState>();
   final _phoneController = TextEditingController();
@@ -70,6 +71,36 @@ class _SignUpPageState extends State<SignUpPage> {
   final ImagePicker _picker = ImagePicker();
   DateTime? _dateOfBirth;
 
+  AnimationController? _introController;
+  AnimationController? _backgroundController;
+
+  AnimationController get _introAnimationController {
+    final controller = _introController;
+    if (controller != null) return controller;
+    final created = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1050),
+    )..forward();
+    _introController = created;
+    return created;
+  }
+
+  AnimationController get _backgroundAnimationController {
+    final controller = _backgroundController;
+    if (controller != null) return controller;
+    final created = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 9),
+    )..repeat(reverse: true);
+    _backgroundController = created;
+    return created;
+  }
+
+  void _ensureAnimationControllers() {
+    _introAnimationController;
+    _backgroundAnimationController;
+  }
+
   LatLng? _workCenter;
   double _workRadius = 5000.0;
   bool _hideSchedule = false;
@@ -80,6 +111,8 @@ class _SignUpPageState extends State<SignUpPage> {
   @override
   void initState() {
     super.initState();
+    _ensureAnimationControllers();
+
     _currentStep = widget.startAtStep == 1
         ? SignUpStep.phone
         : SignUpStep.profile;
@@ -296,6 +329,8 @@ class _SignUpPageState extends State<SignUpPage> {
 
   @override
   void dispose() {
+    _introController?.dispose();
+    _backgroundController?.dispose();
     _phoneController.dispose();
     _codeController.dispose();
     _nameController.dispose();
@@ -315,7 +350,18 @@ class _SignUpPageState extends State<SignUpPage> {
       case 'he':
         return {
           'title': 'יצירת חשבון',
-          'subtitle': 'הצטרף לקהילת הירו',
+          'subtitle': 'צרו פרופיל מאומת והמשיכו ל-Hiro.',
+          'access': 'הרשמה מאובטחת',
+          'profile_card_title': 'פרטי חשבון',
+          'profile_card_subtitle': 'כמה פרטים קצרים לפני אימות הטלפון.',
+          'phone_card_title': 'אימות טלפון',
+          'phone_card_subtitle': 'הכניסו את הקוד שקיבלתם ב-SMS כדי לסיים.',
+          'feature_profile_title': 'פרופיל ברור',
+          'feature_profile_body': 'פרטים בסיסיים שמכינים את החשבון.',
+          'feature_phone_title': 'אימות מהיר',
+          'feature_phone_body': 'קוד SMS קצר שומר על גישה אמינה.',
+          'feature_pro_title': 'מוכן למקצוענים',
+          'feature_pro_body': 'רדיוס עבודה, שעות ומקצועות במקום אחד.',
           'phone_label': 'מספר טלפון',
           'phone_subtitle': 'הכנס את מספר הטלפון שלך לאימות וסיום',
           'send_code': 'שלח קוד אימות',
@@ -365,7 +411,21 @@ class _SignUpPageState extends State<SignUpPage> {
       default:
         return {
           'title': 'Create Account',
-          'subtitle': 'Join the Hiro community',
+          'subtitle': 'Create a verified profile and continue to Hiro.',
+          'access': 'Secure Registration',
+          'profile_card_title': 'Account Details',
+          'profile_card_subtitle':
+              'A few quick details before phone verification.',
+          'phone_card_title': 'Phone Verification',
+          'phone_card_subtitle':
+              'Enter the SMS code to finish creating your account.',
+          'feature_profile_title': 'Clear profile',
+          'feature_profile_body': 'Basic details that prepare your account.',
+          'feature_phone_title': 'Fast verification',
+          'feature_phone_body': 'A short SMS code keeps access trusted.',
+          'feature_pro_title': 'Pro ready',
+          'feature_pro_body':
+              'Work radius, hours, and professions in one flow.',
           'phone_label': 'Phone Number',
           'phone_subtitle': 'Enter your phone number to verify and complete',
           'send_code': 'Send Verification Code',
@@ -608,22 +668,25 @@ class _SignUpPageState extends State<SignUpPage> {
       LocationPermission permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
-        if (permission == LocationPermission.denied)
+        if (permission == LocationPermission.denied) {
           throw 'Location permissions are denied';
+        }
       }
 
-      if (permission == LocationPermission.deniedForever)
+      if (permission == LocationPermission.deniedForever) {
         throw 'Location permissions are permanently denied.';
+      }
 
       Position position = await Geolocator.getCurrentPosition();
       LatLng loc = LatLng(position.latitude, position.longitude);
       setState(() => _workCenter = loc);
       await _updateTownFromLocation(loc);
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text(e.toString())));
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -882,203 +945,254 @@ class _SignUpPageState extends State<SignUpPage> {
 
   @override
   Widget build(BuildContext context) {
+    _ensureAnimationControllers();
     final locale = Provider.of<LanguageProvider>(context).locale.languageCode;
     final isRtl = locale == 'he' || locale == 'ar';
+    final backgroundController = _backgroundAnimationController;
 
     return Directionality(
       textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
       child: Scaffold(
-        backgroundColor: Colors.grey[50],
-        body: _loading
-            ? const Center(child: CircularProgressIndicator())
-            : _buildCurrentStep(isRtl),
-      ),
-    );
-  }
-
-  Widget _buildCurrentStep(bool isRtl) {
-    final strings = _getLocalizedStrings(context);
-    return SingleChildScrollView(
-      child: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 300),
-        child: _currentStep == SignUpStep.profile
-            ? _buildProfileStep(strings, isRtl)
-            : _buildPhoneStep(strings, isRtl),
-      ),
-    );
-  }
-
-  Widget _buildPhoneStep(Map<String, String> strings, bool isRtl) {
-    return Column(
-      key: const ValueKey('phone'),
-      children: [
-        _buildHeader(
-          strings['phone_label']!,
-          strings['phone_subtitle']!,
-          isRtl,
-          showBack: widget.pendingWorkerData == null,
-        ),
-        Transform.translate(
-          offset: const Offset(0, -40),
-          child: Container(
-            margin: const EdgeInsets.symmetric(horizontal: 24),
-            padding: const EdgeInsets.all(32),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(24),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 20,
-                  offset: const Offset(0, 10),
-                ),
-              ],
-            ),
-            child: Column(
+        backgroundColor: const Color(0xFFF7FBFF),
+        body: LayoutBuilder(
+          builder: (context, constraints) {
+            return Stack(
               children: [
-                _buildStyledTextField(
-                  controller: _phoneController,
-                  labelText: strings['phone_label']!,
-                  icon: Icons.phone_android_rounded,
-                  keyboardType: TextInputType.phone,
-                  hintText: 'e.g. 0501234567',
-                  enabled: !_codeSent,
-                ),
-                if (_codeSent) ...[
-                  const SizedBox(height: 16),
-                  _buildStyledTextField(
-                    controller: _codeController,
-                    labelText: strings['enter_code']!,
-                    icon: Icons.lock_outline_rounded,
-                    keyboardType: TextInputType.number,
-                    textAlign: TextAlign.center,
-                  ),
-                ],
-                const SizedBox(height: 32),
-                SizedBox(
-                  width: double.infinity,
-                  height: 55,
-                  child: ElevatedButton(
-                    onPressed: _loading
-                        ? null
-                        : (_codeSent ? _handleVerifyCode : _handleSendCode),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF1976D2),
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                    ),
-                    child: Text(
-                      _codeSent
-                          ? strings['verify_code']!
-                          : strings['send_code']!,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ),
-                if (_codeSent)
-                  Center(
-                    child: TextButton(
-                      onPressed: () => setState(() => _codeSent = false),
-                      child: Text(
-                        strings['edit_phone']!,
-                        style: const TextStyle(
-                          color: Color(0xFF1976D2),
-                          fontWeight: FontWeight.w600,
+                Positioned.fill(
+                  child: AnimatedBuilder(
+                    animation: backgroundController,
+                    builder: (context, _) {
+                      return CustomPaint(
+                        painter: _SignUpBackgroundPainter(
+                          backgroundController.value,
                         ),
-                      ),
-                    ),
+                      );
+                    },
                   ),
+                ),
+                SafeArea(child: _buildCurrentStep(isRtl, constraints)),
+                if (_loading) _buildLoadingOverlay(),
               ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCurrentStep(bool isRtl, BoxConstraints constraints) {
+    final strings = _getLocalizedStrings(context);
+    final isWide = constraints.maxWidth >= 1080;
+    final horizontalPadding = isWide
+        ? 64.0
+        : (constraints.maxWidth < 420 ? 20.0 : 28.0);
+    final verticalPadding = isWide ? 56.0 : 28.0;
+
+    return SingleChildScrollView(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          minHeight: math.max(
+            0,
+            constraints.maxHeight - MediaQuery.paddingOf(context).vertical,
+          ),
+        ),
+        child: Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: horizontalPadding,
+            vertical: verticalPadding,
+          ),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 1440),
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 380),
+                switchInCurve: Curves.easeOutCubic,
+                switchOutCurve: Curves.easeInCubic,
+                transitionBuilder: (child, animation) {
+                  return FadeTransition(
+                    opacity: animation,
+                    child: SlideTransition(
+                      position: Tween<Offset>(
+                        begin: const Offset(0.04, 0),
+                        end: Offset.zero,
+                      ).animate(animation),
+                      child: child,
+                    ),
+                  );
+                },
+                child: _buildStepLayout(
+                  key: ValueKey(_currentStep),
+                  strings: strings,
+                  isRtl: isRtl,
+                  isWide: isWide,
+                ),
+              ),
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildStepLayout({
+    required Key key,
+    required Map<String, String> strings,
+    required bool isRtl,
+    required bool isWide,
+  }) {
+    final compact = !isWide;
+    final formWidth = _currentStep == SignUpStep.profile ? 660.0 : 520.0;
+    final intro = Expanded(
+      child: _buildAnimatedEntry(
+        delay: 0,
+        begin: isRtl ? const Offset(0.06, 0) : const Offset(-0.06, 0),
+        child: _buildIntroPanel(strings, compact: false),
+      ),
+    );
+    final form = _buildAnimatedEntry(
+      delay: 0.14,
+      begin: isRtl ? const Offset(-0.05, 0) : const Offset(0.05, 0),
+      child: SizedBox(
+        width: compact ? double.infinity : formWidth,
+        child: AnimatedBuilder(
+          animation: _backgroundAnimationController,
+          builder: (context, child) {
+            final offset =
+                math.sin(_backgroundAnimationController.value * math.pi * 2) *
+                4;
+            return Transform.translate(offset: Offset(0, offset), child: child);
+          },
+          child: _currentStep == SignUpStep.profile
+              ? _buildProfileStep(strings, compact: compact)
+              : _buildPhoneStep(strings, isRtl, compact: compact),
+        ),
+      ),
+    );
+
+    if (!isWide) {
+      return Column(
+        key: key,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildAnimatedEntry(
+            delay: 0,
+            child: _buildIntroPanel(strings, compact: true),
+          ),
+          const SizedBox(height: 24),
+          form,
+        ],
+      );
+    }
+
+    const gap = SizedBox(width: 64);
+    return Row(
+      key: key,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: isRtl ? [form, gap, intro] : [intro, gap, form],
+    );
+  }
+
+  Widget _buildAnimatedEntry({
+    required Widget child,
+    double delay = 0,
+    Offset begin = const Offset(0, 0.08),
+  }) {
+    final start = delay.clamp(0.0, 0.9).toDouble();
+    final animation = CurvedAnimation(
+      parent: _introAnimationController,
+      curve: Interval(start, 1, curve: Curves.easeOutCubic),
+    );
+
+    return FadeTransition(
+      opacity: animation,
+      child: SlideTransition(
+        position: Tween<Offset>(
+          begin: begin,
+          end: Offset.zero,
+        ).animate(animation),
+        child: child,
+      ),
+    );
+  }
+
+  Widget _buildIntroPanel(
+    Map<String, String> strings, {
+    required bool compact,
+  }) {
+    final isPhoneStep = _currentStep == SignUpStep.phone;
+    final textAlign = compact ? TextAlign.center : TextAlign.start;
+    final alignment = compact
+        ? CrossAxisAlignment.center
+        : CrossAxisAlignment.start;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: alignment,
+      children: [
+        _buildAccessPill(strings),
+        SizedBox(height: compact ? 24 : 28),
+        Text(
+          isPhoneStep ? strings['phone_card_title']! : strings['title']!,
+          textAlign: textAlign,
+          style: TextStyle(
+            color: const Color(0xFF070B18),
+            fontSize: compact ? 40 : 56,
+            height: 1,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 20),
+        ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: compact ? 520 : 620),
+          child: Text(
+            isPhoneStep ? strings['phone_subtitle']! : strings['subtitle']!,
+            textAlign: textAlign,
+            style: const TextStyle(
+              color: Color(0xFF6B7280),
+              fontSize: 20,
+              height: 1.45,
+            ),
+          ),
+        ),
+        if (!compact) ...[
+          const SizedBox(height: 48),
+          _buildFeatureHighlights(strings),
+        ],
       ],
     );
   }
 
-  Widget _buildHeader(
-    String title,
-    String subtitle,
-    bool isRtl, {
-    bool showBack = false,
-  }) {
+  Widget _buildAccessPill(Map<String, String> strings) {
     return Container(
-      height: 300,
-      width: double.infinity,
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topRight,
-          end: Alignment.bottomLeft,
-          colors: [Color(0xFF0D47A1), Color(0xFF1976D2)],
-        ),
-      ),
-      child: Stack(
-        children: [
-          Positioned(
-            top: -50,
-            right: isRtl ? null : -50,
-            left: isRtl ? -50 : null,
-            child: CircleAvatar(
-              radius: 100,
-              backgroundColor: Colors.white.withOpacity(0.1),
-            ),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.88),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF1976D2).withValues(alpha: 0.08),
+            blurRadius: 24,
+            offset: const Offset(0, 12),
           ),
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (showBack)
-                    IconButton(
-                      icon: const Icon(
-                        Icons.arrow_back_ios,
-                        color: Colors.white,
-                        size: 20,
-                      ),
-                      onPressed: () =>
-                          setState(() => _currentStep = SignUpStep.profile),
-                    ),
-                  const SizedBox(height: 10),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Icon(
-                      showBack
-                          ? Icons.phone_android_rounded
-                          : Icons.person_add_rounded,
-                      size: 36,
-                      color: Colors.white,
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 32,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    subtitle,
-                    style: TextStyle(
-                      color: Colors.white.withOpacity(0.8),
-                      fontSize: 16,
-                    ),
-                  ),
-                ],
-              ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.auto_awesome_rounded,
+            color: Color(0xFF1976D2),
+            size: 18,
+          ),
+          const SizedBox(width: 10),
+          Text(
+            strings['access']!.toUpperCase(),
+            style: const TextStyle(
+              color: Color(0xFF1976D2),
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 4,
             ),
           ),
         ],
@@ -1086,118 +1200,406 @@ class _SignUpPageState extends State<SignUpPage> {
     );
   }
 
-  Widget _buildProfileStep(Map<String, String> strings, bool isRtl) {
-    return Column(
-      key: const ValueKey('profile'),
+  Widget _buildFeatureHighlights(Map<String, String> strings) {
+    final features = [
+      _SignUpFeature(
+        icon: Icons.badge_outlined,
+        title: strings['feature_profile_title']!,
+        body: strings['feature_profile_body']!,
+      ),
+      _SignUpFeature(
+        icon: Icons.sms_outlined,
+        title: strings['feature_phone_title']!,
+        body: strings['feature_phone_body']!,
+      ),
+      _SignUpFeature(
+        icon: Icons.work_outline_rounded,
+        title: strings['feature_pro_title']!,
+        body: strings['feature_pro_body']!,
+      ),
+    ];
+
+    return Wrap(
+      spacing: 18,
+      runSpacing: 18,
       children: [
-        _buildHeader(strings['title']!, strings['subtitle']!, isRtl),
-        Transform.translate(
-          offset: const Offset(0, -40),
-          child: Container(
-            margin: const EdgeInsets.symmetric(horizontal: 24),
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(24),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 20,
-                  offset: const Offset(0, 10),
-                ),
-              ],
+        for (var index = 0; index < features.length; index++)
+          _buildAnimatedEntry(
+            delay: 0.24 + index * 0.06,
+            begin: const Offset(0, 0.12),
+            child: SizedBox(
+              width: 190,
+              height: 156,
+              child: _buildFeatureCard(features[index]),
             ),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                children: [
-                  _buildImagePicker(),
-                  const SizedBox(height: 32),
-                  _buildStyledTextField(
-                    controller: _nameController,
-                    labelText: strings['name_label']!,
-                    icon: Icons.person_outline,
-                    validator: (v) => v!.isEmpty ? strings['req'] : null,
-                  ),
-                  const SizedBox(height: 16),
-                  _buildStyledTextField(
-                    controller: _emailController,
-                    labelText: strings['email_label']!,
-                    icon: Icons.email_outlined,
-                    keyboardType: TextInputType.emailAddress,
-                  ),
-                  const SizedBox(height: 16),
-                  _buildStyledTextField(
-                    controller: _dobController,
-                    labelText: strings['dob_label']!,
-                    hintText: strings['dob_hint']!,
-                    icon: Icons.cake_outlined,
-                    readOnly: true,
-                    onTap: _pickDateOfBirth,
-                    validator: (v) => (v == null || v.trim().isEmpty)
-                        ? strings['dob_required']
-                        : null,
-                  ),
-                  const SizedBox(height: 16),
-                  _buildLocationSelectionSection(strings),
-                  const SizedBox(height: 24),
-                  _buildTypeSelector(strings),
-                  if (_userType == UserType.worker) ...[
-                    const SizedBox(height: 24),
-                    _buildWorkRadiusSelector(strings),
-                    const SizedBox(height: 24),
-                    _buildScheduleSection(strings),
-                    const SizedBox(height: 24),
-                    _buildMultiSelectProfessions(strings),
-                    const SizedBox(height: 16),
-                    _buildStyledTextField(
-                      controller: _altPhoneController,
-                      labelText: strings['alt_phone']!,
-                      icon: Icons.phone_android_outlined,
-                      keyboardType: TextInputType.phone,
+          ),
+      ],
+    );
+  }
+
+  Widget _buildFeatureCard(_SignUpFeature feature) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(22),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.82),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.9)),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF1B2A41).withValues(alpha: 0.08),
+            blurRadius: 28,
+            offset: const Offset(0, 18),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(feature.icon, color: const Color(0xFF1976D2), size: 34),
+          const Spacer(),
+          Text(
+            feature.title,
+            style: const TextStyle(
+              color: Color(0xFF101827),
+              fontSize: 17,
+              fontWeight: FontWeight.w800,
+              height: 1.15,
+            ),
+          ),
+          const SizedBox(height: 7),
+          Text(
+            feature.body,
+            style: const TextStyle(
+              color: Color(0xFF6B7280),
+              fontSize: 14,
+              height: 1.25,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPhoneStep(
+    Map<String, String> strings,
+    bool isRtl, {
+    required bool compact,
+  }) {
+    return _buildStepCard(
+      compact: compact,
+      icon: Icons.phone_iphone_rounded,
+      title: strings['phone_card_title']!,
+      subtitle: strings['phone_card_subtitle']!,
+      leading: widget.pendingWorkerData == null
+          ? _buildBackButton(strings, isRtl)
+          : null,
+      child: Column(
+        children: [
+          _buildStyledTextField(
+            controller: _phoneController,
+            labelText: strings['phone_label']!,
+            icon: Icons.phone_iphone_rounded,
+            keyboardType: TextInputType.phone,
+            hintText: 'e.g. 0501234567',
+            enabled: !_codeSent,
+          ),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 280),
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeInCubic,
+            child: _codeSent
+                ? Padding(
+                    key: const ValueKey('code-field'),
+                    padding: const EdgeInsets.only(top: 16),
+                    child: _buildStyledTextField(
+                      controller: _codeController,
+                      labelText: strings['enter_code']!,
+                      icon: Icons.lock_outline_rounded,
+                      keyboardType: TextInputType.number,
+                      textAlign: TextAlign.center,
                     ),
-                    const SizedBox(height: 16),
-                    _buildStyledTextField(
-                      controller: _descriptionController,
-                      labelText: strings['desc_label']!,
-                      icon: Icons.description_outlined,
-                      maxLines: 3,
-                    ),
-                  ],
-                  const SizedBox(height: 24),
-                  _buildPolicyCheckbox(strings),
-                  const SizedBox(height: 32),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 55,
-                    child: ElevatedButton(
-                      onPressed: _submitProfile,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF1976D2),
-                        foregroundColor: Colors.white,
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                      ),
-                      child: Text(
-                        _userType == UserType.worker
-                            ? strings['pay']!
-                            : strings['finish']!,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
+                  )
+                : const SizedBox.shrink(key: ValueKey('no-code-field')),
+          ),
+          const SizedBox(height: 28),
+          _buildPrimaryButton(
+            label: _codeSent ? strings['verify_code']! : strings['send_code']!,
+            icon: _codeSent ? Icons.verified_rounded : Icons.sms_outlined,
+            onPressed: _loading
+                ? null
+                : (_codeSent ? _handleVerifyCode : _handleSendCode),
+          ),
+          if (_codeSent)
+            Center(
+              child: TextButton(
+                onPressed: () => setState(() => _codeSent = false),
+                child: Text(
+                  strings['edit_phone']!,
+                  style: const TextStyle(
+                    color: Color(0xFF1976D2),
+                    fontWeight: FontWeight.w700,
                   ),
-                ],
+                ),
               ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProfileStep(
+    Map<String, String> strings, {
+    required bool compact,
+  }) {
+    return _buildStepCard(
+      compact: compact,
+      icon: Icons.person_add_rounded,
+      title: strings['profile_card_title']!,
+      subtitle: strings['profile_card_subtitle']!,
+      child: Form(
+        key: _formKey,
+        child: Column(
+          children: [
+            _buildImagePicker(),
+            const SizedBox(height: 32),
+            _buildStyledTextField(
+              controller: _nameController,
+              labelText: strings['name_label']!,
+              icon: Icons.person_outline,
+              validator: (v) => v!.isEmpty ? strings['req'] : null,
+            ),
+            const SizedBox(height: 16),
+            _buildStyledTextField(
+              controller: _emailController,
+              labelText: strings['email_label']!,
+              icon: Icons.email_outlined,
+              keyboardType: TextInputType.emailAddress,
+            ),
+            const SizedBox(height: 16),
+            _buildStyledTextField(
+              controller: _dobController,
+              labelText: strings['dob_label']!,
+              hintText: strings['dob_hint']!,
+              icon: Icons.cake_outlined,
+              readOnly: true,
+              onTap: _pickDateOfBirth,
+              validator: (v) => (v == null || v.trim().isEmpty)
+                  ? strings['dob_required']
+                  : null,
+            ),
+            const SizedBox(height: 16),
+            _buildLocationSelectionSection(strings),
+            const SizedBox(height: 24),
+            _buildTypeSelector(strings),
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 280),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeInCubic,
+              child: _userType == UserType.worker
+                  ? Column(
+                      key: const ValueKey('worker-fields'),
+                      children: [
+                        const SizedBox(height: 24),
+                        _buildWorkRadiusSelector(strings),
+                        const SizedBox(height: 24),
+                        _buildScheduleSection(strings),
+                        const SizedBox(height: 24),
+                        _buildMultiSelectProfessions(strings),
+                        const SizedBox(height: 16),
+                        _buildStyledTextField(
+                          controller: _altPhoneController,
+                          labelText: strings['alt_phone']!,
+                          icon: Icons.phone_android_outlined,
+                          keyboardType: TextInputType.phone,
+                        ),
+                        const SizedBox(height: 16),
+                        _buildStyledTextField(
+                          controller: _descriptionController,
+                          labelText: strings['desc_label']!,
+                          icon: Icons.description_outlined,
+                          maxLines: 3,
+                        ),
+                      ],
+                    )
+                  : const SizedBox.shrink(key: ValueKey('customer-fields')),
+            ),
+            const SizedBox(height: 24),
+            _buildPolicyCheckbox(strings),
+            const SizedBox(height: 32),
+            _buildPrimaryButton(
+              label: _userType == UserType.worker
+                  ? strings['pay']!
+                  : strings['finish']!,
+              icon: _userType == UserType.worker
+                  ? Icons.workspace_premium_outlined
+                  : Icons.arrow_forward_rounded,
+              onPressed: _submitProfile,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStepCard({
+    required bool compact,
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required Widget child,
+    Widget? leading,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.all(compact ? 24 : 38),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.93),
+        borderRadius: BorderRadius.circular(compact ? 28 : 34),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.95),
+          width: 1.4,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.13),
+            blurRadius: 48,
+            offset: const Offset(0, 28),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (leading != null) ...[
+            Align(alignment: AlignmentDirectional.centerStart, child: leading),
+            const SizedBox(height: 8),
+          ],
+          _buildLogoMark(icon),
+          const SizedBox(height: 24),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: const Color(0xFF070B18),
+              fontSize: compact ? 31 : 36,
+              fontWeight: FontWeight.w800,
+              height: 1.05,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            subtitle,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Color(0xFF6B7280),
+              fontSize: 16,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 32),
+          child,
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLogoMark(IconData icon) {
+    return Container(
+      width: 78,
+      height: 78,
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF1E88E5), Color(0xFF0D47A1)],
+        ),
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF1976D2).withValues(alpha: 0.28),
+            blurRadius: 30,
+            offset: const Offset(0, 16),
+          ),
+        ],
+      ),
+      child: Icon(icon, color: Colors.white, size: 34),
+    );
+  }
+
+  Widget _buildBackButton(Map<String, String> strings, bool isRtl) {
+    return TextButton.icon(
+      onPressed: () => setState(() => _currentStep = SignUpStep.profile),
+      icon: Icon(
+        isRtl
+            ? Icons.arrow_forward_ios_rounded
+            : Icons.arrow_back_ios_new_rounded,
+        size: 16,
+      ),
+      label: Text(strings['edit_phone']!),
+      style: TextButton.styleFrom(
+        foregroundColor: const Color(0xFF1976D2),
+        textStyle: const TextStyle(fontWeight: FontWeight.w800),
+      ),
+    );
+  }
+
+  Widget _buildPrimaryButton({
+    required String label,
+    required IconData icon,
+    required VoidCallback? onPressed,
+  }) {
+    return SizedBox(
+      width: double.infinity,
+      height: 58,
+      child: ElevatedButton(
+        onPressed: onPressed,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color(0xFF1976D2),
+          foregroundColor: Colors.white,
+          disabledBackgroundColor: const Color(0xFF8ABCEA),
+          elevation: 0,
+          shadowColor: Colors.transparent,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+        ),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 20),
+              const SizedBox(width: 10),
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLoadingOverlay() {
+    return Positioned.fill(
+      child: Container(
+        color: Colors.white.withValues(alpha: 0.45),
+        child: const Center(
+          child: SizedBox(
+            width: 38,
+            height: 38,
+            child: CircularProgressIndicator(
+              color: Color(0xFF1976D2),
+              strokeWidth: 3,
             ),
           ),
         ),
-        const SizedBox(height: 20),
-      ],
+      ),
     );
   }
 
@@ -1211,7 +1613,7 @@ class _SignUpPageState extends State<SignUpPage> {
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               border: Border.all(
-                color: const Color(0xFF1976D2).withOpacity(0.2),
+                color: const Color(0xFF1976D2).withValues(alpha: 0.2),
                 width: 2,
               ),
             ),
@@ -1258,7 +1660,13 @@ class _SignUpPageState extends State<SignUpPage> {
           child: Checkbox(
             value: _agreedToPolicy,
             onChanged: (v) => setState(() => _agreedToPolicy = v!),
-            activeColor: const Color(0xFF1976D2),
+            fillColor: WidgetStateProperty.resolveWith((states) {
+              if (states.contains(WidgetState.selected)) {
+                return const Color(0xFF1976D2);
+              }
+              return Colors.white;
+            }),
+            side: const BorderSide(color: Color(0xFFDCE5EE)),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(4),
             ),
@@ -1268,7 +1676,7 @@ class _SignUpPageState extends State<SignUpPage> {
         Expanded(
           child: RichText(
             text: TextSpan(
-              style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+              style: const TextStyle(fontSize: 13, color: Color(0xFF6B7280)),
               children: [
                 TextSpan(text: strings['agree_prefix']!),
                 TextSpan(
@@ -1342,7 +1750,7 @@ class _SignUpPageState extends State<SignUpPage> {
                   foregroundColor: const Color(0xFF1976D2),
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   side: BorderSide(
-                    color: const Color(0xFF1976D2).withOpacity(0.5),
+                    color: const Color(0xFF1976D2).withValues(alpha: 0.5),
                   ),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
@@ -1366,7 +1774,7 @@ class _SignUpPageState extends State<SignUpPage> {
                   foregroundColor: const Color(0xFF1976D2),
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   side: BorderSide(
-                    color: const Color(0xFF1976D2).withOpacity(0.5),
+                    color: const Color(0xFF1976D2).withValues(alpha: 0.5),
                   ),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
@@ -1399,9 +1807,9 @@ class _SignUpPageState extends State<SignUpPage> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.grey[50],
+        color: const Color(0xFFF9FAFB),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.grey[200]!),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1419,7 +1827,7 @@ class _SignUpPageState extends State<SignUpPage> {
                 style: const TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.bold,
-                  color: Colors.black87,
+                  color: Color(0xFF374151),
                 ),
               ),
             ],
@@ -1482,9 +1890,9 @@ class _SignUpPageState extends State<SignUpPage> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.grey[50],
+        color: const Color(0xFFF9FAFB),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.grey[200]!),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1492,7 +1900,8 @@ class _SignUpPageState extends State<SignUpPage> {
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             value: _hideSchedule,
-            activeColor: const Color(0xFF1976D2),
+            activeThumbColor: const Color(0xFF1976D2),
+            activeTrackColor: const Color(0xFFB9D9F6),
             title: Text(
               strings['hide_schedule']!,
               style: const TextStyle(
@@ -1553,8 +1962,8 @@ class _SignUpPageState extends State<SignUpPage> {
                   height: 38,
                   decoration: BoxDecoration(
                     color: isOff
-                        ? Colors.red.withOpacity(0.1)
-                        : const Color(0xFF1976D2).withOpacity(0.1),
+                        ? Colors.red.withValues(alpha: 0.1)
+                        : const Color(0xFF1976D2).withValues(alpha: 0.1),
                     shape: BoxShape.circle,
                     border: Border.all(
                       color: isOff ? Colors.red : const Color(0xFF1976D2),
@@ -1636,7 +2045,8 @@ class _SignUpPageState extends State<SignUpPage> {
                       padding: EdgeInsets.zero,
                       shrinkWrap: true,
                       itemCount: options.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      separatorBuilder: (context, index) =>
+                          const Divider(height: 1),
                       itemBuilder: (context, index) {
                         final option = options.elementAt(index);
                         return ListTile(
@@ -1680,7 +2090,9 @@ class _SignUpPageState extends State<SignUpPage> {
                         fontWeight: FontWeight.w500,
                       ),
                     ),
-                    backgroundColor: const Color(0xFF1976D2).withOpacity(0.1),
+                    backgroundColor: const Color(
+                      0xFF1976D2,
+                    ).withValues(alpha: 0.1),
                     side: BorderSide.none,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
@@ -1704,17 +2116,18 @@ class _SignUpPageState extends State<SignUpPage> {
         Text(
           strings['user_type']!,
           style: const TextStyle(
-            fontWeight: FontWeight.bold,
+            fontWeight: FontWeight.w800,
             fontSize: 14,
-            color: Colors.black87,
+            color: Color(0xFF374151),
           ),
         ),
         const SizedBox(height: 10),
         Container(
           padding: const EdgeInsets.all(4),
           decoration: BoxDecoration(
-            color: Colors.grey[100],
+            color: const Color(0xFFF3F7FC),
             borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFE5E7EB)),
           ),
           child: Row(
             children: [
@@ -1744,7 +2157,7 @@ class _SignUpPageState extends State<SignUpPage> {
           boxShadow: isSelected
               ? [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
+                    color: Colors.black.withValues(alpha: 0.05),
                     blurRadius: 4,
                     offset: const Offset(0, 2),
                   ),
@@ -1756,7 +2169,7 @@ class _SignUpPageState extends State<SignUpPage> {
           textAlign: TextAlign.center,
           style: TextStyle(
             color: isSelected ? const Color(0xFF1976D2) : Colors.grey[600],
-            fontWeight: FontWeight.bold,
+            fontWeight: FontWeight.w800,
           ),
         ),
       ),
@@ -1783,12 +2196,12 @@ class _SignUpPageState extends State<SignUpPage> {
         Text(
           labelText,
           style: const TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 14,
-            color: Colors.black87,
+            fontWeight: FontWeight.w800,
+            fontSize: 15,
+            color: Color(0xFF374151),
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 9),
         TextFormField(
           controller: controller,
           keyboardType: keyboardType,
@@ -1798,24 +2211,146 @@ class _SignUpPageState extends State<SignUpPage> {
           onTap: onTap,
           focusNode: focusNode,
           textAlign: textAlign,
-          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+          style: const TextStyle(
+            color: Color(0xFF111827),
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+          ),
           decoration: InputDecoration(
             hintText: hintText,
-            prefixIcon: Icon(icon, color: const Color(0xFF1976D2), size: 20),
-            filled: true,
-            fillColor: enabled ? Colors.grey[100] : Colors.grey[200],
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(16),
-              borderSide: BorderSide.none,
+            hintStyle: const TextStyle(
+              color: Color(0xFF9CA3AF),
+              fontWeight: FontWeight.w500,
             ),
+            prefixIcon: Icon(icon, color: const Color(0xFF9CA3AF), size: 21),
+            filled: true,
+            fillColor: enabled
+                ? const Color(0xFFF9FAFB)
+                : const Color(0xFFEFF4FA),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+            ),
+            disabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: const BorderSide(
+                color: Color(0xFF1976D2),
+                width: 1.4,
+              ),
+            ),
+            errorBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: const BorderSide(color: Color(0xFFE11D48)),
+            ),
+            focusedErrorBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: const BorderSide(
+                color: Color(0xFFE11D48),
+                width: 1.4,
+              ),
+            ),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
             contentPadding: const EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: 16,
+              horizontal: 18,
+              vertical: 18,
             ),
           ),
           validator: validator,
         ),
       ],
     );
+  }
+}
+
+class _SignUpFeature {
+  const _SignUpFeature({
+    required this.icon,
+    required this.title,
+    required this.body,
+  });
+
+  final IconData icon;
+  final String title;
+  final String body;
+}
+
+class _SignUpBackgroundPainter extends CustomPainter {
+  const _SignUpBackgroundPainter(this.progress);
+
+  final double progress;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = Offset.zero & size;
+    final eased = Curves.easeInOut.transform(progress);
+    final begin = Alignment.lerp(Alignment.topLeft, Alignment.topRight, eased)!;
+    final end = Alignment.lerp(
+      Alignment.bottomRight,
+      Alignment.bottomLeft,
+      eased,
+    )!;
+
+    final basePaint = Paint()
+      ..shader = LinearGradient(
+        begin: begin,
+        end: end,
+        colors: const [
+          Color(0xFFFDFEFF),
+          Color(0xFFEAF5FF),
+          Color(0xFFF7FBFF),
+          Color(0xFFE3F8FF),
+        ],
+        stops: const [0, 0.38, 0.68, 1],
+      ).createShader(rect);
+    canvas.drawRect(rect, basePaint);
+
+    final width = size.width;
+    final height = size.height;
+    final phase = progress * math.pi * 2;
+
+    final highlightPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeWidth = math.max(120, size.shortestSide * 0.18)
+      ..color = const Color(0xFF1976D2).withValues(alpha: 0.055)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 54);
+    final path = Path()
+      ..moveTo(-width * 0.2, height * (0.22 + math.sin(phase) * 0.03))
+      ..cubicTo(
+        width * 0.24,
+        height * (0.02 + math.cos(phase) * 0.04),
+        width * 0.58,
+        height * (0.54 + math.sin(phase) * 0.03),
+        width * 1.2,
+        height * (0.25 + math.cos(phase) * 0.03),
+      );
+    canvas.drawPath(path, highlightPaint);
+
+    final lowerPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeWidth = math.max(90, size.shortestSide * 0.13)
+      ..color = const Color(0xFF62D6E8).withValues(alpha: 0.05)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 46);
+    final lowerPath = Path()
+      ..moveTo(width * 0.36, height * 1.12)
+      ..cubicTo(
+        width * (0.46 + math.sin(phase) * 0.04),
+        height * 0.78,
+        width * (0.72 + math.cos(phase) * 0.03),
+        height * 0.95,
+        width * 1.16,
+        height * (0.65 + math.sin(phase) * 0.04),
+      );
+    canvas.drawPath(lowerPath, lowerPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _SignUpBackgroundPainter oldDelegate) {
+    return oldDelegate.progress != progress;
   }
 }

@@ -59,7 +59,7 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
     return _products.isNotEmpty ? _products.first : null;
   }
 
-  String get _monthlyPriceLabel => _selectedProduct?.price ?? '100 ₪';
+  String get _monthlyPriceLabel => _selectedProduct?.price ?? '99.90 ₪';
 
   static const List<Map<String, dynamic>> _proCapabilities = [
     {
@@ -847,7 +847,7 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
                   Text(
                     _products.isNotEmpty
                         ? _products.first.price.split(' ')[0]
-                        : '100',
+                        : '99.90',
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 48,

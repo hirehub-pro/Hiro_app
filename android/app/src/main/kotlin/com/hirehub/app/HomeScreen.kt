@@ -1,6 +1,5 @@
-package com.example.untitled1
+package com.hirehub.app
 
-import com.hiro.hiroapp.R
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -62,12 +61,12 @@ fun HeaderSection() {
             ) {
                 Column {
                     Text(
-                        text = stringResource(R.string.welcome_back),
+                        text = "Welcome back",
                         color = Color.White.copy(alpha = 0.8f),
                         fontSize = 16.sp
                     )
                     Text(
-                        text = stringResource(R.string.find_local_pros),
+                        text = "Find local pros",
                         color = Color.White,
                         fontSize = 24.sp,
                         fontWeight = FontWeight.Bold
@@ -92,7 +91,7 @@ fun HeaderSection() {
                     .background(Color.White.copy(alpha = 0.1f), RoundedCornerShape(12.dp)),
                 placeholder = {
                     Text(
-                        text = stringResource(R.string.search_hint),
+                        text = "Search...",
                         color = Color.White.copy(alpha = 0.7f)
                     )
                 },
@@ -122,14 +121,14 @@ fun CategoriesSection() {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = stringResource(R.string.categories),
+                text = "Categories",
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color.Black
             )
             TextButton(onClick = { /* TODO */ }) {
                 Text(
-                    text = stringResource(R.string.see_all) + " →",
+                    text = "See all →",
                     color = Color(0xFF1976D2),
                     fontSize = 14.sp
                 )
@@ -137,14 +136,14 @@ fun CategoriesSection() {
         }
         Spacer(modifier = Modifier.height(16.dp))
         val categories = listOf(
-            CategoryItem(stringResource(R.string.plumber), Color(0xFFE3F2FD), Color(0xFF1E88E5)),
-            CategoryItem(stringResource(R.string.carpenter), Color(0xFFFFF8E1), Color(0xFFFFA000)),
-            CategoryItem(stringResource(R.string.electrician), Color(0xFFFFFDE7), Color(0xFFFBC02D)),
-            CategoryItem(stringResource(R.string.painter), Color(0xFFFCE4EC), Color(0xFFD81B60)),
-            CategoryItem(stringResource(R.string.cleaner), Color(0xFFE8F5E9), Color(0xFF43A047)),
-            CategoryItem(stringResource(R.string.handyman), Color(0xFFF3E5F5), Color(0xFF8E24AA)),
-            CategoryItem(stringResource(R.string.landscaper), Color(0xFFE8F5E9), Color(0xFF2E7D32)),
-            CategoryItem(stringResource(R.string.hvac), Color(0xFFE0F7FA), Color(0xFF00ACC1))
+            CategoryItem("Plumber", Color(0xFFE3F2FD), Color(0xFF1E88E5)),
+            CategoryItem("Carpenter", Color(0xFFFFF8E1), Color(0xFFFFA000)),
+            CategoryItem("Electrician", Color(0xFFFFFDE7), Color(0xFFFBC02D)),
+            CategoryItem("Painter", Color(0xFFFCE4EC), Color(0xFFD81B60)),
+            CategoryItem("Cleaner", Color(0xFFE8F5E9), Color(0xFF43A047)),
+            CategoryItem("Handyman", Color(0xFFF3E5F5), Color(0xFF8E24AA)),
+            CategoryItem("Landscaper", Color(0xFFE8F5E9), Color(0xFF2E7D32)),
+            CategoryItem("HVAC", Color(0xFFE0F7FA), Color(0xFF00ACC1))
         )
         LazyVerticalGrid(
             columns = GridCells.Fixed(4),
@@ -194,20 +193,19 @@ fun TopRatedSection() {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = stringResource(R.string.top_rated),
+                text = "Top Rated",
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color.Black
             )
             TextButton(onClick = { /* TODO */ }) {
                 Text(
-                    text = stringResource(R.string.view_all) + " →",
+                    text = "View all →",
                     color = Color(0xFF1976D2),
                     fontSize = 14.sp
                 )
             }
         }
-        // Placeholder for list of top rated pros
     }
 }
 
@@ -219,25 +217,25 @@ fun BottomNavigationBar() {
     ) {
         NavigationBarItem(
             icon = { IconPlaceholder(modifier = Modifier.size(24.dp), color = Color(0xFF1976D2)) },
-            label = { Text(stringResource(R.string.home)) },
+            label = { Text("Home") },
             selected = true,
             onClick = { /* TODO */ }
         )
         NavigationBarItem(
             icon = { IconPlaceholder(modifier = Modifier.size(24.dp), color = Color.Gray) },
-            label = { Text(stringResource(R.string.search)) },
+            label = { Text("Search") },
             selected = false,
             onClick = { /* TODO */ }
         )
         NavigationBarItem(
             icon = { IconPlaceholder(modifier = Modifier.size(24.dp), color = Color.Gray) },
-            label = { Text(stringResource(R.string.messages)) },
+            label = { Text("Messages") },
             selected = false,
             onClick = { /* TODO */ }
         )
         NavigationBarItem(
             icon = { IconPlaceholder(modifier = Modifier.size(24.dp), color = Color.Gray) },
-            label = { Text(stringResource(R.string.profile)) },
+            label = { Text("Profile") },
             selected = false,
             onClick = { /* TODO */ }
         )
