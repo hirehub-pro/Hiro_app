@@ -55,8 +55,8 @@ exports.sendChatPushOnNotificationCreate = onDocumentCreated(
         return;
       }
 
-      const fcmToken = userDoc.get("fcmToken");
-      if (!fcmToken || typeof fcmToken !== "string") {
+      const fcmTokens = await getUserFcmTokens(userDoc);
+      if (fcmTokens.length === 0) {
         logger.info("No FCM token for user", {userId});
         return;
       }
@@ -69,7 +69,7 @@ exports.sendChatPushOnNotificationCreate = onDocumentCreated(
       const requestStatus = payload.status || "";
 
       const message = {
-        token: fcmToken,
+        tokens: fcmTokens,
         notification: {
           title,
           body,
@@ -101,12 +101,22 @@ exports.sendChatPushOnNotificationCreate = onDocumentCreated(
       };
 
       try {
-        await admin.messaging().send(message);
-        logger.info("Notification push sent", {
+        const response = await admin.messaging().sendEachForMulticast(message);
+        await cleanupInvalidFcmTokens(userDoc.ref, fcmTokens, response.responses);
+        const failureCodes = summarizeMessagingFailures(response.responses);
+        const logPayload = {
           userId,
           notificationId: snap.id,
           type: payload.type,
-        });
+          successCount: response.successCount,
+          failureCount: response.failureCount,
+          failureCodes,
+        };
+        if (response.successCount > 0) {
+          logger.info("Notification push sent", logPayload);
+        } else {
+          logger.error("Notification push failed for all tokens", logPayload);
+        }
       } catch (error) {
         logger.error("Failed to send notification push", {
           userId,
@@ -116,6 +126,58 @@ exports.sendChatPushOnNotificationCreate = onDocumentCreated(
       }
     },
 );
+
+async function getUserFcmTokens(userDoc) {
+  const tokens = new Set();
+  const legacyToken = userDoc.get("fcmToken");
+  if (typeof legacyToken === "string" && legacyToken.trim()) {
+    tokens.add(legacyToken.trim());
+  }
+
+  const tokenSnap = await userDoc.ref.collection("deviceTokens").limit(100).get();
+  tokenSnap.forEach((doc) => {
+    const token = doc.get("token");
+    if (typeof token === "string" && token.trim()) {
+      tokens.add(token.trim());
+    }
+  });
+
+  return Array.from(tokens).slice(0, 500);
+}
+
+async function cleanupInvalidFcmTokens(userRef, tokens, responses) {
+  const invalidCodes = new Set([
+    "messaging/registration-token-not-registered",
+    "messaging/invalid-registration-token",
+  ]);
+  const deletes = [];
+
+  responses.forEach((response, index) => {
+    const code = response.error?.code;
+    if (!code || !invalidCodes.has(code)) return;
+    deletes.push(
+        userRef
+            .collection("deviceTokens")
+            .where("token", "==", tokens[index])
+            .limit(10)
+            .get()
+            .then((snapshot) => Promise.all(
+                snapshot.docs.map((doc) => doc.ref.delete()),
+            )),
+    );
+  });
+
+  await Promise.all(deletes);
+}
+
+function summarizeMessagingFailures(responses) {
+  return responses.reduce((summary, response) => {
+    const code = response.error?.code;
+    if (!code) return summary;
+    summary[code] = (summary[code] || 0) + 1;
+    return summary;
+  }, {});
+}
 
 exports.handleGooglePlaySubscriptionNotification = onMessagePublished(
     {

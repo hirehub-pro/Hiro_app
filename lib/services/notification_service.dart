@@ -6,6 +6,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:crypto/crypto.dart';
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {}
@@ -87,24 +88,48 @@ class NotificationService {
       );
 
       if (settings.authorizationStatus == AuthorizationStatus.authorized) {
-        String? token = await _messaging.getToken();
+        String? token = await _getMessagingToken();
         if (token != null) {
           final firestore = FirebaseFirestore.instance;
+          final platform = Platform.isAndroid ? 'android' : 'ios';
+          final tokenId = sha256.convert(utf8.encode(token)).toString();
           final data = {
             'fcmToken': token,
             'lastTokenUpdate': FieldValue.serverTimestamp(),
-            'platform': Platform.isAndroid ? 'android' : 'ios',
+            'platform': platform,
           };
-          // Save token to the unified 'users' collection
-          await firestore
-              .collection('users')
-              .doc(user.uid)
-              .set(data, SetOptions(merge: true));
+          final userRef = firestore.collection('users').doc(user.uid);
+          final deviceTokenRef = userRef
+              .collection('deviceTokens')
+              .doc(tokenId);
+
+          await firestore.runTransaction((transaction) async {
+            transaction.set(userRef, data, SetOptions(merge: true));
+            transaction.set(deviceTokenRef, {
+              'token': token,
+              'platform': platform,
+              'updatedAt': FieldValue.serverTimestamp(),
+            }, SetOptions(merge: true));
+          });
+
+          debugPrint("Saved $platform FCM token for user ${user.uid}");
         }
       }
     } catch (e) {
       debugPrint("Error saving FCM token: $e");
     }
+  }
+
+  static Future<String?> _getMessagingToken() async {
+    if (Platform.isIOS) {
+      for (var attempt = 0; attempt < 5; attempt++) {
+        final apnsToken = await _messaging.getAPNSToken();
+        if (apnsToken != null) break;
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+      }
+    }
+
+    return _messaging.getToken();
   }
 
   static void startListening() {
@@ -149,7 +174,7 @@ class NotificationService {
               id: snapshot.docs.first.id.hashCode,
               title: data['title'] ?? 'New Notification',
               body: data['body'] ?? '',
-              payload: jsonEncode(data),
+              payload: _encodePayload(data),
             );
           }
         });
@@ -172,10 +197,42 @@ class NotificationService {
               id: snapshot.docs.first.id.hashCode,
               title: data['title'] ?? 'System Broadcast',
               body: data['message'] ?? '',
-              payload: jsonEncode({'type': 'broadcast', ...data}),
+              payload: _encodePayload({'type': 'broadcast', ...data}),
             );
           }
         });
+  }
+
+  static String _encodePayload(Map<String, dynamic> payload) {
+    return jsonEncode(_jsonSafe(payload));
+  }
+
+  static Object? _jsonSafe(Object? value) {
+    if (value == null || value is num || value is bool || value is String) {
+      return value;
+    }
+    if (value is Timestamp) {
+      return value.toDate().toIso8601String();
+    }
+    if (value is DateTime) {
+      return value.toIso8601String();
+    }
+    if (value is GeoPoint) {
+      return {'latitude': value.latitude, 'longitude': value.longitude};
+    }
+    if (value is DocumentReference) {
+      return value.path;
+    }
+    if (value is Iterable) {
+      return value.map(_jsonSafe).toList();
+    }
+    if (value is Map) {
+      return value.map(
+        (key, entryValue) => MapEntry(key.toString(), _jsonSafe(entryValue)),
+      );
+    }
+
+    return value.toString();
   }
 
   static void stopListening() {

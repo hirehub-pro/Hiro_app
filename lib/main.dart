@@ -72,7 +72,6 @@ class _MyAppState extends State<MyApp> {
   Future<void> _initializeApp() async {
     Object? initializationError;
     var firebaseInitialized = false;
-    final isIos = !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
 
     try {
       await _ensureFirebaseInitialized().timeout(
@@ -83,24 +82,28 @@ class _MyAppState extends State<MyApp> {
       );
       debugPrint('Startup: Firebase.initializeApp completed');
 
-      try {
-        await FirebaseAppCheck.instance.activate(
-          // Use debug providers on non-release builds to avoid local
-          // attestation failures (especially iOS profile/dev runs).
-          providerAndroid: kDebugMode
-              ? const AndroidDebugProvider()
-              : const AndroidPlayIntegrityProvider(),
-          providerApple: kDebugMode
-              ? const AppleDebugProvider()
-              : const AppleAppAttestWithDeviceCheckFallbackProvider(),
-        );
-      } catch (e) {
-        debugPrint('App Check activation warning: $e');
-      }
-
-      if (isIos) {
+      if (_shouldEnableAppCheck()) {
+        try {
+          await FirebaseAppCheck.instance.activate(
+            // In non-release builds we use debug providers, but we only enable
+            // App Check locally when explicitly requested via dart-define.
+            providerAndroid: kReleaseMode
+                ? const AndroidPlayIntegrityProvider()
+                : const AndroidDebugProvider(),
+            providerApple: kReleaseMode
+                ? const AppleAppAttestWithDeviceCheckFallbackProvider()
+                : const AppleDebugProvider(),
+          );
+          debugPrint('Startup: Firebase App Check activated');
+        } on FirebaseException catch (e) {
+          debugPrint('App Check activation warning (${e.code}): ${e.message}');
+        } catch (e) {
+          debugPrint('App Check activation warning: $e');
+        }
+      } else {
         debugPrint(
-          'iOS diagnostic mode: skipping notification init during startup.',
+          'Startup: Firebase App Check skipped for local non-release build. '
+          'Set --dart-define=ENABLE_FIREBASE_APP_CHECK=true to test App Check locally.',
         );
       }
 
@@ -113,22 +116,18 @@ class _MyAppState extends State<MyApp> {
         await FirebaseAuth.instance.setSettings(forceRecaptchaFlow: true);
       }
 
-      if (!isIos) {
+      if (!kIsWeb) {
         FirebaseFirestore.instance.settings = const Settings(
           persistenceEnabled: true,
           cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
         );
 
+        _attachNotificationTapListener();
         await NotificationService.init().timeout(
           const Duration(seconds: 5),
           onTimeout: () => debugPrint("Notification initialization timed out"),
         );
         await AnalyticsService.logAppOpen();
-        _attachNotificationTapListener();
-      } else {
-        debugPrint(
-          'iOS diagnostic mode: skipping Firestore settings and analytics during startup.',
-        );
       }
       firebaseInitialized = true;
     } catch (e, stack) {
@@ -167,6 +166,17 @@ class _MyAppState extends State<MyApp> {
       Firebase.app();
       debugPrint('Startup: reused existing default Firebase app');
     }
+  }
+
+  bool _shouldEnableAppCheck() {
+    // Keep local development stable by default; App Check is always enabled in
+    // release builds. Opt-in locally via:
+    // --dart-define=ENABLE_FIREBASE_APP_CHECK=true
+    const enableForLocal = bool.fromEnvironment(
+      'ENABLE_FIREBASE_APP_CHECK',
+      defaultValue: false,
+    );
+    return kReleaseMode || enableForLocal;
   }
 
   void _attachNotificationTapListener() {
