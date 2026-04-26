@@ -266,8 +266,7 @@ class _SubscriptionPageState extends State<SubscriptionPage>
 
   Future<void> _refreshLinkedAccountNotice() async {
     final linkedElsewhere =
-        await SubscriptionAccessService
-            .isCurrentGooglePlaySubscriptionLinkedToAnotherAccount();
+        await SubscriptionAccessService.isCurrentGooglePlaySubscriptionLinkedToAnotherAccount();
     if (!mounted) return;
 
     setState(() {
@@ -655,20 +654,11 @@ class _SubscriptionPageState extends State<SubscriptionPage>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _buildAnimatedEntry(
-          delay: 0.0,
-          child: _buildHeaderPill(),
-        ),
+        _buildAnimatedEntry(delay: 0.0, child: _buildHeaderPill()),
         const SizedBox(height: 28),
-        _buildAnimatedEntry(
-          delay: 0.08,
-          child: _buildMainHeading(),
-        ),
+        _buildAnimatedEntry(delay: 0.08, child: _buildMainHeading()),
         const SizedBox(height: 32),
-        _buildAnimatedEntry(
-          delay: 0.14,
-          child: _buildPricingCard(),
-        ),
+        _buildAnimatedEntry(delay: 0.14, child: _buildPricingCard()),
         const SizedBox(height: 28),
         if (_storeNotice != null) ...[
           _buildAnimatedEntry(
@@ -677,20 +667,11 @@ class _SubscriptionPageState extends State<SubscriptionPage>
           ),
           const SizedBox(height: 22),
         ],
-        _buildAnimatedEntry(
-          delay: 0.26,
-          child: _buildProCapabilitiesSection(),
-        ),
+        _buildAnimatedEntry(delay: 0.26, child: _buildProCapabilitiesSection()),
         const SizedBox(height: 28),
-        _buildAnimatedEntry(
-          delay: 0.32,
-          child: _buildHowItWorks(),
-        ),
+        _buildAnimatedEntry(delay: 0.32, child: _buildHowItWorks()),
         const SizedBox(height: 28),
-        _buildAnimatedEntry(
-          delay: 0.38,
-          child: _buildGrowthStats(),
-        ),
+        _buildAnimatedEntry(delay: 0.38, child: _buildGrowthStats()),
         const SizedBox(height: 140),
       ],
     );
@@ -819,38 +800,41 @@ class _SubscriptionPageState extends State<SubscriptionPage>
             ),
           ),
           const SizedBox(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.baseline,
-            textBaseline: TextBaseline.alphabetic,
-            children: [
-              Text(
-                _monthlyPriceLabel.split(' ')[0],
-                style: const TextStyle(
-                  color: Color(0xFF070B18),
-                  fontSize: 56,
-                  fontWeight: FontWeight.w900,
-                  height: 1,
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: [
+                Text(
+                  _monthlyPriceLabel.split(' ')[0],
+                  style: const TextStyle(
+                    color: Color(0xFF070B18),
+                    fontSize: 56,
+                    fontWeight: FontWeight.w900,
+                    height: 1,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 10),
-              const Text(
-                '₪ / חודש',
-                style: TextStyle(
-                  color: Color(0xFF6B7280),
-                  fontSize: 18,
-                  fontWeight: FontWeight.w500,
+                const SizedBox(width: 10),
+                const Text(
+                  '₪ / חודש',
+                  style: TextStyle(
+                    color: Color(0xFF6B7280),
+                    fontSize: 18,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
           const SizedBox(height: 32),
           const Divider(color: Color(0xFFE5E7EB), height: 1),
           const SizedBox(height: 32),
-          _buildFeatureRow('קבלת פניות (לידים) ללא הגבלה'),
-          _buildFeatureRow('תג "מקצוען" מוצמד לפרופיל'),
-          _buildFeatureRow('גישה לכלי ניהול מתקדמים'),
-          _buildFeatureRow('תמיכה טכנית מועדפת (VIP)'),
+          _buildFeatureRow('פניות ולידים ללא הגבלה'),
+          _buildFeatureRow('תג Pro בולט בפרופיל שלך'),
+          _buildFeatureRow('כלים לניהול עבודות ולקוחות'),
+          _buildFeatureRow('תמיכה מועדפת לעובדי Pro'),
         ],
       ),
     );
@@ -914,7 +898,10 @@ class _SubscriptionPageState extends State<SubscriptionPage>
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Icon(Icons.shopping_cart_outlined, size: 20),
+                              const Icon(
+                                Icons.shopping_cart_outlined,
+                                size: 20,
+                              ),
                               const SizedBox(width: 10),
                               Text(
                                 'הצטרפות ל-Pro · $_monthlyPriceLabel',
@@ -1161,25 +1148,26 @@ class _SubscriptionPageState extends State<SubscriptionPage>
 
   Widget _buildFeatureRow(String text) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10.0),
+      padding: const EdgeInsets.symmetric(vertical: 9),
       child: Row(
         children: [
           Container(
             padding: const EdgeInsets.all(4),
             decoration: const BoxDecoration(
-              color: Colors.white24,
+              color: Color(0xFF1976D2),
               shape: BoxShape.circle,
             ),
             child: const Icon(Icons.check, color: Colors.white, size: 16),
           ),
-          const SizedBox(width: 16),
+          const SizedBox(width: 14),
           Expanded(
             child: Text(
               text,
               style: const TextStyle(
-                color: Colors.white,
+                color: Color(0xFF111827),
                 fontSize: 17,
-                fontWeight: FontWeight.w400,
+                fontWeight: FontWeight.w800,
+                height: 1.3,
               ),
             ),
           ),

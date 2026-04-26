@@ -1,9 +1,11 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:untitled1/services/language_provider.dart';
 import 'package:untitled1/sign_in.dart';
@@ -21,7 +23,8 @@ class SettingsPage extends StatefulWidget {
   State<SettingsPage> createState() => _SettingsPageState();
 }
 
-class _SettingsPageState extends State<SettingsPage> {
+class _SettingsPageState extends State<SettingsPage>
+    with WidgetsBindingObserver {
   static const List<int> _displayWeekdayOrder = [7, 1, 2, 3, 4, 5, 6];
   bool _notificationsEnabled = true;
   bool _hideSchedule = false;
@@ -35,7 +38,21 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadSettings();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _syncNotificationPermissionState();
+    }
   }
 
   Future<void> _loadSettings() async {
@@ -57,10 +74,12 @@ class _SettingsPageState extends State<SettingsPage> {
 
       if (doc.exists) {
         final data = doc.data() as Map<String, dynamic>;
-        final scheduleData = scheduleDoc.data() as Map<String, dynamic>?;
+        final scheduleData = scheduleDoc.data();
         final defaultWorkingHours =
             scheduleData?['defaultWorkingHours'] as Map<String, dynamic>?;
-        final status = await Permission.notification.status;
+        final notificationsAllowed = await _isNotificationPermissionGranted();
+        if (!mounted) return;
+
         setState(() {
           _userData = data;
           _userRole = data['role'] ?? 'customer';
@@ -74,16 +93,17 @@ class _SettingsPageState extends State<SettingsPage> {
             defaultWorkingHours?['to']?.toString(),
             fallback: const TimeOfDay(hour: 16, minute: 0),
           );
-          _notificationsEnabled =
-              (data['notificationsEnabled'] ?? true) &&
-              !status.isPermanentlyDenied;
+          _notificationsEnabled = notificationsAllowed;
           _isLoadingSettings = false;
         });
+        await _updateSetting('notificationsEnabled', notificationsAllowed);
       } else {
+        if (!mounted) return;
         setState(() => _isLoadingSettings = false);
       }
     } catch (e) {
       debugPrint("Error loading settings: $e");
+      if (!mounted) return;
       setState(() => _isLoadingSettings = false);
     }
   }
@@ -177,31 +197,105 @@ class _SettingsPageState extends State<SettingsPage> {
 
   Future<void> _toggleNotifications(bool value) async {
     if (value) {
-      final status = await Permission.notification.request();
-      if (status.isGranted) {
+      final isAlreadyGranted = await _isNotificationPermissionGranted();
+      if (!mounted) return;
+
+      if (isAlreadyGranted) {
         setState(() => _notificationsEnabled = true);
         await _updateSetting('notificationsEnabled', true);
-      } else if (status.isPermanentlyDenied) {
-        if (mounted) {
-          _showPermissionDialog();
-        }
+        return;
+      }
+
+      final isGranted = await _requestNotificationPermission();
+      if (!mounted) return;
+
+      if (isGranted) {
+        setState(() => _notificationsEnabled = true);
+        await _updateSetting('notificationsEnabled', true);
+      } else if (await _isNotificationPermissionBlocked()) {
+        _showPermissionDialog();
         setState(() => _notificationsEnabled = false);
+        await _updateSetting('notificationsEnabled', false);
       } else {
         setState(() => _notificationsEnabled = false);
+        await _updateSetting('notificationsEnabled', false);
       }
     } else {
-      setState(() => _notificationsEnabled = false);
-      await _updateSetting('notificationsEnabled', false);
+      final isGranted = await _isNotificationPermissionGranted();
+      if (!mounted) return;
+
+      setState(() => _notificationsEnabled = isGranted);
+      if (isGranted) {
+        _showPermissionDialog(messageKey: 'permission_controlled_by_phone');
+      } else {
+        await _updateSetting('notificationsEnabled', false);
+      }
     }
   }
 
-  void _showPermissionDialog() {
+  Future<bool> _requestNotificationPermission() async {
+    if (Platform.isIOS || Platform.isMacOS) {
+      final settings = await FirebaseMessaging.instance.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+      return settings.authorizationStatus == AuthorizationStatus.authorized ||
+          settings.authorizationStatus == AuthorizationStatus.provisional;
+    }
+
+    if (Platform.isAndroid) {
+      final notificationsPlugin = FlutterLocalNotificationsPlugin();
+      final androidPlugin = notificationsPlugin
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >();
+      final granted = await androidPlugin?.requestNotificationsPermission();
+      if (granted != null) return granted;
+    }
+
+    final status = await Permission.notification.request();
+    return status.isGranted;
+  }
+
+  Future<bool> _isNotificationPermissionGranted() async {
+    if (Platform.isIOS || Platform.isMacOS) {
+      final settings = await FirebaseMessaging.instance
+          .getNotificationSettings();
+      return settings.authorizationStatus == AuthorizationStatus.authorized ||
+          settings.authorizationStatus == AuthorizationStatus.provisional;
+    }
+
+    final status = await Permission.notification.status;
+    return status.isGranted;
+  }
+
+  Future<bool> _isNotificationPermissionBlocked() async {
+    if (Platform.isIOS || Platform.isMacOS) {
+      final settings = await FirebaseMessaging.instance
+          .getNotificationSettings();
+      return settings.authorizationStatus == AuthorizationStatus.denied;
+    }
+
+    final status = await Permission.notification.status;
+    return status.isPermanentlyDenied;
+  }
+
+  Future<void> _syncNotificationPermissionState() async {
+    final isGranted = await _isNotificationPermissionGranted();
+    if (!mounted) return;
+
+    setState(() => _notificationsEnabled = isGranted);
+    await _updateSetting('notificationsEnabled', isGranted);
+  }
+
+  void _showPermissionDialog({String messageKey = 'permission_denied'}) {
     final strings = _getLocalizedStrings(context, listen: false);
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: Text(strings['notifications']!),
-        content: Text(strings['permission_denied']!),
+        content: Text(strings[messageKey]!),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -252,6 +346,8 @@ class _SettingsPageState extends State<SettingsPage> {
           'days': 'א,ב,ג,ד,ה,ו,ש',
           'permission_denied':
               'התראות חסומות בהגדרות המכשיר. האם תרצה לפתוח את ההגדרות?',
+          'permission_controlled_by_phone':
+              'כדי לכבות התראות צריך לשנות את הרשאת ההתראות בהגדרות המכשיר.',
           'settings': 'הגדרות',
           'cancel': 'ביטול',
         };
@@ -279,6 +375,8 @@ class _SettingsPageState extends State<SettingsPage> {
           'days': 'ح,ن,ث,ر,خ,ج,س',
           'permission_denied':
               'الإشعارات محظورة في إعدادات الجهاز. هل تريد فتح الإعدادات؟',
+          'permission_controlled_by_phone':
+              'لإيقاف الإشعارات، غيّر إذن الإشعارات من إعدادات الجهاز.',
           'settings': 'الإعدادات',
           'cancel': 'إلغاء',
         };
@@ -306,6 +404,8 @@ class _SettingsPageState extends State<SettingsPage> {
           'days': 'Вс,Пн,Вт,Ср,Чт,Пт,Сб',
           'permission_denied':
               'Уведомления заблокированы в настройках устройства. Открыть настройки?',
+          'permission_controlled_by_phone':
+              'Чтобы выключить уведомления, измените разрешение уведомлений в настройках устройства.',
           'settings': 'Настройки',
           'cancel': 'Отмена',
         };
@@ -332,6 +432,8 @@ class _SettingsPageState extends State<SettingsPage> {
           'select_off_days': 'ቋሚ የእረፍት ቀናትን ይምረጡ',
           'days': 'እ,ሰ,ማ,ረ,ሐ,ዓ,ቅ',
           'permission_denied': 'ማሳወቂያዎች በመሣሪያው ቅንብሮች ውስጥ ታግደዋል። ቅንብሮቹን ልክፈት?',
+          'permission_controlled_by_phone':
+              'ማሳወቂያዎችን ለማጥፋት በመሣሪያው ቅንብሮች ውስጥ የማሳወቂያ ፈቃዱን ይቀይሩ።',
           'settings': 'ቅንብሮች',
           'cancel': 'ሰርዝ',
         };
@@ -359,6 +461,8 @@ class _SettingsPageState extends State<SettingsPage> {
           'days': 'Su,Mo,Tu,We,Th,Fr,Sa',
           'permission_denied':
               'Notifications are blocked in system settings. Would you like to open settings?',
+          'permission_controlled_by_phone':
+              'To turn notifications off, change the notification permission in your phone settings.',
           'settings': 'Settings',
           'cancel': 'Cancel',
         };
