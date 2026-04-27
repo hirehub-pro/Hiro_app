@@ -52,6 +52,8 @@ class _SendRequestPageState extends State<SendRequestPage> {
   Position? _currentPosition;
   LatLng? _selectedLocation;
   String? _locationSelectionMode;
+  String? _providerLocationName;
+  LatLng? _providerLocation;
   bool _isLoading = false;
   bool _isLocating = false;
 
@@ -87,8 +89,12 @@ class _SendRequestPageState extends State<SendRequestPage> {
       _fromTime = const TimeOfDay(hour: 8, minute: 0);
       _toTime = const TimeOfDay(hour: 16, minute: 0);
     }
-    if (!widget.isQuoteRequest && !_customerTravels && !_onlineOnly) {
-      _fetchLocation();
+    if (!widget.isQuoteRequest && !_onlineOnly) {
+      if (_customerTravels) {
+        _fetchProviderLocation();
+      } else {
+        _fetchLocation();
+      }
     }
   }
 
@@ -157,6 +163,35 @@ class _SendRequestPageState extends State<SendRequestPage> {
       _selectedLocation = picked;
       _locationSelectionMode = 'map';
     });
+  }
+
+  Future<void> _fetchProviderLocation() async {
+    try {
+      final workerDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.workerId)
+          .get();
+      final workerData = workerDoc.data();
+      if (workerData == null || !mounted) return;
+
+      final locationName =
+          (workerData['town'] ?? workerData['address'] ?? widget.workerName)
+              .toString()
+              .trim();
+      final lat = (workerData['workCenterLat'] ?? workerData['lat']) as num?;
+      final lng = (workerData['workCenterLng'] ?? workerData['lng']) as num?;
+
+      setState(() {
+        _providerLocationName = locationName.isEmpty
+            ? widget.workerName
+            : locationName;
+        if (lat != null && lng != null) {
+          _providerLocation = LatLng(lat.toDouble(), lng.toDouble());
+        }
+      });
+    } catch (e) {
+      debugPrint('Error fetching provider location: $e');
+    }
   }
 
   Map<String, String> _getLocalizedStrings(BuildContext context) {
@@ -242,8 +277,13 @@ class _SendRequestPageState extends State<SendRequestPage> {
           'choose_from_map': 'בחר מהמפה',
           'from': 'מ-',
           'to': 'עד',
+          'at': 'בשעה',
           'time_window': 'שעות עבודה',
           'time_window_helper': 'בחר את טווח השעות המבוקש לעבודה.',
+          'at_time': _onlineOnly ? 'שעת הפגישה' : 'שעת התור',
+          'at_time_helper': _onlineOnly
+              ? 'בחר את השעה המדויקת לפגישה האונליין.'
+              : 'בחר את השעה המדויקת לתור אצל בעל המקצוע.',
           'send': 'שלח בקשה',
           'send_cta': 'שלח עכשיו',
           'req': 'שדה חובה',
@@ -341,8 +381,13 @@ class _SendRequestPageState extends State<SendRequestPage> {
           'choose_from_map': 'اختر من الخريطة',
           'from': 'من',
           'to': 'إلى',
+          'at': 'الساعة',
           'time_window': 'ساعات العمل',
           'time_window_helper': 'اختر الفترة الزمنية المطلوبة للعمل.',
+          'at_time': _onlineOnly ? 'وقت الجلسة' : 'وقت الموعد',
+          'at_time_helper': _onlineOnly
+              ? 'اختر الوقت المحدد لجلسة الأونلاين.'
+              : 'اختر الوقت المحدد للموعد عند المحترف.',
           'send': 'إرسال الطلب',
           'send_cta': 'إرسال الآن',
           'req': 'مطلوب',
@@ -441,8 +486,13 @@ class _SendRequestPageState extends State<SendRequestPage> {
           'choose_from_map': 'Choose from map',
           'from': 'From',
           'to': 'To',
+          'at': 'At',
           'time_window': 'Time Window',
           'time_window_helper': 'Choose the requested working hours.',
+          'at_time': _onlineOnly ? 'Session Time' : 'Appointment Time',
+          'at_time_helper': _onlineOnly
+              ? 'Choose the exact time for the online session.'
+              : 'Choose the exact time for the appointment at the professional location.',
           'send': 'Send Request',
           'send_cta': 'Send Now',
           'req': 'Required',
@@ -480,6 +530,7 @@ class _SendRequestPageState extends State<SendRequestPage> {
   }
 
   bool _hasValidTimeRange() {
+    if (_customerTravels || _onlineOnly) return true;
     if (_fromTime == null || _toTime == null) return true;
     final fromMinutes = (_fromTime!.hour * 60) + _fromTime!.minute;
     final toMinutes = (_toTime!.hour * 60) + _toTime!.minute;
@@ -564,8 +615,12 @@ class _SendRequestPageState extends State<SendRequestPage> {
       final fStr = !widget.isQuoteRequest && _fromTime != null
           ? '${_fromTime!.hour.toString().padLeft(2, '0')}:${_fromTime!.minute.toString().padLeft(2, '0')}'
           : null;
-      final tStr = !widget.isQuoteRequest && _toTime != null
-          ? '${_toTime!.hour.toString().padLeft(2, '0')}:${_toTime!.minute.toString().padLeft(2, '0')}'
+      final tStr = !widget.isQuoteRequest
+          ? (_customerTravels || _onlineOnly)
+                ? fStr
+                : _toTime != null
+                ? '${_toTime!.hour.toString().padLeft(2, '0')}:${_toTime!.minute.toString().padLeft(2, '0')}'
+                : null
           : null;
 
       final professionLabel = widget.professionName?.trim();
@@ -600,13 +655,9 @@ class _SendRequestPageState extends State<SendRequestPage> {
       final notifBody = widget.isQuoteRequest
           ? '$userName ($userTown) requested a quote.'
           : _onlineOnly
-          ? (widget.isExtraHours
-                ? '$userName requested an online session on $dStr from $fStr to $tStr.'
-                : '$userName requested an online session on $dStr.')
+          ? '$userName requested an online session on $dStr at $fStr.'
           : _customerTravels
-          ? (widget.isExtraHours
-                ? '$userName requested an appointment on $dStr from $fStr to $tStr.'
-                : '$userName requested an appointment on $dStr.')
+          ? '$userName requested an appointment on $dStr at $fStr.'
           : !widget.isExtraHours
           ? '$userName ($userTown) requested you to work on $dStr.'
           : '$userName ($userTown) requested you to work on $dStr from $fStr to $tStr.';
@@ -800,7 +851,7 @@ class _SendRequestPageState extends State<SendRequestPage> {
                           ],
                           const SizedBox(height: 16),
                           _buildSectionCard(child: _buildImageSection(strings)),
-                          if (!widget.isQuoteRequest) ...[
+                          if (!widget.isQuoteRequest && !_onlineOnly) ...[
                             const SizedBox(height: 16),
                             _buildSectionCard(
                               child: _buildLocationCard(strings),
@@ -1187,6 +1238,33 @@ class _SendRequestPageState extends State<SendRequestPage> {
   }
 
   Widget _buildTimeSection(Map<String, String> strings) {
+    if (_customerTravels || _onlineOnly) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildSectionHeader(
+            icon: Icons.schedule_rounded,
+            title: strings['at_time']!,
+            subtitle: strings['at_time_helper'],
+          ),
+          const SizedBox(height: 14),
+          _buildTimePickerTile(
+            label: strings['at']!,
+            value: _fromTime!.format(context),
+            onTap: () async {
+              final picked = await showTimePicker(
+                context: context,
+                initialTime: _fromTime!,
+              );
+              if (picked != null) {
+                setState(() => _fromTime = picked);
+              }
+            },
+          ),
+        ],
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1476,7 +1554,10 @@ class _SendRequestPageState extends State<SendRequestPage> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    strings['appointment_place_helper']!,
+                    _providerLocationName == null ||
+                            _providerLocationName!.isEmpty
+                        ? strings['appointment_place_helper']!
+                        : '${strings['appointment_place_helper']}\n\n${_providerLocationName!}${_providerLocation != null ? ' (${_providerLocation!.latitude.toStringAsFixed(4)}, ${_providerLocation!.longitude.toStringAsFixed(4)})' : ''}',
                     style: const TextStyle(
                       color: Color(0xFF475569),
                       height: 1.4,

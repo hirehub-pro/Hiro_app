@@ -19,6 +19,51 @@ class SearchPage extends StatefulWidget {
   State<SearchPage> createState() => _SearchPageState();
 }
 
+class _SearchBackgroundLayer extends StatelessWidget {
+  const _SearchBackgroundLayer();
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(painter: _SearchBackgroundPainter());
+  }
+}
+
+class _SearchBackgroundPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = Offset.zero & size;
+    final basePaint = Paint()
+      ..shader = const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [
+          Color(0xFFFDFEFF),
+          Color(0xFFEAF5FF),
+          Color(0xFFF7FBFF),
+          Color(0xFFE3F8FF),
+        ],
+        stops: [0, 0.38, 0.68, 1],
+      ).createShader(rect);
+    canvas.drawRect(rect, basePaint);
+
+    final glowPaint = Paint()
+      ..color = const Color(0xFF1976D2).withValues(alpha: 0.07);
+    canvas.drawCircle(
+      Offset(size.width * 0.18, size.height * 0.12),
+      size.shortestSide * 0.26,
+      glowPaint,
+    );
+    canvas.drawCircle(
+      Offset(size.width * 0.85, size.height * 0.3),
+      size.shortestSide * 0.23,
+      glowPaint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
 class _SearchPageState extends State<SearchPage> {
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
@@ -849,57 +894,105 @@ class _SearchPageState extends State<SearchPage> {
     }
   }
 
+  BoxDecoration _surfaceDecoration({
+    double radius = 24,
+    bool elevated = true,
+    Color? tint,
+  }) {
+    return BoxDecoration(
+      color: Colors.white.withValues(alpha: 0.9),
+      borderRadius: BorderRadius.circular(radius),
+      border: Border.all(color: Colors.white.withValues(alpha: 0.95)),
+      boxShadow: elevated
+          ? [
+              BoxShadow(
+                color: (tint ?? const Color(0xFF1B2A41)).withValues(alpha: 0.1),
+                blurRadius: 30,
+                offset: const Offset(0, 14),
+              ),
+            ]
+          : const [],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final locale = Provider.of<LanguageProvider>(context).locale.languageCode;
     final themeColor = _getThemeColor();
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
-      appBar: AppBar(
-        elevation: 0,
-        backgroundColor: themeColor,
-        leading: _showWorkerList
-            ? IconButton(
-                icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
-                onPressed: () {
-                  setState(() {
-                    _showWorkerList = false;
-                    _selectedProfession = null;
-                    _allWorkers = [];
-                    _filteredWorkers = [];
-                    _searchController.clear();
-                    _applyFilters();
-                  });
-                },
-              )
-            : null,
-        title: _buildSearchField(locale, themeColor),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.place_outlined, color: Colors.white),
-            onPressed: _openLocationManager,
-          ),
-          if (_showWorkerList)
-            IconButton(
-              icon: const Icon(Icons.tune_rounded, color: Colors.white),
-              onPressed: () => _showSortOptions(locale, themeColor),
+      backgroundColor: const Color(0xFFF7FBFF),
+      body: Stack(
+        children: [
+          const Positioned.fill(child: _SearchBackgroundLayer()),
+          SafeArea(
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+                  child: Container(
+                    decoration: _surfaceDecoration(radius: 22, elevated: false),
+                    padding: const EdgeInsets.all(8),
+                    child: Row(
+                      children: [
+                        if (_showWorkerList)
+                          IconButton(
+                            icon: const Icon(
+                              Icons.arrow_back_rounded,
+                              color: Color(0xFF111827),
+                            ),
+                            onPressed: () {
+                              setState(() {
+                                _showWorkerList = false;
+                                _selectedProfession = null;
+                                _allWorkers = [];
+                                _filteredWorkers = [];
+                                _searchController.clear();
+                                _applyFilters();
+                              });
+                            },
+                          ),
+                        Expanded(child: _buildSearchField(locale, themeColor)),
+                        IconButton(
+                          icon: const Icon(
+                            Icons.place_outlined,
+                            color: Color(0xFF111827),
+                          ),
+                          onPressed: _openLocationManager,
+                        ),
+                        if (_showWorkerList)
+                          IconButton(
+                            icon: const Icon(
+                              Icons.tune_rounded,
+                              color: Color(0xFF111827),
+                            ),
+                            onPressed: () =>
+                                _showSortOptions(locale, themeColor),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: _showWorkerList
+                      ? (_isLoadingWorkers
+                            ? _buildWorkerListSkeleton()
+                            : _buildWorkerList(locale, themeColor))
+                      : (_isLoadingProfessions
+                            ? _buildProfessionGridSkeleton()
+                            : _buildProfessionGrid(locale)),
+                ),
+              ],
             ),
+          ),
         ],
       ),
-      body: _showWorkerList
-          ? (_isLoadingWorkers
-                ? _buildWorkerListSkeleton()
-                : _buildWorkerList(locale, themeColor))
-          : (_isLoadingProfessions
-                ? _buildProfessionGridSkeleton()
-                : _buildProfessionGrid(locale)),
     );
   }
 
   Widget _buildProfessionGridSkeleton() {
     return GridView.builder(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 2,
         crossAxisSpacing: 16,
@@ -910,11 +1003,7 @@ class _SearchPageState extends State<SearchPage> {
       itemBuilder: (context, index) {
         return Container(
           padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: Colors.grey.shade200),
-          ),
+          decoration: _surfaceDecoration(radius: 24),
           child: const Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -932,17 +1021,13 @@ class _SearchPageState extends State<SearchPage> {
 
   Widget _buildWorkerListSkeleton() {
     return ListView.separated(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 18),
       itemCount: 5,
       separatorBuilder: (context, index) => const SizedBox(height: 16),
       itemBuilder: (context, index) {
         return Container(
           padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: Colors.grey.shade200),
-          ),
+          decoration: _surfaceDecoration(radius: 24),
           child: const Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -975,27 +1060,38 @@ class _SearchPageState extends State<SearchPage> {
   }
 
   Widget _buildSearchField(String locale, Color themeColor) {
-    return Container(
-      height: 45,
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.15),
-        borderRadius: BorderRadius.circular(16),
+    return TextField(
+      controller: _searchController,
+      onChanged: (_) => _applyFilters(),
+      style: const TextStyle(
+        color: Color(0xFF111827),
+        fontSize: 16,
+        fontWeight: FontWeight.w600,
       ),
-      child: TextField(
-        controller: _searchController,
-        onChanged: (_) => _applyFilters(),
-        style: const TextStyle(color: Colors.white),
-        decoration: InputDecoration(
-          hintStyle: TextStyle(
-            color: Colors.white.withOpacity(0.7),
-            fontSize: 14,
-          ),
-          hintText: _showWorkerList
-              ? _t('search_worker_hint', locale)
-              : _t('search_prof_hint', locale),
-          prefixIcon: Icon(Icons.search_rounded, color: Colors.white70),
-          border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(vertical: 10),
+      decoration: InputDecoration(
+        hintStyle: const TextStyle(
+          color: Color(0xFF9CA3AF),
+          fontSize: 14,
+          fontWeight: FontWeight.w500,
+        ),
+        hintText: _showWorkerList
+            ? _t('search_worker_hint', locale)
+            : _t('search_prof_hint', locale),
+        prefixIcon: Icon(Icons.search_rounded, color: themeColor, size: 21),
+        filled: true,
+        fillColor: const Color(0xFFF9FAFB),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(color: themeColor, width: 1.3),
+        ),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 14,
+          vertical: 14,
         ),
       ),
     );
@@ -1010,7 +1106,25 @@ class _SearchPageState extends State<SearchPage> {
           children: [
             SizedBox(
               height: MediaQuery.of(context).size.height * 0.55,
-              child: Center(child: Text(_t('no_professions', locale))),
+              child: Center(
+                child: Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 24),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 18,
+                  ),
+                  decoration: _surfaceDecoration(radius: 20, elevated: false),
+                  child: Text(
+                    _t('no_professions', locale),
+                    style: const TextStyle(
+                      color: Color(0xFF6B7280),
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ),
             ),
           ],
         ),
@@ -1021,7 +1135,7 @@ class _SearchPageState extends State<SearchPage> {
       onRefresh: _refreshSearchPage,
       child: GridView.builder(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 2,
           crossAxisSpacing: 16,
@@ -1050,24 +1164,14 @@ class _SearchPageState extends State<SearchPage> {
             },
             borderRadius: BorderRadius.circular(24),
             child: Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(24),
-                boxShadow: [
-                  BoxShadow(
-                    color: color.withOpacity(0.15),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
+              decoration: _surfaceDecoration(radius: 24, tint: color),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: color.withOpacity(0.1),
+                      color: color.withValues(alpha: 0.1),
                       shape: BoxShape.circle,
                     ),
                     child: Icon(_getIcon(p['logo']), color: color, size: 32),
@@ -1078,9 +1182,9 @@ class _SearchPageState extends State<SearchPage> {
                     child: Text(
                       p[locale] ?? p['en'],
                       style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                        color: Colors.black87,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14.5,
+                        color: Color(0xFF101827),
                       ),
                       textAlign: TextAlign.center,
                       maxLines: 2,
@@ -1116,7 +1220,10 @@ class _SearchPageState extends State<SearchPage> {
                   const SizedBox(height: 16),
                   Text(
                     _t('no_workers', locale),
-                    style: const TextStyle(color: Colors.grey),
+                    style: const TextStyle(
+                      color: Color(0xFF6B7280),
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ],
               ),
@@ -1132,7 +1239,7 @@ class _SearchPageState extends State<SearchPage> {
         physics: const BouncingScrollPhysics(
           parent: AlwaysScrollableScrollPhysics(),
         ),
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 18),
         itemCount: _filteredWorkers.length + (_hasMore ? 1 : 0),
         itemBuilder: (context, index) {
           if (index == _filteredWorkers.length) {
@@ -1210,21 +1317,14 @@ class _SearchPageState extends State<SearchPage> {
 
           return Container(
             margin: const EdgeInsets.only(bottom: 16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
+            decoration: _surfaceDecoration(radius: 24, tint: themeColor),
             child: Stack(
               children: [
                 ListTile(
-                  contentPadding: const EdgeInsets.all(12),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
                   leading: Hero(
                     tag: w['uid'],
                     child: CircleAvatar(
@@ -1249,7 +1349,7 @@ class _SearchPageState extends State<SearchPage> {
                         child: Text(
                           w['name'] ?? _t('worker_fallback', locale),
                           style: const TextStyle(
-                            fontWeight: FontWeight.bold,
+                            fontWeight: FontWeight.w800,
                             fontSize: 17,
                           ),
                           overflow: TextOverflow.ellipsis,
@@ -1298,7 +1398,7 @@ class _SearchPageState extends State<SearchPage> {
                             child: Text(
                               w['town'] ?? '',
                               style: const TextStyle(
-                                color: Colors.grey,
+                                color: Color(0xFF6B7280),
                                 fontSize: 13,
                               ),
                               overflow: TextOverflow.ellipsis,
@@ -1326,7 +1426,7 @@ class _SearchPageState extends State<SearchPage> {
                           ),
                           decoration: BoxDecoration(
                             color: (isAvailableNow ? Colors.green : Colors.red)
-                                .withOpacity(0.1),
+                                .withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(999),
                           ),
                           child: Text(
@@ -1347,7 +1447,7 @@ class _SearchPageState extends State<SearchPage> {
                         Text(
                           (w['professions'] as List).join(', '),
                           style: const TextStyle(
-                            color: Colors.grey,
+                            color: Color(0xFF6B7280),
                             fontSize: 12,
                           ),
                           maxLines: 1,
@@ -1382,7 +1482,7 @@ class _SearchPageState extends State<SearchPage> {
                             vertical: 2,
                           ),
                           decoration: BoxDecoration(
-                            color: Colors.amber.withOpacity(0.1),
+                            color: Colors.amber.withValues(alpha: 0.12),
                             borderRadius: BorderRadius.circular(6),
                           ),
                           child: Row(
@@ -1431,6 +1531,8 @@ class _SearchPageState extends State<SearchPage> {
                           userId: w['uid'],
                           viewedProfession: _selectedProfession?['en']
                               ?.toString(),
+                          viewedProfessionBookingMode:
+                              _selectedProfession?['bookingMode']?.toString(),
                         ),
                       ),
                     );
@@ -1471,33 +1573,49 @@ class _SearchPageState extends State<SearchPage> {
   void _showSortOptions(String locale, Color themeColor) {
     showModalBottomSheet(
       context: context,
+      backgroundColor: const Color(0xFFFDFEFF),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (context) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 20),
+        padding: const EdgeInsets.fromLTRB(12, 14, 12, 20),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            SwitchListTile(
-              title: Text(_t('filter_radius_title', locale)),
-              subtitle: Text(_t('filter_radius_subtitle', locale)),
-              value: _filterByRadius,
-              onChanged: (val) {
-                setState(() => _filterByRadius = val);
-                if (val && _currentPosition == null) {
-                  _getCurrentLocation();
-                } else {
-                  _applyFilters();
-                }
-                Navigator.pop(context);
-              },
-              secondary: Icon(Icons.radar, color: themeColor),
+            Container(
+              decoration: _surfaceDecoration(radius: 20, elevated: false),
+              child: SwitchListTile(
+                title: Text(
+                  _t('filter_radius_title', locale),
+                  style: const TextStyle(
+                    color: Color(0xFF101827),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                subtitle: Text(
+                  _t('filter_radius_subtitle', locale),
+                  style: const TextStyle(color: Color(0xFF6B7280)),
+                ),
+                value: _filterByRadius,
+                onChanged: (val) {
+                  setState(() => _filterByRadius = val);
+                  if (val && _currentPosition == null) {
+                    _getCurrentLocation();
+                  } else {
+                    _applyFilters();
+                  }
+                  Navigator.pop(context);
+                },
+                secondary: Icon(Icons.radar, color: themeColor),
+              ),
             ),
-            const Divider(),
+            const SizedBox(height: 10),
             ListTile(
               leading: const Icon(Icons.star_rounded, color: Colors.amber),
-              title: Text(_t('sort_rating', locale)),
+              title: Text(
+                _t('sort_rating', locale),
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
               trailing: _sortBy == 'rating'
                   ? Icon(Icons.check_circle, color: themeColor)
                   : null,
@@ -1509,7 +1627,10 @@ class _SearchPageState extends State<SearchPage> {
             ),
             ListTile(
               leading: Icon(Icons.my_location, color: themeColor),
-              title: Text(_t('sort_nearest', locale)),
+              title: Text(
+                _t('sort_nearest', locale),
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
               trailing: _sortBy == 'distance'
                   ? Icon(Icons.check_circle, color: themeColor)
                   : null,
@@ -1520,7 +1641,10 @@ class _SearchPageState extends State<SearchPage> {
             ),
             ListTile(
               leading: Icon(Icons.sort_by_alpha_rounded, color: themeColor),
-              title: Text(_t('sort_name', locale)),
+              title: Text(
+                _t('sort_name', locale),
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
               trailing: _sortBy == 'name'
                   ? Icon(Icons.check_circle, color: themeColor)
                   : null,

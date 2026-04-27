@@ -5,10 +5,14 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:untitled1/ptofile.dart';
 import 'package:untitled1/pages/admin_profile.dart';
 import 'package:untitled1/services/language_provider.dart';
+import 'package:untitled1/services/subscription_access_service.dart';
 import 'package:untitled1/search.dart';
 import 'package:untitled1/pages/my_requests_page.dart';
+import 'package:untitled1/pages/my_request_details_page.dart';
+import 'package:untitled1/pages/request_details.dart';
 import 'package:untitled1/pages/notifications.dart';
 import 'package:untitled1/pages/location_manager_page.dart';
+import 'package:untitled1/pages/subscription.dart';
 import 'package:untitled1/widgets/skeleton.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -36,6 +40,9 @@ class _HomePageState extends State<HomePage> {
   Timer? _bannerAutoScrollTimer;
   int _bannerPageIndex = 0;
   int _bannerCount = 0;
+  int _requestSwipeIndex = 0;
+  int _requestTransitionDirection = 1;
+  bool _showRequestsSentToMe = false;
 
   List<Map<String, dynamic>> _popularCategories = [];
   List<Map<String, dynamic>> _professionItems = [];
@@ -43,6 +50,7 @@ class _HomePageState extends State<HomePage> {
   String? _cachedName;
   String? _profileImageUrl;
   String _userRole = "customer";
+  String _subscriptionStatus = "inactive";
 
   List<String> _announcementImages(Map<String, dynamic> data) {
     final raw = data['imageUrls'];
@@ -564,6 +572,9 @@ class _HomePageState extends State<HomePage> {
             _cachedName = doc.data()?['name']?.toString().split(' ').first;
             _profileImageUrl = doc.data()?['profileImageUrl']?.toString();
             _userRole = doc.data()?['role'] ?? 'customer';
+            _subscriptionStatus =
+                doc.data()?['subscriptionStatus']?.toString().toLowerCase() ??
+                'inactive';
           });
         }
       } catch (e) {
@@ -749,10 +760,18 @@ class _HomePageState extends State<HomePage> {
           'request_scheduled': 'נקבע',
           'request_declined': 'נדחה',
           'request_cancelled': 'בוטל',
+          'request_swipe_hint': 'החלק ימינה/שמאלה כדי לעבור בין בקשות',
+          'requests_to_me': 'בקשות אליי',
+          'latest_request_to_me': 'הבקשות שנשלחו אליי',
+          'no_incoming_requests': 'אין בקשות חדשות שנשלחו אליך',
           'categories': 'קטגוריות פופולריות',
           'see_all': 'הכל',
           'broadcast_title': 'הודעת מערכת',
           'my_requests': 'הבקשות שלי',
+          'subscribe_cta_title': 'הפעלת מנוי Pro',
+          'subscribe_cta_subtitle':
+              'כדי לפתוח את כל הכלים המקצועיים ולקבל יותר פניות, הפעל מנוי Pro.',
+          'subscribe_cta_button': 'מעבר למנוי',
         };
       case 'ar':
         return {
@@ -849,10 +868,18 @@ class _HomePageState extends State<HomePage> {
           'request_scheduled': 'تمت الجدولة',
           'request_declined': 'تم الرفض',
           'request_cancelled': 'تم الإلغاء',
+          'request_swipe_hint': 'اسحب يمينًا/يسارًا للتنقل بين الطلبات',
+          'requests_to_me': 'الطلبات المرسلة إليّ',
+          'latest_request_to_me': 'الطلبات المرسلة إليّ',
+          'no_incoming_requests': 'لا توجد طلبات جديدة مرسلة إليك',
           'categories': 'الفئات الشائعة',
           'see_all': 'الكل',
           'broadcast_title': 'بلاغ النظام',
           'my_requests': 'طلباتي',
+          'subscribe_cta_title': 'تفعيل اشتراك Pro',
+          'subscribe_cta_subtitle':
+              'لفتح جميع الأدوات المهنية والحصول على المزيد من الطلبات، فعّل اشتراك Pro.',
+          'subscribe_cta_button': 'الانتقال للاشتراك',
         };
       default:
         return {
@@ -963,12 +990,95 @@ class _HomePageState extends State<HomePage> {
           'request_scheduled': 'Scheduled',
           'request_declined': 'Declined',
           'request_cancelled': 'Cancelled',
+          'request_swipe_hint': 'Swipe left/right to browse requests',
+          'requests_to_me': 'Requests sent to me',
+          'latest_request_to_me': 'Requests sent to me',
+          'no_incoming_requests': 'No incoming requests yet',
           'categories': 'Popular Categories',
           'see_all': 'See all',
           'broadcast_title': 'System Broadcast',
           'my_requests': 'My Requests',
+          'subscribe_cta_title': 'Activate Pro Subscription',
+          'subscribe_cta_subtitle':
+              'To unlock all professional tools and get more requests, activate Pro.',
+          'subscribe_cta_button': 'Go to Subscription',
         };
     }
+  }
+
+  bool get _shouldShowSubscriptionCta {
+    if (_userRole != 'worker') return false;
+    return !SubscriptionAccessService.isEntitledSubscriptionStatus(
+      _subscriptionStatus,
+    );
+  }
+
+  void _goToRequest(int nextIndex, int totalCount) {
+    final safeNext = nextIndex.clamp(0, totalCount - 1);
+    if (safeNext == _requestSwipeIndex) return;
+    setState(() {
+      _requestTransitionDirection = safeNext > _requestSwipeIndex ? 1 : -1;
+      _requestSwipeIndex = safeNext;
+    });
+  }
+
+  Widget _buildRequestModeButton({
+    required bool selected,
+    required VoidCallback onPressed,
+    required IconData icon,
+    required String label,
+    required Color activeForeground,
+    required Color activeBackground,
+    required Color activeBorder,
+  }) {
+    return AnimatedScale(
+      scale: selected ? 1.02 : 1.0,
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOutBack,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+        decoration: BoxDecoration(
+          color: selected ? activeBackground : Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: selected ? activeBorder : const Color(0xFFE2E8F0),
+          ),
+          boxShadow: selected
+              ? [
+                  BoxShadow(
+                    color: activeForeground.withValues(alpha: 0.18),
+                    blurRadius: 12,
+                    offset: const Offset(0, 6),
+                  ),
+                ]
+              : const [],
+        ),
+        child: OutlinedButton.icon(
+          style: OutlinedButton.styleFrom(
+            visualDensity: VisualDensity.compact,
+            foregroundColor: selected
+                ? activeForeground
+                : const Color(0xFF475569),
+            side: BorderSide.none,
+            backgroundColor: Colors.transparent,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+          onPressed: onPressed,
+          icon: Icon(icon, size: 18),
+          label: Text(
+            label,
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              color: selected ? activeForeground : const Color(0xFF475569),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -1000,6 +1110,10 @@ class _HomePageState extends State<HomePage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       _buildCategories(context, localized, theme),
+                      if (_shouldShowSubscriptionCta) ...[
+                        const SizedBox(height: 16),
+                        _buildSubscribeCta(localized),
+                      ],
                       const SizedBox(height: 24),
                       _buildRequestStatusTimeline(localized),
                       const SizedBox(height: 20),
@@ -1273,6 +1387,69 @@ class _HomePageState extends State<HomePage> {
           ),
         );
       },
+    );
+  }
+
+  Widget _buildSubscribeCta(Map<String, dynamic> strings) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEFF6FF),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFBFDBFE)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            strings['subscribe_cta_title'] ?? 'Activate Pro Subscription',
+            style: const TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF0F2E67),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            strings['subscribe_cta_subtitle'] ??
+                'Activate Pro to unlock worker tools.',
+            style: const TextStyle(
+              fontSize: 14,
+              height: 1.4,
+              color: Color(0xFF334155),
+            ),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => SubscriptionPage(
+                      email: FirebaseAuth.instance.currentUser?.email ?? '',
+                    ),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.workspace_premium_rounded),
+              label: Text(
+                strings['subscribe_cta_button'] ?? 'Go to Subscription',
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF1976D2),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1679,23 +1856,66 @@ class _HomePageState extends State<HomePage> {
       return const SizedBox.shrink();
     }
 
+    final isIncomingForWorker = _userRole == 'worker' && _showRequestsSentToMe;
+    final requestStream = isIncomingForWorker
+        ? _firestore
+              .collection('users')
+              .doc(user.uid)
+              .collection('notifications')
+              .orderBy('timestamp', descending: true)
+              .limit(60)
+              .snapshots()
+        : _firestore
+              .collection('users')
+              .doc(user.uid)
+              .collection('requests')
+              .orderBy('timestamp', descending: true)
+              .limit(20)
+              .snapshots();
+
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: _firestore
-          .collection('users')
-          .doc(user.uid)
-          .collection('requests')
-          .orderBy('timestamp', descending: true)
-          .limit(1)
-          .snapshots(),
+      stream: requestStream,
       builder: (context, snapshot) {
         if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
           return Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: _buildEmptyRequestCard(strings),
+            child: _buildEmptyRequestCard(
+              strings,
+              customMessage: isIncomingForWorker
+                  ? strings['no_incoming_requests']
+                  : null,
+            ),
           );
         }
 
-        final doc = snapshot.data!.docs.first;
+        final docs = isIncomingForWorker
+            ? snapshot.data!.docs.where((doc) {
+                final type = (doc.data()['type'] ?? '').toString();
+                return type == 'work_request' || type == 'quote_request';
+              }).toList()
+            : snapshot.data!.docs;
+
+        if (docs.isEmpty) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: _buildEmptyRequestCard(
+              strings,
+              customMessage: isIncomingForWorker
+                  ? strings['no_incoming_requests']
+                  : null,
+            ),
+          );
+        }
+        if (_requestSwipeIndex >= docs.length) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            setState(() {
+              _requestSwipeIndex = docs.length - 1;
+            });
+          });
+        }
+        final currentIndex = _requestSwipeIndex.clamp(0, docs.length - 1);
+        final doc = docs[currentIndex];
         final data = doc.data();
         final status = _normalizeHomeRequestStatus(
           (data['status'] ?? 'pending').toString(),
@@ -1707,6 +1927,22 @@ class _HomePageState extends State<HomePage> {
             status == 'accepted' ||
             status == 'rejected' ||
             status == 'cancelled';
+        final statusLabel = switch (status) {
+          'rejected' => strings['request_declined'] ?? 'Declined',
+          'cancelled' => strings['request_cancelled'] ?? 'Cancelled',
+          'accepted' when hasSchedule =>
+            strings['request_scheduled'] ?? 'Scheduled',
+          'accepted' => strings['request_accepted'] ?? 'Accepted',
+          _ when isReviewed => strings['request_reviewed'] ?? 'Reviewed',
+          _ => strings['request_pending'] ?? 'Waiting for review',
+        };
+        final statusColor = switch (status) {
+          'rejected' => const Color(0xFFDC2626),
+          'cancelled' => const Color(0xFF64748B),
+          'accepted' => const Color(0xFF059669),
+          _ when isReviewed => const Color(0xFF1D4ED8),
+          _ => const Color(0xFFF59E0B),
+        };
         final currentStep = switch (status) {
           'accepted' when hasSchedule => 3,
           'accepted' => 2,
@@ -1724,22 +1960,6 @@ class _HomePageState extends State<HomePage> {
               : (strings['request_accepted'] ?? 'Accepted'),
           strings['request_scheduled'] ?? 'Scheduled',
         ];
-        final statusLabel = switch (status) {
-          'rejected' => strings['request_declined'] ?? 'Declined',
-          'cancelled' => strings['request_cancelled'] ?? 'Cancelled',
-          'accepted' when hasSchedule =>
-            strings['request_scheduled'] ?? 'Scheduled',
-          'accepted' => strings['request_accepted'] ?? 'Accepted',
-          _ when isReviewed => strings['request_reviewed'] ?? 'Reviewed',
-          _ => strings['request_pending'] ?? 'Waiting for review',
-        };
-        final statusColor = switch (status) {
-          'rejected' => const Color(0xFFDC2626),
-          'cancelled' => const Color(0xFF64748B),
-          'accepted' => const Color(0xFF059669),
-          _ when isReviewed => const Color(0xFF1D4ED8),
-          _ => const Color(0xFFF59E0B),
-        };
         final title = (data['jobDescription'] ?? 'Request').toString().trim();
         final date = (data['date'] ?? '').toString().trim();
         final profession = (data['profession'] ?? '').toString().trim();
@@ -1768,7 +1988,10 @@ class _HomePageState extends State<HomePage> {
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        strings['latest_request'] ?? 'Latest Request',
+                        isIncomingForWorker
+                            ? (strings['latest_request_to_me'] ??
+                                  'Requests sent to me')
+                            : (strings['latest_request'] ?? 'Latest Request'),
                         style: const TextStyle(
                           fontSize: 17,
                           fontWeight: FontWeight.w800,
@@ -1776,12 +1999,49 @@ class _HomePageState extends State<HomePage> {
                         ),
                       ),
                     ),
+                    if (docs.length > 1)
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        icon: const Icon(
+                          Icons.chevron_left_rounded,
+                          color: Color(0xFF64748B),
+                        ),
+                        onPressed: currentIndex > 0
+                            ? () => _goToRequest(currentIndex - 1, docs.length)
+                            : null,
+                      ),
+                    if (docs.length > 1)
+                      Padding(
+                        padding: const EdgeInsetsDirectional.only(end: 2),
+                        child: Text(
+                          '${currentIndex + 1}/${docs.length}',
+                          style: const TextStyle(
+                            color: Color(0xFF64748B),
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    if (docs.length > 1)
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        icon: const Icon(
+                          Icons.chevron_right_rounded,
+                          color: Color(0xFF64748B),
+                        ),
+                        onPressed: currentIndex < docs.length - 1
+                            ? () => _goToRequest(currentIndex + 1, docs.length)
+                            : null,
+                      ),
                     TextButton(
                       onPressed: () {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) => const MyRequestsPage(),
+                            builder: (_) => isIncomingForWorker
+                                ? const NotificationsPage(
+                                    initialFilter: 'requests',
+                                  )
+                                : const MyRequestsPage(),
                           ),
                         );
                       },
@@ -1789,155 +2049,318 @@ class _HomePageState extends State<HomePage> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  title.isEmpty ? 'Request' : title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Color(0xFF334155),
-                    fontWeight: FontWeight.w700,
-                    height: 1.35,
-                  ),
-                ),
-                if (date.isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  Text(
-                    date,
-                    style: const TextStyle(
-                      color: Color(0xFF64748B),
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                    ),
+                if (_userRole == 'worker') ...[
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _buildRequestModeButton(
+                        selected: !isIncomingForWorker,
+                        onPressed: () => setState(() {
+                          _showRequestsSentToMe = false;
+                          _requestSwipeIndex = 0;
+                        }),
+                        icon: Icons.assignment_outlined,
+                        label: strings['my_requests'] ?? 'My Requests',
+                        activeForeground: const Color(0xFF1976D2),
+                        activeBackground: const Color(0xFFEFF6FF),
+                        activeBorder: const Color(0xFFBFDBFE),
+                      ),
+                      _buildRequestModeButton(
+                        selected: isIncomingForWorker,
+                        onPressed: () => setState(() {
+                          _showRequestsSentToMe = true;
+                          _requestSwipeIndex = 0;
+                        }),
+                        icon: Icons.mark_email_unread_outlined,
+                        label:
+                            strings['requests_to_me'] ?? 'Requests sent to me',
+                        activeForeground: const Color(0xFF0F766E),
+                        activeBackground: const Color(0xFFF0FDFA),
+                        activeBorder: const Color(0xFF99F6E4),
+                      ),
+                    ],
                   ),
                 ],
-                const SizedBox(height: 16),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: statusColor.withValues(alpha: 0.10),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    statusLabel,
-                    style: TextStyle(
-                      color: statusColor,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 18),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: List.generate(stepLabels.length * 2 - 1, (index) {
-                    if (index.isOdd) {
-                      final connectorIndex = index ~/ 2;
-                      final isActive = connectorIndex < currentStep;
-                      return Expanded(
-                        child: Padding(
-                          padding: const EdgeInsets.only(top: 15),
-                          child: Container(
-                            height: 3,
-                            decoration: BoxDecoration(
-                              color: isActive
-                                  ? const Color(0xFF1976D2)
-                                  : const Color(0xFFE2E8F0),
-                              borderRadius: BorderRadius.circular(999),
-                            ),
+                const SizedBox(height: 8),
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () {
+                    if (isIncomingForWorker) {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => RequestDetailsPage(
+                            notificationId: doc.id,
+                            data: data,
+                          ),
+                        ),
+                      );
+                    } else {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => MyRequestDetailsPage(
+                            requestRef: doc.reference,
+                            initialData: data,
                           ),
                         ),
                       );
                     }
-
-                    final stepIndex = index ~/ 2;
-                    final isActive = stepIndex <= currentStep;
-                    final isRejectedStep =
-                        status == 'rejected' && stepIndex == 2 && isActive;
-                    final isCancelledStep =
-                        status == 'cancelled' && stepIndex == 2 && isActive;
-                    final stepColor = isRejectedStep
-                        ? const Color(0xFFDC2626)
-                        : isCancelledStep
-                        ? const Color(0xFF64748B)
-                        : isActive
-                        ? const Color(0xFF1976D2)
-                        : const Color(0xFFE2E8F0);
-                    final stepIcon = isRejectedStep
-                        ? Icons.close_rounded
-                        : isCancelledStep
-                        ? Icons.remove_rounded
-                        : isActive
-                        ? Icons.check_rounded
-                        : Icons.circle;
-                    final iconColor =
-                        isActive && !isCancelledStep && !isRejectedStep
-                        ? Colors.white
-                        : isRejectedStep || isCancelledStep
-                        ? Colors.white
-                        : const Color(0xFF94A3B8);
-
-                    return SizedBox(
-                      width: 62,
-                      child: Column(
-                        children: [
-                          Container(
-                            width: 34,
-                            height: 34,
-                            decoration: BoxDecoration(
-                              color: stepColor,
-                              shape: BoxShape.circle,
-                            ),
-                            child: Icon(stepIcon, size: 18, color: iconColor),
+                  },
+                  onHorizontalDragEnd: (details) {
+                    final velocity = details.primaryVelocity ?? 0;
+                    if (velocity.abs() < 120) return;
+                    if (velocity < 0 && currentIndex < docs.length - 1) {
+                      _goToRequest(currentIndex + 1, docs.length);
+                    } else if (velocity > 0 && currentIndex > 0) {
+                      _goToRequest(currentIndex - 1, docs.length);
+                    }
+                  },
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 320),
+                    switchInCurve: Curves.easeOutCubic,
+                    switchOutCurve: Curves.easeInCubic,
+                    transitionBuilder: (child, animation) {
+                      final beginOffset = Offset(
+                        _requestTransitionDirection * 0.18,
+                        0,
+                      );
+                      return FadeTransition(
+                        opacity: animation,
+                        child: SlideTransition(
+                          position: Tween<Offset>(
+                            begin: beginOffset,
+                            end: Offset.zero,
+                          ).animate(animation),
+                          child: ScaleTransition(
+                            scale: Tween<double>(
+                              begin: 0.985,
+                              end: 1,
+                            ).animate(animation),
+                            child: child,
                           ),
-                          const SizedBox(height: 8),
+                        ),
+                      );
+                    },
+                    child: Column(
+                      key: ValueKey(doc.id),
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title.isEmpty ? 'Request' : title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Color(0xFF334155),
+                            fontWeight: FontWeight.w700,
+                            height: 1.35,
+                          ),
+                        ),
+                        if (date.isNotEmpty) ...[
+                          const SizedBox(height: 6),
                           Text(
-                            stepLabels[stepIndex],
-                            textAlign: TextAlign.center,
+                            date,
                             style: const TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFF475569),
-                              height: 1.25,
+                              color: Color(0xFF64748B),
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
                             ),
                           ),
                         ],
-                      ),
-                    );
-                  }),
-                ),
-                if (status == 'rejected' && profession.isNotEmpty) ...[
-                  const SizedBox(height: 18),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: const Color(0xFFDC2626),
-                        side: const BorderSide(color: Color(0xFFFCA5A5)),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                      ),
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) =>
-                                SearchPage(initialTrade: profession),
+                        const SizedBox(height: 16),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
                           ),
-                        );
-                      },
-                      icon: const Icon(Icons.person_search_rounded),
-                      label: Text(
-                        strings['request_someone_else'] ??
-                            'Request from someone else',
-                      ),
+                          decoration: BoxDecoration(
+                            color: statusColor.withValues(alpha: 0.10),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            statusLabel,
+                            style: TextStyle(
+                              color: statusColor,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        if (!isIncomingForWorker) ...[
+                          const SizedBox(height: 18),
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: List.generate(stepLabels.length * 2 - 1, (
+                              index,
+                            ) {
+                              if (index.isOdd) {
+                                final connectorIndex = index ~/ 2;
+                                final isActive = connectorIndex < currentStep;
+                                return Expanded(
+                                  child: Padding(
+                                    padding: const EdgeInsets.only(top: 15),
+                                    child: Container(
+                                      height: 3,
+                                      decoration: BoxDecoration(
+                                        color: isActive
+                                            ? const Color(0xFF1976D2)
+                                            : const Color(0xFFE2E8F0),
+                                        borderRadius: BorderRadius.circular(
+                                          999,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              }
+
+                              final stepIndex = index ~/ 2;
+                              final isActive = stepIndex <= currentStep;
+                              final isRejectedStep =
+                                  status == 'rejected' &&
+                                  stepIndex == 2 &&
+                                  isActive;
+                              final isCancelledStep =
+                                  status == 'cancelled' &&
+                                  stepIndex == 2 &&
+                                  isActive;
+                              final stepColor = isRejectedStep
+                                  ? const Color(0xFFDC2626)
+                                  : isCancelledStep
+                                  ? const Color(0xFF64748B)
+                                  : isActive
+                                  ? const Color(0xFF1976D2)
+                                  : const Color(0xFFE2E8F0);
+                              final stepIcon = isRejectedStep
+                                  ? Icons.close_rounded
+                                  : isCancelledStep
+                                  ? Icons.remove_rounded
+                                  : isActive
+                                  ? Icons.check_rounded
+                                  : Icons.circle;
+                              final iconColor =
+                                  isActive &&
+                                      !isCancelledStep &&
+                                      !isRejectedStep
+                                  ? Colors.white
+                                  : isRejectedStep || isCancelledStep
+                                  ? Colors.white
+                                  : const Color(0xFF94A3B8);
+
+                              return SizedBox(
+                                width: 62,
+                                child: Column(
+                                  children: [
+                                    Container(
+                                      width: 34,
+                                      height: 34,
+                                      decoration: BoxDecoration(
+                                        color: stepColor,
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: Icon(
+                                        stepIcon,
+                                        size: 18,
+                                        color: iconColor,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      stepLabels[stepIndex],
+                                      textAlign: TextAlign.center,
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                        color: Color(0xFF475569),
+                                        height: 1.25,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }),
+                          ),
+                        ] else ...[
+                          const SizedBox(height: 12),
+                        ],
+                        if (status == 'rejected' && profession.isNotEmpty) ...[
+                          const SizedBox(height: 18),
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: const Color(0xFFDC2626),
+                                side: const BorderSide(
+                                  color: Color(0xFFFCA5A5),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 14,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                              ),
+                              onPressed: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) =>
+                                        SearchPage(initialTrade: profession),
+                                  ),
+                                );
+                              },
+                              icon: const Icon(Icons.person_search_rounded),
+                              label: Text(
+                                strings['request_someone_else'] ??
+                                    'Request from someone else',
+                              ),
+                            ),
+                          ),
+                        ],
+                        if (docs.length > 1) ...[
+                          const SizedBox(height: 12),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: List.generate(docs.length, (index) {
+                              final selected = index == currentIndex;
+                              return GestureDetector(
+                                onTap: () => _goToRequest(index, docs.length),
+                                child: AnimatedContainer(
+                                  duration: const Duration(milliseconds: 180),
+                                  margin: const EdgeInsets.symmetric(
+                                    horizontal: 3,
+                                  ),
+                                  width: selected ? 16 : 6,
+                                  height: 6,
+                                  decoration: BoxDecoration(
+                                    color: selected
+                                        ? const Color(0xFF1976D2)
+                                        : const Color(0xFFCBD5E1),
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                ),
+                              );
+                            }),
+                          ),
+                          const SizedBox(height: 8),
+                          Center(
+                            child: Text(
+                              strings['request_swipe_hint'] ??
+                                  'Swipe left/right to browse requests',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: Color(0xFF64748B),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
-                ],
+                ),
               ],
             ),
           ),
@@ -1946,7 +2369,10 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildEmptyRequestCard(Map<String, dynamic> strings) {
+  Widget _buildEmptyRequestCard(
+    Map<String, dynamic> strings, {
+    String? customMessage,
+  }) {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
@@ -1977,7 +2403,9 @@ class _HomePageState extends State<HomePage> {
           const SizedBox(width: 12),
           Expanded(
             child: Text(
-              strings['no_active_requests'] ?? 'No active requests yet',
+              customMessage ??
+                  strings['no_active_requests'] ??
+                  'No active requests yet',
               style: const TextStyle(
                 fontWeight: FontWeight.w700,
                 color: Color(0xFF334155),

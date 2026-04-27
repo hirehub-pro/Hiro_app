@@ -22,6 +22,10 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
 
   AnimationController? _introController;
   AnimationController? _backgroundController;
+  AnimationController? _logoTapController;
+  Animation<double>? _logoScale;
+  Animation<double>? _logoTwist;
+  Animation<double>? _logoGlow;
 
   AnimationController get _introAnimationController {
     final controller = _introController;
@@ -45,9 +49,102 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
     return created;
   }
 
+  AnimationController get _logoTapAnimationController {
+    final controller = _logoTapController;
+    if (controller != null) return controller;
+    final created = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 560),
+    );
+    _logoScale = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween<double>(
+          begin: 1,
+          end: 0.9,
+        ).chain(CurveTween(curve: Curves.easeOut)),
+        weight: 22,
+      ),
+      TweenSequenceItem(
+        tween: Tween<double>(
+          begin: 0.9,
+          end: 1.08,
+        ).chain(CurveTween(curve: Curves.easeOutBack)),
+        weight: 43,
+      ),
+      TweenSequenceItem(
+        tween: Tween<double>(
+          begin: 1.08,
+          end: 1,
+        ).chain(CurveTween(curve: Curves.easeOutCubic)),
+        weight: 35,
+      ),
+    ]).animate(created);
+    _logoTwist = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween<double>(
+          begin: 0,
+          end: -0.07,
+        ).chain(CurveTween(curve: Curves.easeOut)),
+        weight: 33,
+      ),
+      TweenSequenceItem(
+        tween: Tween<double>(
+          begin: -0.07,
+          end: 0.06,
+        ).chain(CurveTween(curve: Curves.easeInOut)),
+        weight: 33,
+      ),
+      TweenSequenceItem(
+        tween: Tween<double>(
+          begin: 0.06,
+          end: 0,
+        ).chain(CurveTween(curve: Curves.easeOut)),
+        weight: 34,
+      ),
+    ]).animate(created);
+    _logoGlow = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween<double>(
+          begin: 0.28,
+          end: 0.5,
+        ).chain(CurveTween(curve: Curves.easeOut)),
+        weight: 45,
+      ),
+      TweenSequenceItem(
+        tween: Tween<double>(
+          begin: 0.5,
+          end: 0.28,
+        ).chain(CurveTween(curve: Curves.easeOut)),
+        weight: 55,
+      ),
+    ]).animate(created);
+    _logoTapController = created;
+    return created;
+  }
+
+  Animation<double> get _logoScaleAnimation {
+    _logoTapAnimationController;
+    return _logoScale!;
+  }
+
+  Animation<double> get _logoTwistAnimation {
+    _logoTapAnimationController;
+    return _logoTwist!;
+  }
+
+  Animation<double> get _logoGlowAnimation {
+    _logoTapAnimationController;
+    return _logoGlow!;
+  }
+
   void _ensureAnimationControllers() {
     _introAnimationController;
     _backgroundAnimationController;
+    _logoTapAnimationController;
+  }
+
+  void _playLogoTapAnimation() {
+    _logoTapAnimationController.forward(from: 0);
   }
 
   String _verificationId = "";
@@ -64,6 +161,7 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
   void dispose() {
     _introController?.dispose();
     _backgroundController?.dispose();
+    _logoTapController?.dispose();
     _phoneController.dispose();
     _codeController.dispose();
     super.dispose();
@@ -845,33 +943,38 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
   }
 
   Widget _buildLogoMark() {
-    return Container(
-      width: 78,
-      height: 78,
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF1E88E5), Color(0xFF0D47A1)],
-        ),
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF1976D2).withValues(alpha: 0.28),
-            blurRadius: 30,
-            offset: const Offset(0, 16),
-          ),
-        ],
-      ),
-      child: const Center(
-        child: Text(
-          'H',
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 30,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
+    return GestureDetector(
+      onTap: _playLogoTapAnimation,
+      child: AnimatedBuilder(
+        animation: _logoTapAnimationController,
+        builder: (context, child) {
+          return Transform.rotate(
+            angle: _logoTwistAnimation.value,
+            child: Transform.scale(
+              scale: _logoScaleAnimation.value,
+              child: Container(
+                width: 78,
+                height: 78,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(24),
+                  image: const DecorationImage(
+                    image: AssetImage('assets/icon/app_icon.jpg'),
+                    fit: BoxFit.cover,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(
+                        0xFF1976D2,
+                      ).withValues(alpha: _logoGlowAnimation.value),
+                      blurRadius: 30,
+                      offset: const Offset(0, 16),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }

@@ -1001,35 +1001,68 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
             horizontal: horizontalPadding,
             vertical: verticalPadding,
           ),
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 1440),
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 380),
-                switchInCurve: Curves.easeOutCubic,
-                switchOutCurve: Curves.easeInCubic,
-                transitionBuilder: (child, animation) {
-                  return FadeTransition(
-                    opacity: animation,
-                    child: SlideTransition(
-                      position: Tween<Offset>(
-                        begin: const Offset(0.04, 0),
-                        end: Offset.zero,
-                      ).animate(animation),
-                      child: child,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: _buildReturnBackArrow(),
+              ),
+              const SizedBox(height: 10),
+              Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1440),
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 380),
+                    switchInCurve: Curves.easeOutCubic,
+                    switchOutCurve: Curves.easeInCubic,
+                    transitionBuilder: (child, animation) {
+                      return FadeTransition(
+                        opacity: animation,
+                        child: SlideTransition(
+                          position: Tween<Offset>(
+                            begin: const Offset(0.04, 0),
+                            end: Offset.zero,
+                          ).animate(animation),
+                          child: child,
+                        ),
+                      );
+                    },
+                    child: _buildStepLayout(
+                      key: ValueKey(_currentStep),
+                      strings: strings,
+                      isRtl: isRtl,
+                      isWide: isWide,
                     ),
-                  );
-                },
-                child: _buildStepLayout(
-                  key: ValueKey(_currentStep),
-                  strings: strings,
-                  isRtl: isRtl,
-                  isWide: isWide,
+                  ),
                 ),
               ),
-            ),
+            ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildReturnBackArrow() {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.9),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.95)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: IconButton(
+        tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+        onPressed: () => Navigator.of(context).maybePop(),
+        icon: const BackButtonIcon(),
+        color: const Color(0xFF1976D2),
       ),
     );
   }

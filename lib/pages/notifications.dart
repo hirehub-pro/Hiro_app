@@ -8,7 +8,9 @@ import 'package:untitled1/pages/request_details.dart';
 import 'package:untitled1/services/language_provider.dart';
 
 class NotificationsPage extends StatefulWidget {
-  const NotificationsPage({super.key});
+  final String initialFilter;
+
+  const NotificationsPage({super.key, this.initialFilter = 'all'});
 
   @override
   State<NotificationsPage> createState() => _NotificationsPageState();
@@ -17,6 +19,20 @@ class NotificationsPage extends StatefulWidget {
 class _NotificationsPageState extends State<NotificationsPage> {
   String _selectedFilter = 'all';
   bool _didMarkResponseNotificationsRead = false;
+
+  @override
+  void initState() {
+    super.initState();
+    switch (widget.initialFilter) {
+      case 'requests':
+      case 'updates':
+      case 'broadcasts':
+      case 'all':
+        _selectedFilter = widget.initialFilter;
+      default:
+        _selectedFilter = 'all';
+    }
+  }
 
   Map<String, String> _getLocalizedStrings(BuildContext context) {
     final locale = Provider.of<LanguageProvider>(context).locale.languageCode;

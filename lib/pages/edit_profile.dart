@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -21,7 +22,8 @@ class EditProfilePage extends StatefulWidget {
   State<EditProfilePage> createState() => _EditProfilePageState();
 }
 
-class _EditProfilePageState extends State<EditProfilePage> {
+class _EditProfilePageState extends State<EditProfilePage>
+    with TickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
   late TextEditingController _nameController;
   late TextEditingController _emailController;
@@ -42,10 +44,13 @@ class _EditProfilePageState extends State<EditProfilePage> {
   double _workRadius = 25000.0;
   LatLng? _workCenter;
   DateTime? _dateOfBirth;
+  AnimationController? _introController;
+  AnimationController? _backgroundController;
 
   @override
   void initState() {
     super.initState();
+    _ensureAnimationControllers();
     _nameController = TextEditingController(text: widget.userData['name']);
     _emailController = TextEditingController(text: widget.userData['email']);
     _dateOfBirth = _parseDate(widget.userData['dateOfBirth']);
@@ -170,6 +175,8 @@ class _EditProfilePageState extends State<EditProfilePage> {
 
   @override
   void dispose() {
+    _introController?.dispose();
+    _backgroundController?.dispose();
     _nameController.dispose();
     _emailController.dispose();
     _dobController.dispose();
@@ -178,6 +185,33 @@ class _EditProfilePageState extends State<EditProfilePage> {
     _descriptionController.dispose();
     _townController.dispose();
     super.dispose();
+  }
+
+  AnimationController get _introAnimationController {
+    final controller = _introController;
+    if (controller != null) return controller;
+    final created = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1100),
+    )..forward();
+    _introController = created;
+    return created;
+  }
+
+  AnimationController get _backgroundAnimationController {
+    final controller = _backgroundController;
+    if (controller != null) return controller;
+    final created = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 9),
+    )..repeat(reverse: true);
+    _backgroundController = created;
+    return created;
+  }
+
+  void _ensureAnimationControllers() {
+    _introAnimationController;
+    _backgroundAnimationController;
   }
 
   Future<void> _pickImage() async {
@@ -521,116 +555,363 @@ class _EditProfilePageState extends State<EditProfilePage> {
 
   @override
   Widget build(BuildContext context) {
+    _ensureAnimationControllers();
     final strings = _getLocalizedStrings();
     final locale = Provider.of<LanguageProvider>(context).locale.languageCode;
     final isRtl = locale == 'he' || locale == 'ar';
+    final backgroundController = _backgroundAnimationController;
 
     return Directionality(
       textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
       child: Scaffold(
-        backgroundColor: const Color(0xFFF6F8FC),
-        body: _isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : SingleChildScrollView(
-                child: Column(
-                  children: [
-                    _buildHeader(strings),
-                    Padding(
-                      padding: const EdgeInsets.all(24.0),
-                      child: Form(
-                        key: _formKey,
-                        child: Column(
-                          children: [
-                            _buildImagePicker(),
-                            const SizedBox(height: 24),
-                            _buildSectionCard(
-                              title: strings['basic_info']!,
-                              child: Column(
-                                children: [
-                                  _buildStyledTextField(
-                                    controller: _nameController,
-                                    labelText: strings['name']!,
-                                    icon: Icons.person_outline,
-                                    validator: (v) =>
-                                        v!.isEmpty ? strings['req'] : null,
-                                  ),
-                                  const SizedBox(height: 16),
-                                  _buildStyledTextField(
-                                    controller: _emailController,
-                                    labelText: strings['email']!,
-                                    icon: Icons.email_outlined,
-                                    keyboardType: TextInputType.emailAddress,
-                                  ),
-                                  const SizedBox(height: 16),
-                                  _buildStyledTextField(
-                                    controller: _dobController,
-                                    labelText: strings['dob']!,
-                                    hintText: strings['dob_hint']!,
-                                    icon: Icons.cake_outlined,
-                                    readOnly: true,
-                                    onTap: _pickDateOfBirth,
-                                    validator: (v) =>
-                                        (v == null || v.trim().isEmpty)
-                                        ? strings['dob_required']
-                                        : null,
-                                  ),
-                                  const SizedBox(height: 16),
-                                  _buildLocationSection(strings),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-                            if (widget.userData['role'] == 'worker') ...[
-                              _buildSectionCard(
-                                title: strings['service_details']!,
-                                child: Column(
-                                  children: [
-                                    _buildWorkRadiusSelector(strings),
-                                    const SizedBox(height: 16),
-                                    _buildMultiSelectProfessions(strings),
-                                    const SizedBox(height: 16),
-                                    _buildStyledTextField(
-                                      controller: _altPhoneController,
-                                      labelText: strings['alt_phone']!,
-                                      icon: Icons.phone_android_outlined,
-                                      keyboardType: TextInputType.phone,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(height: 16),
-                            ],
-                            _buildSectionCard(
-                              title: strings['about_you']!,
-                              child: Column(
-                                children: [
-                                  _buildStyledTextField(
-                                    controller: _phoneController,
-                                    labelText: strings['phone']!,
-                                    icon: Icons.phone_android_outlined,
-                                    keyboardType: TextInputType.phone,
-                                    enabled: false,
-                                  ),
-                                  const SizedBox(height: 16),
-                                  _buildStyledTextField(
-                                    controller: _descriptionController,
-                                    labelText: strings['desc']!,
-                                    icon: Icons.description_outlined,
-                                    maxLines: 3,
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(height: 32),
-                            _buildSaveButton(strings),
-                            const SizedBox(height: 40),
-                          ],
+        backgroundColor: const Color(0xFFF7FBFF),
+        body: LayoutBuilder(
+          builder: (context, constraints) {
+            final isWide = constraints.maxWidth >= 980;
+            final horizontalPadding = isWide
+                ? 64.0
+                : (constraints.maxWidth < 420 ? 20.0 : 28.0);
+            final verticalPadding = isWide ? 56.0 : 28.0;
+
+            return Stack(
+              children: [
+                Positioned.fill(
+                  child: AnimatedBuilder(
+                    animation: backgroundController,
+                    builder: (context, _) {
+                      return CustomPaint(
+                        painter: _EditProfileBackgroundPainter(
+                          backgroundController.value,
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                SafeArea(
+                  child: SingleChildScrollView(
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        minHeight: math.max(
+                          0,
+                          constraints.maxHeight -
+                              MediaQuery.paddingOf(context).vertical,
                         ),
                       ),
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: horizontalPadding,
+                          vertical: verticalPadding,
+                        ),
+                        child: Center(
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 1440),
+                            child: isWide
+                                ? _buildWideLayout(strings, isRtl)
+                                : _buildNarrowLayout(strings),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWideLayout(Map<String, String> strings, bool isRtl) {
+    final intro = Expanded(
+      child: _buildAnimatedEntry(
+        delay: 0.0,
+        begin: isRtl ? const Offset(0.06, 0) : const Offset(-0.06, 0),
+        child: _buildIntroPanel(strings, compact: false),
+      ),
+    );
+    final form = _buildAnimatedEntry(
+      delay: 0.16,
+      begin: isRtl ? const Offset(-0.06, 0) : const Offset(0.06, 0),
+      child: _buildProfileFormCard(strings, compact: false),
+    );
+    const gap = SizedBox(width: 56);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: isRtl ? [form, gap, intro] : [intro, gap, form],
+    );
+  }
+
+  Widget _buildNarrowLayout(Map<String, String> strings) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildAnimatedEntry(delay: 0.0, child: _buildTopBar(strings)),
+        const SizedBox(height: 22),
+        _buildAnimatedEntry(
+          delay: 0.08,
+          child: _buildIntroPanel(strings, compact: true),
+        ),
+        const SizedBox(height: 22),
+        _buildAnimatedEntry(
+          delay: 0.14,
+          child: _buildProfileFormCard(strings, compact: true),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTopBar(Map<String, String> strings) {
+    return Row(
+      children: [
+        IconButton(
+          onPressed: () => Navigator.pop(context),
+          icon: const Icon(Icons.arrow_back_rounded),
+          color: const Color(0xFF1F2937),
+          tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+        ),
+        const SizedBox(width: 8),
+        Text(
+          strings['title'] ?? 'Edit Profile',
+          style: const TextStyle(
+            color: Color(0xFF101827),
+            fontSize: 22,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAnimatedEntry({
+    required Widget child,
+    double delay = 0,
+    Offset begin = const Offset(0, 0.08),
+  }) {
+    final start = delay.clamp(0.0, 0.9).toDouble();
+    final animation = CurvedAnimation(
+      parent: _introAnimationController,
+      curve: Interval(start, 1, curve: Curves.easeOutCubic),
+    );
+
+    return FadeTransition(
+      opacity: animation,
+      child: SlideTransition(
+        position: Tween<Offset>(
+          begin: begin,
+          end: Offset.zero,
+        ).animate(animation),
+        child: child,
+      ),
+    );
+  }
+
+  Widget _buildIntroPanel(
+    Map<String, String> strings, {
+    required bool compact,
+  }) {
+    final textAlign = compact ? TextAlign.center : TextAlign.start;
+    final alignment = compact
+        ? CrossAxisAlignment.center
+        : CrossAxisAlignment.start;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: alignment,
+      children: [
+        if (!compact)
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: IconButton(
+              onPressed: () => Navigator.pop(context),
+              icon: const Icon(Icons.arrow_back_rounded),
+              color: const Color(0xFF1F2937),
+              tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+            ),
+          ),
+        _buildAccessPill(),
+        SizedBox(height: compact ? 20 : 26),
+        Text(
+          strings['title'] ?? 'Edit Profile',
+          textAlign: textAlign,
+          style: TextStyle(
+            color: const Color(0xFF070B18),
+            fontSize: compact ? 38 : 54,
+            height: 1,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 14),
+        ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: compact ? 540 : 620),
+          child: Text(
+            strings['location_info'] ??
+                'Precise details help others find and trust your profile.',
+            textAlign: textAlign,
+            style: const TextStyle(
+              color: Color(0xFF6B7280),
+              fontSize: 18,
+              height: 1.45,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAccessPill() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.88),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF1976D2).withValues(alpha: 0.08),
+            blurRadius: 24,
+            offset: const Offset(0, 12),
+          ),
+        ],
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.auto_awesome_rounded, color: Color(0xFF1976D2), size: 18),
+          SizedBox(width: 10),
+          Text(
+            'PROFILE EDIT',
+            style: TextStyle(
+              color: Color(0xFF1976D2),
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 3.2,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProfileFormCard(
+    Map<String, String> strings, {
+    required bool compact,
+  }) {
+    return SizedBox(
+      width: compact ? double.infinity : 560,
+      child: Container(
+        width: double.infinity,
+        padding: EdgeInsets.all(compact ? 24 : 38),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.93),
+          borderRadius: BorderRadius.circular(compact ? 28 : 34),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.95),
+            width: 1.4,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.13),
+              blurRadius: 48,
+              offset: const Offset(0, 28),
+            ),
+          ],
+        ),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            children: [
+              _buildImagePicker(),
+              const SizedBox(height: 24),
+              _buildSectionCard(
+                title: strings['basic_info']!,
+                child: Column(
+                  children: [
+                    _buildStyledTextField(
+                      controller: _nameController,
+                      labelText: strings['name']!,
+                      icon: Icons.person_outline,
+                      validator: (v) => v!.isEmpty ? strings['req'] : null,
+                    ),
+                    const SizedBox(height: 16),
+                    _buildStyledTextField(
+                      controller: _emailController,
+                      labelText: strings['email']!,
+                      icon: Icons.email_outlined,
+                      keyboardType: TextInputType.emailAddress,
+                    ),
+                    const SizedBox(height: 16),
+                    _buildStyledTextField(
+                      controller: _dobController,
+                      labelText: strings['dob']!,
+                      hintText: strings['dob_hint']!,
+                      icon: Icons.cake_outlined,
+                      readOnly: true,
+                      onTap: _pickDateOfBirth,
+                      validator: (v) => (v == null || v.trim().isEmpty)
+                          ? strings['dob_required']
+                          : null,
+                    ),
+                    const SizedBox(height: 16),
+                    _buildLocationSection(strings),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              if (widget.userData['role'] == 'worker') ...[
+                _buildSectionCard(
+                  title: strings['service_details']!,
+                  child: Column(
+                    children: [
+                      _buildWorkRadiusSelector(strings),
+                      const SizedBox(height: 16),
+                      _buildMultiSelectProfessions(strings),
+                      const SizedBox(height: 16),
+                      _buildStyledTextField(
+                        controller: _altPhoneController,
+                        labelText: strings['alt_phone']!,
+                        icon: Icons.phone_android_outlined,
+                        keyboardType: TextInputType.phone,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+              _buildSectionCard(
+                title: strings['about_you']!,
+                child: Column(
+                  children: [
+                    _buildStyledTextField(
+                      controller: _phoneController,
+                      labelText: strings['phone']!,
+                      icon: Icons.phone_android_outlined,
+                      keyboardType: TextInputType.phone,
+                      enabled: false,
+                    ),
+                    const SizedBox(height: 16),
+                    _buildStyledTextField(
+                      controller: _descriptionController,
+                      labelText: strings['desc']!,
+                      icon: Icons.description_outlined,
+                      maxLines: 3,
                     ),
                   ],
                 ),
               ),
+              const SizedBox(height: 30),
+              _buildSaveButton(strings),
+              if (_isLoading) ...[
+                const SizedBox(height: 14),
+                const SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(strokeWidth: 2.4),
+                ),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -805,46 +1086,6 @@ class _EditProfilePageState extends State<EditProfilePage> {
     );
   }
 
-  Widget _buildHeader(Map<String, String> strings) {
-    return Container(
-      height: 180,
-      width: double.infinity,
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF1E3A8A), Color(0xFF1976D2)],
-        ),
-        borderRadius: BorderRadius.only(
-          bottomLeft: Radius.circular(36),
-          bottomRight: Radius.circular(36),
-        ),
-      ),
-      child: Stack(
-        children: [
-          Positioned(
-            top: 40,
-            left: 10,
-            child: IconButton(
-              icon: const Icon(Icons.arrow_back, color: Colors.white),
-              onPressed: () => Navigator.pop(context),
-            ),
-          ),
-          Center(
-            child: Text(
-              strings['title']!,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildImagePicker() {
     return GestureDetector(
       onTap: _pickImage,
@@ -856,11 +1097,11 @@ class _EditProfilePageState extends State<EditProfilePage> {
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               gradient: const LinearGradient(
-                colors: [Color(0xFF1E3A8A), Color(0xFF60A5FA)],
+                colors: [Color(0xFF1976D2), Color(0xFF62D6E8)],
               ),
               boxShadow: [
                 BoxShadow(
-                  color: const Color(0xFF1E3A8A).withValues(alpha: 0.2),
+                  color: const Color(0xFF1976D2).withValues(alpha: 0.25),
                   blurRadius: 20,
                   offset: const Offset(0, 8),
                 ),
@@ -934,16 +1175,18 @@ class _EditProfilePageState extends State<EditProfilePage> {
       decoration: InputDecoration(
         labelText: labelText,
         hintText: hintText,
-        prefixIcon: Icon(icon, color: const Color(0xFF1976D2)),
+        prefixIcon: Icon(icon, color: const Color(0xFF9CA3AF)),
         filled: true,
-        fillColor: enabled ? const Color(0xFFF8FAFC) : const Color(0xFFE2E8F0),
+        fillColor: enabled
+            ? Colors.white.withValues(alpha: 0.86)
+            : const Color(0xFFE5E7EB),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide.none,
+          borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+          borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
@@ -963,14 +1206,14 @@ class _EditProfilePageState extends State<EditProfilePage> {
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFE5EAF2)),
+        color: Colors.white.withValues(alpha: 0.78),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.9)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 12,
-            offset: const Offset(0, 6),
+            color: const Color(0xFF1B2A41).withValues(alpha: 0.08),
+            blurRadius: 24,
+            offset: const Offset(0, 14),
           ),
         ],
       ),
@@ -980,9 +1223,9 @@ class _EditProfilePageState extends State<EditProfilePage> {
           Text(
             title,
             style: const TextStyle(
-              fontSize: 15,
+              fontSize: 16,
               fontWeight: FontWeight.w800,
-              color: Color(0xFF1E3A8A),
+              color: Color(0xFF101827),
             ),
           ),
           const SizedBox(height: 12),
@@ -1095,28 +1338,28 @@ class _EditProfilePageState extends State<EditProfilePage> {
   Widget _buildSaveButton(Map<String, String> strings) {
     return Container(
       width: double.infinity,
-      height: 56,
+      height: 58,
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [Color(0xFF1E3A8A), Color(0xFF1976D2)],
+          colors: [Color(0xFF1976D2), Color(0xFF62D6E8)],
         ),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(18),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF1E3A8A).withValues(alpha: 0.25),
-            blurRadius: 14,
-            offset: const Offset(0, 6),
+            color: const Color(0xFF1976D2).withValues(alpha: 0.34),
+            blurRadius: 18,
+            offset: const Offset(0, 10),
           ),
         ],
       ),
       child: ElevatedButton(
-        onPressed: _saveProfile,
+        onPressed: _isLoading ? null : _saveProfile,
         style: ElevatedButton.styleFrom(
           backgroundColor: Colors.transparent,
           shadowColor: Colors.transparent,
           foregroundColor: Colors.white,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(18),
           ),
         ),
         child: Text(
@@ -1125,5 +1368,82 @@ class _EditProfilePageState extends State<EditProfilePage> {
         ),
       ),
     );
+  }
+}
+
+class _EditProfileBackgroundPainter extends CustomPainter {
+  const _EditProfileBackgroundPainter(this.progress);
+
+  final double progress;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = Offset.zero & size;
+    final eased = Curves.easeInOut.transform(progress);
+    final begin = Alignment.lerp(Alignment.topLeft, Alignment.topRight, eased)!;
+    final end = Alignment.lerp(
+      Alignment.bottomRight,
+      Alignment.bottomLeft,
+      eased,
+    )!;
+
+    final basePaint = Paint()
+      ..shader = LinearGradient(
+        begin: begin,
+        end: end,
+        colors: const [
+          Color(0xFFFDFEFF),
+          Color(0xFFEAF5FF),
+          Color(0xFFF7FBFF),
+          Color(0xFFE3F8FF),
+        ],
+        stops: const [0, 0.38, 0.68, 1],
+      ).createShader(rect);
+    canvas.drawRect(rect, basePaint);
+
+    final width = size.width;
+    final height = size.height;
+    final phase = progress * math.pi * 2;
+
+    final highlightPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeWidth = math.max(120, size.shortestSide * 0.18)
+      ..color = const Color(0xFF1976D2).withValues(alpha: 0.055)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 54);
+    final path = Path()
+      ..moveTo(-width * 0.2, height * (0.22 + math.sin(phase) * 0.03))
+      ..cubicTo(
+        width * 0.24,
+        height * (0.02 + math.cos(phase) * 0.04),
+        width * 0.58,
+        height * (0.54 + math.sin(phase) * 0.03),
+        width * 1.2,
+        height * (0.25 + math.cos(phase) * 0.03),
+      );
+    canvas.drawPath(path, highlightPaint);
+
+    final lowerPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeWidth = math.max(90, size.shortestSide * 0.13)
+      ..color = const Color(0xFF62D6E8).withValues(alpha: 0.05)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 46);
+    final lowerPath = Path()
+      ..moveTo(width * 0.36, height * 1.12)
+      ..cubicTo(
+        width * (0.46 + math.sin(phase) * 0.04),
+        height * 0.78,
+        width * (0.72 + math.cos(phase) * 0.03),
+        height * 0.95,
+        width * 1.16,
+        height * (0.65 + math.sin(phase) * 0.04),
+      );
+    canvas.drawPath(lowerPath, lowerPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _EditProfileBackgroundPainter oldDelegate) {
+    return oldDelegate.progress != progress;
   }
 }

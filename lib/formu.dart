@@ -30,6 +30,8 @@ class BlogPage extends StatefulWidget {
 }
 
 class _BlogPageState extends State<BlogPage> {
+  static const String _myProfessionFilterValue = '__my_profession__';
+  static const double _myRadiusFilterValue = -1;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final ScrollController _scrollController = ScrollController();
   final TextEditingController _searchController = TextEditingController();
@@ -44,11 +46,16 @@ class _BlogPageState extends State<BlogPage> {
   String _sortBy = 'newest';
   int _selectedFilterIndex = 0;
   bool _isGuideExpanded = false;
+  String _jobRequestProfessionFilter = '';
+  double _jobRequestRadiusFilterKm = 0;
+  final Set<String> _myProfessions = <String>{};
+  double _myWorkRadiusKm = 25;
 
   @override
   void initState() {
     super.initState();
     _loadProfessionMetadata();
+    _loadMyJobRequestFilterProfile();
     _loadViewerLocation();
     _listenToPosts();
     _scrollController.addListener(_onScroll);
@@ -103,6 +110,17 @@ class _BlogPageState extends State<BlogPage> {
   }
 
   String? _distanceLabelForPost(Map<String, dynamic> post) {
+    final meters = _distanceMetersForPost(post);
+    if (meters == null) return null;
+
+    if (meters < 1000) {
+      return "${meters.round()} m";
+    }
+
+    return "${(meters / 1000).toStringAsFixed(1)} km";
+  }
+
+  double? _distanceMetersForPost(Map<String, dynamic> post) {
     if (_viewerLocation == null ||
         post['locationLat'] == null ||
         post['locationLng'] == null) {
@@ -111,18 +129,12 @@ class _BlogPageState extends State<BlogPage> {
 
     final lat = (post['locationLat'] as num).toDouble();
     final lng = (post['locationLng'] as num).toDouble();
-    final meters = Geolocator.distanceBetween(
+    return Geolocator.distanceBetween(
       _viewerLocation!.latitude,
       _viewerLocation!.longitude,
       lat,
       lng,
     );
-
-    if (meters < 1000) {
-      return "${meters.round()} m";
-    }
-
-    return "${(meters / 1000).toStringAsFixed(1)} km";
   }
 
   Future<void> _loadProfessionMetadata() async {
@@ -154,6 +166,59 @@ class _BlogPageState extends State<BlogPage> {
       setState(() => _professionItems = items);
     } catch (e) {
       debugPrint('Failed to load profession metadata: $e');
+    }
+  }
+
+  Future<void> _loadMyJobRequestFilterProfile() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null || user.isAnonymous) return;
+
+      final snapshot = await _firestore.collection('users').doc(user.uid).get();
+      final data = snapshot.data();
+      if (data == null) return;
+
+      final myProfessions = <String>{};
+
+      final professionsRaw = data['professions'];
+      if (professionsRaw is List) {
+        for (final item in professionsRaw) {
+          final normalized = _normalizeStoredProfession(item.toString());
+          if (normalized.isNotEmpty) {
+            myProfessions.add(normalized.toLowerCase());
+          }
+        }
+      }
+
+      final singleProfession = (data['profession'] ?? '').toString().trim();
+      if (singleProfession.isNotEmpty) {
+        final normalized = _normalizeStoredProfession(singleProfession);
+        if (normalized.isNotEmpty) {
+          myProfessions.add(normalized.toLowerCase());
+        }
+      }
+
+      double myWorkRadiusKm = 25;
+      final rawRadius = data['workRadius'];
+      if (rawRadius is num && rawRadius.toDouble() > 0) {
+        final radiusValue = rawRadius.toDouble();
+        myWorkRadiusKm = radiusValue > 1000 ? radiusValue / 1000 : radiusValue;
+      } else if (rawRadius != null) {
+        final parsed = double.tryParse(rawRadius.toString());
+        if (parsed != null && parsed > 0) {
+          myWorkRadiusKm = parsed > 1000 ? parsed / 1000 : parsed;
+        }
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _myProfessions
+          ..clear()
+          ..addAll(myProfessions);
+        _myWorkRadiusKm = myWorkRadiusKm;
+      });
+    } catch (e) {
+      debugPrint('Failed to load current user request filter profile: $e');
     }
   }
 
@@ -224,17 +289,281 @@ class _BlogPageState extends State<BlogPage> {
     return '$hour:$minute';
   }
 
+  bool _isJobRequestSectionActive(Map<String, dynamic> strings) {
+    final categories = (strings['categories'] as List?) ?? const [];
+    if (_selectedFilterIndex < 0 || _selectedFilterIndex >= categories.length) {
+      return false;
+    }
+    return _isJobRequestCategoryValue(
+      categories[_selectedFilterIndex].toString(),
+    );
+  }
+
+  bool _matchesJobRequestFilters(
+    Map<String, dynamic> post,
+    Map<String, dynamic> strings,
+  ) {
+    if (!_isJobRequestSectionActive(strings)) return true;
+
+    final isJobRequest =
+        post['isJobRequest'] == true ||
+        _isJobRequestCategoryValue((post['category'] ?? '').toString());
+    if (!isJobRequest) return true;
+
+    if (_jobRequestProfessionFilter == _myProfessionFilterValue) {
+      if (_myProfessions.isNotEmpty) {
+        final raw = (post['professionLabel'] ?? post['profession'] ?? '')
+            .toString()
+            .trim();
+        final normalized = _normalizeStoredProfession(raw).toLowerCase();
+        if (!_myProfessions.contains(normalized)) {
+          return false;
+        }
+      }
+    } else if (_jobRequestProfessionFilter.isNotEmpty) {
+      final raw = (post['professionLabel'] ?? post['profession'] ?? '')
+          .toString()
+          .trim();
+      final normalized = _normalizeStoredProfession(raw);
+      if (normalized.toLowerCase() !=
+          _jobRequestProfessionFilter.toLowerCase()) {
+        return false;
+      }
+    }
+
+    if (_jobRequestRadiusFilterKm == _myRadiusFilterValue &&
+        _viewerLocation != null &&
+        _myWorkRadiusKm > 0) {
+      final meters = _distanceMetersForPost(post);
+      if (meters == null || meters > (_myWorkRadiusKm * 1000)) {
+        return false;
+      }
+    } else if (_jobRequestRadiusFilterKm > 0 && _viewerLocation != null) {
+      final meters = _distanceMetersForPost(post);
+      if (meters == null || meters > (_jobRequestRadiusFilterKm * 1000)) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  List<MapEntry<String, String>> _jobRequestProfessionChoices(
+    String localeCode,
+  ) {
+    final byValue = <String, String>{};
+
+    for (final item in _professionItems) {
+      final value = _professionCanonicalValue(item).trim();
+      if (value.isEmpty) continue;
+      byValue[value] = _professionLabel(item, localeCode);
+    }
+
+    if (byValue.isEmpty) {
+      for (final post in _posts) {
+        final raw = (post['professionLabel'] ?? post['profession'] ?? '')
+            .toString()
+            .trim();
+        if (raw.isEmpty) continue;
+        final value = _normalizeStoredProfession(raw);
+        if (value.isEmpty) continue;
+        byValue[value] = value;
+      }
+    }
+
+    final entries =
+        byValue.entries
+            .map((entry) => MapEntry(entry.key, entry.value))
+            .toList()
+          ..sort(
+            (a, b) => a.value.toLowerCase().compareTo(b.value.toLowerCase()),
+          );
+    return entries;
+  }
+
+  Widget _buildJobRequestFilters(
+    Map<String, dynamic> strings,
+    String localeCode,
+  ) {
+    final professionChoices = _jobRequestProfessionChoices(localeCode);
+    final hasMyRadius = _myWorkRadiusKm > 0;
+    const radiusChoices = <double>[0, _myRadiusFilterValue];
+    final radiusDescription = _jobRequestRadiusFilterKm == 0
+        ? (strings['filter_any_radius'] ?? 'Any radius')
+        : hasMyRadius
+        ? (strings['filter_my_radius_value'] ?? 'My radius: {val} km')
+              .replaceFirst('{val}', _myWorkRadiusKm.toStringAsFixed(0))
+        : (strings['filter_my_radius_unavailable'] ??
+              'My radius is not available');
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 6, 16, 10),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: DropdownButtonFormField<String>(
+                  isExpanded: true,
+                  initialValue: _jobRequestProfessionFilter,
+                  decoration: InputDecoration(
+                    labelText: strings['filter_profession'] ?? 'Profession',
+                    filled: true,
+                    fillColor: const Color(0xFFF8FAFC),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                    ),
+                  ),
+                  items: [
+                    DropdownMenuItem(
+                      value: '',
+                      child: Text(
+                        strings['filter_all_professions'] ?? 'All professions',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    DropdownMenuItem(
+                      value: _myProfessionFilterValue,
+                      child: Text(
+                        strings['filter_my_profession'] ?? 'My profession',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    ...professionChoices.map(
+                      (choice) => DropdownMenuItem(
+                        value: choice.key,
+                        child: Text(
+                          choice.value,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ),
+                  ],
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setState(() => _jobRequestProfessionFilter = value);
+                  },
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: DropdownButtonFormField<double>(
+                  isExpanded: true,
+                  initialValue: _jobRequestRadiusFilterKm,
+                  decoration: InputDecoration(
+                    labelText: strings['filter_radius'] ?? 'Work radius',
+                    filled: true,
+                    fillColor: const Color(0xFFF8FAFC),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                    ),
+                  ),
+                  items: radiusChoices
+                      .map(
+                        (radiusKm) => DropdownMenuItem<double>(
+                          value: radiusKm,
+                          child: Text(
+                            radiusKm == 0
+                                ? (strings['filter_any_radius'] ?? 'Any radius')
+                                : hasMyRadius
+                                ? (strings['filter_my_radius_value'] ??
+                                          'My radius: {val} km')
+                                      .replaceFirst(
+                                        '{val}',
+                                        _myWorkRadiusKm.toStringAsFixed(0),
+                                      )
+                                : (strings['filter_my_radius_unavailable'] ??
+                                      'My radius is not available'),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setState(() => _jobRequestRadiusFilterKm = value);
+                  },
+                ),
+              ),
+            ],
+          ),
+          if (_jobRequestProfessionFilter == _myProfessionFilterValue &&
+              _myProfessions.isEmpty) ...[
+            const SizedBox(height: 6),
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: Text(
+                strings['my_profession_not_set'] ??
+                    'Set your profession in profile to use this filter',
+                style: const TextStyle(
+                  color: Color(0xFF64748B),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+          if (_viewerLocation == null &&
+              _jobRequestRadiusFilterKm == _myRadiusFilterValue) ...[
+            const SizedBox(height: 6),
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: Text(
+                strings['radius_requires_location'] ??
+                    'Enable location to apply radius filter',
+                style: const TextStyle(
+                  color: Color(0xFF64748B),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ] else ...[
+            const SizedBox(height: 6),
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: Text(
+                radiusDescription,
+                style: const TextStyle(
+                  color: Color(0xFF64748B),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   void _listenToPosts() {
     _postsSubscription?.cancel();
 
     Query query = _firestore.collection('blog_posts');
-    final strings = _getLocalizedStrings(context);
-    final categories = strings['categories'] as List;
-
-    if (_selectedFilterIndex != 0 && _selectedFilterIndex < categories.length) {
+    if (_selectedFilterIndex > 0 &&
+        _selectedFilterIndex < _categoryAliases.length) {
       query = query.where(
         'category',
-        isEqualTo: categories[_selectedFilterIndex],
+        whereIn: _categoryAliases[_selectedFilterIndex],
       );
     }
 
@@ -384,6 +713,15 @@ class _BlogPageState extends State<BlogPage> {
       'profession': 'מקצוע',
       'profession_hint': 'בחר בעל מקצוע נדרש',
       'profession_required': 'נא לבחור מקצוע',
+      'filter_profession': 'סינון לפי מקצוע',
+      'filter_all_professions': 'כל המקצועות',
+      'filter_my_profession': 'המקצוע שלי',
+      'my_profession_not_set': 'הגדר מקצוע בפרופיל כדי להשתמש במסנן הזה',
+      'filter_radius': 'סינון לפי רדיוס',
+      'filter_any_radius': 'כל רדיוס',
+      'filter_my_radius_value': 'הרדיוס שלי: {val} ק"מ',
+      'filter_my_radius_unavailable': 'הרדיוס שלי לא זמין',
+      'radius_requires_location': 'יש להפעיל מיקום כדי לסנן לפי רדיוס',
       'use_current_location': 'השתמש במיקום נוכחי',
       'choose_from_map': 'בחר מהמפה',
       'selected_location': 'המיקום שנבחר',
@@ -497,6 +835,15 @@ class _BlogPageState extends State<BlogPage> {
       'profession': 'المهنة',
       'profession_hint': 'اختر المهنة المطلوبة',
       'profession_required': 'يرجى اختيار مهنة',
+      'filter_profession': 'تصفية حسب المهنة',
+      'filter_all_professions': 'كل المهن',
+      'filter_my_profession': 'مهنتي',
+      'my_profession_not_set': 'حدّد مهنتك في الملف الشخصي لاستخدام هذا الفلتر',
+      'filter_radius': 'تصفية حسب النطاق',
+      'filter_any_radius': 'أي نطاق',
+      'filter_my_radius_value': 'نطاقي: {val} كم',
+      'filter_my_radius_unavailable': 'نطاقي غير متاح',
+      'radius_requires_location': 'فعّل الموقع لتفعيل التصفية حسب النطاق',
       'use_current_location': 'استخدم الموقع الحالي',
       'choose_from_map': 'اختر من الخريطة',
       'selected_location': 'الموقع المختار',
@@ -818,6 +1165,16 @@ class _BlogPageState extends State<BlogPage> {
       'profession': 'Profession',
       'profession_hint': 'Choose the profession you need',
       'profession_required': 'Please choose a profession',
+      'filter_profession': 'Filter by profession',
+      'filter_all_professions': 'All professions',
+      'filter_my_profession': 'My profession',
+      'my_profession_not_set':
+          'Set your profession in profile to use this filter',
+      'filter_radius': 'Filter by radius',
+      'filter_any_radius': 'Any radius',
+      'filter_my_radius_value': 'My radius: {val} km',
+      'filter_my_radius_unavailable': 'My radius is not available',
+      'radius_requires_location': 'Enable location to apply radius filter',
       'use_current_location': 'Use current location',
       'choose_from_map': 'Choose from map',
       'selected_location': 'Selected location',
@@ -1989,180 +2346,6 @@ class _BlogPageState extends State<BlogPage> {
     );
   }
 
-  Widget _buildFeaturedArticles(Map<String, dynamic> strings) {
-    final articles = strings['articles'] as List;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-          child: Text(
-            strings['featured_articles'],
-            style: const TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF1E293B),
-            ),
-          ),
-        ),
-        SizedBox(
-          height: 140,
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            itemCount: articles.length,
-            itemBuilder: (context, index) {
-              final art = articles[index];
-              final color = art['color'] as Color;
-              return Container(
-                width: 220,
-                margin: const EdgeInsets.only(right: 16),
-                child: InkWell(
-                  onTap: () => _showArticleSheet(art, strings),
-                  borderRadius: BorderRadius.circular(20),
-                  child: Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: color.withOpacity(0.08),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: color.withOpacity(0.2),
-                        width: 1.5,
-                      ),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        CircleAvatar(
-                          backgroundColor: color.withOpacity(0.1),
-                          radius: 18,
-                          child: Icon(
-                            art['icon'] as IconData,
-                            color: color,
-                            size: 20,
-                          ),
-                        ),
-                        const Spacer(),
-                        Text(
-                          art['title'],
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 15,
-                            color: Color(0xFF1E293B),
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          art['subtitle'],
-                          style: TextStyle(
-                            color: Colors.grey[600],
-                            fontSize: 12,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-        const SizedBox(height: 24),
-      ],
-    );
-  }
-
-  void _showArticleSheet(
-    Map<String, dynamic> art,
-    Map<String, dynamic> strings,
-  ) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-      ),
-      builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.7,
-        maxChildSize: 0.9,
-        minChildSize: 0.5,
-        expand: false,
-        builder: (context, scrollController) => Column(
-          children: [
-            const SizedBox(height: 12),
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.grey[300],
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            Expanded(
-              child: ListView(
-                controller: scrollController,
-                padding: const EdgeInsets.all(24),
-                children: [
-                  Icon(
-                    art['icon'] as IconData,
-                    color: art['color'] as Color,
-                    size: 48,
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    art['title'],
-                    style: const TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF1E293B),
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  Text(
-                    art['subtitle'],
-                    style: TextStyle(fontSize: 16, color: Colors.grey[600]),
-                    textAlign: TextAlign.center,
-                  ),
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 20),
-                    child: Divider(),
-                  ),
-                  Text(
-                    art['content'],
-                    style: const TextStyle(
-                      fontSize: 16,
-                      height: 1.8,
-                      color: Color(0xFF334155),
-                    ),
-                  ),
-                  const SizedBox(height: 40),
-                  ElevatedButton.icon(
-                    onPressed: () =>
-                        Share.share("${art['title']}\n\n${art['content']}"),
-                    icon: const Icon(Icons.share),
-                    label: Text(strings['share_article']),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: art['color'],
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _buildFilterBar(Map<String, dynamic> strings) {
     final categories = strings['categories'] as List;
     return SizedBox(
@@ -2216,8 +2399,10 @@ class _BlogPageState extends State<BlogPage> {
     final strings = _getLocalizedStrings(context);
     final locale = Provider.of<LanguageProvider>(context).locale.languageCode;
     final isRtl = locale == 'he' || locale == 'ar';
+    final isJobRequestSectionActive = _isJobRequestSectionActive(strings);
     final visiblePosts = _posts
         .where((p) => !_hiddenPostIds.contains(p['id']))
+        .where((p) => _matchesJobRequestFilters(p, strings))
         .toList();
 
     return Directionality(
@@ -2273,7 +2458,9 @@ class _BlogPageState extends State<BlogPage> {
             ),
           ],
           bottom: PreferredSize(
-            preferredSize: const Size.fromHeight(110),
+            preferredSize: Size.fromHeight(
+              isJobRequestSectionActive ? 186 : 110,
+            ),
             child: Column(
               children: [
                 Padding(
@@ -2297,6 +2484,8 @@ class _BlogPageState extends State<BlogPage> {
                   ),
                 ),
                 _buildFilterBar(strings),
+                if (isJobRequestSectionActive)
+                  _buildJobRequestFilters(strings, locale),
               ],
             ),
           ),
@@ -2323,14 +2512,13 @@ class _BlogPageState extends State<BlogPage> {
                   padding: const EdgeInsets.all(16),
                   itemCount:
                       visiblePosts.length +
-                      2 +
+                      1 +
                       (visiblePosts.isEmpty ? 1 : 0) +
                       (_isMoreLoading ? 1 : 0),
                   itemBuilder: (context, index) {
                     if (index == 0) return _buildExplanationCard(strings);
-                    if (index == 1) return _buildFeaturedArticles(strings);
 
-                    if (visiblePosts.isEmpty && index == 2) {
+                    if (visiblePosts.isEmpty && index == 1) {
                       return Padding(
                         padding: const EdgeInsets.only(top: 60),
                         child: Center(
@@ -2342,7 +2530,7 @@ class _BlogPageState extends State<BlogPage> {
                       );
                     }
 
-                    final postIndex = index - 2;
+                    final postIndex = index - 1;
                     if (postIndex < visiblePosts.length) {
                       return _BlogCard(
                         post: visiblePosts[postIndex],
@@ -2440,6 +2628,7 @@ class _BlogCard extends StatelessWidget {
     final requestDateFrom = _blogCardDate(post['requestDateFrom']);
     final requestDateTo = _blogCardDate(post['requestDateTo']);
     final postedAt = _blogCardDate(post['timestamp']);
+    final cityLabel = _blogCardCityLabel(post['location']);
     final dateLabel = requestDateFrom != null || requestDateTo != null
         ? requestDateFrom != null && requestDateTo != null
               ? "${intl.DateFormat('dd/MM').format(requestDateFrom)} - ${intl.DateFormat('dd/MM').format(requestDateTo)}"
@@ -2658,53 +2847,73 @@ class _BlogCard extends StatelessWidget {
                   ],
                   Row(
                     children: [
-                      const Icon(
-                        Icons.person_outline,
-                        size: 16,
-                        color: Color(0xFF94A3B8),
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        post['authorName'] ?? localizedStrings['anonymous'],
-                        style: const TextStyle(
-                          color: Color(0xFF64748B),
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      if (distanceLabel != null) ...[
-                        const SizedBox(width: 10),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFEFF6FF),
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(
-                                Icons.near_me_rounded,
-                                size: 14,
-                                color: Color(0xFF1976D2),
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                distanceLabel!,
+                      Expanded(
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.person_outline,
+                              size: 16,
+                              color: Color(0xFF94A3B8),
+                            ),
+                            const SizedBox(width: 4),
+                            Flexible(
+                              child: Text(
+                                (post['authorName'] ??
+                                        localizedStrings['anonymous'])
+                                    .toString(),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
-                                  color: Color(0xFF1976D2),
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFF64748B),
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                            if (distanceLabel != null) ...[
+                              const SizedBox(width: 8),
+                              Flexible(
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFEFF6FF),
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(
+                                        Icons.near_me_rounded,
+                                        size: 14,
+                                        color: Color(0xFF1976D2),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Flexible(
+                                        child: Text(
+                                          cityLabel == null
+                                              ? distanceLabel!
+                                              : '${distanceLabel!} · $cityLabel',
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            color: Color(0xFF1976D2),
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
                             ],
-                          ),
+                          ],
                         ),
-                      ],
-                      const Spacer(),
+                      ),
+                      const SizedBox(width: 8),
                       GestureDetector(
                         onTap: onLike,
                         child: Row(
@@ -2753,19 +2962,34 @@ DateTime? _blogCardDate(dynamic value) {
   return null;
 }
 
+String? _blogCardCityLabel(dynamic rawLocation) {
+  final location = rawLocation?.toString().trim() ?? '';
+  if (location.isEmpty) return null;
+
+  final coordinatesPattern = RegExp(r'^-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?$');
+  if (coordinatesPattern.hasMatch(location)) return null;
+
+  final city = location.split(',').first.trim();
+  if (city.isEmpty) return null;
+  return city;
+}
+
 bool _isJobRequestCategoryValue(String raw) {
   final normalized = raw.trim().toLowerCase();
   if (normalized.isEmpty) return false;
 
-  const aliases = <String>{
-    'job request',
-    'דרוש בעל מקצוע',
-    'طلب عامل',
-    'የስራ ጥያቄ',
-    'запрос на работу',
-  };
+  final aliases = _categoryAliases[3].toSet();
   return aliases.contains(normalized);
 }
+
+const List<List<String>> _categoryAliases = <List<String>>[
+  ['all', 'הכל', 'الكل', 'ሁሉም', 'все'],
+  ['question', 'שאלה', 'سؤال', 'ጥያቄ', 'вопрос'],
+  ['tip', 'טיפ', 'نصيحة', 'ምክር', 'совет'],
+  ['job request', 'דרוש בעל מקצוע', 'طلب عامل', 'የስራ ጥያቄ', 'запрос на работу'],
+  ['recommendation', 'המלצה', 'توصية', 'ምክር ሰጪ', 'рекомендация'],
+  ['other', 'אחר', 'أخرى', 'ሌላ', 'другое'],
+];
 
 String _localizedCategoryValueForMap(
   String raw,
@@ -2774,24 +2998,9 @@ String _localizedCategoryValueForMap(
   final normalized = raw.trim().toLowerCase();
   if (normalized.isEmpty) return raw;
 
-  const categoryAliases = <List<String>>[
-    ['all', 'הכל', 'الكل', 'ሁሉም', 'все'],
-    ['question', 'שאלה', 'سؤال', 'ጥያቄ', 'вопрос'],
-    ['tip', 'טיפ', 'نصيحة', 'ምክር', 'совет'],
-    [
-      'job request',
-      'דרוש בעל מקצוע',
-      'طلب عامل',
-      'የስራ ጥያቄ',
-      'запрос на работу',
-    ],
-    ['recommendation', 'המלצה', 'توصية', 'ምክር ሰጪ', 'рекомендация'],
-    ['other', 'אחר', 'أخرى', 'ሌላ', 'другое'],
-  ];
-
   int categoryIndex = -1;
-  for (var i = 0; i < categoryAliases.length; i++) {
-    if (categoryAliases[i].contains(normalized)) {
+  for (var i = 0; i < _categoryAliases.length; i++) {
+    if (_categoryAliases[i].contains(normalized)) {
       categoryIndex = i;
       break;
     }

@@ -11,6 +11,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/services.dart';
 import 'package:untitled1/sign_up.dart';
+import 'package:untitled1/main.dart';
 import 'package:untitled1/services/subscription_access_service.dart';
 
 class SubscriptionPage extends StatefulWidget {
@@ -72,21 +73,37 @@ class _SubscriptionPageState extends State<SubscriptionPage>
     _backgroundAnimationController;
   }
 
-  static const String _proProductId = 'pro_worker_monthly';
-  static const String _backwardsCompatibleId =
+  static const String _androidProProductId = 'pro_worker_monthly';
+  static const String _androidBackwardsCompatibleId =
       'com-hiro-app-pro-worker-monthly';
+  static const String _iosProProductId = 'HIRO_SUBSCRIPTION';
 
-  static const Set<String> _allowedSubscriptionIds = {
-    _proProductId,
-    _backwardsCompatibleId,
-  };
+  Set<String> get _storeProductIds {
+    if (!kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.iOS ||
+            defaultTargetPlatform == TargetPlatform.macOS)) {
+      return const {_iosProProductId};
+    }
+
+    return const {_androidProProductId, _androidBackwardsCompatibleId};
+  }
+
+  Set<String> get _allowedSubscriptionIds => _storeProductIds;
 
   ProductDetails? get _selectedProduct {
+    if (!kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.iOS ||
+            defaultTargetPlatform == TargetPlatform.macOS)) {
+      for (final product in _products) {
+        if (product.id == _iosProProductId) return product;
+      }
+    }
+
     for (final product in _products) {
-      if (product.id == _proProductId) return product;
+      if (product.id == _androidProProductId) return product;
     }
     for (final product in _products) {
-      if (product.id == _backwardsCompatibleId) return product;
+      if (product.id == _androidBackwardsCompatibleId) return product;
     }
     return _products.isNotEmpty ? _products.first : null;
   }
@@ -176,9 +193,8 @@ class _SubscriptionPageState extends State<SubscriptionPage>
       return;
     }
 
-    const Set<String> kIds = <String>{_proProductId, _backwardsCompatibleId};
     final ProductDetailsResponse response = await _inAppPurchase
-        .queryProductDetails(kIds);
+        .queryProductDetails(_storeProductIds);
 
     final bool hasMatchingProduct = response.productDetails.any(
       (p) => _allowedSubscriptionIds.contains(p.id),
@@ -571,6 +587,54 @@ class _SubscriptionPageState extends State<SubscriptionPage>
     );
   }
 
+  Future<void> _confirmSkipForLater() async {
+    final shouldSkip = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          title: const Text(
+            'לדלג על המנוי כרגע?',
+            style: TextStyle(fontWeight: FontWeight.w800),
+          ),
+          content: const Text(
+            'אם תדלג עכשיו, לא תקבל גישה לכלי Pro כמו:\n'
+            '• חשיפה מוגברת ותג Pro בפרופיל\n'
+            '• מערכת ניהול לידים והזמנות מלאה\n'
+            '• דוחות מתקדמים ותמיכת VIP\n\n'
+            'תוכל להצטרף למנוי בהמשך מעמוד הפרופיל.',
+            style: TextStyle(height: 1.45),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('חזרה'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF1976D2),
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('אישור'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (shouldSkip != true || !mounted) return;
+
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (_) => const MyHomePage()),
+      (route) => false,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     _ensureAnimationControllers();
@@ -924,6 +988,21 @@ class _SubscriptionPageState extends State<SubscriptionPage>
                 fontSize: 12,
                 color: Color(0xFF9CA3AF),
                 height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 10),
+            TextButton(
+              onPressed: _isPurchasing ? null : _confirmSkipForLater,
+              style: TextButton.styleFrom(
+                foregroundColor: const Color(0xFF1F2937),
+              ),
+              child: const Text(
+                'דלג בינתיים',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  decoration: TextDecoration.underline,
+                ),
               ),
             ),
           ],

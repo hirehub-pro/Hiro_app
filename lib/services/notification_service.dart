@@ -51,6 +51,14 @@ class NotificationService {
       },
     );
 
+    if (Platform.isIOS) {
+      await _messaging.setForegroundNotificationPresentationOptions(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+    }
+
     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
@@ -87,7 +95,8 @@ class NotificationService {
         sound: true,
       );
 
-      if (settings.authorizationStatus == AuthorizationStatus.authorized) {
+      if (settings.authorizationStatus == AuthorizationStatus.authorized ||
+          settings.authorizationStatus == AuthorizationStatus.provisional) {
         String? token = await _getMessagingToken();
         if (token != null) {
           final firestore = FirebaseFirestore.instance;
@@ -113,6 +122,10 @@ class NotificationService {
           });
 
           debugPrint("Saved $platform FCM token for user ${user.uid}");
+        } else {
+          debugPrint(
+            "Skipping token save: FCM/APNs token is unavailable on iOS right now.",
+          );
         }
       }
     } catch (e) {
@@ -122,10 +135,25 @@ class NotificationService {
 
   static Future<String?> _getMessagingToken() async {
     if (Platform.isIOS) {
-      for (var attempt = 0; attempt < 5; attempt++) {
+      String? apnsToken;
+      for (var attempt = 0; attempt < 20; attempt++) {
         final apnsToken = await _messaging.getAPNSToken();
-        if (apnsToken != null) break;
-        await Future<void>.delayed(const Duration(milliseconds: 500));
+        if (apnsToken != null && apnsToken.isNotEmpty) {
+          debugPrint("APNs token is available (length=${apnsToken.length})");
+          break;
+        }
+        if (attempt == 19) {
+          debugPrint(
+            "APNs token is still null after waiting; iOS push won't work yet.",
+          );
+          return null;
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 750));
+      }
+
+      apnsToken = await _messaging.getAPNSToken();
+      if (apnsToken == null || apnsToken.isEmpty) {
+        return null;
       }
     }
 
@@ -282,6 +310,8 @@ class NotificationService {
     Map<String, dynamic>? data,
   }) async {
     try {
+      // Push delivery is handled by backend Cloud Functions when a notification
+      // document is created. This method is currently diagnostic only.
       debugPrint("FCM notification request for token: $targetToken");
       debugPrint("Title: $title, Body: $body");
     } catch (e) {
