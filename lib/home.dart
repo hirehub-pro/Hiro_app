@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -16,7 +19,6 @@ import 'package:untitled1/pages/subscription.dart';
 import 'package:untitled1/widgets/skeleton.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'dart:async';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -29,9 +31,15 @@ class _HomeSessionState {
   static final Set<String> hiddenBannerIds = <String>{};
 }
 
-class _HomePageState extends State<HomePage> {
+class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
+  static const Color _kPrimaryBlue = Color(0xFF1976D2);
+  static const Color _kPageTint = Color(0xFFF7FBFF);
+  static const Color _kTextMain = Color(0xFF070B18);
+  static const Color _kTextMuted = Color(0xFF6B7280);
+
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   StreamSubscription? _popupSubscription;
+  AnimationController? _backgroundController;
   String? _lastPopupId;
   String? _lastPopupSignature;
   final Set<String> _hiddenPopupIds = _HomeSessionState.hiddenPopupIds;
@@ -51,6 +59,17 @@ class _HomePageState extends State<HomePage> {
   String? _profileImageUrl;
   String _userRole = "customer";
   String _subscriptionStatus = "inactive";
+
+  AnimationController get _backgroundAnimationController {
+    final controller = _backgroundController;
+    if (controller != null) return controller;
+    final created = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 9),
+    )..repeat(reverse: true);
+    _backgroundController = created;
+    return created;
+  }
 
   List<String> _announcementImages(Map<String, dynamic> data) {
     final raw = data['imageUrls'];
@@ -140,6 +159,7 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
+    _backgroundAnimationController;
     _bannerPageController = PageController(initialPage: 1000);
     _initData();
     _listenForPopups();
@@ -188,6 +208,7 @@ class _HomePageState extends State<HomePage> {
   void dispose() {
     _popupSubscription?.cancel();
     _bannerAutoScrollTimer?.cancel();
+    _backgroundController?.dispose();
     _bannerPageController.dispose();
     super.dispose();
   }
@@ -1039,17 +1060,21 @@ class _HomePageState extends State<HomePage> {
         duration: const Duration(milliseconds: 220),
         curve: Curves.easeOutCubic,
         decoration: BoxDecoration(
-          color: selected ? activeBackground : Colors.white,
-          borderRadius: BorderRadius.circular(12),
+          color: selected
+              ? activeBackground.withValues(alpha: 0.92)
+              : Colors.white.withValues(alpha: 0.82),
+          borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: selected ? activeBorder : const Color(0xFFE2E8F0),
+            color: selected
+                ? activeBorder.withValues(alpha: 0.95)
+                : const Color(0xFFE5E7EB),
           ),
           boxShadow: selected
               ? [
                   BoxShadow(
                     color: activeForeground.withValues(alpha: 0.18),
-                    blurRadius: 12,
-                    offset: const Offset(0, 6),
+                    blurRadius: 18,
+                    offset: const Offset(0, 8),
                   ),
                 ]
               : const [],
@@ -1059,12 +1084,12 @@ class _HomePageState extends State<HomePage> {
             visualDensity: VisualDensity.compact,
             foregroundColor: selected
                 ? activeForeground
-                : const Color(0xFF475569),
+                : const Color(0xFF374151),
             side: BorderSide.none,
             backgroundColor: Colors.transparent,
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(16),
             ),
           ),
           onPressed: onPressed,
@@ -1073,7 +1098,7 @@ class _HomePageState extends State<HomePage> {
             label,
             style: TextStyle(
               fontWeight: FontWeight.w700,
-              color: selected ? activeForeground : const Color(0xFF475569),
+              color: selected ? activeForeground : const Color(0xFF374151),
             ),
           ),
         ),
@@ -1090,39 +1115,103 @@ class _HomePageState extends State<HomePage> {
     ).locale.languageCode;
     final isRtl = localeCode == 'he' || localeCode == 'ar';
     final user = FirebaseAuth.instance.currentUser;
+    final homeTheme = theme.copyWith(
+      scaffoldBackgroundColor: Colors.transparent,
+      colorScheme: theme.colorScheme.copyWith(primary: _kPrimaryBlue),
+      cardTheme: CardThemeData(
+        color: Colors.white.withValues(alpha: 0.88),
+        elevation: 0,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      ),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: _kPrimaryBlue,
+          foregroundColor: Colors.white,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: const Color(0xFF374151),
+          side: const BorderSide(color: Color(0xFFDCE5EE)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+        ),
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: const Color(0xFFF9FAFB),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 14,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: _kPrimaryBlue, width: 1.4),
+        ),
+      ),
+    );
+    final backgroundController = _backgroundAnimationController;
 
     return Directionality(
       textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
-      child: Scaffold(
-        backgroundColor: const Color(0xFFF8FAFC),
-        body: RefreshIndicator(
-          onRefresh: () async {
-            await _initData();
-          },
-          child: CustomScrollView(
-            slivers: [
-              _buildSliverAppBar(localized, theme, user),
-              _buildBroadcastBanner(localized),
-              SliverPadding(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                sliver: SliverToBoxAdapter(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildCategories(context, localized, theme),
-                      if (_shouldShowSubscriptionCta) ...[
-                        const SizedBox(height: 16),
-                        _buildSubscribeCta(localized),
-                      ],
-                      const SizedBox(height: 24),
-                      _buildRequestStatusTimeline(localized),
-                      const SizedBox(height: 20),
-                      _buildProjectIdeasSection(localized),
-                      const SizedBox(height: 24),
-                      _buildMaintenanceChecklist(localized),
-                      const SizedBox(height: 32),
-                    ],
-                  ),
+      child: Theme(
+        data: homeTheme,
+        child: Scaffold(
+          backgroundColor: _kPageTint,
+          body: Stack(
+            children: [
+              Positioned.fill(
+                child: AnimatedBuilder(
+                  animation: backgroundController,
+                  builder: (context, _) {
+                    return CustomPaint(
+                      painter: _HomeBackgroundPainter(
+                        backgroundController.value,
+                      ),
+                    );
+                  },
+                ),
+              ),
+              RefreshIndicator(
+                onRefresh: () async {
+                  await _initData();
+                },
+                child: CustomScrollView(
+                  slivers: [
+                    _buildSliverAppBar(localized, theme, user),
+                    _buildBroadcastBanner(localized),
+                    SliverPadding(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      sliver: SliverToBoxAdapter(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildCategories(context, localized, theme),
+                            if (_shouldShowSubscriptionCta) ...[
+                              const SizedBox(height: 16),
+                              _buildSubscribeCta(localized),
+                            ],
+                            const SizedBox(height: 24),
+                            _buildRequestStatusTimeline(localized),
+                            const SizedBox(height: 20),
+                            _buildProjectIdeasSection(localized),
+                            const SizedBox(height: 24),
+                            _buildMaintenanceChecklist(localized),
+                            const SizedBox(height: 32),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -1393,11 +1482,18 @@ class _HomePageState extends State<HomePage> {
   Widget _buildSubscribeCta(Map<String, dynamic> strings) {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: const Color(0xFFEFF6FF),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFBFDBFE)),
+        color: Colors.white.withValues(alpha: 0.9),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.96)),
+        boxShadow: [
+          BoxShadow(
+            color: _kPrimaryBlue.withValues(alpha: 0.08),
+            blurRadius: 28,
+            offset: const Offset(0, 14),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1405,9 +1501,9 @@ class _HomePageState extends State<HomePage> {
           Text(
             strings['subscribe_cta_title'] ?? 'Activate Pro Subscription',
             style: const TextStyle(
-              fontSize: 17,
+              fontSize: 19,
               fontWeight: FontWeight.w800,
-              color: Color(0xFF0F2E67),
+              color: _kTextMain,
             ),
           ),
           const SizedBox(height: 8),
@@ -1415,12 +1511,12 @@ class _HomePageState extends State<HomePage> {
             strings['subscribe_cta_subtitle'] ??
                 'Activate Pro to unlock worker tools.',
             style: const TextStyle(
-              fontSize: 14,
+              fontSize: 15,
               height: 1.4,
-              color: Color(0xFF334155),
+              color: _kTextMuted,
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 14),
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
@@ -1439,11 +1535,11 @@ class _HomePageState extends State<HomePage> {
                 strings['subscribe_cta_button'] ?? 'Go to Subscription',
               ),
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF1976D2),
+                backgroundColor: _kPrimaryBlue,
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 12),
+                padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(16),
                 ),
               ),
             ),
@@ -1466,10 +1562,10 @@ class _HomePageState extends State<HomePage> {
       floating: false,
       pinned: true,
       elevation: 0,
-      backgroundColor: const Color(0xFF1976D2),
+      backgroundColor: _kPageTint,
       actions: [
         IconButton(
-          icon: const Icon(Icons.place_outlined, color: Colors.white),
+          icon: const Icon(Icons.place_outlined, color: Color(0xFF1E3A8A)),
           onPressed: _openLocationManager,
         ),
         StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
@@ -1492,7 +1588,10 @@ class _HomePageState extends State<HomePage> {
               children: [
                 IconButton(
                   tooltip: strings['my_requests'],
-                  icon: const Icon(Icons.list_alt_rounded, color: Colors.white),
+                  icon: const Icon(
+                    Icons.list_alt_rounded,
+                    color: Color(0xFF1E3A8A),
+                  ),
                   onPressed: () {
                     Navigator.push(
                       context,
@@ -1512,7 +1611,7 @@ class _HomePageState extends State<HomePage> {
                       decoration: BoxDecoration(
                         color: const Color(0xFFDC2626),
                         borderRadius: BorderRadius.circular(999),
-                        border: Border.all(color: const Color(0xFF1976D2)),
+                        border: Border.all(color: _kPageTint),
                       ),
                       constraints: const BoxConstraints(
                         minWidth: 18,
@@ -1563,7 +1662,7 @@ class _HomePageState extends State<HomePage> {
                   IconButton(
                     icon: const Icon(
                       Icons.notifications_none_rounded,
-                      color: Colors.white,
+                      color: Color(0xFF1E3A8A),
                       size: 28,
                     ),
                     onPressed: () => Navigator.push(
@@ -1610,7 +1709,13 @@ class _HomePageState extends State<HomePage> {
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [Color(0xFF1E3A8A), Color(0xFF1976D2)],
+              colors: [
+                Color(0xFFFDFEFF),
+                Color(0xFFEAF5FF),
+                Color(0xFFF7FBFF),
+                Color(0xFFE3F8FF),
+              ],
+              stops: [0, 0.38, 0.68, 1],
             ),
           ),
           child: Stack(
@@ -1620,7 +1725,7 @@ class _HomePageState extends State<HomePage> {
                 right: -20,
                 child: CircleAvatar(
                   radius: 80,
-                  backgroundColor: Colors.white.withOpacity(0.05),
+                  backgroundColor: _kPrimaryBlue.withValues(alpha: 0.1),
                 ),
               ),
               Padding(
@@ -1650,7 +1755,9 @@ class _HomePageState extends State<HomePage> {
                           },
                           child: CircleAvatar(
                             radius: 22,
-                            backgroundColor: Colors.white.withOpacity(0.2),
+                            backgroundColor: Colors.white.withValues(
+                              alpha: 0.2,
+                            ),
                             backgroundImage:
                                 (_profileImageUrl != null &&
                                     _profileImageUrl!.isNotEmpty)
@@ -1671,8 +1778,11 @@ class _HomePageState extends State<HomePage> {
                         Text(
                           '${strings['welcome']} $displayName',
                           style: TextStyle(
-                            color: Colors.white.withOpacity(0.9),
+                            color: const Color(
+                              0xFF1E293B,
+                            ).withValues(alpha: 0.92),
                             fontSize: 16,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -1687,9 +1797,9 @@ class _HomePageState extends State<HomePage> {
                     Text(
                       strings['find_pros'],
                       style: const TextStyle(
-                        color: Colors.white,
+                        color: Color(0xFF0F172A),
                         fontSize: 22,
-                        fontWeight: FontWeight.bold,
+                        fontWeight: FontWeight.w800,
                         height: 1.2,
                       ),
                     ),
@@ -1712,13 +1822,14 @@ class _HomePageState extends State<HomePage> {
             ),
             child: Container(
               decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
+                color: Colors.white.withValues(alpha: 0.92),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.white),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.08),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
+                    color: _kPrimaryBlue.withValues(alpha: 0.08),
+                    blurRadius: 18,
+                    offset: const Offset(0, 8),
                   ),
                 ],
               ),
@@ -1818,7 +1929,7 @@ class _HomePageState extends State<HomePage> {
                               height: 64,
                               width: 64,
                               decoration: BoxDecoration(
-                                color: color.withOpacity(0.1),
+                                color: color.withValues(alpha: 0.1),
                                 borderRadius: BorderRadius.circular(20),
                               ),
                               child: Icon(
@@ -3426,5 +3537,82 @@ class _HomePageState extends State<HomePage> {
       default:
         return Icons.work_rounded;
     }
+  }
+}
+
+class _HomeBackgroundPainter extends CustomPainter {
+  const _HomeBackgroundPainter(this.progress);
+
+  final double progress;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = Offset.zero & size;
+    final eased = Curves.easeInOut.transform(progress);
+    final begin = Alignment.lerp(Alignment.topLeft, Alignment.topRight, eased)!;
+    final end = Alignment.lerp(
+      Alignment.bottomRight,
+      Alignment.bottomLeft,
+      eased,
+    )!;
+
+    final basePaint = Paint()
+      ..shader = LinearGradient(
+        begin: begin,
+        end: end,
+        colors: const [
+          Color(0xFFFDFEFF),
+          Color(0xFFEAF5FF),
+          Color(0xFFF7FBFF),
+          Color(0xFFE3F8FF),
+        ],
+        stops: const [0, 0.38, 0.68, 1],
+      ).createShader(rect);
+    canvas.drawRect(rect, basePaint);
+
+    final width = size.width;
+    final height = size.height;
+    final phase = progress * math.pi * 2;
+
+    final highlightPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeWidth = math.max(120, size.shortestSide * 0.18)
+      ..color = const Color(0xFF1976D2).withValues(alpha: 0.055)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 54);
+    final path = Path()
+      ..moveTo(-width * 0.2, height * (0.22 + math.sin(phase) * 0.03))
+      ..cubicTo(
+        width * 0.24,
+        height * (0.02 + math.cos(phase) * 0.04),
+        width * 0.58,
+        height * (0.54 + math.sin(phase) * 0.03),
+        width * 1.2,
+        height * (0.25 + math.cos(phase) * 0.03),
+      );
+    canvas.drawPath(path, highlightPaint);
+
+    final lowerPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeWidth = math.max(90, size.shortestSide * 0.13)
+      ..color = const Color(0xFF62D6E8).withValues(alpha: 0.05)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 46);
+    final lowerPath = Path()
+      ..moveTo(width * 0.36, height * 1.12)
+      ..cubicTo(
+        width * (0.46 + math.sin(phase) * 0.04),
+        height * 0.78,
+        width * (0.72 + math.cos(phase) * 0.03),
+        height * 0.95,
+        width * 1.16,
+        height * (0.65 + math.sin(phase) * 0.04),
+      );
+    canvas.drawPath(lowerPath, lowerPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _HomeBackgroundPainter oldDelegate) {
+    return oldDelegate.progress != progress;
   }
 }

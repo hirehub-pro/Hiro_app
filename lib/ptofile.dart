@@ -50,6 +50,10 @@ class Profile extends StatefulWidget {
 }
 
 class _ProfileState extends State<Profile> with TickerProviderStateMixin {
+  static const Color _kPrimaryBlue = Color(0xFF1976D2);
+  static const Color _kPageTint = Color(0xFFF7FBFF);
+  static const Color _kTextMain = Color(0xFF070B18);
+  static const Color _kTextMuted = Color(0xFF6B7280);
   static const String _vpdDocId = 'currentWeek';
   static const int _counterShardCount = 20;
   static const List<String> _weekDayKeys = [
@@ -68,6 +72,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
       GlobalKey<RefreshIndicatorState>();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   StreamSubscription<User?>? _authSubscription;
+  AnimationController? _backgroundController;
 
   String _userName = "";
   String _bio = "";
@@ -116,9 +121,21 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
     return !_hideSchedule;
   }
 
+  AnimationController get _backgroundAnimationController {
+    final controller = _backgroundController;
+    if (controller != null) return controller;
+    final created = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 9),
+    )..repeat(reverse: true);
+    _backgroundController = created;
+    return created;
+  }
+
   @override
   void initState() {
     super.initState();
+    _backgroundAnimationController;
     _checkInitialOwnership();
     _initTabController();
     _loadProfessionTranslations();
@@ -1241,7 +1258,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
 
   Widget _buildProfileSkeleton() {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
+      backgroundColor: _kPageTint,
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(16),
@@ -1328,10 +1345,40 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
   @override
   Widget build(BuildContext context) {
     final strings = _getLocalizedStrings(context);
+    final theme = Theme.of(context);
     final localeCode = Provider.of<LanguageProvider>(
       context,
     ).locale.languageCode;
     final isRtl = localeCode == 'he' || localeCode == 'ar';
+    final profileTheme = theme.copyWith(
+      scaffoldBackgroundColor: Colors.transparent,
+      colorScheme: theme.colorScheme.copyWith(primary: _kPrimaryBlue),
+      cardTheme: CardThemeData(
+        color: Colors.white.withValues(alpha: 0.9),
+        elevation: 0,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      ),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: _kPrimaryBlue,
+          foregroundColor: Colors.white,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: _kPrimaryBlue,
+          side: const BorderSide(color: _kPrimaryBlue, width: 1.4),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+        ),
+      ),
+    );
+    final backgroundController = _backgroundAnimationController;
 
     if (_isLoading) {
       return _buildProfileSkeleton();
@@ -1340,53 +1387,90 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
     if (widget.userId == null && _isGuest()) {
       return Directionality(
         textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
-        child: Scaffold(
-          backgroundColor: Colors.white,
-          body: Center(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.person_outline_rounded,
-                    size: 72,
-                    color: Colors.grey[400],
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    isRtl
-                        ? strings['signin_prompt']!
-                        : strings['signin_prompt']!,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (_) => const SignInPage()),
-                        );
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF1976D2),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+        child: Theme(
+          data: profileTheme,
+          child: Scaffold(
+            backgroundColor: _kPageTint,
+            body: Stack(
+              children: [
+                Positioned.fill(
+                  child: AnimatedBuilder(
+                    animation: backgroundController,
+                    builder: (context, _) {
+                      return CustomPaint(
+                        painter: _ProfileBackgroundPainter(
+                          backgroundController.value,
                         ),
+                      );
+                    },
+                  ),
+                ),
+                Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    child: Container(
+                      width: double.infinity,
+                      constraints: const BoxConstraints(maxWidth: 520),
+                      padding: const EdgeInsets.all(24),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.9),
+                        borderRadius: BorderRadius.circular(28),
+                        border: Border.all(color: Colors.white),
+                        boxShadow: [
+                          BoxShadow(
+                            color: _kPrimaryBlue.withValues(alpha: 0.1),
+                            blurRadius: 26,
+                            offset: const Offset(0, 14),
+                          ),
+                        ],
                       ),
-                      child: Text(strings['go_to_signin']!),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.person_outline_rounded,
+                            size: 72,
+                            color: Colors.grey[400],
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            strings['signin_prompt']!,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: _kTextMain,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton(
+                              onPressed: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const SignInPage(),
+                                  ),
+                                );
+                              },
+                              style: ElevatedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 14,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                              ),
+                              child: Text(strings['go_to_signin']!),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),
@@ -1395,303 +1479,334 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
 
     return Directionality(
       textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
-      child: Scaffold(
-        key: _scaffoldKey,
-        backgroundColor: Colors.white,
-        body: Stack(
-          children: [
-            RefreshIndicator(
-              key: _refreshIndicatorKey,
-              color: const Color(0xFF1976D2),
-              onRefresh: _fetchUserData,
-              child: NestedScrollView(
-                headerSliverBuilder: (context, innerBoxIsScrolled) => [
-                  SliverAppBar(
-                    expandedHeight: 450,
-                    pinned: true,
-                    stretch: true,
-                    backgroundColor: const Color(0xFF1976D2),
-                    actions: [
-                      IconButton(
-                        icon: const Icon(Icons.place_outlined),
-                        onPressed: _openLocationManager,
+      child: Theme(
+        data: profileTheme,
+        child: Scaffold(
+          key: _scaffoldKey,
+          backgroundColor: _kPageTint,
+          body: Stack(
+            children: [
+              Positioned.fill(
+                child: AnimatedBuilder(
+                  animation: backgroundController,
+                  builder: (context, _) {
+                    return CustomPaint(
+                      painter: _ProfileBackgroundPainter(
+                        backgroundController.value,
                       ),
-                      if (_isOwnProfile && !_isGuest())
+                    );
+                  },
+                ),
+              ),
+              RefreshIndicator(
+                key: _refreshIndicatorKey,
+                color: _kPrimaryBlue,
+                onRefresh: _fetchUserData,
+                child: NestedScrollView(
+                  headerSliverBuilder: (context, innerBoxIsScrolled) => [
+                    SliverAppBar(
+                      expandedHeight: 450,
+                      pinned: true,
+                      stretch: true,
+                      backgroundColor: _kPageTint,
+                      actions: [
                         IconButton(
-                          icon: const Icon(Icons.favorite_outline),
-                          onPressed: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const LikedProsPage(),
-                            ),
-                          ),
-                        ),
-                      IconButton(
-                        icon: const Icon(Icons.share_outlined),
-                        onPressed: () => _shareProfile(strings),
-                      ),
-                      if (!_isOwnProfile)
-                        IconButton(
-                          icon: Icon(
-                            _isFavorite
-                                ? Icons.favorite
-                                : Icons.favorite_border,
-                            color: _isFavorite
-                                ? Colors.redAccent
-                                : Colors.white,
-                          ),
-                          onPressed: _toggleFavorite,
-                        ),
-                      if (!_isOwnProfile)
-                        IconButton(
-                          tooltip:
-                              strings['report_user_title'] ?? "Report User",
-                          style: IconButton.styleFrom(
-                            backgroundColor: Colors.red.withValues(alpha: 0.18),
-                          ),
                           icon: const Icon(
-                            Icons.flag_outlined,
-                            color: Colors.white,
+                            Icons.place_outlined,
+                            color: Color(0xFF1E3A8A),
                           ),
-                          onPressed: () => _reportUser(strings),
+                          onPressed: _openLocationManager,
                         ),
-                      if (_isOwnProfile && !_isGuest())
-                        IconButton(
-                          icon: const Icon(Icons.settings_outlined),
-                          onPressed: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const SettingsPage(),
+                        if (_isOwnProfile && !_isGuest())
+                          IconButton(
+                            icon: const Icon(
+                              Icons.favorite_outline,
+                              color: Color(0xFF1E3A8A),
                             ),
-                          ).then((_) => _fetchUserData()),
-                        ),
-                    ],
-                    flexibleSpace: FlexibleSpaceBar(
-                      stretchModes: const [
-                        StretchMode.zoomBackground,
-                        StretchMode.blurBackground,
-                      ],
-                      background: Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          Hero(
-                            tag:
-                                widget.userId ??
-                                (FirebaseAuth.instance.currentUser?.uid ??
-                                    'profile'),
-                            child: _profileImageUrl.isNotEmpty
-                                ? CachedNetworkImage(
-                                    imageUrl: _profileImageUrl,
-                                    fit: BoxFit.cover,
-                                    placeholder: (context, url) => Container(
-                                      color: const Color(0xFF1E3A8A),
-                                    ),
-                                    errorWidget: (context, url, error) =>
-                                        const Icon(Icons.error),
-                                  )
-                                : Container(
-                                    color: const Color(0xFF1E3A8A),
-                                    child: const Icon(
-                                      Icons.person,
-                                      size: 100,
-                                      color: Colors.white24,
-                                    ),
-                                  ),
-                          ),
-                          Container(
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                begin: Alignment.topCenter,
-                                end: Alignment.bottomCenter,
-                                colors: [
-                                  Colors.transparent,
-                                  Colors.black.withOpacity(0.2),
-                                  Colors.black.withOpacity(0.8),
-                                ],
+                            onPressed: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const LikedProsPage(),
                               ),
                             ),
                           ),
-                          Positioned(
-                            bottom: 60,
-                            left: 24,
-                            right: 24,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Flexible(
-                                      child: Text(
-                                        _userName,
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 30,
-                                          fontWeight: FontWeight.bold,
-                                          letterSpacing: -0.5,
-                                        ),
+                        IconButton(
+                          icon: const Icon(
+                            Icons.share_outlined,
+                            color: Color(0xFF1E3A8A),
+                          ),
+                          onPressed: () => _shareProfile(strings),
+                        ),
+                        if (!_isOwnProfile)
+                          IconButton(
+                            icon: Icon(
+                              _isFavorite
+                                  ? Icons.favorite
+                                  : Icons.favorite_border,
+                              color: _isFavorite
+                                  ? Colors.redAccent
+                                  : Colors.white,
+                            ),
+                            onPressed: _toggleFavorite,
+                          ),
+                        if (!_isOwnProfile)
+                          IconButton(
+                            tooltip:
+                                strings['report_user_title'] ?? "Report User",
+                            style: IconButton.styleFrom(
+                              backgroundColor: Colors.red.withValues(
+                                alpha: 0.18,
+                              ),
+                            ),
+                            icon: const Icon(
+                              Icons.flag_outlined,
+                              color: Colors.white,
+                            ),
+                            onPressed: () => _reportUser(strings),
+                          ),
+                        if (_isOwnProfile && !_isGuest())
+                          IconButton(
+                            icon: const Icon(
+                              Icons.settings_outlined,
+                              color: Color(0xFF1E3A8A),
+                            ),
+                            onPressed: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const SettingsPage(),
+                              ),
+                            ).then((_) => _fetchUserData()),
+                          ),
+                      ],
+                      flexibleSpace: FlexibleSpaceBar(
+                        stretchModes: const [
+                          StretchMode.zoomBackground,
+                          StretchMode.blurBackground,
+                        ],
+                        background: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            Hero(
+                              tag:
+                                  widget.userId ??
+                                  (FirebaseAuth.instance.currentUser?.uid ??
+                                      'profile'),
+                              child: _profileImageUrl.isNotEmpty
+                                  ? CachedNetworkImage(
+                                      imageUrl: _profileImageUrl,
+                                      fit: BoxFit.cover,
+                                      placeholder: (context, url) => Container(
+                                        color: const Color(0xFFEAF5FF),
+                                      ),
+                                      errorWidget: (context, url, error) =>
+                                          const Icon(Icons.error),
+                                    )
+                                  : Container(
+                                      color: const Color(0xFFEAF5FF),
+                                      child: const Icon(
+                                        Icons.person,
+                                        size: 100,
+                                        color: Color(0xFF9CA3AF),
                                       ),
                                     ),
-                                    if (_userRole == 'worker')
-                                      const Padding(
-                                        padding: EdgeInsets.symmetric(
-                                          horizontal: 8,
-                                        ),
-                                        child: Icon(
-                                          Icons.verified,
-                                          color: Color(0xFF60A5FA),
-                                          size: 24,
-                                        ),
-                                      ),
+                            ),
+                            Container(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    Colors.transparent,
+                                    Colors.black.withValues(alpha: 0.2),
+                                    Colors.black.withValues(alpha: 0.8),
                                   ],
                                 ),
-                                const SizedBox(height: 6),
-                                if (_userProfessions.isNotEmpty)
-                                  Text(
-                                    _localizedProfessionList(
-                                      localeCode,
-                                    ).join(' • '),
-                                    style: TextStyle(
-                                      color: Colors.white.withOpacity(0.9),
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w400,
-                                    ),
-                                  ),
-                                const SizedBox(height: 16),
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    _buildStatItem(
-                                      _projects.length.toString(),
-                                      strings['projects']!,
-                                    ),
-                                    _buildStatItem(
-                                      _userReviews.length.toString(),
-                                      strings['reviews']!,
-                                    ),
-                                    _buildStatItem(
-                                      _viewsCount.toString(),
-                                      strings['views']!,
-                                    ),
-                                    if (_userReviews.isNotEmpty)
-                                      _buildStatItem(
-                                        _calculateAverageRating()
-                                            .toStringAsFixed(1),
-                                        strings['rating']!,
-                                      ),
-                                  ],
-                                ),
-                                const SizedBox(height: 16),
-                                SingleChildScrollView(
-                                  scrollDirection: Axis.horizontal,
-                                  child: Row(
+                              ),
+                            ),
+                            Positioned(
+                              bottom: 60,
+                              left: 24,
+                              right: 24,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
                                     children: [
-                                      if (_isIdVerified)
-                                        _buildHeaderBadge(
-                                          Icons.assignment_ind,
-                                          strings['verified_id']!,
-                                          Colors.greenAccent,
+                                      Flexible(
+                                        child: Text(
+                                          _userName,
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 30,
+                                            fontWeight: FontWeight.bold,
+                                            letterSpacing: -0.5,
+                                          ),
                                         ),
-                                      if (_isBusinessVerified)
-                                        _buildHeaderBadge(
-                                          Icons.business_center,
-                                          strings['verified_biz']!,
-                                          Colors.orangeAccent,
-                                        ),
-                                      if (_isInsured)
-                                        _buildHeaderBadge(
-                                          Icons.shield,
-                                          strings['insured']!,
-                                          Colors.blueAccent,
+                                      ),
+                                      if (_userRole == 'worker')
+                                        const Padding(
+                                          padding: EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                          ),
+                                          child: Icon(
+                                            Icons.verified,
+                                            color: Color(0xFF60A5FA),
+                                            size: 24,
+                                          ),
                                         ),
                                     ],
                                   ),
-                                ),
-                              ],
+                                  const SizedBox(height: 6),
+                                  if (_userProfessions.isNotEmpty)
+                                    Text(
+                                      _localizedProfessionList(
+                                        localeCode,
+                                      ).join(' • '),
+                                      style: TextStyle(
+                                        color: Colors.white.withValues(
+                                          alpha: 0.9,
+                                        ),
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w400,
+                                      ),
+                                    ),
+                                  const SizedBox(height: 16),
+                                  Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      _buildStatItem(
+                                        _projects.length.toString(),
+                                        strings['projects']!,
+                                      ),
+                                      _buildStatItem(
+                                        _userReviews.length.toString(),
+                                        strings['reviews']!,
+                                      ),
+                                      _buildStatItem(
+                                        _viewsCount.toString(),
+                                        strings['views']!,
+                                      ),
+                                      if (_userReviews.isNotEmpty)
+                                        _buildStatItem(
+                                          _calculateAverageRating()
+                                              .toStringAsFixed(1),
+                                          strings['rating']!,
+                                        ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 16),
+                                  SingleChildScrollView(
+                                    scrollDirection: Axis.horizontal,
+                                    child: Row(
+                                      children: [
+                                        if (_isIdVerified)
+                                          _buildHeaderBadge(
+                                            Icons.assignment_ind,
+                                            strings['verified_id']!,
+                                            Colors.greenAccent,
+                                          ),
+                                        if (_isBusinessVerified)
+                                          _buildHeaderBadge(
+                                            Icons.business_center,
+                                            strings['verified_biz']!,
+                                            Colors.orangeAccent,
+                                          ),
+                                        if (_isInsured)
+                                          _buildHeaderBadge(
+                                            Icons.shield,
+                                            strings['insured']!,
+                                            Colors.blueAccent,
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
-                          ),
-                          Positioned(
-                            bottom: -1,
-                            left: 0,
-                            right: 0,
-                            child: Container(
-                              height: 30,
-                              decoration: const BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.vertical(
-                                  top: Radius.circular(30),
+                            Positioned(
+                              bottom: -1,
+                              left: 0,
+                              right: 0,
+                              child: Container(
+                                height: 30,
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.96),
+                                  borderRadius: BorderRadius.vertical(
+                                    top: Radius.circular(30),
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  SliverPersistentHeader(
-                    pinned: true,
-                    delegate: _SliverAppBarDelegate(
-                      TabBar(
-                        controller: _tabController,
-                        isScrollable: false,
-                        indicatorColor: const Color(0xFF1976D2),
-                        indicatorWeight: 3,
-                        indicatorSize: TabBarIndicatorSize.label,
-                        labelColor: const Color(0xFF1976D2),
-                        unselectedLabelColor: Colors.grey[400],
-                        labelStyle: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14,
+                          ],
                         ),
-                        tabs: _buildTabs(strings),
                       ),
                     ),
-                  ),
-                ],
-                body: Container(
-                  color: Colors.white,
-                  child: TabBarView(
-                    controller: _tabController,
-                    children: _buildTabViews(strings, localeCode),
+                    SliverPersistentHeader(
+                      pinned: true,
+                      delegate: _SliverAppBarDelegate(
+                        TabBar(
+                          controller: _tabController,
+                          isScrollable: false,
+                          indicatorColor: _kPrimaryBlue,
+                          indicatorWeight: 3,
+                          indicatorSize: TabBarIndicatorSize.label,
+                          labelColor: _kPrimaryBlue,
+                          unselectedLabelColor: const Color(0xFF9CA3AF),
+                          labelStyle: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
+                          tabs: _buildTabs(strings),
+                        ),
+                      ),
+                    ),
+                  ],
+                  body: Container(
+                    color: Colors.white.withValues(alpha: 0.72),
+                    child: TabBarView(
+                      controller: _tabController,
+                      children: _buildTabViews(strings, localeCode),
+                    ),
                   ),
                 ),
               ),
-            ),
-          ],
-        ),
-        bottomNavigationBar:
-            (!_isOwnProfile &&
-                _userRole == 'worker' &&
-                _hasActiveWorkerSubscription)
-            ? _buildBottomBar(strings)
-            : null,
-        floatingActionButton:
-            (_isOwnProfile &&
-                _tabController != null &&
-                _tabController!.index == 0)
-            ? Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  FloatingActionButton.extended(
-                    heroTag: 'profile_fab',
-                    onPressed: _addProject,
-                    backgroundColor: const Color(0xFF1976D2),
-                    icon: const Icon(
-                      Icons.add_photo_alternate_rounded,
-                      color: Colors.white,
-                    ),
-                    label: Text(
-                      strings['add']!,
-                      style: const TextStyle(
+            ],
+          ),
+          bottomNavigationBar:
+              (!_isOwnProfile &&
+                  _userRole == 'worker' &&
+                  _hasActiveWorkerSubscription)
+              ? _buildBottomBar(strings)
+              : null,
+          floatingActionButton:
+              (_isOwnProfile &&
+                  _tabController != null &&
+                  _tabController!.index == 0)
+              ? Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    FloatingActionButton.extended(
+                      heroTag: 'profile_fab',
+                      onPressed: _addProject,
+                      backgroundColor: _kPrimaryBlue,
+                      icon: const Icon(
+                        Icons.add_photo_alternate_rounded,
                         color: Colors.white,
-                        fontWeight: FontWeight.bold,
+                      ),
+                      label: Text(
+                        strings['add']!,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
-                  ),
-                ],
-              )
-            : null,
+                  ],
+                )
+              : null,
+        ),
       ),
     );
   }
@@ -1711,14 +1826,17 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
         Text(
           value,
           style: const TextStyle(
-            color: Colors.white,
+            color: Color(0xFFF9FAFB),
             fontSize: 18,
             fontWeight: FontWeight.bold,
           ),
         ),
         Text(
           label,
-          style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 12),
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.76),
+            fontSize: 12,
+          ),
         ),
       ],
     );
@@ -1729,9 +1847,9 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
       margin: const EdgeInsets.only(right: 8),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.15),
+        color: Colors.white.withValues(alpha: 0.17),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withOpacity(0.4), width: 0.5),
+        border: Border.all(color: color.withValues(alpha: 0.45), width: 0.5),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -1884,7 +2002,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
               borderRadius: BorderRadius.circular(20),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.04),
+                  color: Colors.black.withValues(alpha: 0.04),
                   blurRadius: 10,
                   offset: const Offset(0, 4),
                 ),
@@ -1954,7 +2072,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
                           end: Alignment.bottomCenter,
                           colors: [
                             Colors.transparent,
-                            Colors.black.withOpacity(0.8),
+                            Colors.black.withValues(alpha: 0.8),
                           ],
                         ),
                       ),
@@ -2135,7 +2253,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.02),
+                    color: Colors.black.withValues(alpha: 0.02),
                     blurRadius: 10,
                     offset: const Offset(0, 4),
                   ),
@@ -2442,15 +2560,15 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [Color(0xFFF3E8FF), Color(0xFFE9D5FF)],
+          colors: [Color(0xFFEAF5FF), Color(0xFFF7FBFF)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: const Color(0xFFD8B4FE)),
+        border: Border.all(color: const Color(0xFFBFDBFE)),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF7E22CE).withOpacity(0.12),
+            color: _kPrimaryBlue.withValues(alpha: 0.12),
             blurRadius: 16,
             offset: const Offset(0, 8),
           ),
@@ -2464,12 +2582,12 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.65),
+                  color: Colors.white.withValues(alpha: 0.7),
                   borderRadius: BorderRadius.circular(14),
                 ),
                 child: const Icon(
                   Icons.workspace_premium_rounded,
-                  color: Color(0xFF7E22CE),
+                  color: _kPrimaryBlue,
                   size: 22,
                 ),
               ),
@@ -2480,7 +2598,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
                   style: const TextStyle(
                     fontSize: 17,
                     fontWeight: FontWeight.w800,
-                    color: Color(0xFF581C87),
+                    color: _kTextMain,
                   ),
                 ),
               ),
@@ -2492,7 +2610,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
             style: const TextStyle(
               fontSize: 13,
               height: 1.45,
-              color: Color(0xFF6B21A8),
+              color: _kTextMuted,
             ),
           ),
           const SizedBox(height: 12),
@@ -2507,12 +2625,12 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
               icon: const Icon(Icons.rocket_launch_rounded),
               label: Text(strings['upgrade_worker']!),
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF7E22CE),
+                backgroundColor: _kPrimaryBlue,
                 foregroundColor: Colors.white,
                 elevation: 0,
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(16),
                 ),
               ),
             ),
@@ -2527,8 +2645,8 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
       title,
       style: const TextStyle(
         fontSize: 18,
-        fontWeight: FontWeight.bold,
-        color: Color(0xFF1E3A8A),
+        fontWeight: FontWeight.w800,
+        color: _kTextMain,
       ),
     );
   }
@@ -2537,11 +2655,15 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Colors.white.withValues(alpha: 0.9),
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.grey[100]!),
+        border: Border.all(color: Colors.white),
         boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10),
+          BoxShadow(
+            color: _kPrimaryBlue.withValues(alpha: 0.07),
+            blurRadius: 16,
+            offset: const Offset(0, 8),
+          ),
         ],
       ),
       child: Column(children: children),
@@ -2563,12 +2685,12 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: color.withOpacity(0.06),
+          color: color.withValues(alpha: 0.08),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
             color: highlight
                 ? const Color(0xFF2563EB)
-                : color.withOpacity(0.15),
+                : color.withValues(alpha: 0.2),
             width: highlight ? 2 : 1,
           ),
         ),
@@ -2585,7 +2707,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 13,
-                    color: color.withOpacity(0.9),
+                    color: color.withValues(alpha: 0.9),
                   ),
                 ),
               ],
@@ -2640,7 +2762,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
               color: Colors.grey[50],
               borderRadius: BorderRadius.circular(12),
             ),
-            child: Icon(icon, color: const Color(0xFF1976D2), size: 18),
+            child: Icon(icon, color: _kPrimaryBlue, size: 18),
           ),
           const SizedBox(width: 16),
           Expanded(
@@ -2660,7 +2782,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 15,
-                    color: Color(0xFF1E3A8A),
+                    color: _kTextMain,
                   ),
                 ),
               ],
@@ -2675,11 +2797,11 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
     return Container(
       padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Colors.white.withValues(alpha: 0.92),
         border: Border(top: BorderSide(color: Colors.grey[100]!)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: _kPrimaryBlue.withValues(alpha: 0.08),
             blurRadius: 20,
             offset: const Offset(0, -4),
           ),
@@ -2693,7 +2815,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
               icon: const Icon(Icons.call, size: 20),
               label: Text(strings['call']!),
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF1976D2),
+                backgroundColor: _kPrimaryBlue,
                 foregroundColor: Colors.white,
                 elevation: 0,
                 padding: const EdgeInsets.symmetric(vertical: 16),
@@ -2724,8 +2846,8 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
               icon: const Icon(Icons.chat_bubble_outline, size: 20),
               label: Text(strings['message']!),
               style: OutlinedButton.styleFrom(
-                foregroundColor: const Color(0xFF1976D2),
-                side: const BorderSide(color: Color(0xFF1976D2), width: 1.5),
+                foregroundColor: _kPrimaryBlue,
+                side: const BorderSide(color: _kPrimaryBlue, width: 1.5),
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
@@ -2816,7 +2938,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
             width: double.infinity,
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.72),
+              color: Colors.white.withValues(alpha: 0.72),
               borderRadius: BorderRadius.circular(18),
               border: Border.all(color: const Color(0xFFFED7AA)),
             ),
@@ -2908,6 +3030,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
   void dispose() {
     _tabController?.dispose();
     _authSubscription?.cancel();
+    _backgroundController?.dispose();
     _aboutScrollController.dispose();
     super.dispose();
   }
@@ -3411,6 +3534,83 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
   }
 }
 
+class _ProfileBackgroundPainter extends CustomPainter {
+  const _ProfileBackgroundPainter(this.progress);
+
+  final double progress;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = Offset.zero & size;
+    final eased = Curves.easeInOut.transform(progress);
+    final begin = Alignment.lerp(Alignment.topLeft, Alignment.topRight, eased)!;
+    final end = Alignment.lerp(
+      Alignment.bottomRight,
+      Alignment.bottomLeft,
+      eased,
+    )!;
+
+    final basePaint = Paint()
+      ..shader = LinearGradient(
+        begin: begin,
+        end: end,
+        colors: const [
+          Color(0xFFFDFEFF),
+          Color(0xFFEAF5FF),
+          Color(0xFFF7FBFF),
+          Color(0xFFE3F8FF),
+        ],
+        stops: const [0, 0.38, 0.68, 1],
+      ).createShader(rect);
+    canvas.drawRect(rect, basePaint);
+
+    final width = size.width;
+    final height = size.height;
+    final phase = progress * pi * 2;
+
+    final highlightPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeWidth = max(120, size.shortestSide * 0.18)
+      ..color = const Color(0xFF1976D2).withValues(alpha: 0.055)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 54);
+    final path = Path()
+      ..moveTo(-width * 0.2, height * (0.22 + sin(phase) * 0.03))
+      ..cubicTo(
+        width * 0.24,
+        height * (0.02 + cos(phase) * 0.04),
+        width * 0.58,
+        height * (0.54 + sin(phase) * 0.03),
+        width * 1.2,
+        height * (0.25 + cos(phase) * 0.03),
+      );
+    canvas.drawPath(path, highlightPaint);
+
+    final lowerPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeWidth = max(90, size.shortestSide * 0.13)
+      ..color = const Color(0xFF62D6E8).withValues(alpha: 0.05)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 46);
+    final lowerPath = Path()
+      ..moveTo(width * 0.36, height * 1.12)
+      ..cubicTo(
+        width * (0.46 + sin(phase) * 0.04),
+        height * 0.78,
+        width * (0.72 + cos(phase) * 0.03),
+        height * 0.95,
+        width * 1.16,
+        height * (0.65 + sin(phase) * 0.04),
+      );
+    canvas.drawPath(lowerPath, lowerPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _ProfileBackgroundPainter oldDelegate) {
+    return oldDelegate.progress != progress;
+  }
+}
+
 class _ProjectVideoThumbnail extends StatefulWidget {
   final String url;
 
@@ -3505,7 +3705,7 @@ class _ProjectVideoThumbnailState extends State<_ProjectVideoThumbnail> {
               child: VideoPlayer(controller),
             ),
           ),
-          Container(color: Colors.black.withOpacity(0.12)),
+          Container(color: Colors.black.withValues(alpha: 0.12)),
           const Center(
             child: Icon(
               Icons.play_circle_outline,
@@ -3554,7 +3754,10 @@ class _SliverAppBarDelegate extends SliverPersistentHeaderDelegate {
     double shrinkOffset,
     bool overlapsContent,
   ) {
-    return Container(color: Colors.white, child: _tabBar);
+    return Container(
+      color: Colors.white.withValues(alpha: 0.94),
+      child: _tabBar,
+    );
   }
 
   @override
@@ -3606,12 +3809,15 @@ class _BouncingArrowState extends State<_BouncingArrow>
           width: widget.size + 12,
           height: widget.size + 12,
           decoration: BoxDecoration(
-            color: widget.color.withOpacity(0.15),
+            color: widget.color.withValues(alpha: 0.15),
             shape: BoxShape.circle,
-            border: Border.all(color: widget.color.withOpacity(0.5), width: 2),
+            border: Border.all(
+              color: widget.color.withValues(alpha: 0.5),
+              width: 2,
+            ),
             boxShadow: [
               BoxShadow(
-                color: widget.color.withOpacity(0.35),
+                color: widget.color.withValues(alpha: 0.35),
                 blurRadius: 14,
                 spreadRadius: 1,
               ),
@@ -3642,7 +3848,7 @@ class _UpgradeFeatureLine extends StatelessWidget {
           const Icon(
             Icons.check_circle_rounded,
             size: 16,
-            color: Color(0xFF7E22CE),
+            color: Color(0xFF1976D2),
           ),
           const SizedBox(width: 8),
           Expanded(
@@ -3650,7 +3856,7 @@ class _UpgradeFeatureLine extends StatelessWidget {
               text,
               style: const TextStyle(
                 fontSize: 12.5,
-                color: Color(0xFF6B21A8),
+                color: Color(0xFF475569),
                 fontWeight: FontWeight.w600,
               ),
             ),
