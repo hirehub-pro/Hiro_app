@@ -302,12 +302,12 @@ class _ZoomableImageViewerState extends State<ZoomableImageViewer>
     Widget image = hasLocal
         ? Image.file(
             File(widget.localPath!),
-            fit: BoxFit.contain,
+            fit: BoxFit.cover,
             filterQuality: FilterQuality.high,
           )
         : CachedNetworkImage(
             imageUrl: widget.imageUrl,
-            fit: BoxFit.contain,
+            fit: BoxFit.cover,
             fadeInDuration: const Duration(milliseconds: 180),
             placeholder: (context, url) => const _ImageLoadingPlaceholder(),
             errorWidget: (context, url, error) =>
@@ -385,14 +385,14 @@ class _ZoomableImageViewerState extends State<ZoomableImageViewer>
                         transformationController: _transformationController,
                         minScale: _minScale,
                         maxScale: _maxScale,
-                        panEnabled: _isZoomed,
-                        scaleEnabled: true,
-                        interactionEndFrictionCoefficient: 0.00008,
-                        constrained: false,
-                        boundaryMargin: const EdgeInsets.all(260),
-                        clipBehavior: Clip.none,
-                        onInteractionUpdate: _handleInteractionUpdate,
-                        onInteractionEnd: _handleInteractionEnd,
+                      panEnabled: _isZoomed,
+                      scaleEnabled: true,
+                      interactionEndFrictionCoefficient: 0.00008,
+                      constrained: false,
+                      boundaryMargin: EdgeInsets.zero,
+                      clipBehavior: Clip.hardEdge,
+                      onInteractionUpdate: _handleInteractionUpdate,
+                      onInteractionEnd: _handleInteractionEnd,
                         child: SizedBox(
                           width: viewportSize.width,
                           height: viewportSize.height,
