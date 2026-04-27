@@ -32,13 +32,93 @@ class InvoiceItem {
   final String description;
   final int quantity;
   final double price;
+  final bool isPriceBeforeTax;
   InvoiceItem({
     required this.description,
     this.quantity = 1,
     required this.price,
+    this.isPriceBeforeTax = false,
   });
+}
 
-  double get total => quantity * price;
+class _PaymentMethodEntry {
+  _PaymentMethodEntry();
+
+  String method = 'cash';
+  String creditDealType = 'regular';
+  bool isExpanded = true;
+  final amountController = TextEditingController();
+
+  final cardNumberController = TextEditingController();
+  final cardNameController = TextEditingController();
+  final installmentsController = TextEditingController();
+  final checkNumberController = TextEditingController();
+  final checkBankController = TextEditingController();
+  final checkBranchController = TextEditingController();
+  final checkAccountController = TextEditingController();
+  final transferBankController = TextEditingController();
+  final transferBranchController = TextEditingController();
+  final transferAccountController = TextEditingController();
+
+  Map<String, dynamic> toMap() {
+    final data = <String, dynamic>{'method': method};
+    final amount = double.tryParse(
+      amountController.text.trim().replaceAll(',', '.'),
+    );
+    if (amount != null) {
+      data['amount'] = amount;
+    }
+    switch (method) {
+      case 'credit':
+        data['dealType'] = creditDealType;
+        if (cardNumberController.text.trim().isNotEmpty) {
+          data['cardNumber'] = cardNumberController.text.trim();
+        }
+        if (cardNameController.text.trim().isNotEmpty) {
+          data['cardName'] = cardNameController.text.trim();
+        }
+        if (creditDealType == 'installments' &&
+            installmentsController.text.trim().isNotEmpty) {
+          data['installments'] = installmentsController.text.trim();
+        }
+        break;
+      case 'check':
+        data['checkNumber'] = checkNumberController.text.trim();
+        if (checkBankController.text.trim().isNotEmpty) {
+          data['bank'] = checkBankController.text.trim();
+        }
+        if (checkBranchController.text.trim().isNotEmpty) {
+          data['branch'] = checkBranchController.text.trim();
+        }
+        if (checkAccountController.text.trim().isNotEmpty) {
+          data['account'] = checkAccountController.text.trim();
+        }
+        break;
+      case 'transfer':
+        data['bank'] = transferBankController.text.trim();
+        data['branch'] = transferBranchController.text.trim();
+        data['account'] = transferAccountController.text.trim();
+        break;
+      case 'cash':
+      default:
+        break;
+    }
+    return data;
+  }
+
+  void dispose() {
+    amountController.dispose();
+    cardNumberController.dispose();
+    cardNameController.dispose();
+    installmentsController.dispose();
+    checkNumberController.dispose();
+    checkBankController.dispose();
+    checkBranchController.dispose();
+    checkAccountController.dispose();
+    transferBankController.dispose();
+    transferBranchController.dispose();
+    transferAccountController.dispose();
+  }
 }
 
 class InvoiceBuilderPage extends StatefulWidget {
@@ -88,6 +168,18 @@ class InvoiceBuilderPage extends StatefulWidget {
 }
 
 class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
+  String _normalizePaymentMethod(String? raw) {
+    switch (raw) {
+      case 'cash':
+      case 'credit':
+      case 'transfer':
+      case 'check':
+        return raw!;
+      default:
+        return 'cash';
+    }
+  }
+
   List<Map<String, String>> _logTargetsForDocType(String docType) {
     switch (docType) {
       case 'receipt':
@@ -155,11 +247,10 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     final signedTotalAmount = docType == 'credit_note'
         ? -_totalAmount
         : _totalAmount;
-    final vatAmount = (_dealerType == 'licensed' && docType != 'receipt')
-        ? (docType == 'credit_note'
-              ? -(_totalAmount - (_totalAmount / 1.17))
-              : (_totalAmount - (_totalAmount / 1.17)))
+    final calculatedVat = _usesVat
+        ? (_totalAmount - (_totalAmount / (1 + _vatRate)))
         : 0.0;
+    final vatAmount = docType == 'credit_note' ? -calculatedVat : calculatedVat;
     final logTargets = _logTargetsForDocType(docType);
 
     final userDoc = FirebaseFirestore.instance.collection('users').doc(userId);
@@ -214,11 +305,23 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                 'description': item.description,
                 'quantity': item.quantity,
                 'price': item.price,
+                'priceTaxMode': item.isPriceBeforeTax
+                    ? 'before_tax'
+                    : 'after_tax',
               },
             )
             .toList(),
+        'priceTaxModeDefault': _selectedPriceTaxMode,
+        'hasDiscount': _hasDiscount,
+        'discountAmount': _discountAmount,
         'notes': _notesController.text,
-        'paymentMethod': _selectedPaymentMethod,
+        'paymentMethod': _paymentMethods.isNotEmpty
+            ? _paymentMethods.first.method
+            : 'cash',
+        'paymentMethods': _paymentMethods
+            .map((entry) => entry.toMap())
+            .toList(),
+        'paymentAmountTotal': _paymentMethodsAmountTotal(),
         'invoiceNumber': nextNumber,
         'date': dateStr,
         'createdAt': timestamp,
@@ -346,6 +449,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   final _itemDescController = TextEditingController();
   final _itemQtyController = TextEditingController(text: "1");
   final _itemPriceController = TextEditingController();
+  final _discountController = TextEditingController();
   final _notesController = TextEditingController();
   final _creditReasonController = TextEditingController();
   final _creditOriginalInvoiceNumberController = TextEditingController();
@@ -353,32 +457,62 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   final _creditReceiptConfirmationController = TextEditingController();
 
   // Payment method state
-  String _selectedPaymentMethod = 'cash';
-  final _checkNumberController = TextEditingController();
-  final _transferDetailsController = TextEditingController();
+  final List<_PaymentMethodEntry> _paymentMethods = [_PaymentMethodEntry()];
   String _selectedCreditDeliveryMethod = 'email_confirmation';
 
   final List<InvoiceItem> _items = [];
   bool _isPreparing = false;
   String _invoiceNumber = "";
-  double _totalAmount = 0.0;
+  static const double _vatRate = 0.17;
+  String _selectedPriceTaxMode = 'after_tax';
+  bool _hasDiscount = false;
 
   bool get _isCreditNote => _selectedDocType == 'credit_note';
+  bool get _usesVat =>
+      _dealerType == 'licensed' && _selectedDocType != 'receipt';
+
+  double _unitPriceAfterTax(InvoiceItem item) {
+    if (!_usesVat) return item.price;
+    return item.isPriceBeforeTax ? item.price * (1 + _vatRate) : item.price;
+  }
+
+  double _itemTotalAfterTax(InvoiceItem item) =>
+      _unitPriceAfterTax(item) * item.quantity;
+
+  double get _itemsTotalBeforeDiscount =>
+      _items.fold<double>(0, (sum, item) => sum + _itemTotalAfterTax(item));
+
+  double get _discountAmount {
+    if (!_hasDiscount) return 0.0;
+    final parsed = double.tryParse(
+      _discountController.text.trim().replaceAll(',', '.'),
+    );
+    if (parsed == null || parsed <= 0) return 0.0;
+    final maxDiscount = _itemsTotalBeforeDiscount;
+    return parsed > maxDiscount ? maxDiscount : parsed;
+  }
+
+  double get _totalAmount {
+    final total = _itemsTotalBeforeDiscount - _discountAmount;
+    return total < 0 ? 0 : total;
+  }
 
   double get _signedTotalAmount => _isCreditNote ? -_totalAmount : _totalAmount;
 
   double get _signedSubtotalAmount {
-    final subtotal = _totalAmount / 1.17;
+    final subtotal = _usesVat ? (_totalAmount / (1 + _vatRate)) : _totalAmount;
     return _isCreditNote ? -subtotal : subtotal;
   }
 
   double get _signedVatAmount {
-    final vat = _totalAmount - (_totalAmount / 1.17);
+    final vat = _usesVat
+        ? (_totalAmount - (_totalAmount / (1 + _vatRate)))
+        : 0.0;
     return _isCreditNote ? -vat : vat;
   }
 
   double _signedItemTotal(InvoiceItem item) =>
-      _isCreditNote ? -item.total : item.total;
+      _isCreditNote ? -_itemTotalAfterTax(item) : _itemTotalAfterTax(item);
 
   String _creditDeliveryMethodLabel(
     Map<String, String> strings,
@@ -459,13 +593,17 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     }
     if (widget.initialPaymentMethod != null &&
         widget.initialPaymentMethod!.isNotEmpty) {
-      _selectedPaymentMethod = widget.initialPaymentMethod!;
+      _paymentMethods.first.method = _normalizePaymentMethod(
+        widget.initialPaymentMethod,
+      );
     }
     if (widget.initialCheckNumber != null) {
-      _checkNumberController.text = widget.initialCheckNumber!;
+      _paymentMethods.first.checkNumberController.text =
+          widget.initialCheckNumber!;
     }
     if (widget.initialTransferDetails != null) {
-      _transferDetailsController.text = widget.initialTransferDetails!;
+      _paymentMethods.first.transferBankController.text =
+          widget.initialTransferDetails!;
     }
     if (widget.initialCreditOriginalInvoiceNumber != null) {
       _creditOriginalInvoiceNumberController.text =
@@ -497,14 +635,15 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           final description = (item['description'] ?? '').toString();
           final quantity = (item['quantity'] as num?)?.toInt() ?? 1;
           final price = (item['price'] as num?)?.toDouble() ?? 0.0;
+          final priceTaxMode = (item['priceTaxMode'] ?? 'after_tax').toString();
           return InvoiceItem(
             description: description,
             quantity: quantity < 1 ? 1 : quantity,
             price: price,
+            isPriceBeforeTax: priceTaxMode == 'before_tax',
           );
         }),
       );
-    _totalAmount = _items.fold<double>(0, (sum, item) => sum + item.total);
   }
 
   void _bindInvoiceCounterLiveSync() {
@@ -627,13 +766,15 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     _itemDescController.dispose();
     _itemQtyController.dispose();
     _itemPriceController.dispose();
+    _discountController.dispose();
     _notesController.dispose();
     _creditReasonController.dispose();
     _creditOriginalInvoiceNumberController.dispose();
     _creditOriginalInvoiceDateController.dispose();
     _creditReceiptConfirmationController.dispose();
-    _checkNumberController.dispose();
-    _transferDetailsController.dispose();
+    for (final methodEntry in _paymentMethods) {
+      methodEntry.dispose();
+    }
     super.dispose();
   }
 
@@ -678,10 +819,22 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'client_name': 'שם הלקוח',
           'client_address': 'כתובת הלקוח',
           'client_phone': 'טלפון הלקוח',
+          'client_details_required':
+              'יש למלא את כל פרטי הלקוח: שם, טלפון וכתובת.',
           'items': 'פירוט פריטים ושירותים',
           'desc': 'תיאור השירות/מוצר',
           'qty': 'כמות',
           'price': 'מחיר ליח\'',
+          'price_tax_mode': 'מחיר כולל/לפני מע"מ',
+          'price_before_tax': 'לפני מע"מ',
+          'price_after_tax': 'כולל מע"מ',
+          'has_discount': 'האם יש הנחה?',
+          'discount_amount': 'סכום הנחה',
+          'discount_invalid':
+              'אם יש הנחה יש למלא סכום הנחה תקין שקטן או שווה לסכום הפריטים.',
+          'discount': 'הנחה',
+          'entered_price_before_tax': 'לפני מע"מ',
+          'entered_price_after_tax': 'כולל מע"מ',
           'add_item': 'הוסף פריט',
           'total': 'סה"כ לתשלום',
           'generate': 'תצוגה מקדימה / הדפסה',
@@ -740,10 +893,22 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'client_name': 'Client Name',
           'client_address': 'Client Address',
           'client_phone': 'Client Phone',
+          'client_details_required':
+              'Please fill all client details: name, phone, and address.',
           'items': 'Service Items & Details',
           'desc': 'Description',
           'qty': 'Qty',
           'price': 'Unit Price',
+          'price_tax_mode': 'Price Tax Mode',
+          'price_before_tax': 'Before Tax',
+          'price_after_tax': 'After Tax',
+          'has_discount': 'Apply Discount?',
+          'discount_amount': 'Discount Amount',
+          'discount_invalid':
+              'When discount is enabled, enter a valid amount less than or equal to items total.',
+          'discount': 'Discount',
+          'entered_price_before_tax': 'Before Tax',
+          'entered_price_after_tax': 'After Tax',
           'add_item': 'Add Item',
           'total': 'Grand Total',
           'generate': 'Preview / Print PDF',
@@ -812,10 +977,22 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'client_name': 'Client Name',
       'client_phone': 'Client Phone',
       'client_address': 'Client Address',
+      'client_details_required':
+          'Please fill all client details: name, phone, and address.',
       'items': 'Service Items & Details',
       'desc': 'Description',
       'qty': 'Qty',
       'price': 'Unit Price',
+      'price_tax_mode': 'Price Tax Mode',
+      'price_before_tax': 'Before Tax',
+      'price_after_tax': 'After Tax',
+      'has_discount': 'Apply Discount?',
+      'discount_amount': 'Discount Amount',
+      'discount_invalid':
+          'When discount is enabled, enter a valid amount less than or equal to items total.',
+      'discount': 'Discount',
+      'entered_price_before_tax': 'Before Tax',
+      'entered_price_after_tax': 'After Tax',
       'add_item': 'Add Item',
       'notes': 'Notes / Payment Terms',
       'total': 'Grand Total',
@@ -861,16 +1038,20 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   void _addItem() {
     if (_itemDescController.text.isEmpty || _itemPriceController.text.isEmpty)
       return;
-    final price = double.tryParse(_itemPriceController.text) ?? 0.0;
+    final price =
+        double.tryParse(
+          _itemPriceController.text.trim().replaceAll(',', '.'),
+        ) ??
+        0.0;
     final qty = int.tryParse(_itemQtyController.text) ?? 1;
     setState(() {
       final newItem = InvoiceItem(
         description: _itemDescController.text,
         quantity: qty,
         price: price,
+        isPriceBeforeTax: _selectedPriceTaxMode == 'before_tax',
       );
       _items.add(newItem);
-      _totalAmount += newItem.total;
       _itemDescController.clear();
       _itemPriceController.clear();
       _itemQtyController.text = "1";
@@ -879,7 +1060,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
 
   void _removeItem(int index) {
     setState(() {
-      _totalAmount -= _items[index].total;
       _items.removeAt(index);
     });
   }
@@ -930,6 +1110,263 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     return false;
   }
 
+  bool _validateClientDetails() {
+    final strings = _getLocalizedStrings(context, listen: false);
+    final missingClientDetails =
+        _clientNameController.text.trim().isEmpty ||
+        _clientPhoneController.text.trim().isEmpty ||
+        _clientAddressController.text.trim().isEmpty;
+
+    if (!missingClientDetails) return true;
+
+    final locale = Provider.of<LanguageProvider>(
+      context,
+      listen: false,
+    ).locale.languageCode;
+    final fallback = (locale == 'he' || locale == 'ar')
+        ? 'יש למלא את כל פרטי הלקוח: שם, טלפון וכתובת.'
+        : 'Please fill all client details: name, phone, and address.';
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(strings['client_details_required'] ?? fallback)),
+    );
+    return false;
+  }
+
+  bool _validateDiscount() {
+    if (!_hasDiscount) return true;
+
+    final strings = _getLocalizedStrings(context, listen: false);
+    final parsed = double.tryParse(
+      _discountController.text.trim().replaceAll(',', '.'),
+    );
+    if (parsed == null || parsed <= 0 || parsed > _itemsTotalBeforeDiscount) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(strings['discount_invalid']!)));
+      return false;
+    }
+    return true;
+  }
+
+  String _paymentMethodLabel(bool isRtl, String method) {
+    switch (method) {
+      case 'credit':
+        return isRtl ? 'אשראי' : 'Credit Card';
+      case 'transfer':
+        return isRtl ? 'העברה בנקאית' : 'Bank Transfer';
+      case 'check':
+        return isRtl ? 'צ׳ק' : 'Check';
+      case 'cash':
+      default:
+        return isRtl ? 'מזומן' : 'Cash';
+    }
+  }
+
+  String _creditDealTypeLabel(bool isRtl, String dealType) {
+    switch (dealType) {
+      case 'installments':
+        return isRtl ? 'תשלומים' : 'Installments';
+      case 'credit':
+        return isRtl ? 'קרדיט' : 'Credit';
+      case 'other':
+        return isRtl ? 'אחר' : 'Other';
+      case 'regular':
+      default:
+        return isRtl ? 'רגיל' : 'Regular';
+    }
+  }
+
+  double? _parsePaymentAmount(String raw) {
+    final normalized = raw.trim().replaceAll(',', '.');
+    return double.tryParse(normalized);
+  }
+
+  double _paymentMethodsAmountTotal() {
+    var total = 0.0;
+    for (final methodEntry in _paymentMethods) {
+      total += _parsePaymentAmount(methodEntry.amountController.text) ?? 0.0;
+    }
+    return total;
+  }
+
+  bool _validatePaymentMethods() {
+    final strings = _getLocalizedStrings(context, listen: false);
+    final locale = Provider.of<LanguageProvider>(
+      context,
+      listen: false,
+    ).locale.languageCode;
+    final isRtl = locale == 'he' || locale == 'ar';
+
+    for (var i = 0; i < _paymentMethods.length; i++) {
+      final methodEntry = _paymentMethods[i];
+      final amount = _parsePaymentAmount(methodEntry.amountController.text);
+      if (amount == null || amount <= 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              isRtl
+                  ? 'חובה למלא סכום תשלום תקין בכל אמצעי תשלום (שורה ${i + 1}).'
+                  : 'A valid payment amount is required for each payment method (row ${i + 1}).',
+            ),
+          ),
+        );
+        return false;
+      }
+
+      if (methodEntry.method == 'check' &&
+          methodEntry.checkNumberController.text.trim().isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              isRtl
+                  ? 'בשיטת צ׳ק חובה למלא מספר צ׳ק (שורה ${i + 1}).'
+                  : 'Check number is required for check payments (row ${i + 1}).',
+            ),
+          ),
+        );
+        return false;
+      }
+
+      if (methodEntry.method == 'credit' &&
+          methodEntry.creditDealType == 'installments') {
+        final installments = methodEntry.installmentsController.text.trim();
+        final parsed = int.tryParse(installments);
+        if (installments.isEmpty || parsed == null || parsed < 1) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                isRtl
+                    ? 'באשראי מסוג תשלומים חובה לרשום מספר תשלומים תקין (שורה ${i + 1}).'
+                    : 'Installments count is required for installment credit payments (row ${i + 1}).',
+              ),
+            ),
+          );
+          return false;
+        }
+      }
+
+      if (methodEntry.method == 'transfer') {
+        final bank = methodEntry.transferBankController.text.trim();
+        final branch = methodEntry.transferBranchController.text.trim();
+        final account = methodEntry.transferAccountController.text.trim();
+        if (bank.isEmpty || branch.isEmpty || account.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                isRtl
+                    ? 'בהעברה בנקאית חובה למלא בנק, סניף ומספר חשבון (שורה ${i + 1}).'
+                    : 'Bank transfer requires bank name, branch, and account number (row ${i + 1}).',
+              ),
+            ),
+          );
+          return false;
+        }
+      }
+    }
+
+    if (_paymentMethods.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            strings['payment_method'] ??
+                (isRtl
+                    ? 'יש לבחור אמצעי תשלום'
+                    : 'Select at least one payment method'),
+          ),
+        ),
+      );
+      return false;
+    }
+
+    final paidTotal = _paymentMethodsAmountTotal();
+    final expectedTotal = _totalAmount;
+    if ((paidTotal - expectedTotal).abs() > 0.01) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            isRtl
+                ? 'סה״כ התשלומים (${paidTotal.toStringAsFixed(2)} ₪) חייב להיות שווה לסה״כ לתשלום (${expectedTotal.toStringAsFixed(2)} ₪).'
+                : 'Total payments (${paidTotal.toStringAsFixed(2)} ₪) must equal grand total (${expectedTotal.toStringAsFixed(2)} ₪).',
+          ),
+        ),
+      );
+      return false;
+    }
+
+    return true;
+  }
+
+  String _paymentMethodsSummaryText(bool isRtl) {
+    if (_paymentMethods.isEmpty) {
+      return _paymentMethodLabel(isRtl, 'cash');
+    }
+    final sections = <String>[];
+    for (final methodEntry in _paymentMethods) {
+      final parts = <String>[_paymentMethodLabel(isRtl, methodEntry.method)];
+      final amount = _parsePaymentAmount(methodEntry.amountController.text);
+      if (amount != null) {
+        parts.add(
+          '${isRtl ? 'סכום ששולם: ' : 'Amount Paid: '}${amount.toStringAsFixed(2)} ₪',
+        );
+      }
+      if (methodEntry.method == 'credit') {
+        final cardNumber = methodEntry.cardNumberController.text.trim();
+        final cardName = methodEntry.cardNameController.text.trim();
+        if (cardNumber.isNotEmpty) {
+          parts.add((isRtl ? 'מספר כרטיס: ' : 'Card Number: ') + cardNumber);
+        }
+        if (cardName.isNotEmpty) {
+          parts.add((isRtl ? 'שם כרטיס: ' : 'Card Name: ') + cardName);
+        }
+        parts.add(
+          (isRtl ? 'סוג העסקה: ' : 'Deal Type: ') +
+              _creditDealTypeLabel(isRtl, methodEntry.creditDealType),
+        );
+        if (methodEntry.creditDealType == 'installments') {
+          final installments = methodEntry.installmentsController.text.trim();
+          if (installments.isNotEmpty) {
+            parts.add(
+              (isRtl ? 'מספר תשלומים: ' : 'Installments: ') + installments,
+            );
+          }
+        }
+      } else if (methodEntry.method == 'check') {
+        final checkNumber = methodEntry.checkNumberController.text.trim();
+        if (checkNumber.isNotEmpty) {
+          parts.add((isRtl ? 'מספר צ׳ק: ' : 'Check Number: ') + checkNumber);
+        }
+        final bank = methodEntry.checkBankController.text.trim();
+        final branch = methodEntry.checkBranchController.text.trim();
+        final account = methodEntry.checkAccountController.text.trim();
+        if (bank.isNotEmpty) {
+          parts.add((isRtl ? 'בנק: ' : 'Bank: ') + bank);
+        }
+        if (branch.isNotEmpty) {
+          parts.add((isRtl ? 'סניף: ' : 'Branch: ') + branch);
+        }
+        if (account.isNotEmpty) {
+          parts.add((isRtl ? 'חשבון בנק: ' : 'Bank Account: ') + account);
+        }
+      } else if (methodEntry.method == 'transfer') {
+        final bank = methodEntry.transferBankController.text.trim();
+        final branch = methodEntry.transferBranchController.text.trim();
+        final account = methodEntry.transferAccountController.text.trim();
+        if (bank.isNotEmpty) {
+          parts.add((isRtl ? 'בנק: ' : 'Bank: ') + bank);
+        }
+        if (branch.isNotEmpty) {
+          parts.add((isRtl ? 'סניף: ' : 'Branch: ') + branch);
+        }
+        if (account.isNotEmpty) {
+          parts.add((isRtl ? 'חשבון בנק: ' : 'Bank Account: ') + account);
+        }
+      }
+      sections.add(parts.join(' | '));
+    }
+    return sections.join('\n--------------------\n');
+  }
+
   Future<void> _pickCreditOriginalInvoiceDate() async {
     final now = DateTime.now();
     final picked = await showDatePicker(
@@ -956,8 +1393,17 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       );
       return;
     }
+    if (!_validateClientDetails()) {
+      return;
+    }
 
     if (!_validateCreditNoteLegalFields()) {
+      return;
+    }
+    if (!_validateDiscount()) {
+      return;
+    }
+    if (!_validatePaymentMethods()) {
       return;
     }
 
@@ -1086,6 +1532,16 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         'storagePath': storagePath,
         'url': downloadUrl,
         'amount': _signedTotalAmount,
+        'paymentMethod': _paymentMethods.isNotEmpty
+            ? _paymentMethods.first.method
+            : 'cash',
+        'paymentMethods': _paymentMethods
+            .map((entry) => entry.toMap())
+            .toList(),
+        'paymentAmountTotal': _paymentMethodsAmountTotal(),
+        'priceTaxModeDefault': _selectedPriceTaxMode,
+        'hasDiscount': _hasDiscount,
+        'discountAmount': _discountAmount,
         'invoiceNumber': _invoiceNumber,
         'createdAt': FieldValue.serverTimestamp(),
         if (_creditNoteLegalData != null)
@@ -1232,7 +1688,16 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   }
 
   Future<void> _sendToContact(String receiverId, String receiverName) async {
+    if (!_validateClientDetails()) {
+      return;
+    }
     if (!_validateCreditNoteLegalFields()) {
+      return;
+    }
+    if (!_validateDiscount()) {
+      return;
+    }
+    if (!_validatePaymentMethods()) {
       return;
     }
 
@@ -1614,7 +2079,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                             (item) => [
                               item.description,
                               item.quantity.toString(),
-                              "${item.price.toStringAsFixed(2)} ₪",
+                              "${_unitPriceAfterTax(item).toStringAsFixed(2)} ₪",
                               "${_signedItemTotal(item).toStringAsFixed(2)} ₪",
                             ],
                           )
@@ -1691,6 +2156,26 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                 color: pdf.PdfColors.grey400,
                               ),
                             ],
+                            if (_discountAmount > 0) ...[
+                              pw.Row(
+                                mainAxisAlignment:
+                                    pw.MainAxisAlignment.spaceBetween,
+                                children: [
+                                  pw.Text(
+                                    strings['discount']!,
+                                    style: pw.TextStyle(fontSize: 11),
+                                  ),
+                                  pw.Text(
+                                    "-${_discountAmount.toStringAsFixed(2)} ₪",
+                                    style: pw.TextStyle(fontSize: 11),
+                                  ),
+                                ],
+                              ),
+                              pw.Divider(
+                                thickness: 1,
+                                color: pdf.PdfColors.grey400,
+                              ),
+                            ],
                             pw.Row(
                               mainAxisAlignment:
                                   pw.MainAxisAlignment.spaceBetween,
@@ -1737,30 +2222,10 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                           pw.Radius.circular(5),
                         ),
                       ),
-                      child: pw.Text(() {
-                        switch (_selectedPaymentMethod) {
-                          case 'cash':
-                            return isRtl ? 'מזומן' : 'Cash';
-                          case 'credit':
-                            return isRtl ? 'אשראי' : 'Credit Card';
-                          case 'transfer':
-                            return (isRtl ? 'העברה בנקאית' : 'Bank Transfer') +
-                                (_transferDetailsController.text.isNotEmpty
-                                    ? '\n' + _transferDetailsController.text
-                                    : '');
-                          case 'check':
-                            return (isRtl ? 'צ׳ק' : 'Check') +
-                                (_checkNumberController.text.isNotEmpty
-                                    ? '\n' +
-                                          (isRtl
-                                              ? 'מספר צ׳ק: '
-                                              : 'Check Number: ') +
-                                          _checkNumberController.text
-                                    : '');
-                          default:
-                            return _selectedPaymentMethod;
-                        }
-                      }(), style: const pw.TextStyle(fontSize: 11)),
+                      child: pw.Text(
+                        _paymentMethodsSummaryText(isRtl),
+                        style: const pw.TextStyle(fontSize: 11),
+                      ),
                     ),
                     pw.SizedBox(height: 16),
                     if (_notesController.text.isNotEmpty) ...[
@@ -2088,57 +2553,37 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                           title: isRtl ? 'אמצעי תשלום' : 'Payment Method',
                           icon: Icons.payment,
                           children: [
-                            DropdownButtonFormField<String>(
-                              isExpanded: true,
-                              value: _selectedPaymentMethod,
-                              decoration: _inputStyle(
-                                isRtl
-                                    ? 'בחר אמצעי תשלום'
-                                    : 'Select Payment Method',
-                                Icons.payment,
-                              ),
-                              items: [
-                                DropdownMenuItem(
-                                  value: 'cash',
-                                  child: Text(isRtl ? 'מזומן' : 'Cash'),
+                            ...List.generate(_paymentMethods.length, (index) {
+                              return Padding(
+                                padding: EdgeInsets.only(
+                                  bottom: index == _paymentMethods.length - 1
+                                      ? 0
+                                      : 12,
                                 ),
-                                DropdownMenuItem(
-                                  value: 'credit',
-                                  child: Text(isRtl ? 'אשראי' : 'Credit Card'),
+                                child: _buildPaymentMethodCard(
+                                  index,
+                                  _paymentMethods[index],
+                                  isRtl,
                                 ),
-                                DropdownMenuItem(
-                                  value: 'transfer',
-                                  child: Text(
-                                    isRtl ? 'העברה בנקאית' : 'Bank Transfer',
-                                  ),
-                                ),
-                                DropdownMenuItem(
-                                  value: 'check',
-                                  child: Text(isRtl ? 'צ׳ק' : 'Check'),
-                                ),
-                              ],
-                              onChanged: (val) {
-                                if (val != null)
-                                  setState(() => _selectedPaymentMethod = val);
+                              );
+                            }),
+                            const SizedBox(height: 12),
+                            OutlinedButton.icon(
+                              onPressed: () {
+                                setState(() {
+                                  for (final methodEntry in _paymentMethods) {
+                                    methodEntry.isExpanded = false;
+                                  }
+                                  _paymentMethods.add(_PaymentMethodEntry());
+                                });
                               },
+                              icon: const Icon(Icons.add),
+                              label: Text(
+                                isRtl
+                                    ? 'הוסף אמצעי תשלום'
+                                    : 'Add Payment Method',
+                              ),
                             ),
-                            if (_selectedPaymentMethod == 'check') ...[
-                              const SizedBox(height: 12),
-                              _buildTextField(
-                                _checkNumberController,
-                                isRtl ? 'מספר צ׳ק' : 'Check Number',
-                                Icons.confirmation_number,
-                                keyboardType: TextInputType.number,
-                              ),
-                            ],
-                            if (_selectedPaymentMethod == 'transfer') ...[
-                              const SizedBox(height: 12),
-                              _buildTextField(
-                                _transferDetailsController,
-                                isRtl ? 'פרטי העברה' : 'Transfer Details',
-                                Icons.account_balance,
-                              ),
-                            ],
                           ],
                         ),
                         const SizedBox(height: 20),
@@ -2199,6 +2644,56 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                 ),
                               ],
                             ),
+                            const SizedBox(height: 12),
+                            DropdownButtonFormField<String>(
+                              isExpanded: true,
+                              initialValue: _selectedPriceTaxMode,
+                              decoration: _inputStyle(
+                                strings['price_tax_mode']!,
+                                Icons.percent_rounded,
+                              ),
+                              items: [
+                                DropdownMenuItem(
+                                  value: 'after_tax',
+                                  child: Text(strings['price_after_tax']!),
+                                ),
+                                DropdownMenuItem(
+                                  value: 'before_tax',
+                                  child: Text(strings['price_before_tax']!),
+                                ),
+                              ],
+                              onChanged: (value) {
+                                if (value == null) return;
+                                setState(() => _selectedPriceTaxMode = value);
+                              },
+                            ),
+                            const SizedBox(height: 12),
+                            SwitchListTile.adaptive(
+                              contentPadding: EdgeInsets.zero,
+                              title: Text(strings['has_discount']!),
+                              value: _hasDiscount,
+                              onChanged: (value) {
+                                setState(() {
+                                  _hasDiscount = value;
+                                  if (!value) {
+                                    _discountController.clear();
+                                  }
+                                });
+                              },
+                            ),
+                            if (_hasDiscount) ...[
+                              const SizedBox(height: 8),
+                              _buildTextField(
+                                _discountController,
+                                strings['discount_amount']!,
+                                Icons.discount_outlined,
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                      decimal: true,
+                                    ),
+                                onChanged: (_) => setState(() {}),
+                              ),
+                            ],
                             const SizedBox(height: 16),
                             SizedBox(
                               width: double.infinity,
@@ -2257,7 +2752,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                     ),
                                   ),
                                   subtitle: Text(
-                                    "${item.quantity} x ${item.price.toStringAsFixed(2)} ₪",
+                                    "${item.quantity} x ${item.price.toStringAsFixed(2)} ₪ (${item.isPriceBeforeTax ? strings['entered_price_before_tax']! : strings['entered_price_after_tax']!})",
                                   ),
                                   trailing: Row(
                                     mainAxisSize: MainAxisSize.min,
@@ -2349,6 +2844,29 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                     ),
                                   ],
                                 ),
+                                if (_discountAmount > 0) ...[
+                                  const SizedBox(height: 10),
+                                  Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(
+                                        strings['discount']!,
+                                        style: const TextStyle(
+                                          color: Colors.white70,
+                                          fontSize: 14,
+                                        ),
+                                      ),
+                                      Text(
+                                        "-${_discountAmount.toStringAsFixed(2)} ₪",
+                                        style: const TextStyle(
+                                          color: Colors.white70,
+                                          fontSize: 14,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
                                 const SizedBox(height: 20),
                                 Row(
                                   children: [
@@ -2424,15 +2942,268 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     );
   }
 
+  Widget _buildPaymentMethodCard(
+    int index,
+    _PaymentMethodEntry entry,
+    bool isRtl,
+  ) {
+    final parsedAmount = _parsePaymentAmount(entry.amountController.text);
+
+    if (!entry.isExpanded) {
+      return Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _paymentMethodLabel(isRtl, entry.method),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF1E293B),
+                    ),
+                  ),
+                  if (parsedAmount != null)
+                    Text(
+                      '${isRtl ? 'שולם: ' : 'Paid: '}${parsedAmount.toStringAsFixed(2)} ₪',
+                      style: const TextStyle(color: Color(0xFF475569)),
+                    ),
+                ],
+              ),
+            ),
+            IconButton(
+              onPressed: () {
+                setState(() => entry.isExpanded = true);
+              },
+              icon: const Icon(Icons.expand_more),
+              tooltip: isRtl ? 'פתח' : 'Expand',
+            ),
+            IconButton(
+              onPressed: _paymentMethods.length == 1
+                  ? null
+                  : () {
+                      setState(() {
+                        final removed = _paymentMethods.removeAt(index);
+                        removed.dispose();
+                      });
+                    },
+              icon: const Icon(Icons.delete_outline),
+              tooltip: isRtl ? 'הסר' : 'Remove',
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: DropdownButtonFormField<String>(
+                  isExpanded: true,
+                  initialValue: entry.method,
+                  decoration: _inputStyle(
+                    isRtl ? 'אמצעי תשלום' : 'Payment Method',
+                    Icons.payment,
+                  ),
+                  items: [
+                    DropdownMenuItem(
+                      value: 'cash',
+                      child: Text(isRtl ? 'מזומן' : 'Cash'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'credit',
+                      child: Text(isRtl ? 'אשראי' : 'Credit Card'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'transfer',
+                      child: Text(isRtl ? 'העברה בנקאית' : 'Bank Transfer'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'check',
+                      child: Text(isRtl ? 'צ׳ק' : 'Check'),
+                    ),
+                  ],
+                  onChanged: (val) {
+                    if (val == null) return;
+                    setState(() => entry.method = val);
+                  },
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                onPressed: () {
+                  setState(() => entry.isExpanded = false);
+                },
+                icon: const Icon(Icons.expand_less),
+                tooltip: isRtl ? 'כווץ' : 'Collapse',
+              ),
+              IconButton(
+                onPressed: _paymentMethods.length == 1
+                    ? null
+                    : () {
+                        setState(() {
+                          final removed = _paymentMethods.removeAt(index);
+                          removed.dispose();
+                        });
+                      },
+                icon: const Icon(Icons.delete_outline),
+                tooltip: isRtl ? 'הסר' : 'Remove',
+              ),
+            ],
+          ),
+          if (entry.method == 'credit') ...[
+            const SizedBox(height: 12),
+            _buildTextField(
+              entry.cardNumberController,
+              isRtl ? 'מספר כרטיס (אופציונלי)' : 'Card Number (Optional)',
+              Icons.credit_card,
+              keyboardType: TextInputType.number,
+            ),
+            const SizedBox(height: 12),
+            _buildTextField(
+              entry.cardNameController,
+              isRtl
+                  ? 'שם הכרטיס (Visa, MasterCard וכו׳) - אופציונלי'
+                  : 'Card Name (Visa, MasterCard, etc.) - Optional',
+              Icons.badge_outlined,
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              isExpanded: true,
+              initialValue: entry.creditDealType,
+              decoration: _inputStyle(
+                isRtl ? 'סוג העסקה' : 'Deal Type',
+                Icons.receipt_long_outlined,
+              ),
+              items: [
+                DropdownMenuItem(
+                  value: 'regular',
+                  child: Text(isRtl ? 'רגיל' : 'Regular'),
+                ),
+                DropdownMenuItem(
+                  value: 'installments',
+                  child: Text(isRtl ? 'תשלומים' : 'Installments'),
+                ),
+                DropdownMenuItem(
+                  value: 'credit',
+                  child: Text(isRtl ? 'קרדיט' : 'Credit'),
+                ),
+                DropdownMenuItem(
+                  value: 'other',
+                  child: Text(isRtl ? 'אחר' : 'Other'),
+                ),
+              ],
+              onChanged: (val) {
+                if (val == null) return;
+                setState(() => entry.creditDealType = val);
+              },
+            ),
+            if (entry.creditDealType == 'installments') ...[
+              const SizedBox(height: 12),
+              _buildTextField(
+                entry.installmentsController,
+                isRtl ? 'מספר תשלומים (חובה)' : 'Installments Count (Required)',
+                Icons.format_list_numbered,
+                keyboardType: TextInputType.number,
+              ),
+            ],
+          ],
+          if (entry.method == 'check') ...[
+            const SizedBox(height: 12),
+            _buildTextField(
+              entry.checkNumberController,
+              isRtl ? 'מספר צ׳ק (חובה)' : 'Check Number (Required)',
+              Icons.confirmation_number,
+              keyboardType: TextInputType.number,
+            ),
+            const SizedBox(height: 12),
+            _buildTextField(
+              entry.checkBankController,
+              isRtl ? 'בנק (אופציונלי)' : 'Bank (Optional)',
+              Icons.account_balance,
+            ),
+            const SizedBox(height: 12),
+            _buildTextField(
+              entry.checkBranchController,
+              isRtl ? 'סניף (אופציונלי)' : 'Branch (Optional)',
+              Icons.store_mall_directory_outlined,
+            ),
+            const SizedBox(height: 12),
+            _buildTextField(
+              entry.checkAccountController,
+              isRtl ? 'חשבון בנק (אופציונלי)' : 'Bank Account (Optional)',
+              Icons.account_balance_wallet_outlined,
+            ),
+          ],
+          if (entry.method == 'transfer') ...[
+            const SizedBox(height: 12),
+            _buildTextField(
+              entry.transferBankController,
+              isRtl ? 'בנק (חובה)' : 'Bank Name (Required)',
+              Icons.account_balance,
+            ),
+            const SizedBox(height: 12),
+            _buildTextField(
+              entry.transferBranchController,
+              isRtl ? 'סניף (חובה)' : 'Branch (Required)',
+              Icons.store_mall_directory_outlined,
+            ),
+            const SizedBox(height: 12),
+            _buildTextField(
+              entry.transferAccountController,
+              isRtl ? 'מספר חשבון (חובה)' : 'Account Number (Required)',
+              Icons.account_balance,
+            ),
+          ],
+          const SizedBox(height: 12),
+          _buildTextField(
+            entry.amountController,
+            isRtl ? 'סכום ששולם (חובה)' : 'Amount Paid (Required)',
+            Icons.payments_outlined,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            textInputAction: TextInputAction.done,
+            onSubmitted: (_) {
+              FocusScope.of(context).unfocus();
+              setState(() => entry.isExpanded = false);
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildTextField(
     TextEditingController controller,
     String label,
     IconData icon, {
     TextInputType keyboardType = TextInputType.text,
+    TextInputAction? textInputAction,
+    ValueChanged<String>? onChanged,
+    ValueChanged<String>? onSubmitted,
   }) {
     return TextField(
       controller: controller,
       keyboardType: keyboardType,
+      textInputAction: textInputAction,
+      onChanged: onChanged,
+      onSubmitted: onSubmitted,
       decoration: _inputStyle(label, icon),
     );
   }

@@ -20,6 +20,7 @@ class _FullscreenMediaViewerState extends State<FullscreenMediaViewer> {
   late PageController _pageController;
   late int _currentIndex;
   bool _showChrome = true;
+  bool _isCurrentImageZoomed = false;
 
   @override
   void initState() {
@@ -30,7 +31,21 @@ class _FullscreenMediaViewerState extends State<FullscreenMediaViewer> {
 
   bool _isPathVideo(String url) {
     final lowerUrl = url.toLowerCase();
-    return lowerUrl.contains('.mp4') || lowerUrl.contains('.mov') || lowerUrl.contains('.avi') || lowerUrl.contains('.mkv');
+    return lowerUrl.contains('.mp4') ||
+        lowerUrl.contains('.mov') ||
+        lowerUrl.contains('.avi') ||
+        lowerUrl.contains('.mkv');
+  }
+
+  void _requestAdjacentPage(int direction) {
+    final target = _currentIndex + direction;
+    if (target < 0 || target >= widget.urls.length) return;
+
+    _pageController.animateToPage(
+      target,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   @override
@@ -41,10 +56,14 @@ class _FullscreenMediaViewerState extends State<FullscreenMediaViewer> {
         children: [
           PageView.builder(
             controller: _pageController,
+            physics: _isCurrentImageZoomed
+                ? const NeverScrollableScrollPhysics()
+                : const PageScrollPhysics(),
             itemCount: widget.urls.length,
             onPageChanged: (index) {
               setState(() {
                 _currentIndex = index;
+                _isCurrentImageZoomed = false;
               });
             },
             itemBuilder: (context, index) {
@@ -63,6 +82,15 @@ class _FullscreenMediaViewerState extends State<FullscreenMediaViewer> {
                   enableHero: true,
                   heroTag: url,
                   enableSwipeDismiss: true,
+                  onZoomStateChanged: (isZoomed) {
+                    if (!mounted || index != _currentIndex) return;
+                    if (_isCurrentImageZoomed == isZoomed) return;
+                    setState(() => _isCurrentImageZoomed = isZoomed);
+                  },
+                  onEdgePageRequest: (direction) {
+                    if (!mounted || index != _currentIndex) return;
+                    _requestAdjacentPage(direction);
+                  },
                   onTap: () => setState(() => _showChrome = !_showChrome),
                 );
               }
@@ -123,10 +151,7 @@ class _ChromeButton extends StatelessWidget {
   final IconData icon;
   final VoidCallback onPressed;
 
-  const _ChromeButton({
-    required this.icon,
-    required this.onPressed,
-  });
+  const _ChromeButton({required this.icon, required this.onPressed});
 
   @override
   Widget build(BuildContext context) {
