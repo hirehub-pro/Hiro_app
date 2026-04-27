@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
+import 'dart:math' as math;
 import 'package:untitled1/services/language_provider.dart';
 import 'package:untitled1/services/analytics_service.dart';
 import 'package:untitled1/services/location_context_service.dart';
@@ -20,22 +21,34 @@ class SearchPage extends StatefulWidget {
 }
 
 class _SearchBackgroundLayer extends StatelessWidget {
-  const _SearchBackgroundLayer();
+  const _SearchBackgroundLayer({required this.progress});
+
+  final double progress;
 
   @override
   Widget build(BuildContext context) {
-    return CustomPaint(painter: _SearchBackgroundPainter());
+    return CustomPaint(painter: _SearchBackgroundPainter(progress));
   }
 }
 
 class _SearchBackgroundPainter extends CustomPainter {
+  const _SearchBackgroundPainter(this.progress);
+
+  final double progress;
+
   @override
   void paint(Canvas canvas, Size size) {
     final rect = Offset.zero & size;
+    final phase = progress * math.pi * 2;
+    final eased = Curves.easeInOut.transform((math.sin(phase) + 1) * 0.5);
     final basePaint = Paint()
-      ..shader = const LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
+      ..shader = LinearGradient(
+        begin: Alignment.lerp(Alignment.topLeft, Alignment.topRight, eased)!,
+        end: Alignment.lerp(
+          Alignment.bottomRight,
+          Alignment.bottomLeft,
+          eased,
+        )!,
         colors: [
           Color(0xFFFDFEFF),
           Color(0xFFEAF5FF),
@@ -48,26 +61,48 @@ class _SearchBackgroundPainter extends CustomPainter {
 
     final glowPaint = Paint()
       ..color = const Color(0xFF1976D2).withValues(alpha: 0.07);
-    canvas.drawCircle(
-      Offset(size.width * 0.18, size.height * 0.12),
-      size.shortestSide * 0.26,
-      glowPaint,
-    );
-    canvas.drawCircle(
-      Offset(size.width * 0.85, size.height * 0.3),
-      size.shortestSide * 0.23,
-      glowPaint,
-    );
+    final x1 = size.width * 0.5 + (size.width * 0.44 * math.sin(phase));
+    final y1 =
+        size.height * 0.5 + (size.height * 0.42 * math.cos(phase * 0.86));
+    final r1 =
+        size.shortestSide *
+        (0.2 + (0.09 * ((math.sin(phase * 0.9) + 1) * 0.5)));
+    canvas.drawCircle(Offset(x1, y1), r1, glowPaint);
+
+    final x2 =
+        size.width * 0.5 +
+        (size.width * 0.47 * math.sin(phase + math.pi * 0.8));
+    final y2 =
+        size.height * 0.5 +
+        (size.height * 0.44 * math.sin(phase * 1.12 + math.pi * 0.35));
+    final r2 =
+        size.shortestSide *
+        (0.18 + (0.08 * ((math.cos(phase * 1.1 + 0.7) + 1) * 0.5)));
+    canvas.drawCircle(Offset(x2, y2), r2, glowPaint);
+
+    final x3 =
+        size.width * 0.5 +
+        (size.width * 0.48 * math.cos(phase * 0.74 + math.pi * 0.22));
+    final y3 =
+        size.height * 0.5 +
+        (size.height * 0.46 * math.sin(phase * 0.93 + math.pi * 1.1));
+    final r3 =
+        size.shortestSide *
+        (0.13 + (0.06 * ((math.sin(phase * 1.25 + 1.4) + 1) * 0.5)));
+    canvas.drawCircle(Offset(x3, y3), r3, glowPaint);
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant _SearchBackgroundPainter oldDelegate) {
+    return oldDelegate.progress != progress;
+  }
 }
 
-class _SearchPageState extends State<SearchPage> {
+class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  AnimationController? _backgroundController;
 
   List<Map<String, dynamic>> _allWorkers = [];
   List<Map<String, dynamic>> _filteredWorkers = [];
@@ -257,6 +292,10 @@ class _SearchPageState extends State<SearchPage> {
   @override
   void initState() {
     super.initState();
+    _backgroundController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 10),
+    )..repeat(reverse: true);
     LocationContextService.locationPermissionGrantedTick.addListener(
       _onLocationPermissionGranted,
     );
@@ -278,6 +317,7 @@ class _SearchPageState extends State<SearchPage> {
     LocationContextService.locationPermissionGrantedTick.removeListener(
       _onLocationPermissionGranted,
     );
+    _backgroundController?.dispose();
     _scrollController.dispose();
     _searchController.dispose();
     super.dispose();
@@ -924,7 +964,16 @@ class _SearchPageState extends State<SearchPage> {
       backgroundColor: const Color(0xFFF7FBFF),
       body: Stack(
         children: [
-          const Positioned.fill(child: _SearchBackgroundLayer()),
+          Positioned.fill(
+            child: AnimatedBuilder(
+              animation: _backgroundController!,
+              builder: (context, _) {
+                return _SearchBackgroundLayer(
+                  progress: _backgroundController!.value,
+                );
+              },
+            ),
+          ),
           SafeArea(
             child: Column(
               children: [
