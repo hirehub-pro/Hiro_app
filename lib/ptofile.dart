@@ -37,7 +37,13 @@ import 'package:untitled1/widgets/skeleton.dart';
 class Profile extends StatefulWidget {
   final String? userId;
   final String? viewedProfession;
-  const Profile({super.key, this.userId, this.viewedProfession});
+  final String? viewedProfessionBookingMode;
+  const Profile({
+    super.key,
+    this.userId,
+    this.viewedProfession,
+    this.viewedProfessionBookingMode,
+  });
 
   @override
   State<Profile> createState() => _ProfileState();
@@ -183,6 +189,11 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
   }
 
   String _resolvedBookingMode() {
+    final explicitMode = widget.viewedProfessionBookingMode;
+    if (explicitMode != null && explicitMode.trim().isNotEmpty) {
+      return normalizeBookingMode(explicitMode);
+    }
+
     final viewed = widget.viewedProfession?.trim().toLowerCase();
     if (viewed != null && viewed.isNotEmpty) {
       return normalizeBookingMode(_professionBookingModes[viewed]);
