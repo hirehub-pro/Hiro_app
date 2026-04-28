@@ -706,6 +706,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           'project_ideas_hint':
               'בעיות דחופות, שיפוצים ורעיונות לפרויקט במקום אחד',
           'project_ideas_cta': 'צפה באפשרויות',
+          'other_services_title': 'שירותים מקצועיים נוספים',
+          'other_services_subtitle':
+              'מורים פרטיים, ייעוץ ושירותים אישיים במקום אחד',
+          'other_services_hint':
+              'משפטי, פיננסי, חינוכי, טיפולי ויצירתי לפי סוג השירות',
+          'other_services_badge': 'שירות',
           'project_find_pros': 'מצא בעלי מקצוע',
           'project_example': 'דוגמאות',
           'project_problem_badge': 'בעיה',
@@ -717,6 +723,54 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           'project_trade_gardener': 'גנן',
           'project_trade_ac': 'טכנאי מזגנים',
           'project_trade_mover': 'מוביל',
+          'other_trade_teacher': 'מורה פרטי',
+          'other_trade_lawyer': 'עורך דין',
+          'other_trade_massage': 'מטפל בעיסוי',
+          'other_trade_accountant': 'רואה חשבון',
+          'other_trade_photographer': 'צלם',
+          'other_trade_trainer': 'מאמן אישי',
+          'other_trade_designer': 'מעצב גרפי',
+          'other_trade_babysitter': 'בייביסיטר',
+          'other_trade_translator': 'מתרגם',
+          'other_trade_music': 'מורה למוזיקה',
+          'other_trade_therapist': 'מטפל רגשי',
+          'other_trade_real_estate': 'יועץ נדל"ן',
+          'other_teacher_title': 'שיעור פרטי או תגבור',
+          'other_teacher_subtitle':
+              'אנגלית, מתמטיקה, שפות, בגרויות או עזרה לסטודנטים',
+          'other_lawyer_title': 'ייעוץ משפטי',
+          'other_lawyer_subtitle':
+              'חוזים, תביעות, מקרקעין, עבודה או ייעוץ ראשוני מהיר',
+          'other_massage_title': 'עיסוי בבית או בקליניקה',
+          'other_massage_subtitle':
+              'רוגע, כאבי גב, התאוששות מספורט או טיפול לגוף',
+          'other_accountant_title': 'רואה חשבון או הנהלת חשבונות',
+          'other_accountant_subtitle':
+              'מסים, דוחות, משכורות או ייעוץ פיננסי לעסק',
+          'other_photographer_title': 'צילום לאירוע או לעסק',
+          'other_photographer_subtitle':
+              'אירועים, מוצרים, תדמית, משפחה או תוכן לרשתות',
+          'other_trainer_title': 'אימון אישי',
+          'other_trainer_subtitle':
+              'כושר בבית, ירידה במשקל, שיקום או תוכנית מותאמת',
+          'other_designer_title': 'עיצוב גרפי או מיתוג',
+          'other_designer_subtitle':
+              'לוגו, פוסטים, חוברות, תפריטים וחומרים לעסק',
+          'other_babysitter_title': 'בייביסיטר או טיפול בילדים',
+          'other_babysitter_subtitle':
+              'עזרה לשעות הערב, אחרי מסגרת או בזמן עבודה מהבית',
+          'other_translator_title': 'תרגום או עריכת מסמכים',
+          'other_translator_subtitle':
+              'מסמכים עסקיים, אקדמיים, משפטיים או רשמיים',
+          'other_music_title': 'שיעורי מוזיקה',
+          'other_music_subtitle':
+              'פסנתר, גיטרה, פיתוח קול או לימוד בסיס לכל גיל',
+          'other_therapist_title': 'ייעוץ רגשי או זוגי',
+          'other_therapist_subtitle':
+              'ליווי אישי, זוגי או משפחתי פרונטלי או אונליין',
+          'other_real_estate_title': 'ייעוץ נדל"ן',
+          'other_real_estate_subtitle':
+              'קנייה, השכרה, מכירה, הערכת שווי או ליווי למשקיעים',
           'project_roof_title': 'בניית או תיקון גג',
           'project_roof_subtitle': 'בדוק סוגי גגות לפני שאתה בוחר בעל מקצוע',
           'project_leak_title': 'נזילת מים',
@@ -754,7 +808,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               'בדיקות פשוטות שכדאי לעשות לפני שהבעיה מתייקרת',
           'seasonal_pick': 'בחירה עונתית',
           'maintenance_cta': 'מצא בעל מקצוע',
-          'maintenance_hint': '6 בדיקות חכמות ששווה לעשות בבית',
+          'maintenance_hint': '12 בדיקות חכמות ששווה לעשות בבית',
           'maintenance_item_1_title': 'ניקוי מסנני מזגן',
           'maintenance_item_1_subtitle': 'לשיפור הקירור ואיכות האוויר בבית',
           'maintenance_item_1_trade': 'טכנאי מזגנים',
@@ -773,6 +827,30 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           'maintenance_item_6_title': 'גיזום וניקוי גינה',
           'maintenance_item_6_subtitle': 'שומר על החוץ מסודר ובטוח כל השנה',
           'maintenance_item_6_trade': 'גנן',
+          'maintenance_item_7_title': 'בדיקת גג ואיטום לפני החורף',
+          'maintenance_item_7_subtitle':
+              'זיהוי מוקדם של סדקים, רטיבות ונקודות חדירת מים',
+          'maintenance_item_7_trade': 'איש איטום',
+          'maintenance_item_8_title': 'ניקוי ותחזוקת ניקוזים',
+          'maintenance_item_8_subtitle':
+              'עוזר למנוע סתימות, ריחות רעים ונזילות חוזרות',
+          'maintenance_item_8_trade': 'אינסטלטור',
+          'maintenance_item_9_title': 'טיפול מונע במזיקים',
+          'maintenance_item_9_subtitle':
+              'מומלץ בעונות חמות או לפני שהבעיה מתפשטת בבית',
+          'maintenance_item_9_trade': 'הדברה',
+          'maintenance_item_10_title': 'בדיקת מכשירי חשמל ביתיים',
+          'maintenance_item_10_subtitle':
+              'לזיהוי רעשים, נזילות או ירידה בביצועים במכשירים גדולים',
+          'maintenance_item_10_trade': 'טכנאי מכשירי חשמל',
+          'maintenance_item_11_title': 'כיוון דלתות וחלונות',
+          'maintenance_item_11_subtitle':
+              'לתיקון חריקות, סגירה לא טובה או חדירת אוויר ואבק',
+          'maintenance_item_11_trade': 'הנדימן',
+          'maintenance_item_12_title': 'בדיקת מערכת סולארית או דוד שמש',
+          'maintenance_item_12_subtitle':
+              'לשמירה על חימום יעיל וזיהוי תקלות לפני עונות העומס',
+          'maintenance_item_12_trade': 'טכנאי סולארי',
           'no_active_requests': 'עדיין אין בקשות פעילות',
           'request_sent': 'נשלח',
           'request_pending': 'ממתין לבדיקה',
@@ -809,6 +887,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           'project_ideas_hint':
               'مشاكل عاجلة وتجديدات وأفكار مشاريع في مكان واحد',
           'project_ideas_cta': 'عرض الخيارات',
+          'other_services_title': 'خدمات مهنية أخرى',
+          'other_services_subtitle':
+              'مدرسون خصوصيون واستشارات وخدمات شخصية في مكان واحد',
+          'other_services_hint':
+              'قانونية ومالية وتعليمية وعلاجية وإبداعية حسب نوع الخدمة',
+          'other_services_badge': 'خدمة',
           'project_find_pros': 'اعثر على محترفين',
           'project_example': 'أمثلة',
           'project_problem_badge': 'مشكلة',
@@ -820,6 +904,66 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           'project_trade_gardener': 'بستاني',
           'project_trade_ac': 'فني تكييف',
           'project_trade_mover': 'نقّال',
+          'project_trade_carpenter': 'نجّار',
+          'project_trade_cleaner': 'عامل تنظيف',
+          'project_trade_pest': 'مكافحة آفات',
+          'project_trade_appliance': 'فني أجهزة منزلية',
+          'project_trade_locksmith': 'حدّاد أقفال',
+          'project_trade_welder': 'لحّام',
+          'project_trade_mason': 'بنّاء',
+          'project_trade_cctv': 'فني كاميرات',
+          'project_trade_solar': 'فني طاقة شمسية',
+          'project_trade_aluminum': 'فني ألمنيوم',
+          'project_trade_curtains': 'فني ستائر',
+          'project_trade_pool': 'فني مسابح',
+          'other_trade_teacher': 'مدرس خصوصي',
+          'other_trade_lawyer': 'محامٍ',
+          'other_trade_massage': 'معالج مساج',
+          'other_trade_accountant': 'محاسب',
+          'other_trade_photographer': 'مصور',
+          'other_trade_trainer': 'مدرب شخصي',
+          'other_trade_designer': 'مصمم جرافيك',
+          'other_trade_babysitter': 'جليسة أطفال',
+          'other_trade_translator': 'مترجم',
+          'other_trade_music': 'مدرس موسيقى',
+          'other_trade_therapist': 'معالج أو مستشار',
+          'other_trade_real_estate': 'مستشار عقاري',
+          'other_teacher_title': 'دروس خصوصية أو تقوية',
+          'other_teacher_subtitle':
+              'إنجليزي أو رياضيات أو لغات أو تحضير امتحانات ودعم للطلاب',
+          'other_lawyer_title': 'استشارة قانونية',
+          'other_lawyer_subtitle':
+              'عقود ودعاوى وعقار وعمل أو استشارة أولية سريعة',
+          'other_massage_title': 'مساج في المنزل أو العيادة',
+          'other_massage_subtitle':
+              'استرخاء أو آلام ظهر أو رياضي أو تعافٍ للجسم',
+          'other_accountant_title': 'محاسب أو مسك دفاتر',
+          'other_accountant_subtitle':
+              'ضرائب وتقارير ورواتب واستشارات للأفراد أو الأعمال',
+          'other_photographer_title': 'تصوير لمناسبة أو نشاط تجاري',
+          'other_photographer_subtitle':
+              'فعاليات أو منتجات أو جلسات عائلية أو محتوى للسوشال',
+          'other_trainer_title': 'مدرب شخصي',
+          'other_trainer_subtitle':
+              'تمارين منزلية أو نزول وزن أو إعادة تأهيل أو خطة مخصصة',
+          'other_designer_title': 'تصميم جرافيك أو هوية',
+          'other_designer_subtitle':
+              'شعار ومنشورات وقوائم وكتيبات ومواد تسويقية للمشروع',
+          'other_babysitter_title': 'جليسة أطفال أو رعاية أطفال',
+          'other_babysitter_subtitle':
+              'مساعدة مسائية أو بعد المدرسة أو أثناء العمل من المنزل',
+          'other_translator_title': 'ترجمة أو تدقيق مستندات',
+          'other_translator_subtitle':
+              'ترجمة تجارية أو أكاديمية أو قانونية أو مستندات رسمية',
+          'other_music_title': 'دروس موسيقى',
+          'other_music_subtitle':
+              'بيانو أو جيتار أو غناء أو تعليم أساسي للصغار والكبار',
+          'other_therapist_title': 'استشارة نفسية أو أسرية',
+          'other_therapist_subtitle':
+              'دعم فردي أو زوجي أو عائلي حضوريًا أو أونلاين',
+          'other_real_estate_title': 'استشارة عقارية',
+          'other_real_estate_subtitle':
+              'شراء أو إيجار أو بيع أو تقييم أو مرافقة للمستثمرين',
           'project_roof_title': 'بناء أو إصلاح سقف',
           'project_roof_subtitle': 'تعرّف على أنواع الأسقف قبل اختيار المحترف',
           'project_leak_title': 'تسرّب مياه',
@@ -836,11 +980,64 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           'project_paint_subtitle': 'دهان داخلي أو خارجي أو تجديد الجدران',
           'project_bathroom_title': 'تجديد الحمام',
           'project_bathroom_subtitle': 'بلاط وأدوات صحية وعزل وتجديد كامل',
+          'project_kitchen_title': 'تجديد المطبخ',
+          'project_kitchen_subtitle': 'خزائن وأسطح وتركيب وتجديد كامل للمطبخ',
           'project_garden_title': 'أعمال الحديقة',
           'project_garden_subtitle': 'عشب وتشذيب وري وتصميم خارجي',
+          'project_floor_title': 'تركيب أو تجديد الأرضيات',
+          'project_floor_subtitle':
+              'سيراميك أو باركيه أو إصلاح أرضيات للمنازل والمحلات',
           'project_cracks_title': 'تشققات في الجدار',
           'project_cracks_subtitle':
               'فحص وإصلاح وطرطشة للجدران الداخلية أو الخارجية',
+          'project_heater_title': 'مشكلة في سخان المياه',
+          'project_heater_subtitle':
+              'لا يوجد ماء ساخن أو يوجد تسريب؟ افحصه وأصلحه بسرعة',
+          'project_pressure_title': 'ضعف ضغط المياه',
+          'project_pressure_subtitle':
+              'للدش أو المطبخ أو كامل المنزل عند ضعف تدفق المياه',
+          'project_lights_title': 'تركيب أو ترقية الإنارة',
+          'project_lights_subtitle':
+              'سبوتات وثريات وإنارة خارجية أو تحسين توزيع الإضاءة',
+          'project_doors_title': 'إصلاح الأبواب أو النوافذ',
+          'project_doors_subtitle':
+              'مشاكل المفصلات أو الإغلاق أو الضبط في البيت أو المكتب',
+          'project_cleaning_title': 'تنظيف عميق للمنزل أو المكتب',
+          'project_cleaning_subtitle':
+              'تنظيف شامل قبل مناسبة أو انتقال أو بعد أعمال تجديد',
+          'project_pest_title': 'مكافحة حشرات أو قوارض',
+          'project_pest_subtitle':
+              'معالجة سريعة للصراصير أو النمل أو القوارض داخل المنزل',
+          'project_appliance_title': 'إصلاح جهاز منزلي',
+          'project_appliance_subtitle':
+              'غسالة أو نشافة أو فرن أو جلاية تحتاج فحصاً وإصلاحاً',
+          'project_lock_title': 'مشكلة قفل أو مفتاح',
+          'project_lock_subtitle':
+              'فتح باب أو تبديل قفل أو إصلاح مشكلة إغلاق بشكل سريع',
+          'project_carpentry_title': 'رفوف أو خزائن حسب الطلب',
+          'project_carpentry_subtitle':
+              'أعمال نجارة مخصصة للتخزين أو التلفزيون أو غرف الأطفال',
+          'project_welding_title': 'أعمال لحام أو حدادة',
+          'project_welding_subtitle':
+              'بوابات أو درابزين أو هياكل معدنية للمنزل أو العمل',
+          'project_masonry_title': 'حجر أو بلاط أو واجهات',
+          'project_masonry_subtitle':
+              'تركيب أو إصلاح بلاط وكسوة وجدران خارجية أو داخلية',
+          'project_cctv_title': 'تركيب كاميرات مراقبة',
+          'project_cctv_subtitle':
+              'كاميرات للمنزل أو المتجر مع ضبط وتوزيع مناسب للنقاط',
+          'project_solar_title': 'صيانة سخان أو نظام شمسي',
+          'project_solar_subtitle':
+              'فحص السخان الشمسي أو الألواح أو التوصيلات والأداء',
+          'project_aluminum_title': 'أعمال ألمنيوم وشبابيك',
+          'project_aluminum_subtitle':
+              'شبابيك أو شتر أو إطارات وأعمال تركيب أو تبديل',
+          'project_curtains_title': 'تركيب ستائر أو بلايندز',
+          'project_curtains_subtitle':
+              'تعليق ستائر أو رول أو بلايندز وقياسها وضبطها',
+          'project_pool_title': 'صيانة أو إصلاح مسبح',
+          'project_pool_subtitle':
+              'تنظيف أو فحص مضخة أو معالجة تسريب أو مشاكل تشغيل',
           'project_move_title': 'الانتقال إلى منزل جديد',
           'project_move_subtitle': 'نقل وفك وتركيب للمنزل أو المكتب',
           'roof_options_title': 'خيارات السقف',
@@ -858,7 +1055,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           'maintenance_subtitle': 'فحوصات بسيطة قبل أن تصبح المشكلة أكثر كلفة',
           'seasonal_pick': 'اختيار موسمي',
           'maintenance_cta': 'اعثر على محترف',
-          'maintenance_hint': '6 فحوصات ذكية تستحق القيام بها في المنزل',
+          'maintenance_hint': '12 فحصاً ذكياً تستحق القيام بها في المنزل',
           'maintenance_item_1_title': 'تنظيف فلاتر المكيف',
           'maintenance_item_1_subtitle':
               'لتحسين التبريد وجودة الهواء في المنزل',
@@ -881,6 +1078,30 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           'maintenance_item_6_subtitle':
               'يبقي المساحة الخارجية مرتبة وآمنة طوال العام',
           'maintenance_item_6_trade': 'بستاني',
+          'maintenance_item_7_title': 'فحص السطح والعزل قبل الشتاء',
+          'maintenance_item_7_subtitle':
+              'يكشف مبكراً عن التشققات والرطوبة ونقاط تسرب المياه',
+          'maintenance_item_7_trade': 'فني عزل',
+          'maintenance_item_8_title': 'تنظيف وصيانة المصارف',
+          'maintenance_item_8_subtitle':
+              'يساعد على منع الانسدادات والروائح والتسربات المتكررة',
+          'maintenance_item_8_trade': 'سباك',
+          'maintenance_item_9_title': 'مكافحة وقائية للآفات',
+          'maintenance_item_9_subtitle':
+              'مناسبة في المواسم الحارة أو قبل انتشار المشكلة داخل المنزل',
+          'maintenance_item_9_trade': 'مكافحة آفات',
+          'maintenance_item_10_title': 'فحص الأجهزة المنزلية',
+          'maintenance_item_10_subtitle':
+              'لاكتشاف الضجيج أو التسريب أو ضعف الأداء في الأجهزة الكبيرة',
+          'maintenance_item_10_trade': 'فني أجهزة منزلية',
+          'maintenance_item_11_title': 'ضبط الأبواب والنوافذ',
+          'maintenance_item_11_subtitle':
+              'لعلاج الصرير أو سوء الإغلاق أو دخول الهواء والغبار',
+          'maintenance_item_11_trade': 'فني متعدد المهام',
+          'maintenance_item_12_title': 'فحص النظام الشمسي أو السخان الشمسي',
+          'maintenance_item_12_subtitle':
+              'للحفاظ على تسخين فعّال وكشف الأعطال قبل مواسم الضغط',
+          'maintenance_item_12_trade': 'فني طاقة شمسية',
           'no_active_requests': 'لا توجد طلبات نشطة بعد',
           'request_sent': 'تم الإرسال',
           'request_pending': 'بانتظار المراجعة',
@@ -917,6 +1138,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           'project_ideas_hint':
               'Urgent fixes, renovations, and project ideas in one place',
           'project_ideas_cta': 'View options',
+          'other_services_title': 'Other Professional Services',
+          'other_services_subtitle':
+              'Private teachers, advisors, and personal services in one place',
+          'other_services_hint':
+              'Legal, financial, education, wellness, and creative help by service type',
+          'other_services_badge': 'Service',
           'project_find_pros': 'Find pros',
           'project_example': 'Examples',
           'project_problem_badge': 'Problem',
@@ -928,6 +1155,66 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           'project_trade_gardener': 'Gardener',
           'project_trade_ac': 'AC Technician',
           'project_trade_mover': 'Mover',
+          'project_trade_carpenter': 'Carpenter',
+          'project_trade_cleaner': 'Cleaner',
+          'project_trade_pest': 'Pest Control',
+          'project_trade_appliance': 'Appliance Technician',
+          'project_trade_locksmith': 'Locksmith',
+          'project_trade_welder': 'Welder',
+          'project_trade_mason': 'Mason',
+          'project_trade_cctv': 'CCTV Technician',
+          'project_trade_solar': 'Solar Technician',
+          'project_trade_aluminum': 'Aluminum Installer',
+          'project_trade_curtains': 'Curtain Installer',
+          'project_trade_pool': 'Pool Technician',
+          'other_trade_teacher': 'Private Teacher',
+          'other_trade_lawyer': 'Lawyer',
+          'other_trade_massage': 'Massage Therapist',
+          'other_trade_accountant': 'Accountant',
+          'other_trade_photographer': 'Photographer',
+          'other_trade_trainer': 'Personal Trainer',
+          'other_trade_designer': 'Graphic Designer',
+          'other_trade_babysitter': 'Babysitter',
+          'other_trade_translator': 'Translator',
+          'other_trade_music': 'Music Teacher',
+          'other_trade_therapist': 'Therapist',
+          'other_trade_real_estate': 'Real Estate Advisor',
+          'other_teacher_title': 'Private lessons or tutoring',
+          'other_teacher_subtitle':
+              'English, math, languages, exam prep, or student support',
+          'other_lawyer_title': 'Legal consultation',
+          'other_lawyer_subtitle':
+              'Contracts, claims, real estate, labor, or a quick first consultation',
+          'other_massage_title': 'Massage at home or in clinic',
+          'other_massage_subtitle':
+              'Relaxation, back pain, sports recovery, or body wellness',
+          'other_accountant_title': 'Accounting or bookkeeping',
+          'other_accountant_subtitle':
+              'Taxes, reports, payroll, and support for individuals or businesses',
+          'other_photographer_title': 'Photography for events or business',
+          'other_photographer_subtitle':
+              'Events, products, family shoots, branding, or social content',
+          'other_trainer_title': 'Personal training',
+          'other_trainer_subtitle':
+              'Home workouts, weight loss, rehab, or a customized fitness plan',
+          'other_designer_title': 'Graphic design or branding',
+          'other_designer_subtitle':
+              'Logos, posts, menus, brochures, and business visuals',
+          'other_babysitter_title': 'Babysitting or child care',
+          'other_babysitter_subtitle':
+              'Evening help, after-school support, or care while you work from home',
+          'other_translator_title': 'Translation or document editing',
+          'other_translator_subtitle':
+              'Business, academic, legal, or official document support',
+          'other_music_title': 'Music lessons',
+          'other_music_subtitle':
+              'Piano, guitar, singing, or beginner lessons for kids and adults',
+          'other_therapist_title': 'Therapy or family counseling',
+          'other_therapist_subtitle':
+              'Personal, couples, or family support in person or online',
+          'other_real_estate_title': 'Real estate advice',
+          'other_real_estate_subtitle':
+              'Buying, renting, selling, valuation, or investor guidance',
           'project_roof_title': 'Build or repair a roof',
           'project_roof_subtitle':
               'Explore roof types before choosing the right pro',
@@ -949,12 +1236,66 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           'project_bathroom_title': 'Bathroom renovation',
           'project_bathroom_subtitle':
               'Tiles, fixtures, waterproofing, and full refresh work',
+          'project_kitchen_title': 'Kitchen renovation',
+          'project_kitchen_subtitle':
+              'Cabinets, surfaces, installation, and a full kitchen refresh',
           'project_garden_title': 'Garden work',
           'project_garden_subtitle':
               'Grass, trimming, irrigation, and outdoor improvement',
+          'project_floor_title': 'Install or renew flooring',
+          'project_floor_subtitle':
+              'Tile, parquet, or floor repair work for homes and shops',
           'project_cracks_title': 'Wall cracks',
           'project_cracks_subtitle':
               'Inspection, patching, and plaster work for indoor or outdoor walls',
+          'project_heater_title': 'Water heater issue',
+          'project_heater_subtitle':
+              'No hot water or a leak? Get it checked and repaired fast',
+          'project_pressure_title': 'Low water pressure',
+          'project_pressure_subtitle':
+              'For showers, kitchens, or full-home flow problems',
+          'project_lights_title': 'Install or upgrade lighting',
+          'project_lights_subtitle':
+              'Spotlights, chandeliers, outdoor lights, or a lighting refresh',
+          'project_doors_title': 'Repair doors or windows',
+          'project_doors_subtitle':
+              'Fix hinges, closing problems, or alignment at home or work',
+          'project_cleaning_title': 'Deep cleaning for home or office',
+          'project_cleaning_subtitle':
+              'Full cleaning before an event, move, or after renovation work',
+          'project_pest_title': 'Pest or rodent treatment',
+          'project_pest_subtitle':
+              'Fast help for cockroaches, ants, or rodents inside the property',
+          'project_appliance_title': 'Repair a home appliance',
+          'project_appliance_subtitle':
+              'Washer, dryer, oven, or dishwasher inspection and repair',
+          'project_lock_title': 'Lock or key problem',
+          'project_lock_subtitle':
+              'Door opening, lock replacement, or a fast lock repair',
+          'project_carpentry_title': 'Custom shelves or cabinets',
+          'project_carpentry_subtitle':
+              'Built-to-fit carpentry for storage, TV walls, or kids rooms',
+          'project_welding_title': 'Welding or metal fabrication',
+          'project_welding_subtitle':
+              'Gates, railings, and metal structures for home or business',
+          'project_masonry_title': 'Stone, tile, or facade work',
+          'project_masonry_subtitle':
+              'Install or repair tile, cladding, and interior or exterior walls',
+          'project_cctv_title': 'Install CCTV cameras',
+          'project_cctv_subtitle':
+              'Camera setup for a home or shop with better placement and coverage',
+          'project_solar_title': 'Service a solar heater or system',
+          'project_solar_subtitle':
+              'Check solar heaters, panels, connections, and overall performance',
+          'project_aluminum_title': 'Aluminum windows or shutters',
+          'project_aluminum_subtitle':
+              'Install or replace frames, shutters, and aluminum fittings',
+          'project_curtains_title': 'Install curtains or blinds',
+          'project_curtains_subtitle':
+              'Measure, mount, and adjust curtains, rollers, or blinds',
+          'project_pool_title': 'Pool maintenance or repair',
+          'project_pool_subtitle':
+              'Cleaning, pump checks, leak treatment, or operating issues',
           'project_move_title': 'Moving to a new place',
           'project_move_subtitle':
               'Moving, disassembly, and setup for home or office',
@@ -978,7 +1319,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               'Simple things to check before they become expensive',
           'seasonal_pick': 'Seasonal pick',
           'maintenance_cta': 'Find a pro',
-          'maintenance_hint': '6 smart checks worth doing around your home',
+          'maintenance_hint': '12 smart checks worth doing around your home',
           'maintenance_item_1_title': 'Clean AC filters',
           'maintenance_item_1_subtitle':
               'Improve cooling and air quality at home',
@@ -1003,6 +1344,30 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           'maintenance_item_6_subtitle':
               'Keep outdoor spaces neat, safe, and easier to maintain',
           'maintenance_item_6_trade': 'Gardener',
+          'maintenance_item_7_title': 'Inspect the roof and waterproofing',
+          'maintenance_item_7_subtitle':
+              'Catch cracks, damp spots, and leak entry points before winter',
+          'maintenance_item_7_trade': 'Sealing specialist',
+          'maintenance_item_8_title': 'Clean and maintain drains',
+          'maintenance_item_8_subtitle':
+              'Help prevent clogs, odors, and repeat drainage problems',
+          'maintenance_item_8_trade': 'Plumber',
+          'maintenance_item_9_title': 'Preventive pest treatment',
+          'maintenance_item_9_subtitle':
+              'A smart seasonal check before insects or rodents spread indoors',
+          'maintenance_item_9_trade': 'Pest Control',
+          'maintenance_item_10_title': 'Check home appliances',
+          'maintenance_item_10_subtitle':
+              'Spot noise, leaks, or weak performance in larger appliances',
+          'maintenance_item_10_trade': 'Appliance Technician',
+          'maintenance_item_11_title': 'Tune up doors and windows',
+          'maintenance_item_11_subtitle':
+              'Fix squeaks, poor closing, and air or dust coming inside',
+          'maintenance_item_11_trade': 'Handyman',
+          'maintenance_item_12_title': 'Check the solar heater or system',
+          'maintenance_item_12_subtitle':
+              'Keep heating efficient and catch faults before peak seasons',
+          'maintenance_item_12_trade': 'Solar Technician',
           'no_active_requests': 'No active requests yet',
           'request_sent': 'Sent',
           'request_pending': 'Waiting for review',
@@ -1204,6 +1569,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                             _buildRequestStatusTimeline(localized),
                             const SizedBox(height: 20),
                             _buildProjectIdeasSection(localized),
+                            const SizedBox(height: 24),
+                            _buildOtherServicesSection(localized),
                             const SizedBox(height: 24),
                             _buildMaintenanceChecklist(localized),
                             const SizedBox(height: 32),
@@ -2528,6 +2895,356 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     );
   }
 
+  Widget _buildOtherServicesSection(Map<String, dynamic> strings) {
+    final items = [
+      {
+        'title':
+            strings['other_teacher_title'] ?? 'Private lessons or tutoring',
+        'subtitle':
+            strings['other_teacher_subtitle'] ??
+            'English, math, languages, exam prep, or student support',
+        'trade': 'Private Teacher',
+        'tradeLabel': strings['other_trade_teacher'] ?? 'Private Teacher',
+        'icon': Icons.school_rounded,
+        'color': const Color(0xFF2563EB),
+      },
+      {
+        'title': strings['other_lawyer_title'] ?? 'Legal consultation',
+        'subtitle':
+            strings['other_lawyer_subtitle'] ??
+            'Contracts, claims, real estate, labor, or a quick first consultation',
+        'trade': 'Lawyer',
+        'tradeLabel': strings['other_trade_lawyer'] ?? 'Lawyer',
+        'icon': Icons.gavel_rounded,
+        'color': const Color(0xFF1E293B),
+      },
+      {
+        'title':
+            strings['other_massage_title'] ?? 'Massage at home or in clinic',
+        'subtitle':
+            strings['other_massage_subtitle'] ??
+            'Relaxation, back pain, sports recovery, or body wellness',
+        'trade': 'Massage Therapist',
+        'tradeLabel': strings['other_trade_massage'] ?? 'Massage Therapist',
+        'icon': Icons.spa_rounded,
+        'color': const Color(0xFFDB2777),
+      },
+      {
+        'title':
+            strings['other_accountant_title'] ?? 'Accounting or bookkeeping',
+        'subtitle':
+            strings['other_accountant_subtitle'] ??
+            'Taxes, reports, payroll, and support for individuals or businesses',
+        'trade': 'Accountant',
+        'tradeLabel': strings['other_trade_accountant'] ?? 'Accountant',
+        'icon': Icons.calculate_rounded,
+        'color': const Color(0xFF0F766E),
+      },
+      {
+        'title':
+            strings['other_photographer_title'] ??
+            'Photography for events or business',
+        'subtitle':
+            strings['other_photographer_subtitle'] ??
+            'Events, products, family shoots, branding, or social content',
+        'trade': 'Photographer',
+        'tradeLabel': strings['other_trade_photographer'] ?? 'Photographer',
+        'icon': Icons.photo_camera_rounded,
+        'color': const Color(0xFF7C3AED),
+      },
+      {
+        'title': strings['other_trainer_title'] ?? 'Personal training',
+        'subtitle':
+            strings['other_trainer_subtitle'] ??
+            'Home workouts, weight loss, rehab, or a customized fitness plan',
+        'trade': 'Personal Trainer',
+        'tradeLabel': strings['other_trade_trainer'] ?? 'Personal Trainer',
+        'icon': Icons.fitness_center_rounded,
+        'color': const Color(0xFFEA580C),
+      },
+      {
+        'title':
+            strings['other_designer_title'] ?? 'Graphic design or branding',
+        'subtitle':
+            strings['other_designer_subtitle'] ??
+            'Logos, posts, menus, brochures, and business visuals',
+        'trade': 'Graphic Designer',
+        'tradeLabel': strings['other_trade_designer'] ?? 'Graphic Designer',
+        'icon': Icons.brush_rounded,
+        'color': const Color(0xFF8B5CF6),
+      },
+      {
+        'title':
+            strings['other_babysitter_title'] ?? 'Babysitting or child care',
+        'subtitle':
+            strings['other_babysitter_subtitle'] ??
+            'Evening help, after-school support, or care while you work from home',
+        'trade': 'Babysitter',
+        'tradeLabel': strings['other_trade_babysitter'] ?? 'Babysitter',
+        'icon': Icons.child_care_rounded,
+        'color': const Color(0xFFEC4899),
+      },
+      {
+        'title':
+            strings['other_translator_title'] ??
+            'Translation or document editing',
+        'subtitle':
+            strings['other_translator_subtitle'] ??
+            'Business, academic, legal, or official document support',
+        'trade': 'Translator',
+        'tradeLabel': strings['other_trade_translator'] ?? 'Translator',
+        'icon': Icons.translate_rounded,
+        'color': const Color(0xFF0891B2),
+      },
+      {
+        'title': strings['other_music_title'] ?? 'Music lessons',
+        'subtitle':
+            strings['other_music_subtitle'] ??
+            'Piano, guitar, singing, or beginner lessons for kids and adults',
+        'trade': 'Music Teacher',
+        'tradeLabel': strings['other_trade_music'] ?? 'Music Teacher',
+        'icon': Icons.music_note_rounded,
+        'color': const Color(0xFFDC2626),
+      },
+      {
+        'title':
+            strings['other_therapist_title'] ?? 'Therapy or family counseling',
+        'subtitle':
+            strings['other_therapist_subtitle'] ??
+            'Personal, couples, or family support in person or online',
+        'trade': 'Therapist',
+        'tradeLabel': strings['other_trade_therapist'] ?? 'Therapist',
+        'icon': Icons.psychology_rounded,
+        'color': const Color(0xFF16A34A),
+      },
+      {
+        'title': strings['other_real_estate_title'] ?? 'Real estate advice',
+        'subtitle':
+            strings['other_real_estate_subtitle'] ??
+            'Buying, renting, selling, valuation, or investor guidance',
+        'trade': 'Real Estate Advisor',
+        'tradeLabel':
+            strings['other_trade_real_estate'] ?? 'Real Estate Advisor',
+        'icon': Icons.apartment_rounded,
+        'color': const Color(0xFF475569),
+      },
+    ];
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  strings['other_services_title'] ??
+                      'Other Professional Services',
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF0F172A),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  strings['other_services_subtitle'] ??
+                      'Private teachers, advisors, and personal services in one place',
+                  style: const TextStyle(
+                    color: Color(0xFF64748B),
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  strings['other_services_hint'] ??
+                      'Legal, financial, education, wellness, and creative help by service type',
+                  style: const TextStyle(
+                    color: Color(0xFF1D4ED8),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            height: 252,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: items.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 12),
+              itemBuilder: (context, index) {
+                final item = items[index];
+                final color = item['color'] as Color;
+
+                return GestureDetector(
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            SearchPage(initialTrade: item['trade']! as String),
+                      ),
+                    );
+                  },
+                  child: Container(
+                    width: 244,
+                    padding: const EdgeInsets.all(18),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [color, color.withValues(alpha: 0.82)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(24),
+                      boxShadow: [
+                        BoxShadow(
+                          color: color.withValues(alpha: 0.22),
+                          blurRadius: 18,
+                          offset: const Offset(0, 10),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            CircleAvatar(
+                              radius: 22,
+                              backgroundColor: Colors.white.withValues(
+                                alpha: 0.18,
+                              ),
+                              child: Icon(
+                                item['icon']! as IconData,
+                                color: Colors.white,
+                              ),
+                            ),
+                            const Spacer(),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 6,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.16),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(
+                                item['tradeLabel']! as String,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                item['title']! as String,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w800,
+                                  height: 1.15,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                item['subtitle']! as String,
+                                maxLines: 3,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  height: 1.3,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                                child: Text(
+                                  strings['other_services_badge'] ?? 'Service',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Container(
+                              width: 24,
+                              height: 24,
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.16),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                Icons.arrow_outward_rounded,
+                                color: Colors.white,
+                                size: 16,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                strings['project_find_pros'] ?? 'Find pros',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                            const Icon(
+                              Icons.arrow_forward_rounded,
+                              color: Colors.white,
+                              size: 18,
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildMaintenanceChecklist(Map<String, dynamic> strings) {
     final items = [
       {
@@ -2593,6 +3310,77 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         'tradeLabel': strings['maintenance_item_6_trade'] ?? 'Gardener',
         'icon': Icons.yard_rounded,
         'color': const Color(0xFF16A34A),
+      },
+      {
+        'title':
+            strings['maintenance_item_7_title'] ??
+            'Inspect the roof and waterproofing',
+        'subtitle':
+            strings['maintenance_item_7_subtitle'] ??
+            'Catch cracks, damp spots, and leak entry points before winter',
+        'trade': 'Handyman',
+        'tradeLabel':
+            strings['maintenance_item_7_trade'] ?? 'Sealing specialist',
+        'icon': Icons.roofing_rounded,
+        'color': const Color(0xFF475569),
+      },
+      {
+        'title':
+            strings['maintenance_item_8_title'] ?? 'Clean and maintain drains',
+        'subtitle':
+            strings['maintenance_item_8_subtitle'] ??
+            'Help prevent clogs, odors, and repeat drainage problems',
+        'trade': 'Plumber',
+        'tradeLabel': strings['maintenance_item_8_trade'] ?? 'Plumber',
+        'icon': Icons.plumbing_rounded,
+        'color': const Color(0xFF0284C7),
+      },
+      {
+        'title':
+            strings['maintenance_item_9_title'] ?? 'Preventive pest treatment',
+        'subtitle':
+            strings['maintenance_item_9_subtitle'] ??
+            'A smart seasonal check before insects or rodents spread indoors',
+        'trade': 'Pest Control',
+        'tradeLabel': strings['maintenance_item_9_trade'] ?? 'Pest Control',
+        'icon': Icons.pest_control_rounded,
+        'color': const Color(0xFFA16207),
+      },
+      {
+        'title':
+            strings['maintenance_item_10_title'] ?? 'Check home appliances',
+        'subtitle':
+            strings['maintenance_item_10_subtitle'] ??
+            'Spot noise, leaks, or weak performance in larger appliances',
+        'trade': 'Appliance Technician',
+        'tradeLabel':
+            strings['maintenance_item_10_trade'] ?? 'Appliance Technician',
+        'icon': Icons.local_laundry_service_rounded,
+        'color': const Color(0xFF0F766E),
+      },
+      {
+        'title':
+            strings['maintenance_item_11_title'] ?? 'Tune up doors and windows',
+        'subtitle':
+            strings['maintenance_item_11_subtitle'] ??
+            'Fix squeaks, poor closing, and air or dust coming inside',
+        'trade': 'Handyman',
+        'tradeLabel': strings['maintenance_item_11_trade'] ?? 'Handyman',
+        'icon': Icons.door_front_door_rounded,
+        'color': const Color(0xFF7C3AED),
+      },
+      {
+        'title':
+            strings['maintenance_item_12_title'] ??
+            'Check the solar heater or system',
+        'subtitle':
+            strings['maintenance_item_12_subtitle'] ??
+            'Keep heating efficient and catch faults before peak seasons',
+        'trade': 'Solar Technician',
+        'tradeLabel':
+            strings['maintenance_item_12_trade'] ?? 'Solar Technician',
+        'icon': Icons.solar_power_rounded,
+        'color': const Color(0xFFF59E0B),
       },
     ];
 
@@ -2913,6 +3701,17 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         'badge': strings['project_project_badge'] ?? 'Project',
       },
       {
+        'title': strings['project_kitchen_title'] ?? 'Kitchen renovation',
+        'subtitle':
+            strings['project_kitchen_subtitle'] ??
+            'Cabinets, surfaces, installation, and a full kitchen refresh',
+        'icon': Icons.kitchen_rounded,
+        'color': const Color(0xFFB45309),
+        'trade': 'Handyman',
+        'tradeLabel': strings['project_trade_handyman'] ?? 'Handyman',
+        'badge': strings['project_project_badge'] ?? 'Project',
+      },
+      {
         'title': strings['project_garden_title'] ?? 'Garden work',
         'subtitle':
             strings['project_garden_subtitle'] ??
@@ -2924,6 +3723,17 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         'badge': strings['project_project_badge'] ?? 'Project',
       },
       {
+        'title': strings['project_floor_title'] ?? 'Install or renew flooring',
+        'subtitle':
+            strings['project_floor_subtitle'] ??
+            'Tile, parquet, or floor repair work for homes and shops',
+        'icon': Icons.grid_view_rounded,
+        'color': const Color(0xFF7C3AED),
+        'trade': 'Handyman',
+        'tradeLabel': strings['project_trade_handyman'] ?? 'Handyman',
+        'badge': strings['project_project_badge'] ?? 'Project',
+      },
+      {
         'title': strings['project_cracks_title'] ?? 'Wall cracks',
         'subtitle':
             strings['project_cracks_subtitle'] ??
@@ -2932,6 +3742,194 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         'color': const Color(0xFF6B7280),
         'trade': 'Handyman',
         'tradeLabel': strings['project_trade_handyman'] ?? 'Handyman',
+        'badge': strings['project_problem_badge'] ?? 'Problem',
+      },
+      {
+        'title': strings['project_heater_title'] ?? 'Water heater issue',
+        'subtitle':
+            strings['project_heater_subtitle'] ??
+            'No hot water or a leak? Get it checked and repaired fast',
+        'icon': Icons.hot_tub_rounded,
+        'color': const Color(0xFFDC2626),
+        'trade': 'Plumber',
+        'tradeLabel': strings['project_trade_plumber'] ?? 'Plumber',
+        'badge': strings['project_problem_badge'] ?? 'Problem',
+      },
+      {
+        'title': strings['project_pressure_title'] ?? 'Low water pressure',
+        'subtitle':
+            strings['project_pressure_subtitle'] ??
+            'For showers, kitchens, or full-home flow problems',
+        'icon': Icons.shower_rounded,
+        'color': const Color(0xFF0891B2),
+        'trade': 'Plumber',
+        'tradeLabel': strings['project_trade_plumber'] ?? 'Plumber',
+        'badge': strings['project_problem_badge'] ?? 'Problem',
+      },
+      {
+        'title':
+            strings['project_lights_title'] ?? 'Install or upgrade lighting',
+        'subtitle':
+            strings['project_lights_subtitle'] ??
+            'Spotlights, chandeliers, outdoor lights, or a lighting refresh',
+        'icon': Icons.lightbulb_circle_rounded,
+        'color': const Color(0xFFFACC15),
+        'trade': 'Electrician',
+        'tradeLabel': strings['project_trade_electrician'] ?? 'Electrician',
+        'badge': strings['project_project_badge'] ?? 'Project',
+      },
+      {
+        'title': strings['project_doors_title'] ?? 'Repair doors or windows',
+        'subtitle':
+            strings['project_doors_subtitle'] ??
+            'Fix hinges, closing problems, or alignment at home or work',
+        'icon': Icons.door_front_door_rounded,
+        'color': const Color(0xFF475569),
+        'trade': 'Handyman',
+        'tradeLabel': strings['project_trade_handyman'] ?? 'Handyman',
+        'badge': strings['project_problem_badge'] ?? 'Problem',
+      },
+      {
+        'title':
+            strings['project_cleaning_title'] ??
+            'Deep cleaning for home or office',
+        'subtitle':
+            strings['project_cleaning_subtitle'] ??
+            'Full cleaning before an event, move, or after renovation work',
+        'icon': Icons.cleaning_services_rounded,
+        'color': const Color(0xFF06B6D4),
+        'trade': 'Cleaner',
+        'tradeLabel': strings['project_trade_cleaner'] ?? 'Cleaner',
+        'badge': strings['project_project_badge'] ?? 'Project',
+      },
+      {
+        'title': strings['project_pest_title'] ?? 'Pest or rodent treatment',
+        'subtitle':
+            strings['project_pest_subtitle'] ??
+            'Fast help for cockroaches, ants, or rodents inside the property',
+        'icon': Icons.pest_control_rounded,
+        'color': const Color(0xFF7C2D12),
+        'trade': 'Pest Control',
+        'tradeLabel': strings['project_trade_pest'] ?? 'Pest Control',
+        'badge': strings['project_problem_badge'] ?? 'Problem',
+      },
+      {
+        'title':
+            strings['project_appliance_title'] ?? 'Repair a home appliance',
+        'subtitle':
+            strings['project_appliance_subtitle'] ??
+            'Washer, dryer, oven, or dishwasher inspection and repair',
+        'icon': Icons.kitchen_rounded,
+        'color': const Color(0xFF0F766E),
+        'trade': 'Appliance Technician',
+        'tradeLabel':
+            strings['project_trade_appliance'] ?? 'Appliance Technician',
+        'badge': strings['project_problem_badge'] ?? 'Problem',
+      },
+      {
+        'title': strings['project_lock_title'] ?? 'Lock or key problem',
+        'subtitle':
+            strings['project_lock_subtitle'] ??
+            'Door opening, lock replacement, or a fast lock repair',
+        'icon': Icons.vpn_key_rounded,
+        'color': const Color(0xFF1D4ED8),
+        'trade': 'Locksmith',
+        'tradeLabel': strings['project_trade_locksmith'] ?? 'Locksmith',
+        'badge': strings['project_problem_badge'] ?? 'Problem',
+      },
+      {
+        'title':
+            strings['project_carpentry_title'] ?? 'Custom shelves or cabinets',
+        'subtitle':
+            strings['project_carpentry_subtitle'] ??
+            'Built-to-fit carpentry for storage, TV walls, or kids rooms',
+        'icon': Icons.carpenter_rounded,
+        'color': const Color(0xFFA16207),
+        'trade': 'Carpenter',
+        'tradeLabel': strings['project_trade_carpenter'] ?? 'Carpenter',
+        'badge': strings['project_project_badge'] ?? 'Project',
+      },
+      {
+        'title':
+            strings['project_welding_title'] ?? 'Welding or metal fabrication',
+        'subtitle':
+            strings['project_welding_subtitle'] ??
+            'Gates, railings, and metal structures for home or business',
+        'icon': Icons.precision_manufacturing_rounded,
+        'color': const Color(0xFF374151),
+        'trade': 'Welder',
+        'tradeLabel': strings['project_trade_welder'] ?? 'Welder',
+        'badge': strings['project_project_badge'] ?? 'Project',
+      },
+      {
+        'title':
+            strings['project_masonry_title'] ?? 'Stone, tile, or facade work',
+        'subtitle':
+            strings['project_masonry_subtitle'] ??
+            'Install or repair tile, cladding, and interior or exterior walls',
+        'icon': Icons.construction_rounded,
+        'color': const Color(0xFF78716C),
+        'trade': 'Mason',
+        'tradeLabel': strings['project_trade_mason'] ?? 'Mason',
+        'badge': strings['project_project_badge'] ?? 'Project',
+      },
+      {
+        'title': strings['project_cctv_title'] ?? 'Install CCTV cameras',
+        'subtitle':
+            strings['project_cctv_subtitle'] ??
+            'Camera setup for a home or shop with better placement and coverage',
+        'icon': Icons.security_rounded,
+        'color': const Color(0xFF0F172A),
+        'trade': 'CCTV Technician',
+        'tradeLabel': strings['project_trade_cctv'] ?? 'CCTV Technician',
+        'badge': strings['project_project_badge'] ?? 'Project',
+      },
+      {
+        'title':
+            strings['project_solar_title'] ??
+            'Service a solar heater or system',
+        'subtitle':
+            strings['project_solar_subtitle'] ??
+            'Check solar heaters, panels, connections, and overall performance',
+        'icon': Icons.solar_power_rounded,
+        'color': const Color(0xFFF59E0B),
+        'trade': 'Solar Technician',
+        'tradeLabel': strings['project_trade_solar'] ?? 'Solar Technician',
+        'badge': strings['project_project_badge'] ?? 'Project',
+      },
+      {
+        'title':
+            strings['project_aluminum_title'] ?? 'Aluminum windows or shutters',
+        'subtitle':
+            strings['project_aluminum_subtitle'] ??
+            'Install or replace frames, shutters, and aluminum fittings',
+        'icon': Icons.window_rounded,
+        'color': const Color(0xFF64748B),
+        'trade': 'Aluminum Installer',
+        'tradeLabel': strings['project_trade_aluminum'] ?? 'Aluminum Installer',
+        'badge': strings['project_project_badge'] ?? 'Project',
+      },
+      {
+        'title':
+            strings['project_curtains_title'] ?? 'Install curtains or blinds',
+        'subtitle':
+            strings['project_curtains_subtitle'] ??
+            'Measure, mount, and adjust curtains, rollers, or blinds',
+        'icon': Icons.checkroom_rounded,
+        'color': const Color(0xFFBE185D),
+        'trade': 'Curtain Installer',
+        'tradeLabel': strings['project_trade_curtains'] ?? 'Curtain Installer',
+        'badge': strings['project_project_badge'] ?? 'Project',
+      },
+      {
+        'title': strings['project_pool_title'] ?? 'Pool maintenance or repair',
+        'subtitle':
+            strings['project_pool_subtitle'] ??
+            'Cleaning, pump checks, leak treatment, or operating issues',
+        'icon': Icons.pool_rounded,
+        'color': const Color(0xFF0284C7),
+        'trade': 'Pool Technician',
+        'tradeLabel': strings['project_trade_pool'] ?? 'Pool Technician',
         'badge': strings['project_problem_badge'] ?? 'Problem',
       },
       {
@@ -2989,7 +3987,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           ),
           const SizedBox(height: 14),
           SizedBox(
-            height: 240,
+            height: 252,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               itemCount: items.length,
@@ -3068,7 +4066,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                             ),
                           ],
                         ),
-                        const SizedBox(height: 18),
+                        const SizedBox(height: 14),
                         Text(
                           item['title']! as String,
                           maxLines: 2,
@@ -3080,7 +4078,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                             height: 1.15,
                           ),
                         ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 6),
                         Text(
                           item['subtitle']! as String,
                           maxLines: 3,
@@ -3092,7 +4090,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                           ),
                         ),
                         if (item['trade'] != null) ...[
-                          const SizedBox(height: 12),
+                          const SizedBox(height: 10),
                           Container(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 10,

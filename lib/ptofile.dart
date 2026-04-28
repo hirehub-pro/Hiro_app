@@ -32,6 +32,7 @@ import 'package:untitled1/pages/liked_pros_page.dart';
 import 'package:untitled1/services/location_context_service.dart';
 import 'package:untitled1/services/subscription_access_service.dart';
 import 'package:untitled1/utils/booking_mode.dart';
+import 'package:untitled1/utils/video_cache_manager.dart';
 import 'package:untitled1/widgets/skeleton.dart';
 
 class Profile extends StatefulWidget {
@@ -3630,6 +3631,7 @@ class _ProfileReportAttachment {
 class _ProjectVideoThumbnailState extends State<_ProjectVideoThumbnail> {
   VideoPlayerController? _controller;
   bool _hasError = false;
+  int _initRequestId = 0;
 
   @override
   void initState() {
@@ -3647,16 +3649,24 @@ class _ProjectVideoThumbnailState extends State<_ProjectVideoThumbnail> {
   }
 
   Future<void> _initialize() async {
-    final controller = VideoPlayerController.networkUrl(Uri.parse(widget.url));
+    final requestId = ++_initRequestId;
 
     try {
+      final fileInfo = await VideoCacheManager.instance.getFileFromCache(
+        widget.url,
+      );
+      final videoFile =
+          fileInfo?.file ??
+          await VideoCacheManager.instance.getSingleFile(widget.url);
+
+      final controller = VideoPlayerController.file(videoFile);
       await controller.initialize();
       await controller.setLooping(false);
       await controller.setVolume(0);
       await controller.pause();
       await controller.seekTo(Duration.zero);
 
-      if (!mounted) {
+      if (!mounted || requestId != _initRequestId) {
         await controller.dispose();
         return;
       }
@@ -3666,7 +3676,6 @@ class _ProjectVideoThumbnailState extends State<_ProjectVideoThumbnail> {
         _hasError = false;
       });
     } catch (_) {
-      await controller.dispose();
       if (!mounted) return;
       setState(() {
         _controller = null;

@@ -46,6 +46,7 @@ class _CachedVideoPlayerState extends State<CachedVideoPlayer>
   bool _showControls = false;
   bool _isMuted = false;
   Timer? _controlsTimer;
+  StreamSubscription<void>? _stopPlaybackSubscription;
 
   @override
   bool get wantKeepAlive => true;
@@ -53,6 +54,19 @@ class _CachedVideoPlayerState extends State<CachedVideoPlayer>
   @override
   void initState() {
     super.initState();
+    _stopPlaybackSubscription = VideoCacheManager.stopPlaybackStream.listen((
+      _,
+    ) {
+      final controller = _controller;
+      if (controller == null || !controller.value.isInitialized) return;
+      if (controller.value.isPlaying) {
+        controller.pause();
+      }
+      _controlsTimer?.cancel();
+      if (mounted) {
+        setState(() => _showControls = true);
+      }
+    });
     _initializeController();
   }
 
@@ -181,6 +195,22 @@ class _CachedVideoPlayerState extends State<CachedVideoPlayer>
     }
   }
 
+  Future<void> _seekTo(Duration position) async {
+    final controller = _controller;
+    if (controller == null || !controller.value.isInitialized) return;
+
+    final duration = controller.value.duration;
+    final clamped = position < Duration.zero
+        ? Duration.zero
+        : position > duration
+        ? duration
+        : position;
+    await controller.seekTo(clamped);
+    if (controller.value.isPlaying) {
+      _startControlsHideTimer();
+    }
+  }
+
   Future<void> _toggleMute() async {
     final controller = _controller;
     if (controller == null) return;
@@ -255,6 +285,7 @@ class _CachedVideoPlayerState extends State<CachedVideoPlayer>
 
   @override
   void dispose() {
+    _stopPlaybackSubscription?.cancel();
     _controlsTimer?.cancel();
     _controller?.dispose();
     super.dispose();
@@ -272,11 +303,7 @@ class _CachedVideoPlayerState extends State<CachedVideoPlayer>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(
-                Icons.error_outline,
-                color: Colors.white70,
-                size: 40,
-              ),
+              const Icon(Icons.error_outline, color: Colors.white70, size: 40),
               const SizedBox(height: 12),
               TextButton.icon(
                 onPressed: _initializeController,
@@ -341,6 +368,7 @@ class _CachedVideoPlayerState extends State<CachedVideoPlayer>
                 onPlayPause: _togglePlayback,
                 onSeekBack: () => _seekRelative(const Duration(seconds: -5)),
                 onSeekForward: () => _seekRelative(const Duration(seconds: 5)),
+                onSeekTo: _seekTo,
                 onMuteToggle: _toggleMute,
                 onFullscreenToggle: widget.allowFullscreen
                     ? _toggleFullscreen
@@ -385,6 +413,7 @@ class _VideoControls extends StatelessWidget {
   final VoidCallback onPlayPause;
   final VoidCallback onSeekBack;
   final VoidCallback onSeekForward;
+  final ValueChanged<Duration> onSeekTo;
   final VoidCallback onMuteToggle;
   final VoidCallback? onFullscreenToggle;
   final bool isFullscreen;
@@ -396,6 +425,7 @@ class _VideoControls extends StatelessWidget {
     required this.onPlayPause,
     required this.onSeekBack,
     required this.onSeekForward,
+    required this.onSeekTo,
     required this.onMuteToggle,
     required this.onFullscreenToggle,
     required this.isFullscreen,
@@ -491,14 +521,35 @@ class _VideoControls extends StatelessWidget {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        VideoProgressIndicator(
-                          controller,
-                          allowScrubbing: true,
-                          padding: EdgeInsets.zero,
-                          colors: const VideoProgressColors(
-                            playedColor: Colors.white,
-                            bufferedColor: Color(0x99FFFFFF),
-                            backgroundColor: Color(0x55FFFFFF),
+                        SliderTheme(
+                          data: SliderTheme.of(context).copyWith(
+                            trackHeight: 4,
+                            thumbShape: const RoundSliderThumbShape(
+                              enabledThumbRadius: 7,
+                            ),
+                            overlayShape: const RoundSliderOverlayShape(
+                              overlayRadius: 14,
+                            ),
+                            activeTrackColor: Colors.white,
+                            inactiveTrackColor: const Color(0x55FFFFFF),
+                            thumbColor: Colors.white,
+                            overlayColor: const Color(0x44FFFFFF),
+                          ),
+                          child: Slider(
+                            min: 0,
+                            max: value.duration.inMilliseconds > 0
+                                ? value.duration.inMilliseconds.toDouble()
+                                : 1,
+                            value: value.position.inMilliseconds
+                                .clamp(
+                                  0,
+                                  value.duration.inMilliseconds > 0
+                                      ? value.duration.inMilliseconds
+                                      : 1,
+                                )
+                                .toDouble(),
+                            onChanged: (ms) =>
+                                onSeekTo(Duration(milliseconds: ms.round())),
                           ),
                         ),
                         const SizedBox(height: 8),
@@ -642,7 +693,8 @@ class _VideoPlayerFullscreenPage extends StatefulWidget {
       _VideoPlayerFullscreenPageState();
 }
 
-class _VideoPlayerFullscreenPageState extends State<_VideoPlayerFullscreenPage> {
+class _VideoPlayerFullscreenPageState
+    extends State<_VideoPlayerFullscreenPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(

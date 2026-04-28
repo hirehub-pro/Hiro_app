@@ -517,8 +517,11 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
                                                   isVideo
                                                       ? CachedVideoPlayer(
                                                           url: url,
-                                                          play: true,
+                                                          play: false,
                                                           fit: BoxFit.cover,
+                                                          showControls: false,
+                                                          allowFullscreen:
+                                                              false,
                                                         )
                                                       : CachedNetworkImage(
                                                           imageUrl: url,

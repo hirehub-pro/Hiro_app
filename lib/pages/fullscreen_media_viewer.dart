@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:untitled1/utils/video_cache_manager.dart';
 import 'package:untitled1/widgets/cached_video_player.dart';
 import 'package:untitled1/widgets/zoomable_image_viewer.dart';
 
@@ -61,6 +62,7 @@ class _FullscreenMediaViewerState extends State<FullscreenMediaViewer> {
                 : const PageScrollPhysics(),
             itemCount: widget.urls.length,
             onPageChanged: (index) {
+              VideoCacheManager.stopAllPlayback();
               setState(() {
                 _currentIndex = index;
                 _isCurrentImageZoomed = false;
@@ -72,7 +74,7 @@ class _FullscreenMediaViewerState extends State<FullscreenMediaViewer> {
                 return Center(
                   child: CachedVideoPlayer(
                     url: url,
-                    play: true,
+                    play: index == _currentIndex,
                     fit: BoxFit.contain,
                   ),
                 );

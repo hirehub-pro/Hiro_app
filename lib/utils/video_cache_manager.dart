@@ -1,4 +1,5 @@
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
+import 'dart:async';
 
 class VideoCacheManager {
   static const key = 'videoCacheKey';
@@ -11,4 +12,15 @@ class VideoCacheManager {
       fileService: HttpFileService(),
     ),
   );
+
+  static final StreamController<void> _stopPlaybackController =
+      StreamController<void>.broadcast();
+
+  static Stream<void> get stopPlaybackStream => _stopPlaybackController.stream;
+
+  static void stopAllPlayback() {
+    if (!_stopPlaybackController.isClosed) {
+      _stopPlaybackController.add(null);
+    }
+  }
 }
