@@ -161,9 +161,7 @@ class _SubscriptionPageState extends State<SubscriptionPage>
     setState(() {
       _products = response.productDetails;
       _storeAvailable = hasMatchingProduct;
-      if (response.notFoundIDs.isNotEmpty) {
-        _storeNotice = null;
-      } else if (!hasMatchingProduct) {
+      if (!hasMatchingProduct) {
         _storeNotice = 'לא נמצאה חבילת Pro זמינה לרכישה כרגע עבור חשבון זה.';
       } else {
         _storeNotice = null;
@@ -471,7 +469,11 @@ class _SubscriptionPageState extends State<SubscriptionPage>
   Future<void> _restoreSubscription() async {
     try {
       setState(() => _isPurchasing = true);
-      await _inAppPurchase.restorePurchases();
+      final user = FirebaseAuth.instance.currentUser;
+      final accountToken = user == null
+          ? null
+          : await SubscriptionAccessService.ensureCurrentUserSubscriptionAccountToken();
+      await _inAppPurchase.restorePurchases(applicationUserName: accountToken);
       await _syncSubscriptionStateFromGooglePlayWithClaim(
         allowClaimUnownedPurchase: true,
       );
@@ -1101,6 +1103,21 @@ class _SubscriptionPageState extends State<SubscriptionPage>
               ],
             ),
             const SizedBox(height: 10),
+            TextButton.icon(
+              onPressed: _isPurchasing ? null : _restoreSubscription,
+              style: TextButton.styleFrom(
+                foregroundColor: const Color(0xFF1976D2),
+              ),
+              icon: const Icon(Icons.restore_rounded, size: 18),
+              label: Text(
+                strings['restore']!,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            const SizedBox(height: 2),
             TextButton(
               onPressed: _isPurchasing ? null : _confirmSkipForLater,
               style: TextButton.styleFrom(
@@ -1676,6 +1693,7 @@ class _SubscriptionPageState extends State<SubscriptionPage>
           'subscription_title_note': 'اسم الاشتراك: HIRO_SUBSCRIPTION',
           'privacy_link': 'سياسة الخصوصية',
           'terms_link': 'شروط الاستخدام',
+          'restore': 'استعادة الشراء',
           'skip': 'تخطي الآن',
           'skip_dialog_title': 'تخطي الاشتراك الآن؟',
           'skip_dialog_subtitle':
@@ -1723,6 +1741,7 @@ class _SubscriptionPageState extends State<SubscriptionPage>
           'subscription_title_note': 'Название подписки: HIRO_SUBSCRIPTION',
           'privacy_link': 'Политика конфиденциальности',
           'terms_link': 'Условия использования',
+          'restore': 'Восстановить покупку',
           'skip': 'Пропустить сейчас',
           'skip_dialog_title': 'Пропустить подписку сейчас?',
           'skip_dialog_subtitle':
@@ -1772,6 +1791,7 @@ class _SubscriptionPageState extends State<SubscriptionPage>
           'subscription_title_note': 'የምዝገባ ስም: HIRO_SUBSCRIPTION',
           'privacy_link': 'የግላዊነት ፖሊሲ',
           'terms_link': 'የአጠቃቀም ውል',
+          'restore': 'ግዢን መልስ',
           'skip': 'አሁን ዝለል',
           'skip_dialog_title': 'አሁን ምዝገባውን ትዝለላለህ?',
           'skip_dialog_subtitle':
@@ -1819,6 +1839,7 @@ class _SubscriptionPageState extends State<SubscriptionPage>
           'subscription_title_note': 'Subscription title: HIRO_SUBSCRIPTION',
           'privacy_link': 'Privacy Policy',
           'terms_link': 'Terms of Use',
+          'restore': 'Restore purchase',
           'skip': 'Skip for now',
           'skip_dialog_title': 'Skip subscription for now?',
           'skip_dialog_subtitle':
@@ -1870,6 +1891,7 @@ class _SubscriptionPageState extends State<SubscriptionPage>
           'subscription_title_note': 'שם המנוי: HIRO_SUBSCRIPTION',
           'privacy_link': 'מדיניות פרטיות',
           'terms_link': 'תנאי שימוש',
+          'restore': 'שחזור רכישה',
           'skip': 'דלג בינתיים',
           'skip_dialog_title': 'לדלג על המנוי כרגע?',
           'skip_dialog_subtitle':

@@ -62,18 +62,16 @@ class NotificationService {
 
     if (Platform.isIOS) {
       await _messaging.setForegroundNotificationPresentationOptions(
-        // Foreground notifications are shown manually below. Keeping the iOS
-        // system alert enabled here causes duplicate banners for one push.
-        alert: false,
-        badge: false,
-        sound: false,
+        alert: true,
+        badge: true,
+        sound: true,
       );
     }
 
     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      if (message.notification != null) {
+      if (message.notification != null && !Platform.isIOS) {
         _showNotification(
           id: message.hashCode,
           title: message.notification!.title ?? '',

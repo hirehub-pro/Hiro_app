@@ -18,13 +18,13 @@ const {
 admin.initializeApp();
 
 const GOOGLE_PLAY_PACKAGE_NAME = "com.hirehub.app";
-const APPLE_BUNDLE_ID = "com.hirehub.app";
+const APPLE_BUNDLE_ID = "com.hiro.hiroapp";
 const GOOGLE_PLAY_RTDN_TOPIC = "play-subscription-notifications";
 const PLAY_ANDROID_PUBLISHER_SCOPE =
   "https://www.googleapis.com/auth/androidpublisher";
 const SUBSCRIPTION_NOTIFICATION_RETENTION_DAYS = 30;
 
-exports.sendChatPushOnNotificationCreate = onDocumentCreated(
+exports.sendNotificationPush = onDocumentCreated(
     {
       document: "users/{userId}/notifications/{notificationId}",
       region: "us-central1",
@@ -69,8 +69,7 @@ exports.sendChatPushOnNotificationCreate = onDocumentCreated(
         (normalizeString(payload.title) || senderName || "New message") :
         (payload.title || defaultTitleForType(payload.type));
       const body = payload.type === "chat_message" ?
-        (normalizeString(payload.body) || normalizeString(payload.message) ||
-          "Sent you a message") :
+        chatMessageBody(payload) :
         (payload.body || defaultBodyForType(payload.type));
 
       const message = {
@@ -927,6 +926,30 @@ function hasEnabledAutoRenew(lineItems) {
 
 function normalizeString(value) {
   return value == null ? "" : String(value);
+}
+
+function chatMessageBody(payload) {
+  const genericBodies = new Set([
+    "you have a new notification",
+    "you received a new notification",
+    "new notification",
+    "you received a new message",
+    "sent you a message",
+  ]);
+  const candidates = [
+    payload.message,
+    payload.text,
+    payload.body,
+    payload.lastMessage,
+  ];
+
+  for (const candidate of candidates) {
+    const body = normalizeString(candidate).trim();
+    if (!body || genericBodies.has(body.toLowerCase())) continue;
+    return body;
+  }
+
+  return "Sent you a message";
 }
 
 function datesEqual(left, right) {
