@@ -10,7 +10,9 @@ import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart' as intl;
+import 'package:permission_handler/permission_handler.dart';
 import 'package:untitled1/map/location_picker.dart';
+import 'package:untitled1/services/app_permission_service.dart';
 import 'package:untitled1/services/language_provider.dart';
 import 'package:untitled1/services/subscription_access_service.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -43,6 +45,7 @@ class _BlogPageState extends State<BlogPage> {
   bool _isMoreLoading = false;
   int _postLimit = 10;
   final Set<String> _hiddenPostIds = {};
+  final Set<String> _blockedUserIds = {};
   String _sortBy = 'newest';
   int _selectedFilterIndex = 0;
   bool _isGuideExpanded = false;
@@ -50,6 +53,8 @@ class _BlogPageState extends State<BlogPage> {
   double _jobRequestRadiusFilterKm = 0;
   final Set<String> _myProfessions = <String>{};
   double _myWorkRadiusKm = 25;
+  bool _isCheckingUgcTerms = true;
+  bool _hasAcceptedUgcTerms = false;
 
   @override
   void initState() {
@@ -57,6 +62,8 @@ class _BlogPageState extends State<BlogPage> {
     _loadProfessionMetadata();
     _loadMyJobRequestFilterProfile();
     _loadViewerLocation();
+    _loadUgcTermsStatus();
+    _loadBlockedUsers();
     _listenToPosts();
     _scrollController.addListener(_onScroll);
   }
@@ -609,6 +616,213 @@ class _BlogPageState extends State<BlogPage> {
         );
   }
 
+  Future<void> _loadUgcTermsStatus() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || user.isAnonymous) {
+      if (!mounted) return;
+      setState(() {
+        _isCheckingUgcTerms = false;
+        _hasAcceptedUgcTerms = true;
+      });
+      return;
+    }
+
+    try {
+      final doc = await _firestore.collection('users').doc(user.uid).get();
+      final data = doc.data() ?? <String, dynamic>{};
+      final accepted = data['ugcTermsAcceptedAt'] != null;
+      if (!mounted) return;
+      setState(() {
+        _hasAcceptedUgcTerms = accepted;
+        _isCheckingUgcTerms = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _isCheckingUgcTerms = false);
+    }
+  }
+
+  Future<void> _acceptUgcTerms() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || user.isAnonymous) {
+      _showGuestDialog(context, _getLocalizedStrings(context));
+      return;
+    }
+    try {
+      await _firestore.collection('users').doc(user.uid).set({
+        'ugcTermsAcceptedAt': FieldValue.serverTimestamp(),
+        'ugcTermsVersion': '2026-04-29',
+      }, SetOptions(merge: true));
+      if (!mounted) return;
+      setState(() => _hasAcceptedUgcTerms = true);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${_getLocalizedStrings(context)['error']}')),
+      );
+      debugPrint('Failed to accept UGC terms: $e');
+    }
+  }
+
+  Future<void> _loadBlockedUsers() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || user.isAnonymous) return;
+    try {
+      final snapshot = await _firestore
+          .collection('users')
+          .doc(user.uid)
+          .collection('blocked_users')
+          .get();
+      final blockedIds = snapshot.docs.map((d) => d.id).toSet();
+      if (!mounted) return;
+      setState(() {
+        _blockedUserIds
+          ..clear()
+          ..addAll(blockedIds);
+      });
+    } catch (e) {
+      debugPrint('Failed loading blocked users: $e');
+    }
+  }
+
+  Future<void> _reportPost(Map<String, dynamic> post) async {
+    final strings = _getLocalizedStrings(context);
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || user.isAnonymous) {
+      _showGuestDialog(context, strings);
+      return;
+    }
+
+    final reasonController = TextEditingController();
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(strings['report_content_title'] ?? 'Report content'),
+        content: TextField(
+          controller: reasonController,
+          maxLines: 3,
+          decoration: InputDecoration(
+            hintText:
+                strings['report_reason_hint'] ?? 'Describe what is wrong...',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(strings['cancel']),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, reasonController.text),
+            child: Text(strings['submit_report'] ?? 'Submit report'),
+          ),
+        ],
+      ),
+    );
+
+    if (reason == null || reason.trim().isEmpty) return;
+
+    try {
+      await _firestore.collection('moderation_reports').add({
+        'type': 'content_report',
+        'postId': post['id'],
+        'postAuthorUid': post['authorUid'],
+        'postTitle': post['title'],
+        'reason': reason.trim(),
+        'reportedByUid': user.uid,
+        'reportedAt': FieldValue.serverTimestamp(),
+        'status': 'pending',
+        'requiresActionBy': Timestamp.fromDate(
+          DateTime.now().toUtc().add(const Duration(hours: 24)),
+        ),
+      });
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            strings['report_submitted'] ?? 'Report submitted to moderation',
+          ),
+        ),
+      );
+    } catch (e) {
+      debugPrint('Failed reporting content: $e');
+    }
+  }
+
+  Future<void> _blockUserFromPost(Map<String, dynamic> post) async {
+    final strings = _getLocalizedStrings(context);
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || user.isAnonymous) {
+      _showGuestDialog(context, strings);
+      return;
+    }
+    final blockedUid = (post['authorUid'] ?? '').toString();
+    if (blockedUid.isEmpty || blockedUid == user.uid) return;
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(strings['block_user'] ?? 'Block user'),
+        content: Text(
+          strings['block_user_confirm'] ??
+              'This user will be removed from your feed immediately and sent to moderation.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(strings['cancel']),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(strings['block_user'] ?? 'Block user'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    if (mounted) {
+      setState(() {
+        _blockedUserIds.add(blockedUid);
+      });
+    }
+
+    try {
+      await _firestore
+          .collection('users')
+          .doc(user.uid)
+          .collection('blocked_users')
+          .doc(blockedUid)
+          .set({
+            'blockedAt': FieldValue.serverTimestamp(),
+            'samplePostId': post['id'],
+          });
+      await _firestore.collection('moderation_reports').add({
+        'type': 'user_block',
+        'blockedUid': blockedUid,
+        'samplePostId': post['id'],
+        'postTitle': post['title'],
+        'blockedByUid': user.uid,
+        'reportedAt': FieldValue.serverTimestamp(),
+        'status': 'pending',
+        'requiresActionBy': Timestamp.fromDate(
+          DateTime.now().toUtc().add(const Duration(hours: 24)),
+        ),
+      });
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            strings['blocked_user_hidden'] ??
+                'User blocked and removed from your feed',
+          ),
+        ),
+      );
+    } catch (e) {
+      debugPrint('Failed blocking user: $e');
+    }
+  }
+
   Future<void> _onRefresh() async {
     if (mounted) {
       setState(() {
@@ -676,6 +890,7 @@ class _BlogPageState extends State<BlogPage> {
       'no_posts': 'אין פוסטים עדיין',
       'delete': 'מחק',
       'share': 'שתף',
+      'post_actions': 'פעולות בפוסט',
       'report': 'דווח',
       'hide': 'הסתר',
       'edit': 'ערוך',
@@ -806,6 +1021,7 @@ class _BlogPageState extends State<BlogPage> {
       'no_posts': 'لا توجد منشورات بعد',
       'delete': 'حذف',
       'share': 'مشاركة',
+      'post_actions': 'إجراءات المنشور',
       'hide': 'إخفاء',
       'comments': 'تعليقات / عروض',
       'add_comment': 'أضف تعليقًا أو عرضًا...',
@@ -923,6 +1139,7 @@ class _BlogPageState extends State<BlogPage> {
       'no_posts': 'እስካሁን ፖስቶች የሉም',
       'delete': 'ሰርዝ',
       'share': 'አጋራ',
+      'post_actions': 'የፖስት እርምጃዎች',
       'hide': 'ደብቅ',
       'comments': 'አስተያየቶች / ቅናሾች',
       'add_comment': 'አስተያየት ወይም ቅናሽ ጨምር...',
@@ -1025,6 +1242,7 @@ class _BlogPageState extends State<BlogPage> {
       'no_posts': 'Публикаций пока нет',
       'delete': 'Удалить',
       'share': 'Поделиться',
+      'post_actions': 'Действия с постом',
       'hide': 'Скрыть',
       'comments': 'Комментарии / Предложения',
       'add_comment': 'Добавить комментарий или предложение...',
@@ -1128,8 +1346,23 @@ class _BlogPageState extends State<BlogPage> {
       'no_posts': 'No posts yet',
       'delete': 'Delete',
       'share': 'Share',
+      'post_actions': 'Post actions',
       'report': 'Report',
       'hide': 'Hide',
+      'block_user': 'Block user',
+      'block_user_confirm':
+          'Block this user? Their content will be removed from your feed immediately, and moderation will be notified.',
+      'report_content_title': 'Report objectionable content',
+      'report_reason_hint': 'What is objectionable about this content?',
+      'submit_report': 'Submit report',
+      'report_submitted':
+          'Report submitted. Our team will review it within 24 hours.',
+      'blocked_user_hidden':
+          'User blocked. Their content was removed from your feed.',
+      'ugc_terms_title': 'Community Terms of Use',
+      'ugc_terms_body':
+          'Before accessing community content, you agree not to post abusive, hateful, sexual, violent, or illegal content. Report objectionable content using Report, and block abusive users using Block user.',
+      'ugc_terms_accept': 'I Agree and Continue',
       'edit': 'Edit',
       'comments': 'Comments / Offers',
       'add_comment': 'Add a comment or offer...',
@@ -1961,6 +2194,14 @@ class _BlogPageState extends State<BlogPage> {
 
                               final picker = ImagePicker();
                               if (source == ImageSource.camera) {
+                                final hasCameraPermission =
+                                    await AppPermissionService.ensureGranted(
+                                      context,
+                                      permission: Permission.camera,
+                                      kind: AppPermissionKind.camera,
+                                    );
+                                if (!hasCameraPermission) return;
+
                                 final picked = await picker.pickImage(
                                   source: source,
                                   imageQuality: 70,
@@ -2018,6 +2259,16 @@ class _BlogPageState extends State<BlogPage> {
                               }
 
                               final picker = ImagePicker();
+                              if (source == ImageSource.camera) {
+                                final hasCameraPermission =
+                                    await AppPermissionService.ensureGranted(
+                                      context,
+                                      permission: Permission.camera,
+                                      kind: AppPermissionKind.camera,
+                                    );
+                                if (!hasCameraPermission) return;
+                              }
+
                               final pickedVideo = await picker.pickVideo(
                                 source: source,
                               );
@@ -2402,6 +2653,9 @@ class _BlogPageState extends State<BlogPage> {
     final isJobRequestSectionActive = _isJobRequestSectionActive(strings);
     final visiblePosts = _posts
         .where((p) => !_hiddenPostIds.contains(p['id']))
+        .where(
+          (p) => !_blockedUserIds.contains((p['authorUid'] ?? '').toString()),
+        )
         .where((p) => _matchesJobRequestFilters(p, strings))
         .toList();
 
@@ -2505,7 +2759,56 @@ class _BlogPageState extends State<BlogPage> {
         ),
         body: RefreshIndicator(
           onRefresh: _onRefresh,
-          child: _isLoading
+          child: _isCheckingUgcTerms
+              ? const Center(child: CircularProgressIndicator())
+              : !_hasAcceptedUgcTerms
+              ? ListView(
+                  padding: const EdgeInsets.all(20),
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(18),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            strings['ugc_terms_title'] ??
+                                'Community Terms of Use',
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF0F172A),
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          Text(
+                            strings['ugc_terms_body'] ?? '',
+                            style: const TextStyle(
+                              color: Color(0xFF334155),
+                              height: 1.5,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton(
+                              onPressed: _acceptUgcTerms,
+                              child: Text(
+                                strings['ugc_terms_accept'] ??
+                                    'I Agree and Continue',
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                )
+              : _isLoading
               ? const Center(child: CircularProgressIndicator())
               : ListView.builder(
                   controller: _scrollController,
@@ -2548,6 +2851,9 @@ class _BlogPageState extends State<BlogPage> {
                           () =>
                               _hiddenPostIds.add(visiblePosts[postIndex]['id']),
                         ),
+                        onReport: () => _reportPost(visiblePosts[postIndex]),
+                        onBlockUser: () =>
+                            _blockUserFromPost(visiblePosts[postIndex]),
                         onCategoryTap: (categoryName) {
                           final categories = strings['categories'] as List;
                           final catIndex = categories.indexOf(categoryName);
@@ -2586,6 +2892,8 @@ class _BlogCard extends StatelessWidget {
   final VoidCallback onDelete;
   final VoidCallback onEdit;
   final VoidCallback onHide;
+  final VoidCallback onReport;
+  final VoidCallback onBlockUser;
   final Function(String) onCategoryTap;
   final Map<String, dynamic> localizedStrings;
   final VoidCallback onGuestDialog;
@@ -2597,10 +2905,178 @@ class _BlogCard extends StatelessWidget {
     required this.onDelete,
     required this.onEdit,
     required this.onHide,
+    required this.onReport,
+    required this.onBlockUser,
     required this.onCategoryTap,
     required this.localizedStrings,
     required this.onGuestDialog,
   });
+
+  Future<void> _showPostActionsSheet(
+    BuildContext context, {
+    required bool isAuthor,
+  }) async {
+    final textTheme = Theme.of(context).textTheme;
+
+    Widget actionTile({
+      required IconData icon,
+      required String title,
+      required VoidCallback onTap,
+      bool isDestructive = false,
+    }) {
+      return Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: () {
+            Navigator.pop(context);
+            onTap();
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            child: Row(
+              children: [
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: isDestructive
+                        ? const Color(0xFFFEE2E2)
+                        : const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    icon,
+                    size: 18,
+                    color: isDestructive
+                        ? const Color(0xFFDC2626)
+                        : const Color(0xFF334155),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: isDestructive
+                          ? const Color(0xFFB91C1C)
+                          : const Color(0xFF0F172A),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.12),
+                    blurRadius: 22,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(height: 10),
+                  Container(
+                    width: 44,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE2E8F0),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            localizedStrings['post_actions'] ?? 'Post actions',
+                            style: textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w800,
+                              color: const Color(0xFF0F172A),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: isAuthor
+                          ? [
+                              actionTile(
+                                icon: Icons.edit_outlined,
+                                title: localizedStrings['edit'],
+                                onTap: onEdit,
+                              ),
+                              actionTile(
+                                icon: Icons.delete_outline_rounded,
+                                title: localizedStrings['delete'],
+                                onTap: onDelete,
+                                isDestructive: true,
+                              ),
+                            ]
+                          : [
+                              actionTile(
+                                icon: Icons.visibility_off_outlined,
+                                title: localizedStrings['hide'],
+                                onTap: onHide,
+                              ),
+                              actionTile(
+                                icon: Icons.flag_outlined,
+                                title: localizedStrings['report'] ?? 'Report',
+                                onTap: onReport,
+                                isDestructive: true,
+                              ),
+                              actionTile(
+                                icon: Icons.block_outlined,
+                                title:
+                                    localizedStrings['block_user'] ??
+                                    'Block user',
+                                onTap: onBlockUser,
+                                isDestructive: true,
+                              ),
+                              actionTile(
+                                icon: Icons.share_outlined,
+                                title: localizedStrings['share'],
+                                onTap: () => Share.share(
+                                  '${post['title']}\n${post['content']}',
+                                ),
+                              ),
+                            ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -2750,42 +3226,24 @@ class _BlogCard extends StatelessWidget {
                         ),
                       ),
                       const Spacer(),
-                      PopupMenuButton<String>(
-                        icon: const Icon(
-                          Icons.more_vert,
-                          color: Color(0xFF94A3B8),
+                      InkWell(
+                        borderRadius: BorderRadius.circular(999),
+                        onTap: () =>
+                            _showPostActionsSheet(context, isAuthor: isAuthor),
+                        child: Ink(
+                          width: 34,
+                          height: 34,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF8FAFC),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(color: const Color(0xFFE2E8F0)),
+                          ),
+                          child: const Icon(
+                            Icons.more_horiz_rounded,
+                            color: Color(0xFF64748B),
+                            size: 18,
+                          ),
                         ),
-                        onSelected: (value) {
-                          if (value == 'delete') onDelete();
-                          if (value == 'edit') onEdit();
-                          if (value == 'share')
-                            Share.share('${post['title']}\n${post['content']}');
-                          if (value == 'hide') onHide();
-                        },
-                        itemBuilder: (context) => isAuthor
-                            ? [
-                                PopupMenuItem(
-                                  value: 'edit',
-                                  child: Text(localizedStrings['edit']),
-                                ),
-                                PopupMenuItem(
-                                  value: 'delete',
-                                  child: Text(
-                                    localizedStrings['delete'],
-                                    style: const TextStyle(color: Colors.red),
-                                  ),
-                                ),
-                              ]
-                            : [
-                                PopupMenuItem(
-                                  value: 'hide',
-                                  child: Text(localizedStrings['hide']),
-                                ),
-                                PopupMenuItem(
-                                  value: 'share',
-                                  child: Text(localizedStrings['share']),
-                                ),
-                              ],
                       ),
                     ],
                   ),

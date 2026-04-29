@@ -7,6 +7,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:untitled1/services/auth_service.dart';
 import 'package:untitled1/services/language_provider.dart';
 import 'package:untitled1/sign_in.dart';
 import 'package:untitled1/pages/about.dart';
@@ -470,7 +471,7 @@ class _SettingsPageState extends State<SettingsPage>
   }
 
   Future<void> _logout() async {
-    await FirebaseAuth.instance.signOut();
+    await AuthService().signOut();
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(builder: (context) => const SignInPage()),

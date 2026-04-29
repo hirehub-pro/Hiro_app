@@ -13,6 +13,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:untitled1/services/language_provider.dart';
 import 'package:untitled1/services/analytics_service.dart';
+import 'package:untitled1/services/ai_description_service.dart';
 import 'package:untitled1/pages/subscription.dart';
 import 'package:untitled1/map/map_radius_picker.dart';
 import 'package:untitled1/map/location_picker.dart';
@@ -99,6 +100,471 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
   void _ensureAnimationControllers() {
     _introAnimationController;
     _backgroundAnimationController;
+  }
+
+  Future<void> _openDescriptionAssistant(Map<String, String> strings) async {
+    final localeCode = Provider.of<LanguageProvider>(
+      context,
+      listen: false,
+    ).locale.languageCode;
+    var years = '';
+    var specialties = '';
+    var serviceStyle = '';
+    var thingsYouDo = '';
+    var thingsYouDontDo = '';
+    var showValidation = false;
+    var isGenerating = false;
+    String? generationError;
+
+    final generatedDescription = await showDialog<String>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          final isComplete =
+              years.trim().isNotEmpty &&
+              specialties.trim().isNotEmpty &&
+              serviceStyle.trim().isNotEmpty &&
+              thingsYouDo.trim().isNotEmpty &&
+              thingsYouDontDo.trim().isNotEmpty;
+
+          return Dialog(
+            insetPadding: const EdgeInsets.symmetric(
+              horizontal: 18,
+              vertical: 24,
+            ),
+            backgroundColor: Colors.transparent,
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: 560),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(28),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.16),
+                    blurRadius: 48,
+                    offset: const Offset(0, 20),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.fromLTRB(22, 20, 22, 18),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFFE8F3FF), Color(0xFFF7FBFF)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(28),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          height: 44,
+                          width: 44,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: const Icon(
+                            Icons.auto_awesome_rounded,
+                            color: Color(0xFF1976D2),
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        Text(
+                          strings['desc_assistant_title']!,
+                          style: const TextStyle(
+                            color: Color(0xFF0F172A),
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          strings['desc_assistant_subtitle']!,
+                          style: const TextStyle(
+                            color: Color(0xFF475569),
+                            fontSize: 13,
+                            height: 1.45,
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            _buildAssistantInfoChip(
+                              icon: Icons.work_outline_rounded,
+                              label: _selectedProfessions.isEmpty
+                                  ? strings['desc_generated_profession_fallback']!
+                                  : _selectedProfessions
+                                        .map(
+                                          (profession) =>
+                                              _labelForStoredProfession(
+                                                profession,
+                                                localeCode,
+                                              ),
+                                        )
+                                        .join(', '),
+                            ),
+                            if ((_selectedTown ?? '').trim().isNotEmpty)
+                              _buildAssistantInfoChip(
+                                icon: Icons.location_on_outlined,
+                                label: _selectedTown!.trim(),
+                              ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  Flexible(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(22, 20, 22, 16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            strings['desc_assistant_section_background']!,
+                            style: const TextStyle(
+                              color: Color(0xFF0F172A),
+                              fontSize: 14,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          _buildDescriptionAssistantField(
+                            label: strings['desc_question_years']!,
+                            hintText: strings['desc_question_years_hint']!,
+                            icon: Icons.timeline_rounded,
+                            keyboardType: TextInputType.number,
+                            onChanged: (value) => setDialogState(() {
+                              years = value;
+                              generationError = null;
+                            }),
+                          ),
+                          const SizedBox(height: 12),
+                          _buildDescriptionAssistantField(
+                            label: strings['desc_question_specialties']!,
+                            hintText:
+                                strings['desc_question_specialties_hint']!,
+                            icon: Icons.handyman_outlined,
+                            maxLines: 2,
+                            onChanged: (value) => setDialogState(() {
+                              specialties = value;
+                              generationError = null;
+                            }),
+                          ),
+                          const SizedBox(height: 18),
+                          Text(
+                            strings['desc_assistant_section_service']!,
+                            style: const TextStyle(
+                              color: Color(0xFF0F172A),
+                              fontSize: 14,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          _buildDescriptionAssistantField(
+                            label: strings['desc_question_service_style']!,
+                            hintText:
+                                strings['desc_question_service_style_hint']!,
+                            icon: Icons.favorite_border_rounded,
+                            maxLines: 2,
+                            onChanged: (value) => setDialogState(() {
+                              serviceStyle = value;
+                              generationError = null;
+                            }),
+                          ),
+                          const SizedBox(height: 12),
+                          _buildDescriptionAssistantField(
+                            label: strings['desc_question_things_you_do']!,
+                            hintText:
+                                strings['desc_question_things_you_do_hint']!,
+                            icon: Icons.check_circle_outline_rounded,
+                            maxLines: 3,
+                            onChanged: (value) => setDialogState(() {
+                              thingsYouDo = value;
+                              generationError = null;
+                            }),
+                          ),
+                          const SizedBox(height: 12),
+                          _buildDescriptionAssistantField(
+                            label: strings['desc_question_things_you_dont_do']!,
+                            hintText:
+                                strings['desc_question_things_you_dont_do_hint']!,
+                            icon: Icons.remove_circle_outline_rounded,
+                            maxLines: 3,
+                            onChanged: (value) => setDialogState(() {
+                              thingsYouDontDo = value;
+                              generationError = null;
+                            }),
+                          ),
+                          if (showValidation && !isComplete) ...[
+                            const SizedBox(height: 14),
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 12,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(
+                                  0xFFE11D48,
+                                ).withValues(alpha: 0.08),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(
+                                  color: const Color(
+                                    0xFFE11D48,
+                                  ).withValues(alpha: 0.18),
+                                ),
+                              ),
+                              child: Text(
+                                strings['desc_assistant_validation']!,
+                                style: const TextStyle(
+                                  color: Color(0xFFBE123C),
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ],
+                          if (generationError != null) ...[
+                            const SizedBox(height: 12),
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 12,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(
+                                  0xFFF59E0B,
+                                ).withValues(alpha: 0.10),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(
+                                  color: const Color(
+                                    0xFFF59E0B,
+                                  ).withValues(alpha: 0.22),
+                                ),
+                              ),
+                              child: Text(
+                                generationError!,
+                                style: const TextStyle(
+                                  color: Color(0xFF92400E),
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(22, 0, 22, 22),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: isGenerating
+                                ? null
+                                : () => Navigator.of(context).pop(),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: const Color(0xFF475569),
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              side: const BorderSide(color: Color(0xFFD7E1EC)),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                            ),
+                            child: Text(strings['cancel']!),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: isGenerating
+                                ? null
+                                : () async {
+                                    years = years.trim();
+                                    specialties = specialties.trim();
+                                    serviceStyle = serviceStyle.trim();
+                                    thingsYouDo = thingsYouDo.trim();
+                                    thingsYouDontDo = thingsYouDontDo.trim();
+
+                                    if (!isComplete) {
+                                      setDialogState(
+                                        () => showValidation = true,
+                                      );
+                                      return;
+                                    }
+
+                                    setDialogState(() {
+                                      isGenerating = true;
+                                      generationError = null;
+                                    });
+
+                                    try {
+                                      final professions = _selectedProfessions
+                                          .map(
+                                            (profession) =>
+                                                _labelForStoredProfession(
+                                                  profession,
+                                                  localeCode,
+                                                ),
+                                          )
+                                          .toList();
+                                      final description =
+                                          await AiDescriptionService.generateDescription(
+                                            AiDescriptionRequest(
+                                              localeCode: localeCode,
+                                              professions: professions,
+                                              town: _selectedTown,
+                                              years: years,
+                                              specialties: specialties,
+                                              serviceStyle: serviceStyle,
+                                              thingsYouDo: thingsYouDo,
+                                              thingsYouDontDo: thingsYouDontDo,
+                                            ),
+                                          );
+                                      if (!context.mounted) return;
+                                      Navigator.of(context).pop(description);
+                                    } catch (_) {
+                                      if (!context.mounted) return;
+                                      setDialogState(() {
+                                        isGenerating = false;
+                                        generationError =
+                                            strings['desc_ai_generation_error']!;
+                                      });
+                                    }
+                                  },
+                            icon: isGenerating
+                                ? const SizedBox(
+                                    height: 18,
+                                    width: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2.2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Icon(Icons.auto_awesome_rounded),
+                            label: Text(
+                              isGenerating
+                                  ? strings['desc_generate_loading']!
+                                  : strings['desc_generate_action']!,
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF1976D2),
+                              foregroundColor: Colors.white,
+                              elevation: 0,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+
+    if (!mounted || generatedDescription == null) return;
+    setState(() {
+      _descriptionController.text = generatedDescription;
+    });
+  }
+
+  Widget _buildAssistantInfoChip({
+    required IconData icon,
+    required String label,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: const Color(0xFFD9E8F8)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: const Color(0xFF1976D2)),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              label,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Color(0xFF0F172A),
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDescriptionAssistantField({
+    required String label,
+    required String hintText,
+    required IconData icon,
+    required ValueChanged<String> onChanged,
+    TextInputType? keyboardType,
+    int maxLines = 1,
+  }) {
+    return TextFormField(
+      keyboardType: keyboardType,
+      maxLines: maxLines,
+      onChanged: onChanged,
+      style: const TextStyle(
+        color: Color(0xFF111827),
+        fontSize: 15,
+        fontWeight: FontWeight.w600,
+      ),
+      decoration: InputDecoration(
+        labelText: label,
+        hintText: hintText,
+        alignLabelWithHint: maxLines > 1,
+        filled: true,
+        fillColor: const Color(0xFFF8FAFC),
+        hintStyle: const TextStyle(
+          color: Color(0xFF94A3B8),
+          fontWeight: FontWeight.w500,
+        ),
+        prefixIcon: Padding(
+          padding: EdgeInsets.only(top: maxLines > 1 ? 12 : 0),
+          child: Icon(icon, color: const Color(0xFF64748B), size: 20),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(18),
+          borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(18),
+          borderSide: const BorderSide(color: Color(0xFF1976D2), width: 1.4),
+        ),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(18)),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 18,
+          vertical: 16,
+        ),
+      ),
+    );
   }
 
   LatLng? _workCenter;
@@ -244,6 +710,21 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
     return _professionCanonicalValue(item);
   }
 
+  List<String> _professionSearchTerms(Map<String, dynamic> item) {
+    final terms = <String>{};
+    for (final key in const ['en', 'he', 'ar', 'ru', 'am']) {
+      final value = item[key]?.toString().trim();
+      if (value != null && value.isNotEmpty) {
+        terms.add(value.toLowerCase());
+      }
+    }
+    final canonical = _professionCanonicalValue(item).trim().toLowerCase();
+    if (canonical.isNotEmpty) {
+      terms.add(canonical);
+    }
+    return terms.toList();
+  }
+
   String _labelForStoredProfession(String profession, String localeCode) {
     final item = _findProfessionItem(profession);
     if (item != null) {
@@ -378,7 +859,35 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
           'pro': 'בעל מקצוע',
           'professions': 'בחר מקצועות',
           'alt_phone': 'טלפון נוסף (אופציונלי)',
-          'desc_label': 'ספר על עצמך (אופציונלי)',
+          'desc_label': 'ספר על עצמך',
+          'desc_helper':
+              'כתוב בקצרה מה הניסיון שלך, באילו עבודות אתה מתמחה, ואיזה שירות אתה נותן.',
+          'desc_generate_button': 'יצירה אוטומטית',
+          'desc_assistant_title': 'יצירת תיאור אוטומטית',
+          'desc_assistant_subtitle':
+              'ענה על כמה שאלות קצרות, ו-Firebase AI יכין עבורך תיאור מקצועי שאפשר לערוך.',
+          'desc_assistant_section_background': 'רקע וניסיון',
+          'desc_assistant_section_service': 'שירות וגבולות עבודה',
+          'desc_assistant_validation': 'יש למלא את כל השדות כדי ליצור תיאור.',
+          'desc_question_years': 'כמה שנות ניסיון יש לך?',
+          'desc_question_years_hint': 'לדוגמה: 6',
+          'desc_question_specialties': 'במה אתה מתמחה?',
+          'desc_question_specialties_hint':
+              'לדוגמה: תיקוני חשמל, התקנות, איתור תקלות',
+          'desc_question_service_style': 'איך היית מתאר את השירות שלך?',
+          'desc_question_service_style_hint': 'לדוגמה: אדיב, מדויק, נקי ומסודר',
+          'desc_question_things_you_do': 'כתוב על הדברים שאתה עושה',
+          'desc_question_things_you_do_hint':
+              'לדוגמה: התקנות, תיקונים, תחזוקה, ייעוץ',
+          'desc_question_things_you_dont_do': 'כתוב על הדברים שאתה לא עושה',
+          'desc_question_things_you_dont_do_hint':
+              'לדוגמה: לא עובד בשבת, לא מטפל בתעשייה, לא עושה עבודות חירום',
+          'desc_generate_action': 'צור עם AI',
+          'desc_generate_loading': 'יוצר תיאור...',
+          'desc_ai_generation_error':
+              'לא הצלחנו ליצור תיאור כרגע. בדוק ש-Firebase AI Logic מוגדר ונסה שוב.',
+          'desc_generated_profession_fallback': 'בעל/ת מקצוע',
+          'desc_generated_town': ' אני עובד/ת באזור {town}.',
           'agree_prefix': 'אני מסכים ל-',
           'and': ' ו-',
           'terms_link': 'תנאי השימוש',
@@ -394,6 +903,7 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
           'terms_content': 'תנאי השימוש...',
           'privacy_title': 'מדיניות פרטיות',
           'privacy_content': 'מדיניות פרטיות...',
+          'cancel': 'ביטול',
           'close': 'סגור',
           'current_loc': 'מיקום נוכחי',
           'pick_map': 'בחר מהמפה',
@@ -442,7 +952,39 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
           'pro': 'Professional',
           'professions': 'Select Professions',
           'alt_phone': 'Alt Phone (Optional)',
-          'desc_label': 'Description (Optional)',
+          'desc_label': 'Description',
+          'desc_helper':
+              'Write a short summary of your experience, specialties, and the service you provide.',
+          'desc_generate_button': 'Generate for me',
+          'desc_assistant_title': 'Generate Description',
+          'desc_assistant_subtitle':
+              'Answer a few short questions and Firebase AI will create a polished description you can edit.',
+          'desc_assistant_section_background': 'Background',
+          'desc_assistant_section_service': 'Service details',
+          'desc_assistant_validation':
+              'Fill in all fields to generate your description.',
+          'desc_question_years': 'How many years of experience do you have?',
+          'desc_question_years_hint': 'Example: 6',
+          'desc_question_specialties': 'What do you specialize in?',
+          'desc_question_specialties_hint':
+              'Example: electrical repairs, installations, troubleshooting',
+          'desc_question_service_style':
+              'How would you describe your service style?',
+          'desc_question_service_style_hint':
+              'Example: friendly, precise, clean, reliable',
+          'desc_question_things_you_do': 'Write about the things you do',
+          'desc_question_things_you_do_hint':
+              'Example: installations, repairs, maintenance, inspections',
+          'desc_question_things_you_dont_do':
+              'Write about the things you do not do',
+          'desc_question_things_you_dont_do_hint':
+              'Example: no emergency jobs, no industrial work, no weekend calls',
+          'desc_generate_action': 'Generate with AI',
+          'desc_generate_loading': 'Generating...',
+          'desc_ai_generation_error':
+              'We could not generate a description right now. Make sure Firebase AI Logic is configured, then try again.',
+          'desc_generated_profession_fallback': 'service',
+          'desc_generated_town': ' I work in the {town} area.',
           'agree_prefix': 'I agree to the ',
           'and': ' and ',
           'terms_link': 'Terms of Use',
@@ -459,6 +1001,7 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
           'terms_content': 'Terms of Use...',
           'privacy_title': 'Privacy Policy',
           'privacy_content': 'Privacy Policy...',
+          'cancel': 'Cancel',
           'close': 'Close',
           'current_loc': 'Current Location',
           'pick_map': 'Select on Map',
@@ -1450,8 +1993,28 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
                         _buildStyledTextField(
                           controller: _descriptionController,
                           labelText: strings['desc_label']!,
+                          helperText: strings['desc_helper']!,
                           icon: Icons.description_outlined,
                           maxLines: 3,
+                          validator: (v) => (v == null || v.trim().isEmpty)
+                              ? strings['req']
+                              : null,
+                        ),
+                        const SizedBox(height: 8),
+                        Align(
+                          alignment: AlignmentDirectional.centerStart,
+                          child: TextButton.icon(
+                            onPressed: () => _openDescriptionAssistant(strings),
+                            icon: const Icon(
+                              Icons.auto_awesome_rounded,
+                              size: 18,
+                            ),
+                            label: Text(strings['desc_generate_button']!),
+                            style: TextButton.styleFrom(
+                              foregroundColor: const Color(0xFF1976D2),
+                              padding: EdgeInsets.zero,
+                            ),
+                          ),
                         ),
                       ],
                     )
@@ -2031,9 +2594,6 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
         : ProfessionLocalization.canonicalProfessions
               .map((profession) => <String, dynamic>{'en': profession})
               .toList();
-    final localizedOptions = options
-        .map((item) => _professionLabel(item, localeCode))
-        .toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2041,12 +2601,18 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
         LayoutBuilder(
           builder: (context, constraints) => Autocomplete<String>(
             optionsBuilder: (TextEditingValue textEditingValue) {
-              if (textEditingValue.text.isEmpty) return localizedOptions;
-              return localizedOptions.where(
-                (option) => option.toLowerCase().contains(
-                  textEditingValue.text.toLowerCase(),
-                ),
-              );
+              final query = textEditingValue.text.trim().toLowerCase();
+              final matchingItems = query.isEmpty
+                  ? options
+                  : options.where(
+                      (item) => _professionSearchTerms(
+                        item,
+                      ).any((term) => term.contains(query)),
+                    );
+              return matchingItems
+                  .map((item) => _professionLabel(item, localeCode))
+                  .toSet()
+                  .toList();
             },
             onSelected: (selection) {
               final matchedItem = _findProfessionItem(selection);
@@ -2217,6 +2783,7 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
     int maxLines = 1,
     String? Function(String?)? validator,
     String? hintText,
+    String? helperText,
     bool enabled = true,
     bool readOnly = false,
     VoidCallback? onTap,
@@ -2251,6 +2818,7 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
           ),
           decoration: InputDecoration(
             hintText: hintText,
+            helperText: helperText,
             hintStyle: const TextStyle(
               color: Color(0xFF9CA3AF),
               fontWeight: FontWeight.w500,

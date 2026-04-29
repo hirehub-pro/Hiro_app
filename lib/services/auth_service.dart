@@ -1,5 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:untitled1/services/notification_service.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -12,8 +13,11 @@ class AuthService {
   Future<void> ensureUserInDatabase(User? user) async {
     if (user == null || user.isAnonymous) return;
 
-    final doc = await _firestore.collection(usersCollection).doc(user.uid).get();
-    
+    final doc = await _firestore
+        .collection(usersCollection)
+        .doc(user.uid)
+        .get();
+
     if (!doc.exists) {
       // Default new users to 'customer' role
       await _firestore.collection(usersCollection).doc(user.uid).set({
@@ -36,6 +40,7 @@ class AuthService {
 
   // Sign Out
   Future<void> signOut() async {
+    await NotificationService.removeCurrentDeviceToken();
     await _auth.signOut();
   }
 }

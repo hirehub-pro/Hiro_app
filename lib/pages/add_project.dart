@@ -6,6 +6,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 import 'package:untitled1/services/language_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:untitled1/services/app_permission_service.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:path_provider/path_provider.dart' as path_provider;
 import 'package:video_player/video_player.dart';
@@ -49,6 +51,13 @@ class _AddProjectPageState extends State<AddProjectPage> {
       return;
     }
     if (source == ImageSource.camera) {
+      final hasCameraPermission = await AppPermissionService.ensureGranted(
+        context,
+        permission: Permission.camera,
+        kind: AppPermissionKind.camera,
+      );
+      if (!hasCameraPermission) return;
+
       final pickedFile = await _picker.pickImage(
         source: source,
         imageQuality: 70,
@@ -80,6 +89,15 @@ class _AddProjectPageState extends State<AddProjectPage> {
       _showLimitReached();
       return;
     }
+    if (source == ImageSource.camera) {
+      final hasCameraPermission = await AppPermissionService.ensureGranted(
+        context,
+        permission: Permission.camera,
+        kind: AppPermissionKind.camera,
+      );
+      if (!hasCameraPermission) return;
+    }
+
     final strings = _getLocalizedStrings();
     final XFile? video = await _picker.pickVideo(
       source: source,

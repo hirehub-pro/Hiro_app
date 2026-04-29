@@ -18,6 +18,8 @@ import 'package:open_filex/open_filex.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:http/http.dart' as http;
 import 'package:untitled1/ptofile.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:untitled1/services/app_permission_service.dart';
 import 'package:untitled1/services/subscription_access_service.dart';
 import 'package:untitled1/pages/my_request_details_page.dart';
 import 'package:untitled1/pages/request_details.dart';
@@ -275,6 +277,7 @@ class _ChatPageState extends State<ChatPage> {
     required String preview,
   }) async {
     try {
+      final senderName = await _resolveSenderDisplayName(senderId);
       final receiverDoc = await _firestore
           .collection('users')
           .doc(widget.receiverId)
@@ -294,18 +297,49 @@ class _ChatPageState extends State<ChatPage> {
           .collection('notifications')
           .add({
             'type': 'chat_message',
-            'title': _currentUserName ?? 'New message',
+            'title': senderName,
             'body': preview,
+            'message': preview,
             'fromId': senderId,
-            'fromName': _currentUserName ?? 'User',
+            'fromName': senderName,
             'chatPartnerId': senderId,
-            'chatPartnerName': _currentUserName ?? 'User',
+            'chatPartnerName': senderName,
             'isRead': false,
             'timestamp': FieldValue.serverTimestamp(),
           });
     } catch (e) {
       debugPrint("Error creating receiver notification: $e");
     }
+  }
+
+  Future<String> _resolveSenderDisplayName(String senderId) async {
+    final cachedName = _currentUserName?.trim();
+    if (cachedName != null && cachedName.isNotEmpty) {
+      return cachedName;
+    }
+
+    try {
+      final senderDoc = await _firestore
+          .collection('users')
+          .doc(senderId)
+          .get();
+      final senderData = senderDoc.data();
+      final firestoreName = senderData?['name']?.toString().trim() ?? '';
+      if (firestoreName.isNotEmpty) {
+        _currentUserName = firestoreName;
+        return firestoreName;
+      }
+    } catch (e) {
+      debugPrint("Error resolving sender display name: $e");
+    }
+
+    final authName = _auth.currentUser?.displayName?.trim() ?? '';
+    if (authName.isNotEmpty) {
+      _currentUserName = authName;
+      return authName;
+    }
+
+    return 'New message';
   }
 
   Future<void> _notifyReportAnsweredIfNeeded({
@@ -1987,6 +2021,15 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   Future<void> _pickMedia(ImageSource source, String type) async {
+    if (source == ImageSource.camera) {
+      final hasCameraPermission = await AppPermissionService.ensureGranted(
+        context,
+        permission: Permission.camera,
+        kind: AppPermissionKind.camera,
+      );
+      if (!hasCameraPermission) return;
+    }
+
     final picker = ImagePicker();
     final pickedFile = type == 'image'
         ? await picker.pickImage(source: source)
@@ -2373,22 +2416,12 @@ class _ChatPageState extends State<ChatPage> {
   Future<void> _startRecording() async {
     if (_isRecording) return;
 
-    final hasPermission = await _audioRecorder.hasPermission();
+    final hasPermission = await AppPermissionService.ensureGranted(
+      context,
+      permission: Permission.microphone,
+      kind: AppPermissionKind.microphone,
+    );
     if (!hasPermission) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            Provider.of<LanguageProvider>(
-                      context,
-                      listen: false,
-                    ).locale.languageCode ==
-                    'he'
-                ? 'נדרשת הרשאת מיקרופון כדי להקליט הודעה קולית.'
-                : 'Microphone permission is required to record voice messages.',
-          ),
-        ),
-      );
       return;
     }
 

@@ -415,6 +415,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'createdAt': FieldValue.serverTimestamp(),
       if (creditNoteLegalData != null) 'creditNoteLegal': creditNoteLegalData,
     });
+    await _addToTotalEarned(userId: userId, amount: signedTotalAmount);
     await Future.wait(
       logEntries.map((entry) async {
         final logFileRef =
@@ -1547,6 +1548,10 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         if (_creditNoteLegalData != null)
           'creditNoteLegal': _creditNoteLegalData,
       });
+      await _addToTotalEarned(
+        userId: currentUser.uid,
+        amount: _signedTotalAmount,
+      );
 
       await _incrementInvoiceCounter();
 
@@ -1579,6 +1584,22 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       ).showSnackBar(const SnackBar(content: Text('Failed to save invoice.')));
       return null;
     }
+  }
+
+  Future<void> _addToTotalEarned({
+    required String userId,
+    required double amount,
+  }) async {
+    final totalEarnedRef = FirebaseFirestore.instance
+        .collection('users')
+        .doc(userId)
+        .collection('saved_invoices')
+        .doc('TotalEarned');
+
+    await totalEarnedRef.set({
+      'totalEarned': FieldValue.increment(amount),
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
   }
 
   String _safeFileName(String input) {

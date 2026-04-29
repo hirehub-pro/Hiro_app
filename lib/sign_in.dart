@@ -6,6 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 import 'package:untitled1/services/language_provider.dart';
 import 'package:untitled1/services/analytics_service.dart';
+import 'package:untitled1/services/auth_service.dart';
 import 'package:untitled1/sign_up.dart';
 import 'main.dart';
 
@@ -395,7 +396,7 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
           }
         } else {
           // User is authenticated but NOT in our database
-          await FirebaseAuth.instance.signOut();
+          await AuthService().signOut();
           if (mounted) {
             showDialog(
               context: context,

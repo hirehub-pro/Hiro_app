@@ -33,6 +33,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   int _totalJobs = 0;
   int _viewsCount = 0;
   double _totalEarnings = 0.0;
+  bool _hasTotalEarnedValue = false;
   double _avgRating = 0.0;
   double _overallAvgRating = 0.0;
 
@@ -49,6 +50,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   double _conversionRate = 0.0;
 
   List<String> _professionOptions = [];
+  List<String> _userProfessions = [];
   String _selectedProfession = _allProfessionsKey;
   Map<String, Map<String, dynamic>> _professionRatingStats = {};
   Map<String, Map<String, int>> _professionWeeklyViews = {};
@@ -80,6 +82,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           'analytics_title': 'לוח בקרה עסקי',
           'all_professions': 'כל המקצועות',
           'total_earnings': 'הכנסות משוערות',
+          'no_earning_yet': 'אין הכנסות עדיין',
           'total_jobs': 'עבודות',
           'rating': 'דירוג',
           'views': 'צפיות',
@@ -115,6 +118,13 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
               'המקצוע החזק ביותר שלך הוא {service}. הצג אותו ראשון בפרופיל ובפורטפוליו.',
           'growth_stable':
               'הביצועים יציבים {scope}. המשך להשלים עבודות באופן עקבי ואסוף יותר ביקורות כדי לצמוח מהר יותר.',
+          'growth_focus_label': 'פוקוס לשבוע הקרוב:',
+          'growth_target_visibility': 'יעד: להגיע ל-20+ צפיות בפרופיל.',
+          'growth_target_conversion': 'יעד: להגיע להמרה של 8% ומעלה.',
+          'growth_target_rating': 'יעד: להעלות את הדירוג ל-4.3 ומעלה.',
+          'growth_target_reviews': 'יעד: להשיג לפחות 3 ביקורות חדשות.',
+          'growth_positive_keep':
+              'הביצועים טובים מאוד. שמור על עקביות בזמן תגובה ובאיכות השירות.',
           'day_sun': 'א',
           'day_mon': 'ב',
           'day_tue': 'ג',
@@ -128,6 +138,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           'analytics_title': 'لوحة تحكم الأعمال',
           'all_professions': 'كل المهن',
           'total_earnings': 'الأرباح التقديرية',
+          'no_earning_yet': 'لا توجد أرباح حتى الآن',
           'total_jobs': 'الأعمال',
           'rating': 'التقييم',
           'views': 'المشاهدات',
@@ -163,6 +174,14 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
               'أقوى خدمة لديك هي {service}. اعرضها أولاً في ملفك ومعرض أعمالك.',
           'growth_stable':
               'الأداء مستقر {scope}. استمر في إنجاز الأعمال بانتظام واجمع مزيداً من التقييمات للنمو أسرع.',
+          'growth_focus_label': 'تركيز الأسبوع القادم:',
+          'growth_target_visibility': 'الهدف: الوصول إلى 20+ مشاهدة للملف.',
+          'growth_target_conversion': 'الهدف: الوصول إلى تحويل 8% أو أكثر.',
+          'growth_target_rating': 'الهدف: رفع التقييم إلى 4.3 أو أكثر.',
+          'growth_target_reviews':
+              'الهدف: الحصول على 3 تقييمات جديدة على الأقل.',
+          'growth_positive_keep':
+              'الأداء ممتاز. حافظ على سرعة الرد وجودة الخدمة بشكل ثابت.',
           'day_sun': 'ح',
           'day_mon': 'ن',
           'day_tue': 'ث',
@@ -176,6 +195,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           'analytics_title': 'Бизнес-аналитика',
           'all_professions': 'Все профессии',
           'total_earnings': 'Оценочный доход',
+          'no_earning_yet': 'Пока нет дохода',
           'total_jobs': 'Заказы',
           'rating': 'Рейтинг',
           'views': 'Просмотры',
@@ -211,6 +231,13 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
               'Ваша самая сильная услуга — {service}. Покажите её первой в профиле и портфолио.',
           'growth_stable':
               'Показатели стабильны {scope}. Продолжайте регулярно выполнять заказы и собирайте больше отзывов для ускоренного роста.',
+          'growth_focus_label': 'Фокус на следующую неделю:',
+          'growth_target_visibility': 'Цель: получить 20+ просмотров профиля.',
+          'growth_target_conversion': 'Цель: повысить конверсию до 8% и выше.',
+          'growth_target_rating': 'Цель: поднять рейтинг до 4.3 и выше.',
+          'growth_target_reviews': 'Цель: получить минимум 3 новых отзыва.',
+          'growth_positive_keep':
+              'Результаты очень хорошие. Сохраняйте стабильную скорость ответа и качество сервиса.',
           'day_sun': 'Вс',
           'day_mon': 'Пн',
           'day_tue': 'Вт',
@@ -224,6 +251,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           'analytics_title': 'የንግድ ትንታኔ',
           'all_professions': 'ሁሉም ሙያዎች',
           'total_earnings': 'የተገመተ ገቢ',
+          'no_earning_yet': 'እስካሁን ምንም ገቢ የለም',
           'total_jobs': 'ስራዎች',
           'rating': 'ደረጃ',
           'views': 'እይታዎች',
@@ -259,6 +287,12 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
               'ከፍተኛ ጠንካራ አገልግሎትዎ {service} ነው። በፕሮፋይልና በፖርትፎሊዮ መጀመሪያ ያሳዩ።',
           'growth_stable':
               'አፈፃፀሙ የተረጋጋ ነው {scope}። ስራ በመደበኛ ሁኔታ ይቀጥሉ እና ተጨማሪ ግምገማዎች ይሰብስቡ።',
+          'growth_focus_label': 'የሚቀጥለው ሳምንት ትኩረት:',
+          'growth_target_visibility': 'ግብ: 20+ የፕሮፋይል እይታዎች መድረስ።',
+          'growth_target_conversion': 'ግብ: 8% ወይም ከዚያ በላይ መቀየር መድረስ።',
+          'growth_target_rating': 'ግብ: ደረጃን ወደ 4.3+ ማሳደግ።',
+          'growth_target_reviews': 'ግብ: ቢያንስ 3 አዲስ ግምገማዎች ማግኘት።',
+          'growth_positive_keep': 'አፈፃፀሙ በጣም ጥሩ ነው። ፈጣን ምላሽ እና ጥራት በቋሚነት ይጠብቁ።',
           'day_sun': 'እሑድ',
           'day_mon': 'ሰኞ',
           'day_tue': 'ማክ',
@@ -272,6 +306,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           'analytics_title': 'Business Dashboard',
           'all_professions': 'All professions',
           'total_earnings': 'Estimated Earnings',
+          'no_earning_yet': 'No earning yet',
           'total_jobs': 'Jobs',
           'rating': 'Rating',
           'views': 'Views',
@@ -307,6 +342,13 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
               'Your strongest profession is {service}. Feature it first in your profile and portfolio.',
           'growth_stable':
               'Performance looks stable {scope}. Keep completing jobs consistently and collect more reviews to grow faster.',
+          'growth_focus_label': 'Focus for next week:',
+          'growth_target_visibility': 'Target: reach 20+ profile views.',
+          'growth_target_conversion': 'Target: reach 8%+ conversion rate.',
+          'growth_target_rating': 'Target: raise rating to 4.3+.',
+          'growth_target_reviews': 'Target: collect at least 3 new reviews.',
+          'growth_positive_keep':
+              'Performance is strong. Keep response time fast and service quality consistent.',
           'day_sun': 'Sun',
           'day_mon': 'Mon',
           'day_tue': 'Tue',
@@ -468,41 +510,71 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   }
 
   String _buildGrowthRecommendation() {
-    final noData = _t('no_data');
-
-    if (_viewsCount == 0 && _totalJobs == 0) {
-      return _t('growth_getting_started');
-    }
-
-    final parts = <String>[];
     final scope = _selectedProfession == _allProfessionsKey
         ? _t('growth_scope_all')
         : '${_t('growth_scope_for')} $_selectedProfession';
 
-    if (_viewsCount < 20) {
-      parts.add(_tp('growth_low_visibility', {'scope': scope}));
-    } else if (_conversionRate < 5) {
-      parts.add(_tp('growth_low_conversion', {'scope': scope}));
-    } else if (_conversionRate >= 20) {
-      parts.add(_tp('growth_high_conversion', {'scope': scope}));
+    final advice = <Map<String, dynamic>>[];
+
+    if (_viewsCount == 0 && _totalJobs == 0) {
+      advice.add({
+        'score': 100,
+        'message':
+            '${_t('growth_getting_started')}\n${_t('growth_focus_label')} ${_t('growth_target_reviews')}',
+      });
+    } else {
+      if (_viewsCount < 20) {
+        advice.add({
+          'score': 90,
+          'message':
+              '${_tp('growth_low_visibility', {'scope': scope})}\n${_t('growth_focus_label')} ${_t('growth_target_visibility')}',
+        });
+      }
+
+      if (_conversionRate < 8 && _viewsCount >= 20) {
+        advice.add({
+          'score': 85,
+          'message':
+              '${_tp('growth_low_conversion', {'scope': scope})}\n${_t('growth_focus_label')} ${_t('growth_target_conversion')}',
+        });
+      }
+
+      if (_avgRating > 0 && _avgRating < 4.3) {
+        final weakestMetric = _getWeakestMetricLabel();
+        advice.add({
+          'score': 80,
+          'message':
+              '${_tp('growth_improve_rating', {'metric': weakestMetric})}\n${_t('growth_focus_label')} ${_t('growth_target_rating')}',
+        });
+      }
+
+      if (_totalJobs < 5) {
+        advice.add({
+          'score': 70,
+          'message':
+              '${_t('growth_getting_started')}\n${_t('growth_focus_label')} ${_t('growth_target_reviews')}',
+        });
+      }
     }
 
-    if (_avgRating >= 4.5) {
-      parts.add(_t('growth_excellent_rating'));
-    } else if (_avgRating > 0 && _avgRating < 4.0) {
-      final weakestMetric = _getWeakestMetricLabel();
-      parts.add(_tp('growth_improve_rating', {'metric': weakestMetric}));
+    if (advice.isEmpty) {
+      final strong =
+          _conversionRate >= 8 && _avgRating >= 4.3 && _viewsCount >= 20;
+      return strong
+          ? _t('growth_positive_keep')
+          : _tp('growth_stable', {'scope': scope});
     }
 
-    if (_topServices.isNotEmpty && _topServices != noData) {
-      parts.add(_tp('growth_top_service', {'service': _topServices}));
-    }
-
-    if (parts.isEmpty) {
-      return _tp('growth_stable', {'scope': scope});
-    }
-
-    return parts.join(' ');
+    advice.sort(
+      (a, b) =>
+          ((b['score'] as int?) ?? 0).compareTo((a['score'] as int?) ?? 0),
+    );
+    final top = advice
+        .take(2)
+        .map((a) => (a['message'] ?? '').toString())
+        .where((m) => m.isNotEmpty)
+        .toList();
+    return top.join('\n\n');
   }
 
   String _getWeakestMetricLabel() {
@@ -531,8 +603,32 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
         _totalJobs = data['totalJobs'] ?? 0;
         _viewsCount = 0;
         _totalEarnings = _asDouble(data['totalEarnings']);
+        _hasTotalEarnedValue = _totalEarnings > 0;
         _overallAvgRating = _asDouble(data['avgRating']);
         _avgRating = _overallAvgRating;
+        if (data['professions'] is List) {
+          _userProfessions = List<String>.from(
+            (data['professions'] as List)
+                .map((e) => e.toString().trim())
+                .where((e) => e.isNotEmpty),
+          );
+        } else {
+          final single = (data['profession'] ?? '').toString().trim();
+          _userProfessions = single.isEmpty ? [] : [single];
+        }
+      }
+
+      final totalEarnedDoc = await workerRef
+          .collection('saved_invoices')
+          .doc('TotalEarned')
+          .get();
+      final totalEarnedData = totalEarnedDoc.data();
+      final totalEarnedValue = totalEarnedData?['totalEarned'];
+      if (totalEarnedValue is num) {
+        _totalEarnings = totalEarnedValue.toDouble();
+        _hasTotalEarnedValue = true;
+      } else {
+        _hasTotalEarnedValue = false;
       }
 
       final reviewsSnapshot = await workerRef.collection('reviews').get();
@@ -547,7 +643,27 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
         reviewsSnapshot,
       );
 
-      _professionOptions = _professionRatingStats.keys.toList()..sort();
+      final optionSet = <String>{
+        ..._professionRatingStats.keys
+            .map((e) => e.trim())
+            .where((e) => e.isNotEmpty),
+        ..._userProfessions.map((e) => e.trim()).where((e) => e.isNotEmpty),
+      };
+      _professionOptions = optionSet.toList()..sort();
+
+      for (final profession in _professionOptions) {
+        _professionRatingStats.putIfAbsent(profession, () {
+          return {
+            'totalViews': 0,
+            'reviewCount': 0,
+            'avgOverallRating': 0.0,
+            'avgPriceRating': 0.0,
+            'avgServiceRating': 0.0,
+            'avgTimingRating': 0.0,
+            'avgWorkQualityRating': 0.0,
+          };
+        });
+      }
       if (_professionOptions.isEmpty) {
         _selectedProfession = _allProfessionsKey;
       } else if (_selectedProfession != _allProfessionsKey &&
@@ -766,12 +882,11 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   }
 
   void _generateChartData() {
-    final base = _totalEarnings / 7;
+    final chartTotal = _totalEarnings.abs();
+    final base = chartTotal / 7;
+    final maxY = chartTotal <= 0 ? 1.0 : chartTotal * 1.5;
     _earningsSpots = List.generate(7, (i) {
-      final y = (base * (i + 0.5) * (0.8 + (i % 3) * 0.1)).clamp(
-        0,
-        _totalEarnings * 1.5,
-      );
+      final y = (base * (i + 0.5) * (0.8 + (i % 3) * 0.1)).clamp(0.0, maxY);
       return FlSpot(i.toDouble(), y.toDouble());
     });
 
@@ -856,8 +971,6 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                   const SizedBox(height: 24),
                   _buildMetricsGrid(),
                   const SizedBox(height: 32),
-                  _buildChartCard(_t('earnings_trend'), _buildEarningsChart()),
-                  const SizedBox(height: 24),
                   _buildChartCard(_t('profile_reach'), _buildViewsChart()),
                   const SizedBox(height: 32),
                   _buildSectionHeader(_t('service_quality_breakdown')),
@@ -907,6 +1020,9 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
             setState(() {
               _selectedProfession = value;
               _applyProfessionSelection();
+              _conversionRate = _viewsCount > 0
+                  ? (_totalJobs / _viewsCount) * 100
+                  : 0.0;
               _performanceOverview = _buildGrowthRecommendation();
               _generateChartData();
             });
@@ -961,10 +1077,12 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           ),
           const SizedBox(height: 12),
           Text(
-            '₪${intl.NumberFormat('#,###').format(_totalEarnings)}',
-            style: const TextStyle(
+            _hasTotalEarnedValue
+                ? '₪${intl.NumberFormat('#,###').format(_totalEarnings)}'
+                : _t('no_earning_yet'),
+            style: TextStyle(
               color: Colors.white,
-              fontSize: 38,
+              fontSize: _hasTotalEarnedValue ? 38 : 24,
               fontWeight: FontWeight.w900,
               letterSpacing: -1,
             ),

@@ -289,6 +289,31 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
     _refreshSearchPage();
   }
 
+  Future<void> _openProfession(Map<String, dynamic> profession) async {
+    final shouldFilterByRadius = _defaultFilterByRadiusForProfession(
+      profession,
+    );
+
+    setState(() {
+      _selectedProfession = profession;
+      _showWorkerList = true;
+      _filterByRadius = shouldFilterByRadius;
+      _sortBy = _defaultSortForProfession(profession);
+      _allWorkers = [];
+      _filteredWorkers = [];
+      _isLoadingWorkers = true;
+      _searchController.clear();
+    });
+
+    if (shouldFilterByRadius) {
+      await _getCurrentLocation(silent: true);
+      if (!mounted) return;
+    }
+
+    await _fetchWorkers(isRefresh: true);
+    _trackSearch(profession['en']);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -373,6 +398,7 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
             });
 
       final professionIndex = <String, Map<String, dynamic>>{};
+      Map<String, dynamic>? initialProfessionToOpen;
       for (final profession in data) {
         final en = _normalizeSearchText(profession['en']?.toString() ?? '');
         if (en.isNotEmpty) {
@@ -396,15 +422,14 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
             orElse: () => {},
           );
           if (initial.isNotEmpty) {
-            _selectedProfession = initial;
-            _showWorkerList = true;
-            _filterByRadius = _defaultFilterByRadiusForProfession(initial);
-            _sortBy = _defaultSortForProfession(initial);
-            _fetchWorkers(isRefresh: true);
-            _trackSearch(initial['en']);
+            initialProfessionToOpen = initial;
           }
         }
       });
+
+      if (initialProfessionToOpen != null) {
+        await _openProfession(initialProfessionToOpen!);
+      }
     } catch (e) {
       debugPrint("Analytics error: $e");
       if (!mounted) return;
@@ -979,47 +1004,51 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
               children: [
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
-                  child: Container(
-                    decoration: _surfaceDecoration(radius: 22, elevated: false),
-                    padding: const EdgeInsets.all(8),
-                    child: Row(
-                      children: [
-                        if (_showWorkerList)
-                          IconButton(
-                            icon: const Icon(
-                              Icons.arrow_back_rounded,
-                              color: Color(0xFF111827),
-                            ),
-                            onPressed: () {
-                              setState(() {
-                                _showWorkerList = false;
-                                _selectedProfession = null;
-                                _allWorkers = [];
-                                _filteredWorkers = [];
-                                _searchController.clear();
-                                _applyFilters();
-                              });
-                            },
-                          ),
-                        Expanded(child: _buildSearchField(locale, themeColor)),
-                        IconButton(
-                          icon: const Icon(
-                            Icons.place_outlined,
-                            color: Color(0xFF111827),
-                          ),
-                          onPressed: _openLocationManager,
+                  child: Column(
+                    children: [
+                      Container(
+                        decoration: _surfaceDecoration(
+                          radius: 22,
+                          elevated: false,
                         ),
-                        if (_showWorkerList)
-                          IconButton(
-                            icon: const Icon(
-                              Icons.tune_rounded,
-                              color: Color(0xFF111827),
+                        padding: const EdgeInsets.all(8),
+                        child: Row(
+                          children: [
+                            if (_showWorkerList)
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.arrow_back_rounded,
+                                  color: Color(0xFF111827),
+                                ),
+                                onPressed: () {
+                                  setState(() {
+                                    _showWorkerList = false;
+                                    _selectedProfession = null;
+                                    _allWorkers = [];
+                                    _filteredWorkers = [];
+                                    _searchController.clear();
+                                    _applyFilters();
+                                  });
+                                },
+                              ),
+                            Expanded(
+                              child: _buildSearchField(locale, themeColor),
                             ),
-                            onPressed: () =>
-                                _showSortOptions(locale, themeColor),
-                          ),
+                            IconButton(
+                              icon: const Icon(
+                                Icons.place_outlined,
+                                color: Color(0xFF111827),
+                              ),
+                              onPressed: _openLocationManager,
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (_showWorkerList) ...[
+                        const SizedBox(height: 10),
+                        _buildWorkerToolbar(locale, themeColor),
                       ],
-                    ),
+                    ],
                   ),
                 ),
                 Expanded(
@@ -1146,6 +1175,102 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
     );
   }
 
+  Widget _buildWorkerToolbar(String locale, Color themeColor) {
+    return Row(
+      children: [
+        Expanded(
+          child: InkWell(
+            borderRadius: BorderRadius.circular(18),
+            onTap: () {
+              final nextValue = !_filterByRadius;
+              setState(() => _filterByRadius = nextValue);
+              if (nextValue && _currentPosition == null) {
+                _getCurrentLocation();
+              } else {
+                _applyFilters();
+              }
+            },
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: _filterByRadius
+                    ? themeColor.withValues(alpha: 0.12)
+                    : Colors.white.withValues(alpha: 0.9),
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(
+                  color: _filterByRadius
+                      ? themeColor.withValues(alpha: 0.28)
+                      : Colors.white.withValues(alpha: 0.95),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.radar,
+                    color: _filterByRadius
+                        ? themeColor
+                        : const Color(0xFF6B7280),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _t('filter_radius_title', locale),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Color(0xFF101827),
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          _t('filter_radius_subtitle', locale),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Color(0xFF6B7280),
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Switch(
+                    value: _filterByRadius,
+                    activeThumbColor: themeColor,
+                    onChanged: (val) {
+                      setState(() => _filterByRadius = val);
+                      if (val && _currentPosition == null) {
+                        _getCurrentLocation();
+                      } else {
+                        _applyFilters();
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        InkWell(
+          borderRadius: BorderRadius.circular(18),
+          onTap: () => _showSortOptions(locale, themeColor),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: _surfaceDecoration(radius: 18, elevated: false),
+            child: Icon(Icons.tune_rounded, color: themeColor),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildProfessionGrid(String locale) {
     if (_filteredProfessions.isEmpty) {
       return RefreshIndicator(
@@ -1197,20 +1322,7 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
           final color = _getColorFromHex(p['color']);
 
           return InkWell(
-            onTap: () {
-              setState(() {
-                _selectedProfession = p;
-                _showWorkerList = true;
-                _filterByRadius = _defaultFilterByRadiusForProfession(p);
-                _sortBy = _defaultSortForProfession(p);
-                _allWorkers = [];
-                _filteredWorkers = [];
-                _isLoadingWorkers = true;
-                _searchController.clear();
-              });
-              _fetchWorkers(isRefresh: true);
-              _trackSearch(p['en']);
-            },
+            onTap: () => _openProfession(p),
             borderRadius: BorderRadius.circular(24),
             child: Container(
               decoration: _surfaceDecoration(radius: 24, tint: color),
@@ -1631,34 +1743,6 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              decoration: _surfaceDecoration(radius: 20, elevated: false),
-              child: SwitchListTile(
-                title: Text(
-                  _t('filter_radius_title', locale),
-                  style: const TextStyle(
-                    color: Color(0xFF101827),
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                subtitle: Text(
-                  _t('filter_radius_subtitle', locale),
-                  style: const TextStyle(color: Color(0xFF6B7280)),
-                ),
-                value: _filterByRadius,
-                onChanged: (val) {
-                  setState(() => _filterByRadius = val);
-                  if (val && _currentPosition == null) {
-                    _getCurrentLocation();
-                  } else {
-                    _applyFilters();
-                  }
-                  Navigator.pop(context);
-                },
-                secondary: Icon(Icons.radar, color: themeColor),
-              ),
-            ),
-            const SizedBox(height: 10),
             ListTile(
               leading: const Icon(Icons.star_rounded, color: Colors.amber),
               title: Text(

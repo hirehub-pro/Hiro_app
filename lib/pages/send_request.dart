@@ -10,6 +10,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:untitled1/map/location_picker.dart';
 import 'package:untitled1/pages/my_requests_page.dart';
+import 'package:untitled1/services/ai_description_service.dart';
 import 'package:untitled1/services/language_provider.dart';
 import 'package:untitled1/utils/booking_mode.dart';
 
@@ -211,6 +212,7 @@ class _SendRequestPageState extends State<SendRequestPage> {
           'worker': 'בעל מקצוע:',
           'profession': 'מקצוע',
           'date': 'תאריך:',
+          'request_details': 'פרטי הבקשה',
           'request_type': 'סוג בקשה',
           'my_requests': 'הבקשות שלי',
           'extra_hours': _onlineOnly
@@ -239,6 +241,28 @@ class _SendRequestPageState extends State<SendRequestPage> {
               : _customerTravels
               ? 'כדאי לציין מה צריך לבצע, מה חשוב לביקור, וכל פרט שיעזור להכין את התור.'
               : 'כדאי לציין מה צריך לבצע, מיקום, גודל עבודה ודגשים חשובים.',
+          'desc_ai_button': 'צור תיאור עם AI',
+          'desc_ai_title': 'יצירת תיאור אוטומטית',
+          'desc_ai_subtitle':
+              'ענה על כמה שאלות קצרות, ו-Firebase AI יכתוב תיאור ברור שמתאים לבעל המקצוע שכבר בחרת.',
+          'desc_ai_question_need': 'מה אתה צריך שיבצעו?',
+          'desc_ai_question_need_hint':
+              'לדוגמה: תיקון דוד, ניקוי מזגן, פגישת ייעוץ',
+          'desc_ai_question_place': 'מה הבעיה או איפה העבודה?',
+          'desc_ai_question_place_hint':
+              'לדוגמה: יש נזילה במטבח, המזגן לא מקרר, הדירה בקומה 3',
+          'desc_ai_question_size': 'מה הגודל או רמת הדחיפות?',
+          'desc_ai_question_size_hint':
+              'לדוגמה: שני חדרים, עבודה קטנה, דחוף להיום',
+          'desc_ai_question_details': 'אילו פרטים חשוב שהעובד ידע?',
+          'desc_ai_question_details_hint':
+              'לדוגמה: יש חניה, צריך להביא סולם, אני זמין רק בערב',
+          'desc_ai_validation': 'יש למלא לפחות שדה אחד כדי ליצור תיאור.',
+          'desc_ai_generate': 'צור עם AI',
+          'desc_ai_generating': 'יוצר תיאור...',
+          'desc_ai_error':
+              'לא הצלחנו ליצור תיאור כרגע. בדוק ש-Firebase AI Logic מוגדר ונסה שוב.',
+          'profession_fallback': 'בעל מקצוע',
           'desc_quick_help': 'עזרה מהירה לכתיבת תיאור',
           'desc_quick_help_subtitle':
               'בחר התחלה מהירה כדי למלא תיאור ברור ומדויק יותר.',
@@ -286,6 +310,7 @@ class _SendRequestPageState extends State<SendRequestPage> {
               : 'בחר את השעה המדויקת לתור אצל בעל המקצוע.',
           'send': 'שלח בקשה',
           'send_cta': 'שלח עכשיו',
+          'cancel': 'ביטול',
           'req': 'שדה חובה',
           'sending': 'שולח...',
           'success': 'הבקשה נשלחה בהצלחה',
@@ -315,6 +340,7 @@ class _SendRequestPageState extends State<SendRequestPage> {
           'worker': 'المحترف:',
           'profession': 'المهنة',
           'date': 'التاريخ:',
+          'request_details': 'تفاصيل الطلب',
           'request_type': 'نوع الطلب',
           'my_requests': 'طلباتي',
           'extra_hours': _onlineOnly
@@ -343,6 +369,27 @@ class _SendRequestPageState extends State<SendRequestPage> {
               : _customerTravels
               ? 'اذكر المطلوب وأي تفاصيل تساعد المحترف على تجهيز الموعد.'
               : 'اذكر المطلوب والموقع وحجم العمل وأي تفاصيل مهمة.',
+          'desc_ai_button': 'إنشاء الوصف بالذكاء الاصطناعي',
+          'desc_ai_title': 'إنشاء وصف تلقائي',
+          'desc_ai_subtitle':
+              'أجب عن بعض الأسئلة القصيرة وسيكتب Firebase AI وصفًا واضحًا يناسب المحترف الذي اخترته.',
+          'desc_ai_question_need': 'ما الذي تحتاج أن يتم تنفيذه؟',
+          'desc_ai_question_need_hint':
+              'مثال: تصليح سخان، تنظيف مكيف، جلسة استشارة',
+          'desc_ai_question_place': 'ما المشكلة أو أين مكان العمل؟',
+          'desc_ai_question_place_hint':
+              'مثال: يوجد تسرب في المطبخ، المكيف لا يبرد، الشقة في الطابق الثالث',
+          'desc_ai_question_size': 'ما حجم العمل أو درجة الاستعجال؟',
+          'desc_ai_question_size_hint': 'مثال: غرفتان، عمل صغير، مطلوب اليوم',
+          'desc_ai_question_details': 'ما التفاصيل التي يجب أن يعرفها العامل؟',
+          'desc_ai_question_details_hint':
+              'مثال: يوجد موقف، يجب إحضار سلم، أنا متاح فقط مساءً',
+          'desc_ai_validation': 'املأ حقلًا واحدًا على الأقل لإنشاء الوصف.',
+          'desc_ai_generate': 'إنشاء بالذكاء الاصطناعي',
+          'desc_ai_generating': 'جارٍ إنشاء الوصف...',
+          'desc_ai_error':
+              'تعذر إنشاء الوصف الآن. تأكد من إعداد Firebase AI Logic ثم حاول مرة أخرى.',
+          'profession_fallback': 'محترف',
           'desc_quick_help': 'مساعدة سريعة لكتابة الوصف',
           'desc_quick_help_subtitle':
               'اختر بداية سريعة لكتابة وصف أوضح وأكثر دقة.',
@@ -390,6 +437,7 @@ class _SendRequestPageState extends State<SendRequestPage> {
               : 'اختر الوقت المحدد للموعد عند المحترف.',
           'send': 'إرسال الطلب',
           'send_cta': 'إرسال الآن',
+          'cancel': 'إلغاء',
           'req': 'مطلوب',
           'sending': 'جاري الإرسال...',
           'success': 'تم إرسال الطلب بنجاح',
@@ -419,6 +467,7 @@ class _SendRequestPageState extends State<SendRequestPage> {
           'worker': 'Professional:',
           'profession': 'Profession',
           'date': 'Date:',
+          'request_details': 'Request Details',
           'request_type': 'Request Type',
           'my_requests': 'My Requests',
           'extra_hours': _onlineOnly
@@ -447,6 +496,30 @@ class _SendRequestPageState extends State<SendRequestPage> {
               : _customerTravels
               ? 'Include what you need, what the visit is for, and anything helpful for preparing the appointment.'
               : 'Include what needs to be done, the location, scope, and anything important.',
+          'desc_ai_button': 'Generate with AI',
+          'desc_ai_title': 'Generate Description',
+          'desc_ai_subtitle':
+              'Answer a few short questions and Firebase AI will write a clear description for the professional you already selected.',
+          'desc_ai_question_need': 'What do you need done?',
+          'desc_ai_question_need_hint':
+              'Example: water heater repair, AC cleaning, consultation session',
+          'desc_ai_question_place': 'What is the problem or where is the job?',
+          'desc_ai_question_place_hint':
+              'Example: leak in the kitchen, AC not cooling, apartment on the 3rd floor',
+          'desc_ai_question_size': 'What is the size or urgency of the job?',
+          'desc_ai_question_size_hint':
+              'Example: two rooms, small job, urgent for today',
+          'desc_ai_question_details':
+              'What important details should the worker know?',
+          'desc_ai_question_details_hint':
+              'Example: parking available, bring a ladder, I am only available in the evening',
+          'desc_ai_validation':
+              'Fill in at least one field to generate the description.',
+          'desc_ai_generate': 'Generate with AI',
+          'desc_ai_generating': 'Generating...',
+          'desc_ai_error':
+              'We could not generate a description right now. Make sure Firebase AI Logic is configured, then try again.',
+          'profession_fallback': 'Professional',
           'desc_quick_help': 'Quick description help',
           'desc_quick_help_subtitle':
               'Choose a quick start to write a clearer, more useful work description.',
@@ -495,6 +568,7 @@ class _SendRequestPageState extends State<SendRequestPage> {
               : 'Choose the exact time for the appointment at the professional location.',
           'send': 'Send Request',
           'send_cta': 'Send Now',
+          'cancel': 'Cancel',
           'req': 'Required',
           'sending': 'Sending...',
           'success': 'Request sent successfully',
@@ -547,6 +621,338 @@ class _SendRequestPageState extends State<SendRequestPage> {
   void _applyDescriptionTemplate(String template) {
     setState(() {
       _descriptionController.text = template;
+      _descriptionController.selection = TextSelection.fromPosition(
+        TextPosition(offset: _descriptionController.text.length),
+      );
+    });
+  }
+
+  Future<void> _openAiDescriptionAssistant(Map<String, String> strings) async {
+    final localeCode = Provider.of<LanguageProvider>(
+      context,
+      listen: false,
+    ).locale.languageCode;
+    var mainNeed = '';
+    var problemOrPlace = '';
+    var sizeOrUrgency = '';
+    var importantDetails = '';
+    var showValidation = false;
+    var isGenerating = false;
+    String? generationError;
+
+    final generatedDescription = await showDialog<String>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          final hasAnyInput =
+              mainNeed.trim().isNotEmpty ||
+              problemOrPlace.trim().isNotEmpty ||
+              sizeOrUrgency.trim().isNotEmpty ||
+              importantDetails.trim().isNotEmpty;
+
+          return Dialog(
+            insetPadding: const EdgeInsets.symmetric(
+              horizontal: 18,
+              vertical: 24,
+            ),
+            backgroundColor: Colors.transparent,
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: 560),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(28),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.14),
+                    blurRadius: 42,
+                    offset: const Offset(0, 18),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.fromLTRB(22, 20, 22, 18),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFFE6FAF7), Color(0xFFF5FCFB)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(28),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          height: 44,
+                          width: 44,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: const Icon(
+                            Icons.auto_awesome_rounded,
+                            color: Color(0xFF0A7E8C),
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        Text(
+                          strings['desc_ai_title']!,
+                          style: const TextStyle(
+                            color: Color(0xFF103A44),
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          strings['desc_ai_subtitle']!,
+                          style: const TextStyle(
+                            color: Color(0xFF5F7D83),
+                            fontSize: 13,
+                            height: 1.45,
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            _buildAiInfoChip(
+                              icon: Icons.work_outline_rounded,
+                              label:
+                                  widget.professionName ??
+                                  strings['profession_fallback']!,
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  Flexible(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(22, 20, 22, 16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _buildAiDescriptionField(
+                            label: strings['desc_ai_question_need']!,
+                            hintText: strings['desc_ai_question_need_hint']!,
+                            icon: Icons.task_alt_rounded,
+                            maxLines: 2,
+                            onChanged: (value) => setDialogState(() {
+                              mainNeed = value;
+                              generationError = null;
+                            }),
+                          ),
+                          const SizedBox(height: 12),
+                          _buildAiDescriptionField(
+                            label: strings['desc_ai_question_place']!,
+                            hintText: strings['desc_ai_question_place_hint']!,
+                            icon: Icons.place_outlined,
+                            maxLines: 2,
+                            onChanged: (value) => setDialogState(() {
+                              problemOrPlace = value;
+                              generationError = null;
+                            }),
+                          ),
+                          const SizedBox(height: 12),
+                          _buildAiDescriptionField(
+                            label: strings['desc_ai_question_size']!,
+                            hintText: strings['desc_ai_question_size_hint']!,
+                            icon: Icons.straighten_rounded,
+                            maxLines: 2,
+                            onChanged: (value) => setDialogState(() {
+                              sizeOrUrgency = value;
+                              generationError = null;
+                            }),
+                          ),
+                          const SizedBox(height: 12),
+                          _buildAiDescriptionField(
+                            label: strings['desc_ai_question_details']!,
+                            hintText: strings['desc_ai_question_details_hint']!,
+                            icon: Icons.info_outline_rounded,
+                            maxLines: 3,
+                            onChanged: (value) => setDialogState(() {
+                              importantDetails = value;
+                              generationError = null;
+                            }),
+                          ),
+                          if (showValidation && !hasAnyInput) ...[
+                            const SizedBox(height: 14),
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 12,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(
+                                  0xFFE11D48,
+                                ).withValues(alpha: 0.08),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(
+                                  color: const Color(
+                                    0xFFE11D48,
+                                  ).withValues(alpha: 0.18),
+                                ),
+                              ),
+                              child: Text(
+                                strings['desc_ai_validation']!,
+                                style: const TextStyle(
+                                  color: Color(0xFFBE123C),
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ],
+                          if (generationError != null) ...[
+                            const SizedBox(height: 12),
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 12,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(
+                                  0xFFF59E0B,
+                                ).withValues(alpha: 0.10),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(
+                                  color: const Color(
+                                    0xFFF59E0B,
+                                  ).withValues(alpha: 0.22),
+                                ),
+                              ),
+                              child: Text(
+                                generationError!,
+                                style: const TextStyle(
+                                  color: Color(0xFF92400E),
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(22, 0, 22, 22),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: isGenerating
+                                ? null
+                                : () => Navigator.of(context).pop(),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: const Color(0xFF5F7D83),
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              side: const BorderSide(color: Color(0xFFD7E8EA)),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                            ),
+                            child: Text(strings['cancel']!),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: isGenerating
+                                ? null
+                                : () async {
+                                    mainNeed = mainNeed.trim();
+                                    problemOrPlace = problemOrPlace.trim();
+                                    sizeOrUrgency = sizeOrUrgency.trim();
+                                    importantDetails = importantDetails.trim();
+
+                                    if (!hasAnyInput) {
+                                      setDialogState(
+                                        () => showValidation = true,
+                                      );
+                                      return;
+                                    }
+
+                                    setDialogState(() {
+                                      isGenerating = true;
+                                      generationError = null;
+                                    });
+
+                                    try {
+                                      final description =
+                                          await AiDescriptionService.generateJobRequestDescription(
+                                            AiJobRequestDescriptionRequest(
+                                              localeCode: localeCode,
+                                              professionName:
+                                                  widget.professionName ??
+                                                  strings['profession_fallback']!,
+                                              mainNeed: mainNeed,
+                                              problemOrPlace: problemOrPlace,
+                                              sizeOrUrgency: sizeOrUrgency,
+                                              importantDetails:
+                                                  importantDetails,
+                                              town: null,
+                                            ),
+                                          );
+                                      if (!context.mounted) return;
+                                      Navigator.of(context).pop(description);
+                                    } catch (_) {
+                                      if (!context.mounted) return;
+                                      setDialogState(() {
+                                        isGenerating = false;
+                                        generationError =
+                                            strings['desc_ai_error']!;
+                                      });
+                                    }
+                                  },
+                            icon: isGenerating
+                                ? const SizedBox(
+                                    height: 18,
+                                    width: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2.2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Icon(Icons.auto_awesome_rounded),
+                            label: Text(
+                              isGenerating
+                                  ? strings['desc_ai_generating']!
+                                  : strings['desc_ai_generate']!,
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF0A7E8C),
+                              foregroundColor: Colors.white,
+                              elevation: 0,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+
+    if (!mounted || generatedDescription == null) return;
+    setState(() {
+      _descriptionController.text = generatedDescription;
       _descriptionController.selection = TextSelection.fromPosition(
         TextPosition(offset: _descriptionController.text.length),
       );
@@ -1097,7 +1503,7 @@ class _SendRequestPageState extends State<SendRequestPage> {
       children: [
         _buildSectionHeader(
           icon: Icons.info_outline_rounded,
-          title: strings['request_type']!,
+          title: strings['request_details']!,
         ),
         const SizedBox(height: 14),
         Wrap(
@@ -1115,15 +1521,6 @@ class _SendRequestPageState extends State<SendRequestPage> {
                 label: strings['date']!,
                 value: _formatSelectedDate(),
               ),
-            _buildInfoTile(
-              icon: Icons.bolt_rounded,
-              label: strings['request_type']!,
-              value: widget.isQuoteRequest
-                  ? strings['quote_request']!
-                  : widget.isExtraHours
-                  ? strings['extra_hours']!
-                  : strings['regular_request']!,
-            ),
             if (widget.professionName != null &&
                 widget.professionName!.trim().isNotEmpty)
               _buildInfoTile(
@@ -1233,7 +1630,95 @@ class _SendRequestPageState extends State<SendRequestPage> {
           validator: (value) =>
               value == null || value.trim().isEmpty ? strings['req'] : null,
         ),
+        const SizedBox(height: 12),
+        Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: TextButton.icon(
+            onPressed: () => _openAiDescriptionAssistant(strings),
+            icon: const Icon(Icons.auto_awesome_rounded, size: 18),
+            label: Text(strings['desc_ai_button']!),
+            style: TextButton.styleFrom(
+              foregroundColor: const Color(0xFF0A7E8C),
+              padding: EdgeInsets.zero,
+            ),
+          ),
+        ),
       ],
+    );
+  }
+
+  Widget _buildAiInfoChip({required IconData icon, required String label}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: const Color(0xFFD9ECEE)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: const Color(0xFF0A7E8C)),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              label,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Color(0xFF103A44),
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAiDescriptionField({
+    required String label,
+    required String hintText,
+    required IconData icon,
+    required ValueChanged<String> onChanged,
+    int maxLines = 1,
+  }) {
+    return TextFormField(
+      maxLines: maxLines,
+      onChanged: onChanged,
+      style: const TextStyle(
+        color: Color(0xFF103A44),
+        fontSize: 15,
+        fontWeight: FontWeight.w600,
+      ),
+      decoration: InputDecoration(
+        labelText: label,
+        hintText: hintText,
+        alignLabelWithHint: maxLines > 1,
+        filled: true,
+        fillColor: const Color(0xFFF7FBFB),
+        hintStyle: const TextStyle(
+          color: Color(0xFF8AA3A8),
+          fontWeight: FontWeight.w500,
+        ),
+        prefixIcon: Padding(
+          padding: EdgeInsets.only(top: maxLines > 1 ? 12 : 0),
+          child: Icon(icon, color: const Color(0xFF6B8790), size: 20),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(18),
+          borderSide: const BorderSide(color: Color(0xFFE1ECEE)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(18),
+          borderSide: const BorderSide(color: Color(0xFF0A7E8C), width: 1.3),
+        ),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(18)),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 18,
+          vertical: 16,
+        ),
+      ),
     );
   }
 

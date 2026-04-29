@@ -61,12 +61,17 @@ exports.sendChatPushOnNotificationCreate = onDocumentCreated(
         return;
       }
 
-      const title = payload.title || defaultTitleForType(payload.type);
-      const body = payload.body || defaultBodyForType(payload.type);
       const senderId = payload.fromId || "";
       const senderName = payload.fromName || "User";
       const requestDate = payload.date || "";
       const requestStatus = payload.status || "";
+      const title = payload.type === "chat_message" ?
+        (normalizeString(payload.title) || senderName || "New message") :
+        (payload.title || defaultTitleForType(payload.type));
+      const body = payload.type === "chat_message" ?
+        (normalizeString(payload.body) || normalizeString(payload.message) ||
+          "Sent you a message") :
+        (payload.body || defaultBodyForType(payload.type));
 
       const message = {
         tokens: fcmTokens,
@@ -129,11 +134,6 @@ exports.sendChatPushOnNotificationCreate = onDocumentCreated(
 
 async function getUserFcmTokens(userDoc) {
   const tokens = new Set();
-  const legacyToken = userDoc.get("fcmToken");
-  if (typeof legacyToken === "string" && legacyToken.trim()) {
-    tokens.add(legacyToken.trim());
-  }
-
   const tokenSnap = await userDoc.ref.collection("deviceTokens").limit(100).get();
   tokenSnap.forEach((doc) => {
     const token = doc.get("token");
@@ -141,6 +141,13 @@ async function getUserFcmTokens(userDoc) {
       tokens.add(token.trim());
     }
   });
+
+  if (tokens.size === 0) {
+    const legacyToken = userDoc.get("fcmToken");
+    if (typeof legacyToken === "string" && legacyToken.trim()) {
+      tokens.add(legacyToken.trim());
+    }
+  }
 
   return Array.from(tokens).slice(0, 500);
 }

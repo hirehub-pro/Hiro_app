@@ -529,20 +529,27 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
 
         if (!_isOwnProfile) {
           final viewedProfession = widget.viewedProfession?.trim() ?? '';
-          if (viewedProfession.isNotEmpty) {
-            await _incrementProfessionWeeklyViews(
-              workerId: targetUid,
-              profession: viewedProfession,
-            );
+          final fallbackProfession = _userProfessions.isNotEmpty
+              ? _userProfessions.first.trim()
+              : '';
+          final professionForViewCount = viewedProfession.isNotEmpty
+              ? viewedProfession
+              : (fallbackProfession.isNotEmpty
+                    ? fallbackProfession
+                    : 'General');
 
-            final int updatedTotalViews = await _readTotalViewsFromProRatings(
-              targetUid,
-            );
-            if (mounted) {
-              setState(() {
-                _viewsCount = updatedTotalViews;
-              });
-            }
+          await _incrementProfessionWeeklyViews(
+            workerId: targetUid,
+            profession: professionForViewCount,
+          );
+
+          final int updatedTotalViews = await _readTotalViewsFromProRatings(
+            targetUid,
+          );
+          if (mounted) {
+            setState(() {
+              _viewsCount = updatedTotalViews;
+            });
           }
         }
         if (mounted) setState(() => _isLoading = false);

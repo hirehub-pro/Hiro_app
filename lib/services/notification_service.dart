@@ -12,6 +12,15 @@ import 'package:crypto/crypto.dart';
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {}
 
 class NotificationService {
+  static const Set<String> _pushBackedNotificationTypes = {
+    'chat_message',
+    'work_request',
+    'quote_request',
+    'request_accepted',
+    'request_declined',
+    'quote_response',
+  };
+
   static final FlutterLocalNotificationsPlugin _notificationsPlugin =
       FlutterLocalNotificationsPlugin();
   static final FirebaseMessaging _messaging = FirebaseMessaging.instance;
@@ -53,9 +62,11 @@ class NotificationService {
 
     if (Platform.isIOS) {
       await _messaging.setForegroundNotificationPresentationOptions(
-        alert: true,
-        badge: true,
-        sound: true,
+        // Foreground notifications are shown manually below. Keeping the iOS
+        // system alert enabled here causes duplicate banners for one push.
+        alert: false,
+        badge: false,
+        sound: false,
       );
     }
 
@@ -120,7 +131,6 @@ class NotificationService {
               'updatedAt': FieldValue.serverTimestamp(),
             }, SetOptions(merge: true));
           });
-
           debugPrint("Saved $platform FCM token for user ${user.uid}");
         } else {
           debugPrint(
@@ -158,6 +168,38 @@ class NotificationService {
     }
 
     return _messaging.getToken();
+  }
+
+  static Future<void> removeCurrentDeviceToken() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || user.isAnonymous) return;
+
+    try {
+      final token = await _messaging.getToken();
+      if (token == null || token.isEmpty) return;
+
+      final userRef = FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid);
+      final tokenId = sha256.convert(utf8.encode(token)).toString();
+      final batch = FirebaseFirestore.instance.batch();
+
+      batch.delete(userRef.collection('deviceTokens').doc(tokenId));
+
+      final userSnapshot = await userRef.get();
+      final legacyToken = (userSnapshot.data()?['fcmToken'] ?? '').toString();
+      if (legacyToken == token) {
+        batch.set(userRef, {
+          'fcmToken': FieldValue.delete(),
+          'lastTokenUpdate': FieldValue.delete(),
+        }, SetOptions(merge: true));
+      }
+
+      await batch.commit();
+      debugPrint("Removed current FCM token for user ${user.uid}");
+    } catch (e) {
+      debugPrint("Error removing current FCM token: $e");
+    }
   }
 
   static void startListening() {
@@ -198,10 +240,21 @@ class NotificationService {
           }
           if (snapshot.docs.isNotEmpty) {
             final data = snapshot.docs.first.data();
+            final type = (data['type'] ?? '').toString();
+            if (_pushBackedNotificationTypes.contains(type)) {
+              return;
+            }
+            final fallbackTitle = type == 'chat_message'
+                ? (data['fromName'] ?? data['chatPartnerName'] ?? 'New message')
+                      .toString()
+                : 'New Notification';
+            final fallbackBody = type == 'chat_message'
+                ? (data['message'] ?? data['body'] ?? '').toString()
+                : (data['body'] ?? '').toString();
             _showNotification(
               id: snapshot.docs.first.id.hashCode,
-              title: data['title'] ?? 'New Notification',
-              body: data['body'] ?? '',
+              title: (data['title'] ?? fallbackTitle).toString(),
+              body: fallbackBody,
               payload: _encodePayload(data),
             );
           }
