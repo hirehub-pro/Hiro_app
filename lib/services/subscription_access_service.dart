@@ -63,6 +63,7 @@ class SubscriptionAccessService {
     'pro_worker_monthly',
     'com-hiro-app-pro-worker-monthly',
   };
+  static const String _iosWorkerSubscriptionProductId = 'HIRO_SUBSCRIPTION';
 
   static const String _subscriptionAccountTokenField =
       'subscriptionAccountToken';
@@ -222,6 +223,13 @@ class SubscriptionAccessService {
     );
 
     if (!playSnapshot.isActive) {
+      if (_hasNonGooglePlayEntitlement(data)) {
+        return SubscriptionAccessState(
+          role: role,
+          subscriptionStatus: _resolveSubscriptionStatusFromData(data),
+        );
+      }
+
       await userRef.set({
         'isSubscribed': false,
         'subscriptionStatus': mapped.subscriptionStatus,
@@ -249,6 +257,13 @@ class SubscriptionAccessService {
       debugPrint(
         'Ignoring Google Play subscription for ${user.uid} because token belongs to ${ownerQuery.docs.first.id}.',
       );
+      if (_hasNonGooglePlayEntitlement(data)) {
+        return SubscriptionAccessState(
+          role: role,
+          subscriptionStatus: _resolveSubscriptionStatusFromData(data),
+        );
+      }
+
       await userRef.set({
         'isSubscribed': false,
         'subscriptionStatus': 'inactive',
@@ -270,6 +285,13 @@ class SubscriptionAccessService {
       debugPrint(
         'Ignoring unclaimed Google Play subscription for ${user.uid}; token is not bound to this account.',
       );
+      if (_hasNonGooglePlayEntitlement(data)) {
+        return SubscriptionAccessState(
+          role: role,
+          subscriptionStatus: _resolveSubscriptionStatusFromData(data),
+        );
+      }
+
       await userRef.set({
         'isSubscribed': false,
         'subscriptionStatus': 'inactive',
@@ -295,6 +317,24 @@ class SubscriptionAccessService {
     }, SetOptions(merge: true));
 
     return mapped;
+  }
+
+  static bool _hasNonGooglePlayEntitlement(Map<String, dynamic>? data) {
+    if (_resolveSubscriptionStatusFromData(data) == 'inactive') return false;
+
+    final platform = (data?['subscriptionPlatform'] ?? '')
+        .toString()
+        .toLowerCase();
+    final productId = (data?['subscriptionProductId'] ?? '').toString();
+
+    if (productId == _iosWorkerSubscriptionProductId) return true;
+    if (platform.contains('app_store') ||
+        platform.contains('storekit') ||
+        platform == 'ios') {
+      return true;
+    }
+
+    return false;
   }
 
   static Future<GooglePlaySubscriptionSnapshot?> _queryGooglePlayState() async {

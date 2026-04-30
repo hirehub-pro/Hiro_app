@@ -45,6 +45,13 @@ enum UserType { normal, worker }
 
 class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
   static const List<int> _displayWeekdayOrder = [7, 1, 2, 3, 4, 5, 6];
+  static const List<String> _spokenLanguageOptions = [
+    'Hebrew',
+    'Arabic',
+    'English',
+    'Russian',
+    'Amharic',
+  ];
   final _formKey = GlobalKey<FormState>();
   final _phoneController = TextEditingController();
   final _codeController = TextEditingController();
@@ -61,6 +68,7 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
 
   String? _selectedTown;
   List<String> _selectedProfessions = [];
+  List<String> _selectedSpokenLanguages = [];
   List<Map<String, dynamic>> _professionItems = [];
 
   bool _loading = false;
@@ -592,6 +600,9 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
       _selectedProfessions = List<String>.from(
         widget.pendingWorkerData!['professions'] ?? [],
       ).map(ProfessionLocalization.toCanonical).toList();
+      _selectedSpokenLanguages = List<String>.from(
+        widget.pendingWorkerData!['spokenLanguages'] ?? [],
+      ).where(_spokenLanguageOptions.contains).toList();
       _altPhoneController.text =
           widget.pendingWorkerData!['optionalPhone'] ?? "";
       _descriptionController.text =
@@ -858,6 +869,8 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
           'normal': 'לקוח',
           'pro': 'בעל מקצוע',
           'professions': 'בחר מקצועות',
+          'spoken_languages': 'שפות מדוברות',
+          'spoken_languages_required': 'יש לבחור לפחות שפה אחת',
           'alt_phone': 'טלפון נוסף (אופציונלי)',
           'desc_label': 'ספר על עצמך',
           'desc_helper':
@@ -951,6 +964,8 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
           'normal': 'Client',
           'pro': 'Professional',
           'professions': 'Select Professions',
+          'spoken_languages': 'Spoken Languages',
+          'spoken_languages_required': 'Select at least one language',
           'alt_phone': 'Alt Phone (Optional)',
           'desc_label': 'Description',
           'desc_helper':
@@ -1154,6 +1169,7 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
       'subscriptionStatus': 'inactive',
       'subscriptionCanceled': false,
       'professions': _selectedProfessions,
+      'spokenLanguages': _selectedSpokenLanguages,
       'optionalPhone': _altPhoneController.text.trim(),
       'description': _descriptionController.text.trim(),
       'workRadius': _workRadius,
@@ -1305,6 +1321,7 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
         'profileImageUrl': imageUrl,
         'createdAt': FieldValue.serverTimestamp(),
         'role': _userType == UserType.worker ? 'worker' : 'customer',
+        'spokenLanguages': _selectedSpokenLanguages,
       };
 
       if (_userType == UserType.worker) {
@@ -1323,6 +1340,7 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
 
         userData.addAll({
           'professions': _selectedProfessions,
+          'spokenLanguages': _selectedSpokenLanguages,
           'optionalPhone': _altPhoneController.text.trim(),
           'description': _descriptionController.text.trim(),
           'isSubscribed': hasActiveSubscriptionFromPending,
@@ -1966,6 +1984,8 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
             ),
             const SizedBox(height: 16),
             _buildLocationSelectionSection(strings),
+            const SizedBox(height: 24),
+            _buildSpokenLanguagesSelector(strings),
             const SizedBox(height: 24),
             _buildTypeSelector(strings),
             AnimatedSwitcher(
@@ -2706,6 +2726,127 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
         ],
       ],
     );
+  }
+
+  Widget _buildSpokenLanguagesSelector(Map<String, String> strings) {
+    final localeCode = Provider.of<LanguageProvider>(
+      context,
+    ).locale.languageCode;
+
+    return FormField<List<String>>(
+      initialValue: _selectedSpokenLanguages,
+      validator: (_) => _selectedSpokenLanguages.isEmpty
+          ? strings['spoken_languages_required']
+          : null,
+      builder: (field) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.language_rounded,
+                size: 20,
+                color: Color(0xFF64748B),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                strings['spoken_languages']!,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 14,
+                  color: Color(0xFF374151),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: _spokenLanguageOptions.map((language) {
+              final selected = _selectedSpokenLanguages.contains(language);
+              return FilterChip(
+                label: Text(_spokenLanguageLabel(language, localeCode)),
+                selected: selected,
+                onSelected: (value) {
+                  setState(() {
+                    if (value) {
+                      _selectedSpokenLanguages.add(language);
+                    } else {
+                      _selectedSpokenLanguages.remove(language);
+                    }
+                  });
+                  field.didChange(_selectedSpokenLanguages);
+                },
+                selectedColor: const Color(0xFF1976D2).withValues(alpha: 0.14),
+                checkmarkColor: const Color(0xFF1976D2),
+                backgroundColor: const Color(0xFFF8FAFC),
+                side: BorderSide(
+                  color: selected
+                      ? const Color(0xFF1976D2)
+                      : const Color(0xFFE2E8F0),
+                ),
+                labelStyle: TextStyle(
+                  color: selected
+                      ? const Color(0xFF0F4C9A)
+                      : const Color(0xFF475569),
+                  fontWeight: FontWeight.w700,
+                ),
+              );
+            }).toList(),
+          ),
+          if (field.hasError) ...[
+            const SizedBox(height: 8),
+            Text(
+              field.errorText!,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  String _spokenLanguageLabel(String language, String localeCode) {
+    const labels = {
+      'Hebrew': {
+        'en': 'Hebrew',
+        'he': 'עברית',
+        'ar': 'العبرية',
+        'ru': 'Иврит',
+        'am': 'ዕብራይስጥ',
+      },
+      'Arabic': {
+        'en': 'Arabic',
+        'he': 'ערבית',
+        'ar': 'العربية',
+        'ru': 'Арабский',
+        'am': 'አረብኛ',
+      },
+      'English': {
+        'en': 'English',
+        'he': 'אנגלית',
+        'ar': 'الإنجليزية',
+        'ru': 'Английский',
+        'am': 'እንግሊዝኛ',
+      },
+      'Russian': {
+        'en': 'Russian',
+        'he': 'רוסית',
+        'ar': 'الروسية',
+        'ru': 'Русский',
+        'am': 'ሩሲኛ',
+      },
+      'Amharic': {
+        'en': 'Amharic',
+        'he': 'אמהרית',
+        'ar': 'الأمهرية',
+        'ru': 'Амхарский',
+        'am': 'አማርኛ',
+      },
+    };
+
+    return labels[language]?[localeCode] ?? labels[language]?['en'] ?? language;
   }
 
   Widget _buildTypeSelector(Map<String, String> strings) {

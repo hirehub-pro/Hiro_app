@@ -11,7 +11,9 @@ import 'package:untitled1/sign_up.dart';
 import 'main.dart';
 
 class SignInPage extends StatefulWidget {
-  const SignInPage({super.key});
+  final bool showDeletionFeedbackPrompt;
+
+  const SignInPage({super.key, this.showDeletionFeedbackPrompt = false});
 
   @override
   State<SignInPage> createState() => _SignInPageState();
@@ -156,6 +158,11 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
   void initState() {
     super.initState();
     _ensureAnimationControllers();
+    if (widget.showDeletionFeedbackPrompt) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _showDeletionFeedbackDialog();
+      });
+    }
   }
 
   @override
@@ -202,6 +209,13 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
           'mobile_body': 'מותאם לכניסה מהירה ופעולות ברורות.',
           'guest_title': 'אפשרות אורח',
           'guest_body': 'אפשר להתחיל לגלוש בלי חשבון מלא.',
+          'delete_feedback_title': 'נשמח להבין מה קרה',
+          'delete_feedback_body':
+              'החשבון נמחק. אם יש לך רגע, ספר לנו מה גרם לך לעזוב כדי שנוכל לשפר את Hiro.',
+          'delete_feedback_hint': 'מה הייתה הסיבה העיקרית?',
+          'delete_feedback_skip': 'דלג',
+          'delete_feedback_send': 'שלח',
+          'delete_feedback_sent': 'תודה על המשוב',
         };
       default:
         return {
@@ -232,7 +246,145 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
           'mobile_body': 'Optimized for quick entry and clear actions.',
           'guest_title': 'Guest option',
           'guest_body': 'Browse immediately without a full account.',
+          'delete_feedback_title': 'Tell us what happened',
+          'delete_feedback_body':
+              'Your account has been deleted. If you have a moment, tell us what made you leave so we can improve Hiro.',
+          'delete_feedback_hint': 'What was the main reason?',
+          'delete_feedback_skip': 'Skip',
+          'delete_feedback_send': 'Send',
+          'delete_feedback_sent': 'Thanks for the feedback',
         };
+    }
+  }
+
+  Future<void> _showDeletionFeedbackDialog() async {
+    final strings = _getLocalizedStrings(context);
+    final controller = TextEditingController();
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (context) => Dialog(
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 24, 24, 18),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 64,
+                height: 64,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE8F3FF),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: const Color(0xFFBFDBFE)),
+                ),
+                child: const Icon(
+                  Icons.rate_review_outlined,
+                  color: Color(0xFF1976D2),
+                  size: 32,
+                ),
+              ),
+              const SizedBox(height: 18),
+              Text(
+                strings['delete_feedback_title']!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF111827),
+                  height: 1.15,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                strings['delete_feedback_body']!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 15,
+                  height: 1.45,
+                  color: Color(0xFF6B7280),
+                ),
+              ),
+              const SizedBox(height: 20),
+              TextField(
+                controller: controller,
+                maxLines: 4,
+                textInputAction: TextInputAction.newline,
+                decoration: InputDecoration(
+                  hintText: strings['delete_feedback_hint']!,
+                  filled: true,
+                  fillColor: const Color(0xFFF8FAFC),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    borderSide: const BorderSide(
+                      color: Color(0xFF1976D2),
+                      width: 1.4,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(context),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF374151),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      child: Text(strings['delete_feedback_skip']!),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () =>
+                          Navigator.pop(context, controller.text.trim()),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF1976D2),
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      child: Text(strings['delete_feedback_send']!),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    controller.dispose();
+
+    if (reason == null || reason.isEmpty) return;
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('accountDeletionFeedback')
+          .add({'reason': reason, 'createdAt': FieldValue.serverTimestamp()});
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(strings['delete_feedback_sent']!)));
+    } catch (_) {
+      // Feedback is optional; failed writes should not block sign-in.
     }
   }
 

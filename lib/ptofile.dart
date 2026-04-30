@@ -57,6 +57,13 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
   static const Color _kTextMuted = Color(0xFF6B7280);
   static const String _vpdDocId = 'currentWeek';
   static const int _counterShardCount = 20;
+  static const List<String> _spokenLanguageOptions = [
+    'Hebrew',
+    'Arabic',
+    'English',
+    'Russian',
+    'Amharic',
+  ];
   static const List<String> _weekDayKeys = [
     'sunday',
     'monday',
@@ -85,6 +92,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
   String _profileImageUrl = "";
   String _userRole = "customer";
   List<String> _userProfessions = [];
+  List<String> _spokenLanguages = [];
   Map<String, Map<String, String>> _professionTranslations = {};
   Map<String, String> _professionBookingModes = {};
   List<Map<String, dynamic>> _userReviews = [];
@@ -112,6 +120,8 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
     return SubscriptionAccessService.hasActiveWorkerSubscriptionFromData({
       'role': _userRole,
       'subscriptionStatus': _subscriptionStatus,
+      'subscriptionDate': _subscriptionDate,
+      'subscriptionExpiresAt': _subscriptionExpiresAt,
     });
   }
 
@@ -455,6 +465,11 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
           _town = data['town']?.toString() ?? "";
           _dateOfBirth = _toDate(data['dateOfBirth']);
           _profileImageUrl = data['profileImageUrl']?.toString() ?? "";
+          _spokenLanguages = data['spokenLanguages'] is List
+              ? List<String>.from(
+                  data['spokenLanguages'],
+                ).where(_spokenLanguageOptions.contains).toList()
+              : [];
           _viewsCount = 0;
           _userRole = data['role'] ?? 'customer';
           _hideSchedule = data['hideSchedule'] ?? false;
@@ -641,6 +656,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
             'name': _userName,
             'profileImageUrl': _profileImageUrl,
             'professions': _userProfessions,
+            'spokenLanguages': _spokenLanguages,
           }),
           likedByRef.set({
             'addedAt': FieldValue.serverTimestamp(),
@@ -2415,6 +2431,13 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
     final currentUserId =
         widget.userId ?? FirebaseAuth.instance.currentUser?.uid;
     final age = _calculateAge(_dateOfBirth);
+    final localeCode = Provider.of<LanguageProvider>(
+      context,
+      listen: false,
+    ).locale.languageCode;
+    final spokenLanguagesText = _spokenLanguages
+        .map((language) => _spokenLanguageLabel(language, localeCode))
+        .join(', ');
     return SingleChildScrollView(
       controller: _aboutScrollController,
       padding: const EdgeInsets.all(24),
@@ -2452,6 +2475,11 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
               ),
             _buildInfoRow(Icons.email_rounded, strings['email']!, _email),
             _buildInfoRow(Icons.location_city_rounded, strings['town']!, _town),
+            _buildInfoRow(
+              Icons.language_rounded,
+              strings['spoken_languages']!,
+              spokenLanguagesText,
+            ),
             if (age != null)
               _buildInfoRow(
                 Icons.cake_outlined,
@@ -2801,6 +2829,48 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
     );
   }
 
+  String _spokenLanguageLabel(String language, String localeCode) {
+    const labels = {
+      'Hebrew': {
+        'en': 'Hebrew',
+        'he': 'עברית',
+        'ar': 'العبرية',
+        'ru': 'Иврит',
+        'am': 'ዕብራይስጥ',
+      },
+      'Arabic': {
+        'en': 'Arabic',
+        'he': 'ערבית',
+        'ar': 'العربية',
+        'ru': 'Арабский',
+        'am': 'አረብኛ',
+      },
+      'English': {
+        'en': 'English',
+        'he': 'אנגלית',
+        'ar': 'الإنجليزية',
+        'ru': 'Английский',
+        'am': 'እንግሊዝኛ',
+      },
+      'Russian': {
+        'en': 'Russian',
+        'he': 'רוסית',
+        'ar': 'الروسية',
+        'ru': 'Русский',
+        'am': 'ሩሲኛ',
+      },
+      'Amharic': {
+        'en': 'Amharic',
+        'he': 'אמהרית',
+        'ar': 'الأمهرية',
+        'ru': 'Амхарский',
+        'am': 'አማርኛ',
+      },
+    };
+
+    return labels[language]?[localeCode] ?? labels[language]?['en'] ?? language;
+  }
+
   Widget _buildBottomBar(Map<String, String> strings) {
     return Container(
       padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
@@ -3139,6 +3209,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
           'secondary': 'נוסף',
           'email': 'אימייל',
           'town': 'עיר',
+          'spoken_languages': 'שפות מדוברות',
           'distance': 'מרחק',
           'upgrade_feature_1': 'לוח ניהול מקצועי לעסק שלך',
           'upgrade_feature_2': 'קבלת פניות והזדמנויות מלקוחות',
@@ -3238,6 +3309,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
           'secondary': 'ثانوي',
           'email': 'البريد الإلكتروني',
           'town': 'المدينة',
+          'spoken_languages': 'اللغات المحكية',
           'distance': 'المسافة',
           'upgrade_feature_1': 'لوحة تحكم احترافية لعملك',
           'upgrade_feature_2': 'استقبال طلبات وفرص من العملاء',
@@ -3333,6 +3405,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
           'secondary': 'ሁለተኛ',
           'email': 'ኢሜል',
           'town': 'ከተማ',
+          'spoken_languages': 'የሚነገሩ ቋንቋዎች',
           'distance': 'ርቀት',
           'upgrade_feature_1': 'ለንግድዎ ሙያዊ ዳሽቦርድ',
           'upgrade_feature_2': 'ከደንበኞች ጥያቄዎችን እና እድሎችን ይቀበሉ',
@@ -3429,6 +3502,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
           'secondary': 'Дополнительный',
           'email': 'Email',
           'town': 'Город',
+          'spoken_languages': 'Разговорные языки',
           'distance': 'Расстояние',
           'upgrade_feature_1': 'Профессиональная панель для вашего бизнеса',
           'upgrade_feature_2': 'Получайте запросы и возможности от клиентов',
@@ -3530,6 +3604,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
           'secondary': 'Secondary',
           'email': 'Email',
           'town': 'Town',
+          'spoken_languages': 'Spoken Languages',
           'distance': 'Distance',
           'upgrade_feature_1': 'Professional dashboard for your business',
           'upgrade_feature_2': 'Get customer inquiries and opportunities',

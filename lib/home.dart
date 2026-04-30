@@ -59,6 +59,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   String? _profileImageUrl;
   String _userRole = "customer";
   String _subscriptionStatus = "inactive";
+  DateTime? _subscriptionDate;
+  DateTime? _subscriptionExpiresAt;
 
   AnimationController get _backgroundAnimationController {
     final controller = _backgroundController;
@@ -596,6 +598,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             _subscriptionStatus =
                 doc.data()?['subscriptionStatus']?.toString().toLowerCase() ??
                 'inactive';
+            _subscriptionDate = _toDate(doc.data()?['subscriptionDate']);
+            _subscriptionExpiresAt = _toDate(
+              doc.data()?['subscriptionExpiresAt'],
+            );
           });
         }
       } catch (e) {
@@ -1394,9 +1400,20 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   bool get _shouldShowSubscriptionCta {
     if (_userRole != 'worker') return false;
-    return !SubscriptionAccessService.isEntitledSubscriptionStatus(
-      _subscriptionStatus,
-    );
+    return !SubscriptionAccessService.hasActiveWorkerSubscriptionFromData({
+      'role': _userRole,
+      'subscriptionStatus': _subscriptionStatus,
+      'subscriptionDate': _subscriptionDate,
+      'subscriptionExpiresAt': _subscriptionExpiresAt,
+    });
+  }
+
+  DateTime? _toDate(dynamic value) {
+    if (value == null) return null;
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    if (value is String) return DateTime.tryParse(value);
+    return null;
   }
 
   void _goToRequest(int nextIndex, int totalCount) {

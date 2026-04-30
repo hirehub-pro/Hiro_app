@@ -153,6 +153,16 @@ class _SubscriptionPageState extends State<SubscriptionPage>
 
     final ProductDetailsResponse response = await _inAppPurchase
         .queryProductDetails(_storeProductIds);
+    if (response.error != null ||
+        response.notFoundIDs.isNotEmpty ||
+        response.productDetails.isEmpty) {
+      debugPrint(
+        'IAP product query failed. requested=$_storeProductIds '
+        'returned=${response.productDetails.map((p) => p.id).toList()} '
+        'notFound=${response.notFoundIDs} '
+        'error=${response.error?.code}: ${response.error?.message}',
+      );
+    }
 
     final bool hasMatchingProduct = response.productDetails.any(
       (p) => _allowedSubscriptionIds.contains(p.id),
@@ -162,7 +172,11 @@ class _SubscriptionPageState extends State<SubscriptionPage>
       _products = response.productDetails;
       _storeAvailable = hasMatchingProduct;
       if (!hasMatchingProduct) {
-        _storeNotice = 'לא נמצאה חבילת Pro זמינה לרכישה כרגע עבור חשבון זה.';
+        final debugReason = response.notFoundIDs.isNotEmpty
+            ? ' (${response.notFoundIDs.join(', ')})'
+            : '';
+        _storeNotice =
+            'לא נמצאה חבילת Pro זמינה לרכישה כרגע עבור חשבון זה.$debugReason';
       } else {
         _storeNotice = null;
       }
