@@ -836,6 +836,11 @@ class _AdminReportDetailsPageState extends State<AdminReportDetailsPage> {
 
   Map<String, dynamic> get _postDetailStrings => {
     'anonymous': 'Anonymous',
+    'post_actions': 'Post actions',
+    'edit': 'Edit',
+    'delete': 'Delete',
+    'report': 'Report',
+    'block_user': 'Block user',
     'confirm_choose_worker_title': 'Choose this worker?',
     'confirm_choose_worker_body':
         'This will mark the worker as the selected offer for this job request.',

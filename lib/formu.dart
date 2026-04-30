@@ -24,6 +24,30 @@ import 'package:untitled1/utils/profession_localization.dart';
 import 'package:untitled1/widgets/cached_video_player.dart';
 import 'package:untitled1/ptofile.dart';
 
+const Color _uiPrimaryBlue = Color(0xFF1976D2);
+const Color _uiSurfaceBackground = Color(0xFFF7FBFF);
+const Color _uiSoftSurface = Color(0xFFF8FAFC);
+const Color _uiBorder = Color(0xFFE2E8F0);
+const Color _uiTitle = Color(0xFF0F172A);
+const Color _uiBody = Color(0xFF334155);
+const Color _uiMuted = Color(0xFF64748B);
+
+List<String> _mediaUrlsFromPost(Map<String, dynamic>? post) {
+  if (post == null) return const [];
+
+  final imageUrls = post['imageUrls'];
+  if (imageUrls is Iterable) {
+    final urls = imageUrls
+        .map((item) => item?.toString().trim() ?? '')
+        .where((item) => item.isNotEmpty)
+        .toList();
+    if (urls.isNotEmpty) return urls;
+  }
+
+  final imageUrl = post['imageUrl']?.toString().trim() ?? '';
+  return imageUrl.isEmpty ? const [] : [imageUrl];
+}
+
 class BlogPage extends StatefulWidget {
   const BlogPage({super.key});
 
@@ -48,6 +72,8 @@ class _BlogPageState extends State<BlogPage> {
   final Set<String> _blockedUserIds = {};
   String _sortBy = 'newest';
   int _selectedFilterIndex = 0;
+  bool _showOnlyLikedPosts = false;
+  bool _showOnlyMyPosts = false;
   bool _isGuideExpanded = false;
   String _jobRequestProfessionFilter = '';
   double _jobRequestRadiusFilterKm = 0;
@@ -722,19 +748,29 @@ class _BlogPageState extends State<BlogPage> {
     if (reason == null || reason.trim().isEmpty) return;
 
     try {
-      await _firestore.collection('moderation_reports').add({
-        'type': 'content_report',
+      final trimmedReason = reason.trim();
+      final postTitle = (post['title'] ?? '').toString().trim();
+      final postAuthorUid = (post['authorUid'] ?? '').toString().trim();
+
+      await _firestore.collection('reports').add({
+        'reporterId': user.uid,
+        'reportedId': postAuthorUid,
+        'reportType': 'content_report',
+        'source': 'post_report',
+        'subject': 'Content Problem',
+        'reason': trimmedReason,
+        'details': postTitle.isEmpty
+            ? 'Reported from a post in the feed.'
+            : 'Reported post: $postTitle',
         'postId': post['id'],
-        'postAuthorUid': post['authorUid'],
-        'postTitle': post['title'],
-        'reason': reason.trim(),
-        'reportedByUid': user.uid,
-        'reportedAt': FieldValue.serverTimestamp(),
-        'status': 'pending',
-        'requiresActionBy': Timestamp.fromDate(
-          DateTime.now().toUtc().add(const Duration(hours: 24)),
-        ),
+        'postAuthorUid': postAuthorUid,
+        'postTitle': postTitle,
+        'status': 'open',
+        'timestamp': FieldValue.serverTimestamp(),
       });
+      await _firestore.collection('metadata').doc('system').set({
+        'reportsCount': FieldValue.increment(1),
+      }, SetOptions(merge: true));
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -797,18 +833,29 @@ class _BlogPageState extends State<BlogPage> {
             'blockedAt': FieldValue.serverTimestamp(),
             'samplePostId': post['id'],
           });
-      await _firestore.collection('moderation_reports').add({
-        'type': 'user_block',
+      final postTitle = (post['title'] ?? '').toString().trim();
+      await _firestore.collection('reports').add({
+        'reporterId': user.uid,
+        'reportedId': blockedUid,
+        'reportType': 'user_block',
+        'source': 'post_block',
+        'subject': 'Blocked User',
+        'reason': strings['block_user_confirm'] ?? 'User blocked from a post',
+        'details': postTitle.isEmpty
+            ? 'User blocked from a post in the feed.'
+            : 'Blocked after viewing post: $postTitle',
         'blockedUid': blockedUid,
+        'reportedUserUid': blockedUid,
         'samplePostId': post['id'],
-        'postTitle': post['title'],
+        'postId': post['id'],
+        'postTitle': postTitle,
         'blockedByUid': user.uid,
-        'reportedAt': FieldValue.serverTimestamp(),
-        'status': 'pending',
-        'requiresActionBy': Timestamp.fromDate(
-          DateTime.now().toUtc().add(const Duration(hours: 24)),
-        ),
+        'status': 'open',
+        'timestamp': FieldValue.serverTimestamp(),
       });
+      await _firestore.collection('metadata').doc('system').set({
+        'reportsCount': FieldValue.increment(1),
+      }, SetOptions(merge: true));
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -1552,11 +1599,7 @@ class _BlogPageState extends State<BlogPage> {
         ? _normalizeStoredProfession(existingPost!['profession'].toString())
         : null;
     List<File> selectedMediaFiles = [];
-    List<String> existingMediaUrls = existingPost?['imageUrls'] != null
-        ? List<String>.from(existingPost!['imageUrls'])
-        : (existingPost?['imageUrl'] != null
-              ? [existingPost!['imageUrl']]
-              : []);
+    List<String> existingMediaUrls = _mediaUrlsFromPost(existingPost);
     bool isUploading = false;
     bool isResolvingLocation = false;
     const maxMediaCount = 5;
@@ -2546,16 +2589,17 @@ class _BlogPageState extends State<BlogPage> {
       margin: const EdgeInsets.only(bottom: 20),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [Color(0xFF1E293B), Color(0xFF334155)],
+          colors: [Color(0xFFEAF5FF), Color(0xFFF8FCFF)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: const Color(0xFFBFDBFE)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 12,
-            offset: const Offset(0, 6),
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 16,
+            offset: const Offset(0, 8),
           ),
         ],
       ),
@@ -2564,20 +2608,20 @@ class _BlogPageState extends State<BlogPage> {
           ListTile(
             onTap: () => setState(() => _isGuideExpanded = !_isGuideExpanded),
             leading: const CircleAvatar(
-              backgroundColor: Colors.white12,
-              child: Icon(Icons.lightbulb_outline, color: Colors.amber),
+              backgroundColor: Color(0xFFDCEEFF),
+              child: Icon(Icons.lightbulb_outline, color: _uiPrimaryBlue),
             ),
             title: Text(
               strings['guide_title'],
               style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
+                color: _uiTitle,
+                fontWeight: FontWeight.w800,
                 fontSize: 16,
               ),
             ),
             trailing: Icon(
               _isGuideExpanded ? Icons.expand_less : Icons.expand_more,
-              color: Colors.white70,
+              color: _uiMuted,
             ),
           ),
           if (_isGuideExpanded)
@@ -2586,7 +2630,7 @@ class _BlogPageState extends State<BlogPage> {
               child: Text(
                 strings['guide_content'],
                 style: const TextStyle(
-                  color: Colors.white70,
+                  color: _uiBody,
                   fontSize: 13,
                   height: 1.6,
                 ),
@@ -2599,50 +2643,151 @@ class _BlogPageState extends State<BlogPage> {
 
   Widget _buildFilterBar(Map<String, dynamic> strings) {
     final categories = strings['categories'] as List;
+    final likedLabel = strings['filter_liked_posts'] ?? 'Liked posts';
+    final myPostsLabel = strings['filter_my_posts'] ?? 'My posts';
     return SizedBox(
       height: 50,
-      child: ListView.builder(
+      child: ListView(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 16),
-        itemCount: categories.length,
-        itemBuilder: (context, index) {
-          final isSelected = _selectedFilterIndex == index;
-          return Padding(
+        children: [
+          ...List.generate(categories.length, (index) {
+            final isSelected = _selectedFilterIndex == index;
+            return Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: FilterChip(
+                selected: isSelected,
+                onSelected: (val) {
+                  setState(() {
+                    _selectedFilterIndex = index;
+                    _isLoading = true;
+                    _posts = [];
+                    _postLimit = 10;
+                  });
+                  _listenToPosts();
+                },
+                label: Text(categories[index]),
+                selectedColor: _uiPrimaryBlue.withValues(alpha: 0.1),
+                backgroundColor: Colors.white,
+                checkmarkColor: _uiPrimaryBlue,
+                labelStyle: TextStyle(
+                  color: isSelected ? _uiPrimaryBlue : _uiMuted,
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: BorderSide(
+                    color: isSelected ? _uiPrimaryBlue : _uiBorder,
+                  ),
+                ),
+              ),
+            );
+          }),
+          Padding(
             padding: const EdgeInsets.only(right: 8),
             child: FilterChip(
-              selected: isSelected,
+              selected: _showOnlyLikedPosts,
               onSelected: (val) {
                 setState(() {
-                  _selectedFilterIndex = index;
-                  _isLoading = true;
-                  _posts = [];
-                  _postLimit = 10;
+                  _showOnlyLikedPosts = val;
+                  if (val) _showOnlyMyPosts = false;
                 });
-                _listenToPosts();
               },
-              label: Text(categories[index]),
-              selectedColor: const Color(0xFF1976D2).withOpacity(0.1),
+              label: Text(likedLabel),
+              selectedColor: _uiPrimaryBlue.withValues(alpha: 0.1),
               backgroundColor: Colors.white,
-              checkmarkColor: const Color(0xFF1976D2),
+              checkmarkColor: _uiPrimaryBlue,
               labelStyle: TextStyle(
-                color: isSelected
-                    ? const Color(0xFF1976D2)
-                    : const Color(0xFF64748B),
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                color: _showOnlyLikedPosts ? _uiPrimaryBlue : _uiMuted,
+                fontWeight: _showOnlyLikedPosts
+                    ? FontWeight.bold
+                    : FontWeight.w500,
               ),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
                 side: BorderSide(
-                  color: isSelected
-                      ? const Color(0xFF1976D2)
-                      : const Color(0xFFE2E8F0),
+                  color: _showOnlyLikedPosts ? _uiPrimaryBlue : _uiBorder,
                 ),
               ),
             ),
-          );
-        },
+          ),
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: FilterChip(
+              selected: _showOnlyMyPosts,
+              onSelected: (val) {
+                setState(() {
+                  _showOnlyMyPosts = val;
+                  if (val) _showOnlyLikedPosts = false;
+                });
+              },
+              label: Text(myPostsLabel),
+              selectedColor: _uiPrimaryBlue.withValues(alpha: 0.1),
+              backgroundColor: Colors.white,
+              checkmarkColor: _uiPrimaryBlue,
+              labelStyle: TextStyle(
+                color: _showOnlyMyPosts ? _uiPrimaryBlue : _uiMuted,
+                fontWeight: _showOnlyMyPosts
+                    ? FontWeight.bold
+                    : FontWeight.w500,
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(
+                  color: _showOnlyMyPosts ? _uiPrimaryBlue : _uiBorder,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
+  }
+
+  bool _isLikedByCurrentUser(Map<String, dynamic> post) {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return false;
+
+    final likedByData = post['likedBy'];
+    if (likedByData is Map) {
+      return likedByData.containsKey(user.uid);
+    }
+    if (likedByData is List) {
+      return likedByData.contains(user.uid);
+    }
+    return false;
+  }
+
+  bool _matchesOwnerFilters(Map<String, dynamic> post) {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      return !_showOnlyLikedPosts && !_showOnlyMyPosts;
+    }
+
+    if (_showOnlyLikedPosts) {
+      return _isLikedByCurrentUser(post);
+    }
+    if (_showOnlyMyPosts) {
+      return (post['authorUid'] ?? '').toString() == user.uid;
+    }
+    return true;
+  }
+
+  bool _matchesSearchQuery(Map<String, dynamic> post) {
+    final query = _searchController.text.trim().toLowerCase();
+    if (query.isEmpty) return true;
+
+    final searchable = <String>[
+      (post['title'] ?? '').toString(),
+      (post['content'] ?? '').toString(),
+      (post['authorName'] ?? '').toString(),
+      (post['category'] ?? '').toString(),
+      (post['location'] ?? '').toString(),
+      (post['professionLabel'] ?? '').toString(),
+      (post['profession'] ?? '').toString(),
+    ].join(' ').toLowerCase();
+
+    return searchable.contains(query);
   }
 
   @override
@@ -2657,30 +2802,32 @@ class _BlogPageState extends State<BlogPage> {
           (p) => !_blockedUserIds.contains((p['authorUid'] ?? '').toString()),
         )
         .where((p) => _matchesJobRequestFilters(p, strings))
+        .where(_matchesOwnerFilters)
+        .where(_matchesSearchQuery)
         .toList();
 
     return Directionality(
       textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
       child: Scaffold(
-        backgroundColor: const Color(0xFFF8FAFC),
+        backgroundColor: _uiSurfaceBackground,
         appBar: AppBar(
           backgroundColor: Colors.white,
           elevation: 0,
           title: Text(
             strings['title'],
             style: const TextStyle(
-              color: Color(0xFF1E293B),
+              color: _uiTitle,
               fontWeight: FontWeight.bold,
               fontSize: 22,
             ),
           ),
           actions: [
             IconButton(
-              icon: const Icon(Icons.refresh, color: Color(0xFF1976D2)),
+              icon: const Icon(Icons.refresh, color: _uiPrimaryBlue),
               onPressed: _onRefresh,
             ),
             PopupMenuButton<String>(
-              icon: const Icon(Icons.sort, color: Color(0xFF1976D2)),
+              icon: const Icon(Icons.sort, color: _uiPrimaryBlue),
               onSelected: (value) {
                 setState(() {
                   _sortBy = value;
@@ -2724,15 +2871,28 @@ class _BlogPageState extends State<BlogPage> {
                   ),
                   child: TextField(
                     controller: _searchController,
+                    onChanged: (_) => setState(() {}),
                     decoration: InputDecoration(
                       hintText: strings['search_hint'],
                       prefixIcon: const Icon(Icons.search, size: 20),
-                      fillColor: const Color(0xFFF1F5F9),
+                      hintStyle: const TextStyle(color: Color(0xFF9CA3AF)),
+                      fillColor: const Color(0xFFF9FAFB),
                       filled: true,
                       contentPadding: EdgeInsets.zero,
                       border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide.none,
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: const BorderSide(color: _uiBorder),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: const BorderSide(color: _uiBorder),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: const BorderSide(
+                          color: _uiPrimaryBlue,
+                          width: 1.3,
+                        ),
                       ),
                     ),
                   ),
@@ -2747,7 +2907,7 @@ class _BlogPageState extends State<BlogPage> {
         floatingActionButton: FloatingActionButton.extended(
           heroTag: 'formu_fab',
           onPressed: () => _showCreatePostSheet(context),
-          backgroundColor: const Color(0xFF1976D2),
+          backgroundColor: _uiPrimaryBlue,
           icon: const Icon(Icons.add, color: Colors.white),
           label: Text(
             strings['publish'],
@@ -3095,9 +3255,7 @@ class _BlogCard extends StatelessWidget {
         post['isJobRequest'] == true ||
         _isJobRequestCategoryValue((post['category'] ?? '').toString());
     final isPinned = post['isPinned'] == true;
-    final mediaUrls = post['imageUrls'] != null
-        ? List<String>.from(post['imageUrls'])
-        : (post['imageUrl'] != null ? [post['imageUrl'] as String] : []);
+    final mediaUrls = _mediaUrlsFromPost(post);
     final firstMedia = mediaUrls.isNotEmpty ? mediaUrls.first : null;
     final firstMediaIsVideo =
         firstMedia != null && _isMediaVideoPath(firstMedia);
@@ -3125,15 +3283,15 @@ class _BlogCard extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
         border: isPinned
-            ? Border.all(color: Colors.blue.shade200, width: 2)
+            ? Border.all(color: const Color(0xFFBFDBFE), width: 1.6)
             : (isJobRequest
-                  ? Border.all(color: Colors.orange.shade200, width: 2)
+                  ? Border.all(color: const Color(0xFFBFDBFE), width: 1.3)
                   : null),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 16,
+            offset: const Offset(0, 8),
           ),
         ],
       ),
@@ -3203,7 +3361,7 @@ class _BlogCard extends StatelessWidget {
                         const Icon(
                           Icons.push_pin,
                           size: 16,
-                          color: Colors.blue,
+                          color: _uiPrimaryBlue,
                         ),
                       Container(
                         padding: const EdgeInsets.symmetric(
@@ -3211,17 +3369,13 @@ class _BlogCard extends StatelessWidget {
                           vertical: 4,
                         ),
                         decoration: BoxDecoration(
-                          color: isJobRequest
-                              ? Colors.orange.shade50
-                              : const Color(0xFFEEF2FF),
+                          color: const Color(0xFFEAF5FF),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(
                           categoryLabel,
-                          style: TextStyle(
-                            color: isJobRequest
-                                ? Colors.orange.shade800
-                                : const Color(0xFF4F46E5),
+                          style: const TextStyle(
+                            color: _uiPrimaryBlue,
                             fontWeight: FontWeight.bold,
                             fontSize: 12,
                           ),
@@ -3255,7 +3409,7 @@ class _BlogCard extends StatelessWidget {
                     style: const TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
-                      color: Color(0xFF1E293B),
+                      color: _uiTitle,
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -3264,7 +3418,7 @@ class _BlogCard extends StatelessWidget {
                     maxLines: 3,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      color: Color(0xFF64748B),
+                      color: _uiMuted,
                       height: 1.5,
                     ),
                   ),
@@ -3444,11 +3598,18 @@ bool _isJobRequestCategoryValue(String raw) {
 
 const List<List<String>> _categoryAliases = <List<String>>[
   ['all', 'הכל', 'الكل', 'ሁሉም', 'все'],
-  ['question', 'שאלה', 'سؤال', 'ጥያቄ', 'вопрос'],
-  ['tip', 'טיפ', 'نصيحة', 'ምክር', 'совет'],
-  ['job request', 'דרוש בעל מקצוע', 'طلب عامل', 'የስራ ጥያቄ', 'запрос на работу'],
-  ['recommendation', 'המלצה', 'توصية', 'ምክር ሰጪ', 'рекомендация'],
-  ['other', 'אחר', 'أخرى', 'ሌላ', 'другое'],
+  ['question', 'Question', 'שאלה', 'سؤال', 'ጥያቄ', 'вопрос'],
+  ['tip', 'Tip', 'טיפ', 'نصيحة', 'ምክር', 'совет'],
+  [
+    'job request',
+    'Job Request',
+    'דרוש בעל מקצוע',
+    'طلب عامل',
+    'የስራ ጥያቄ',
+    'запрос на работу',
+  ],
+  ['recommendation', 'Recommendation', 'המלצה', 'توصية', 'ምክር ሰጪ', 'рекомендация'],
+  ['other', 'Other', 'אחר', 'أخرى', 'ሌላ', 'другое'],
 ];
 
 String _localizedCategoryValueForMap(
@@ -3757,14 +3918,14 @@ class _PostDetailPageState extends State<PostDetailPage> {
         margin: const EdgeInsets.only(bottom: 10),
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: const Color(0xFFF8FAFC),
+          color: _uiSoftSurface,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: const Color(0xFFE2E8F0)),
+          border: Border.all(color: _uiBorder),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, size: 18, color: const Color(0xFF64748B)),
+            Icon(icon, size: 18, color: _uiMuted),
             const SizedBox(width: 10),
             Expanded(
               child: Column(
@@ -3775,7 +3936,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
                     style: const TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
-                      color: Color(0xFF64748B),
+                      color: _uiMuted,
                     ),
                   ),
                   const SizedBox(height: 2),
@@ -3784,7 +3945,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
                     style: const TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
-                      color: Color(0xFF0F172A),
+                      color: _uiTitle,
                     ),
                   ),
                 ],
@@ -3816,6 +3977,179 @@ class _PostDetailPageState extends State<PostDetailPage> {
     }
   }
 
+  Future<void> _showPostActionsSheet({
+    required bool isAuthor,
+    required bool isAdmin,
+  }) async {
+    final textTheme = Theme.of(context).textTheme;
+
+    Widget actionTile({
+      required IconData icon,
+      required String title,
+      required VoidCallback onTap,
+      bool isDestructive = false,
+    }) {
+      return Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () {
+            Navigator.pop(context);
+            onTap();
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+            child: Row(
+              children: [
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: isDestructive
+                        ? const Color(0xFFFEE2E2)
+                        : const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    icon,
+                    size: 18,
+                    color: isDestructive
+                        ? const Color(0xFFDC2626)
+                        : const Color(0xFF334155),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: isDestructive
+                          ? const Color(0xFFB91C1C)
+                          : const Color(0xFF0F172A),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    final List<Widget> actions;
+    if (isAdmin) {
+      actions = [
+        actionTile(
+          icon: Icons.delete_outline_rounded,
+          title: widget.localizedStrings['delete'] ?? 'Delete',
+          onTap: widget.onDelete,
+          isDestructive: true,
+        ),
+        actionTile(
+          icon: Icons.flag_outlined,
+          title: widget.localizedStrings['report'] ?? 'Report',
+          onTap: widget.onReport,
+          isDestructive: true,
+        ),
+      ];
+    } else if (isAuthor) {
+      actions = [
+        actionTile(
+          icon: Icons.edit_outlined,
+          title: widget.localizedStrings['edit'] ?? 'Edit',
+          onTap: widget.onEdit,
+        ),
+        actionTile(
+          icon: Icons.delete_outline_rounded,
+          title: widget.localizedStrings['delete'] ?? 'Delete',
+          onTap: widget.onDelete,
+          isDestructive: true,
+        ),
+      ];
+    } else {
+      actions = [
+        actionTile(
+          icon: Icons.block_outlined,
+          title: widget.localizedStrings['block_user'] ?? 'Block user',
+          onTap: widget.onBlockUser,
+          isDestructive: true,
+        ),
+        actionTile(
+          icon: Icons.flag_outlined,
+          title: widget.localizedStrings['report'] ?? 'Report',
+          onTap: widget.onReport,
+          isDestructive: true,
+        ),
+      ];
+    }
+
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.12),
+                    blurRadius: 22,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(height: 10),
+                  Container(
+                    width: 44,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE2E8F0),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            widget.localizedStrings['post_actions'] ??
+                                'Post actions',
+                            style: textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w800,
+                              color: const Color(0xFF0F172A),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: actions,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final localeCode = Provider.of<LanguageProvider>(
@@ -3827,6 +4161,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
         widget.post['isJobRequest'] == true ||
         _isJobRequestCategoryValue((widget.post['category'] ?? '').toString());
     final isAuthor = user != null && widget.post['authorUid'] == user.uid;
+    final isAdmin = _currentUserRole == 'admin';
     final canCommentOnJobRequest =
         isJobRequest &&
         !isAuthor &&
@@ -3872,18 +4207,22 @@ class _PostDetailPageState extends State<PostDetailPage> {
       else if (likedByData is List)
         isLiked = likedByData.contains(user.uid);
     }
-    final List<String> mediaUrls = widget.post['imageUrls'] != null
-        ? List<String>.from(widget.post['imageUrls'])
-        : (widget.post['imageUrl'] != null
-              ? [widget.post['imageUrl'] as String]
-              : []);
+    final List<String> mediaUrls = _mediaUrlsFromPost(widget.post);
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: _uiSurfaceBackground,
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
-        foregroundColor: const Color(0xFF1E293B),
+        foregroundColor: _uiTitle,
+        actions: [
+          IconButton(
+            onPressed: () =>
+                _showPostActionsSheet(isAuthor: isAuthor, isAdmin: isAdmin),
+            icon: const Icon(Icons.more_vert_rounded),
+            tooltip: widget.localizedStrings['post_actions'] ?? 'Post actions',
+          ),
+        ],
       ),
       body: Column(
         children: [
@@ -3953,13 +4292,13 @@ class _PostDetailPageState extends State<PostDetailPage> {
                                 vertical: 4,
                               ),
                               decoration: BoxDecoration(
-                                color: const Color(0xFFEEF2FF),
+                                color: const Color(0xFFEAF5FF),
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: Text(
                                 category,
                                 style: const TextStyle(
-                                  color: Color(0xFF4F46E5),
+                                  color: _uiPrimaryBlue,
                                   fontWeight: FontWeight.bold,
                                   fontSize: 12,
                                 ),
@@ -3989,7 +4328,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
                           style: const TextStyle(
                             fontSize: 24,
                             fontWeight: FontWeight.bold,
-                            color: Color(0xFF1E293B),
+                            color: _uiTitle,
                           ),
                         ),
                         const SizedBox(height: 12),
@@ -3997,7 +4336,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
                           widget.post['content'] ?? '',
                           style: const TextStyle(
                             fontSize: 16,
-                            color: Color(0xFF334155),
+                            color: _uiBody,
                             height: 1.7,
                           ),
                         ),
@@ -4067,10 +4406,10 @@ class _PostDetailPageState extends State<PostDetailPage> {
                             width: double.infinity,
                             padding: const EdgeInsets.all(14),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFFFF7ED),
+                              color: const Color(0xFFEAF5FF),
                               borderRadius: BorderRadius.circular(16),
                               border: Border.all(
-                                color: const Color(0xFFFED7AA),
+                                color: const Color(0xFFBFDBFE),
                               ),
                             ),
                             child: Column(
@@ -4079,7 +4418,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
                                 Text(
                                   widget.localizedStrings['workers_can_offer'],
                                   style: const TextStyle(
-                                    color: Color(0xFF9A3412),
+                                    color: _uiBody,
                                     fontWeight: FontWeight.w600,
                                     height: 1.4,
                                   ),
@@ -4124,7 +4463,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
                                     widget
                                         .localizedStrings['job_request_comment_restriction'],
                                     style: const TextStyle(
-                                      color: Color(0xFF9A3412),
+                                      color: _uiBody,
                                       fontWeight: FontWeight.w500,
                                       height: 1.4,
                                     ),
@@ -4136,13 +4475,14 @@ class _PostDetailPageState extends State<PostDetailPage> {
                         ],
                         const Padding(
                           padding: EdgeInsets.symmetric(vertical: 24),
-                          child: Divider(),
+                          child: Divider(color: _uiBorder),
                         ),
                         Text(
                           widget.localizedStrings['comments'],
                           style: const TextStyle(
                             fontSize: 18,
-                            fontWeight: FontWeight.bold,
+                            fontWeight: FontWeight.w800,
+                            color: _uiTitle,
                           ),
                         ),
                         const SizedBox(height: 16),
@@ -4175,12 +4515,12 @@ class _PostDetailPageState extends State<PostDetailPage> {
                               padding: const EdgeInsets.all(12),
                               decoration: BoxDecoration(
                                 color: isSelectedBid
-                                    ? const Color(0xFFF0FDF4)
-                                    : const Color(0xFFF1F5F9),
+                                    ? const Color(0xFFEAF5FF)
+                                    : const Color(0xFFF8FAFC),
                                 borderRadius: BorderRadius.circular(12),
                                 border: isSelectedBid
-                                    ? Border.all(color: const Color(0xFF86EFAC))
-                                    : null,
+                                    ? Border.all(color: const Color(0xFFBFDBFE))
+                                    : Border.all(color: _uiBorder),
                               ),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -4276,7 +4616,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
                                             "$bidPrice ₪",
                                             style: const TextStyle(
                                               fontWeight: FontWeight.w800,
-                                              color: Color(0xFF1976D2),
+                                              color: _uiPrimaryBlue,
                                             ),
                                           ),
                                         ),
@@ -4304,7 +4644,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
                                     Text(
                                       widget.localizedStrings['selected_offer'],
                                       style: const TextStyle(
-                                        color: Color(0xFF15803D),
+                                        color: _uiPrimaryBlue,
                                         fontWeight: FontWeight.w800,
                                       ),
                                     ),
@@ -4324,9 +4664,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
                                             .localizedStrings['choose_worker'],
                                       ),
                                       style: TextButton.styleFrom(
-                                        foregroundColor: const Color(
-                                          0xFF1976D2,
-                                        ),
+                                        foregroundColor: _uiPrimaryBlue,
                                         padding: EdgeInsets.zero,
                                       ),
                                     ),
@@ -4373,7 +4711,21 @@ class _PostDetailPageState extends State<PostDetailPage> {
                       labelText: widget.localizedStrings['bid_price'],
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(18),
+                        borderSide: const BorderSide(color: _uiBorder),
                       ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(18),
+                        borderSide: const BorderSide(color: _uiBorder),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(18),
+                        borderSide: const BorderSide(
+                          color: _uiPrimaryBlue,
+                          width: 1.3,
+                        ),
+                      ),
+                      filled: true,
+                      fillColor: const Color(0xFFF9FAFB),
                     ),
                   ),
                   const SizedBox(height: 10),
@@ -4391,7 +4743,21 @@ class _PostDetailPageState extends State<PostDetailPage> {
                                     .localizedStrings['job_request_comment_restriction'],
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(24),
+                            borderSide: const BorderSide(color: _uiBorder),
                           ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(24),
+                            borderSide: const BorderSide(color: _uiBorder),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(24),
+                            borderSide: const BorderSide(
+                              color: _uiPrimaryBlue,
+                              width: 1.3,
+                            ),
+                          ),
+                          filled: true,
+                          fillColor: const Color(0xFFF9FAFB),
                           contentPadding: const EdgeInsets.symmetric(
                             horizontal: 16,
                           ),
@@ -4405,7 +4771,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
                           : _addComment,
                       icon: Icon(
                         canBid ? Icons.local_offer_outlined : Icons.send,
-                        color: const Color(0xFF1976D2),
+                        color: _uiPrimaryBlue,
                       ),
                       tooltip: canBid
                           ? (myExistingBid != null
