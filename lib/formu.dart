@@ -20,6 +20,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:untitled1/sign_in.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:untitled1/pages/fullscreen_media_viewer.dart';
+import 'package:untitled1/pages/schedule.dart';
 import 'package:untitled1/utils/profession_localization.dart';
 import 'package:untitled1/widgets/cached_video_player.dart';
 import 'package:untitled1/ptofile.dart';
@@ -1427,9 +1428,7 @@ class _BlogPageState extends State<BlogPage> {
       'selected_worker': 'Selected Worker',
       'selected_offer': 'Selected Offer',
       'offer_price': 'Offered Price',
-      'workers_can_offer':
-          'Workers can place bids here, and you can choose the one you want.',
-      'job_request_comment_restriction':
+          'job_request_comment_restriction':
           'Only workers with an active subscription can comment on job requests.',
       'rating': 'Rating',
       'reviews': 'Reviews',

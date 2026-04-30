@@ -88,6 +88,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
   String _altPhoneNumber = "";
   String _email = "";
   String _town = "";
+  DateTime? _joinedAt;
   DateTime? _dateOfBirth;
   String _profileImageUrl = "";
   String _userRole = "customer";
@@ -463,6 +464,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
           _altPhoneNumber = data['optionalPhone']?.toString() ?? "";
           _email = data['email']?.toString() ?? "";
           _town = data['town']?.toString() ?? "";
+          _joinedAt = _toDate(data['createdAt']);
           _dateOfBirth = _toDate(data['dateOfBirth']);
           _profileImageUrl = data['profileImageUrl']?.toString() ?? "";
           _spokenLanguages = data['spokenLanguages'] is List
@@ -1804,33 +1806,6 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
                   _hasActiveWorkerSubscription)
               ? _buildBottomBar(strings)
               : null,
-          floatingActionButton:
-              (_isOwnProfile &&
-                  _tabController != null &&
-                  _tabController!.index == 0)
-              ? Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    FloatingActionButton.extended(
-                      heroTag: 'profile_fab',
-                      onPressed: _addProject,
-                      backgroundColor: _kPrimaryBlue,
-                      icon: const Icon(
-                        Icons.add_photo_alternate_rounded,
-                        color: Colors.white,
-                      ),
-                      label: Text(
-                        strings['add']!,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ],
-                )
-              : null,
         ),
       ),
     );
@@ -2439,6 +2414,45 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
     final spokenLanguagesText = _spokenLanguages
         .map((language) => _spokenLanguageLabel(language, localeCode))
         .join(', ');
+    final infoRows = <Widget>[
+      if (_phoneNumber.trim().isNotEmpty)
+        _buildInfoRow(Icons.phone_rounded, strings['call']!, _phoneNumber),
+      if (_altPhoneNumber.trim().isNotEmpty)
+        _buildInfoRow(
+          Icons.phone_iphone_rounded,
+          strings['secondary']!,
+          _altPhoneNumber,
+        ),
+      if (_email.trim().isNotEmpty)
+        _buildInfoRow(Icons.email_rounded, strings['email']!, _email),
+      if (_town.trim().isNotEmpty)
+        _buildInfoRow(Icons.location_city_rounded, strings['town']!, _town),
+      if (spokenLanguagesText.trim().isNotEmpty)
+        _buildInfoRow(
+          Icons.language_rounded,
+          strings['spoken_languages']!,
+          spokenLanguagesText,
+        ),
+      if (age != null)
+        _buildInfoRow(
+          Icons.cake_outlined,
+          strings['age'] ?? 'Age',
+          age.toString(),
+        ),
+      if (_joinedAt != null)
+        _buildInfoRow(
+          Icons.calendar_month_rounded,
+          strings['joined'] ?? 'Joined',
+          _formatJoinedDate(_joinedAt!),
+        ),
+      if (_distanceStr.trim().isNotEmpty)
+        _buildInfoRow(
+          Icons.straighten_rounded,
+          strings['distance']!,
+          _distanceStr,
+        ),
+    ];
+    final hasBio = _bio.trim().isNotEmpty;
     return SingleChildScrollView(
       controller: _aboutScrollController,
       padding: const EdgeInsets.all(24),
@@ -2446,54 +2460,31 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildSectionTitle(strings['bio_title']!),
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.grey[50],
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Text(
-              strings['bio']!,
-              style: TextStyle(
-                fontSize: 15,
-                height: 1.6,
-                color: Colors.grey[800],
+          if (hasBio) ...[
+            _buildSectionTitle(strings['bio_title']!),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.grey[50],
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                _bio,
+                style: TextStyle(
+                  fontSize: 15,
+                  height: 1.6,
+                  color: Colors.grey[800],
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: 32),
-          _buildSectionTitle(strings['contact_info']!),
-          const SizedBox(height: 16),
-          _buildInfoCard([
-            _buildInfoRow(Icons.phone_rounded, strings['call']!, _phoneNumber),
-            if (_altPhoneNumber.isNotEmpty)
-              _buildInfoRow(
-                Icons.phone_iphone_rounded,
-                strings['secondary']!,
-                _altPhoneNumber,
-              ),
-            _buildInfoRow(Icons.email_rounded, strings['email']!, _email),
-            _buildInfoRow(Icons.location_city_rounded, strings['town']!, _town),
-            _buildInfoRow(
-              Icons.language_rounded,
-              strings['spoken_languages']!,
-              spokenLanguagesText,
-            ),
-            if (age != null)
-              _buildInfoRow(
-                Icons.cake_outlined,
-                strings['age'] ?? 'Age',
-                age.toString(),
-              ),
-            if (_distanceStr.isNotEmpty)
-              _buildInfoRow(
-                Icons.straighten_rounded,
-                strings['distance']!,
-                _distanceStr,
-              ),
-          ]),
+          ],
+          if (infoRows.isNotEmpty) ...[
+            if (hasBio) const SizedBox(height: 32),
+            _buildSectionTitle(strings['contact_info']!),
+            const SizedBox(height: 16),
+            _buildInfoCard(infoRows),
+          ],
 
           if (_isOwnProfile) ...[
             const SizedBox(height: 32),
@@ -2788,7 +2779,6 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
   }
 
   Widget _buildInfoRow(IconData icon, String label, String value) {
-    final strings = _getLocalizedStrings(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
       child: Row(
@@ -2815,7 +2805,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
                   ),
                 ),
                 Text(
-                  value.isNotEmpty ? value : strings['not_available']!,
+                  value.trim(),
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 15,
@@ -2828,6 +2818,13 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
         ],
       ),
     );
+  }
+
+  String _formatJoinedDate(DateTime date) {
+    final day = date.day.toString().padLeft(2, '0');
+    final month = date.month.toString().padLeft(2, '0');
+    final year = date.year.toString().padLeft(4, '0');
+    return '$day/$month/$year';
   }
 
   String _spokenLanguageLabel(String language, String localeCode) {
@@ -3133,6 +3130,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
           'bio': _bio.isNotEmpty ? _bio : 'אין תיאור זמין עדיין.',
           'contact_info': 'מידע ליצירת קשר',
           'age': 'גיל',
+          'joined': 'הצטרף',
           'call': 'התקשר',
           'message': 'הודעה',
           'share_profile': 'שתף פרופיל',
@@ -3232,6 +3230,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
           'bio': _bio.isNotEmpty ? _bio : 'لا يوجد وصف متاح بعد.',
           'contact_info': 'معلومات الاتصال',
           'age': 'العمر',
+          'joined': 'انضم',
           'call': 'اتصال',
           'message': 'رسالة',
           'share_profile': 'مشاركة الملف',
@@ -3332,6 +3331,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
           'bio': _bio.isNotEmpty ? _bio : 'ገለፃ አልተገኘም።',
           'contact_info': 'የመገናኛ መረጃ',
           'age': 'ዕድሜ',
+          'joined': 'የተቀላቀለበት',
           'call': 'ይደውሉ',
           'message': 'መልእክት',
           'share_profile': 'መገለጫ አጋራ',
@@ -3428,6 +3428,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
           'bio': _bio.isNotEmpty ? _bio : 'Описание пока недоступно.',
           'contact_info': 'Контактная информация',
           'age': 'Возраст',
+          'joined': 'Дата регистрации',
           'call': 'Позвонить',
           'message': 'Сообщение',
           'share_profile': 'Поделиться профилем',
@@ -3525,6 +3526,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
           'bio': _bio.isNotEmpty ? _bio : 'No description available yet.',
           'contact_info': 'Contact Information',
           'age': 'Age',
+          'joined': 'Joined',
           'call': 'Call',
           'message': 'Message',
           'share_profile': 'Share Profile',
