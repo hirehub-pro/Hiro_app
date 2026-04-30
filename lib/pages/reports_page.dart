@@ -6,6 +6,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:untitled1/ptofile.dart';
 import 'package:untitled1/widgets/cached_video_player.dart';
 
 class ReportsPage extends StatefulWidget {
@@ -22,7 +23,7 @@ class _ReportsPageState extends State<ReportsPage> {
   String _statusFilter = 'all';
   static const int _maxReportAttachments = 5;
 
-  static const List<String> _statuses = ['all', 'open', 'resolved'];
+  static const List<String> _statuses = ['all', 'open', 'resolved', 'block'];
   static const List<String> _readySubjects = [
     'General',
     'Bug Report',
@@ -42,6 +43,12 @@ class _ReportsPageState extends State<ReportsPage> {
 
   ({Color bg, Color fg, IconData icon}) _statusMeta(String status) {
     switch (status) {
+      case 'blocked':
+        return (
+          bg: Colors.orange.withValues(alpha: 0.14),
+          fg: Colors.orange.shade900,
+          icon: Icons.block_outlined,
+        );
       case 'resolved':
         return (
           bg: Colors.green.withValues(alpha: 0.12),
@@ -67,6 +74,94 @@ class _ReportsPageState extends State<ReportsPage> {
           fg: Colors.orange.shade800,
           icon: Icons.pending_outlined,
         );
+    }
+  }
+
+  bool _isBlockReport(Map<String, dynamic> data) {
+    final reportType = (data['reportType'] ?? '').toString();
+    if (reportType == 'user_block') return true;
+    final blockedUid = (data['blockedUid'] ?? '').toString();
+    final blockedByUid = (data['blockedByUid'] ?? '').toString();
+    return blockedUid.isNotEmpty || blockedByUid.isNotEmpty;
+  }
+
+  Future<bool> _confirmAction({
+    required String title,
+    required String content,
+    required String confirmLabel,
+  }) async {
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: Text(content),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(confirmLabel),
+          ),
+        ],
+      ),
+    );
+    return confirmed == true;
+  }
+
+  Future<void> _unblockUser(String reportId, Map<String, dynamic> data) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || user.isAnonymous) return;
+
+    final blockedUid = (data['blockedUid'] ?? data['reportedId'] ?? '')
+        .toString();
+    if (blockedUid.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Missing blocked user data.')),
+      );
+      return;
+    }
+
+    final confirmed = await _confirmAction(
+      title: 'Unblock User',
+      content: 'Remove this user from your blocked list?',
+      confirmLabel: 'Unblock',
+    );
+    if (!confirmed) return;
+
+    try {
+      await _firestore
+          .collection('users')
+          .doc(user.uid)
+          .collection('blocked_users')
+          .doc(blockedUid)
+          .delete();
+
+      final reportRef = _firestore.collection('reports').doc(reportId);
+      final reportSnapshot = await reportRef.get();
+      final wasResolved =
+          (reportSnapshot.data()?['status'] ?? data['status'] ?? 'open')
+              .toString() ==
+          'resolved';
+      await reportRef.delete();
+
+      if (!wasResolved) {
+        await _firestore.collection('metadata').doc('system').set({
+          'reportsCount': FieldValue.increment(-1),
+        }, SetOptions(merge: true));
+      }
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('User removed from your blocked list.')),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to unblock this user.')),
+      );
     }
   }
 
@@ -442,7 +537,9 @@ class _ReportsPageState extends State<ReportsPage> {
     var query = _firestore
         .collection('reports')
         .where('reporterId', isEqualTo: uid);
-    if (_statusFilter != 'all') {
+    if (_statusFilter != 'all' &&
+        _statusFilter != 'block' &&
+        _statusFilter != 'open') {
       query = query.where('status', isEqualTo: _statusFilter);
     }
     return query;
@@ -456,8 +553,9 @@ class _ReportsPageState extends State<ReportsPage> {
     return '${createdAt.year}-$month-$day $hour:$minute';
   }
 
-  Widget _statusBadge(String status) {
+  Widget _statusBadge(String status, {String? label}) {
     final statusMeta = _statusMeta(status);
+    final displayLabel = label ?? _titleCaseStatus(status);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -471,7 +569,7 @@ class _ReportsPageState extends State<ReportsPage> {
           Icon(statusMeta.icon, size: 14, color: statusMeta.fg),
           const SizedBox(width: 4),
           Text(
-            _titleCaseStatus(status),
+            displayLabel,
             style: TextStyle(
               color: statusMeta.fg,
               fontWeight: FontWeight.w600,
@@ -480,6 +578,133 @@ class _ReportsPageState extends State<ReportsPage> {
           ),
         ],
       ),
+    );
+  }
+
+  ({Color tint, Color border, Color text, IconData icon, String label})
+  _cardMeta(Map<String, dynamic> data) {
+    if (_isBlockReport(data)) {
+      return (
+        tint: const Color(0xFFFFF7ED),
+        border: const Color(0xFFFDBA74),
+        text: const Color(0xFF9A3412),
+        icon: Icons.shield_outlined,
+        label: 'Blocked User',
+      );
+    }
+    return (
+      tint: const Color(0xFFF8FAFC),
+      border: const Color(0xFFE2E8F0),
+      text: const Color(0xFF334155),
+      icon: Icons.description_outlined,
+      label: 'Report',
+    );
+  }
+
+  Widget _pill({
+    required String text,
+    required Color background,
+    required Color foreground,
+    IconData? icon,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 14, color: foreground),
+            const SizedBox(width: 6),
+          ],
+          Flexible(
+            child: Text(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: foreground,
+                fontWeight: FontWeight.w600,
+                fontSize: 12,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _userProfileLink({required String userId, required bool blocked}) {
+    final label = blocked ? 'Blocked user' : 'Reported user';
+    return FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      future: _firestore.collection('users').doc(userId).get(),
+      builder: (context, snapshot) {
+        final data = snapshot.data?.data();
+        final resolvedName = (data?['name'] ?? '').toString().trim();
+        final displayName = resolvedName.isNotEmpty ? resolvedName : userId;
+
+        return InkWell(
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => Profile(userId: userId)),
+            );
+          },
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.person_outline_rounded,
+                  size: 18,
+                  color: Color(0xFF475569),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        label,
+                        style: const TextStyle(
+                          color: Color(0xFF64748B),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        displayName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xFF0F172A),
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Icon(
+                  Icons.chevron_right_rounded,
+                  color: Color(0xFF94A3B8),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -542,9 +767,11 @@ class _ReportsPageState extends State<ReportsPage> {
   }
 
   Widget _buildTopSummary() {
-    final activeFilter = _statusFilter == 'all'
-        ? 'Showing all reports'
-        : 'Filtered by ${_titleCaseStatus(_statusFilter)}';
+    final activeFilter = switch (_statusFilter) {
+      'all' => 'Showing all reports',
+      'block' => 'Showing blocked-user and safety items',
+      _ => 'Filtered by ${_titleCaseStatus(_statusFilter)}',
+    };
 
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
@@ -599,9 +826,11 @@ class _ReportsPageState extends State<ReportsPage> {
   }
 
   Widget _buildEmptyState() {
-    final message = _statusFilter == 'all'
-        ? 'No reports yet. Start by creating your first report.'
-        : 'No ${_titleCaseStatus(_statusFilter).toLowerCase()} reports found.';
+    final message = switch (_statusFilter) {
+      'all' => 'No reports yet. Start by creating your first report.',
+      'block' => 'No blocked-user or safety items found.',
+      _ => 'No ${_titleCaseStatus(_statusFilter).toLowerCase()} reports found.',
+    };
     return Center(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -642,9 +871,18 @@ class _ReportsPageState extends State<ReportsPage> {
     final reason = (data['reason'] ?? '').toString();
     final details = (data['details'] ?? '').toString();
     final status = (data['status'] ?? 'open').toString();
+    final isBlockCard = _isBlockReport(data);
+    final canUnblock = isBlockCard && status != 'resolved';
+    final displayStatus = canUnblock ? 'blocked' : status;
+    final cardMeta = _cardMeta(data);
     final subject = (data['subject'] ?? data['priority'] ?? 'General')
         .toString()
         .trim();
+    final relatedUserId =
+        ((data['blockedUid'] ?? '').toString().isNotEmpty
+                ? data['blockedUid']
+                : data['reportedId'])
+            .toString();
     final attachments = ((data['attachments'] ?? []) as List)
         .whereType<Map>()
         .map(
@@ -663,70 +901,189 @@ class _ReportsPageState extends State<ReportsPage> {
         : _formatDate(createdAt);
 
     return Card(
-      elevation: 0.5,
-      child: Padding(
-        padding: const EdgeInsets.all(14),
+      elevation: 0,
+      margin: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: cardMeta.border),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x0A0F172A),
+              blurRadius: 18,
+              offset: Offset(0, 6),
+            ),
+          ],
+        ),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: Text(
-                    reason.isEmpty ? 'General issue' : reason,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 16,
-                      color: Theme.of(context).colorScheme.onSurface,
-                    ),
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: cardMeta.tint,
+                    borderRadius: BorderRadius.circular(12),
                   ),
+                  child: Icon(cardMeta.icon, color: cardMeta.text),
                 ),
-                _statusBadge(status),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
+                const SizedBox(width: 12),
                 Expanded(
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.indigo.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: Text(
-                        'Subject: ${subject.isEmpty ? 'General' : subject}',
-                        maxLines: 1,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        reason.isEmpty ? 'General issue' : reason,
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          color: Colors.indigo.shade800,
-                          fontWeight: FontWeight.w600,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 16,
+                          color: Theme.of(context).colorScheme.onSurface,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        dateText,
+                        style: const TextStyle(
+                          color: Colors.black54,
                           fontSize: 12,
                         ),
                       ),
-                    ),
+                    ],
                   ),
                 ),
-                const SizedBox(width: 10),
-                Text(
-                  dateText,
-                  style: const TextStyle(color: Colors.black54, fontSize: 12),
+                const SizedBox(width: 12),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    _statusBadge(
+                      displayStatus,
+                      label: canUnblock ? 'Blocked' : null,
+                    ),
+                    if (canUnblock) ...[
+                      const SizedBox(height: 8),
+                      OutlinedButton.icon(
+                        onPressed: () => _unblockUser(id, data),
+                        icon: const Icon(Icons.lock_open_outlined, size: 16),
+                        label: const Text('Unblock'),
+                        style: OutlinedButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          foregroundColor: Colors.orange.shade800,
+                          side: BorderSide(color: Colors.orange.shade200),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 8,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ],
             ),
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _pill(
+                  text: cardMeta.label,
+                  background: cardMeta.tint,
+                  foreground: cardMeta.text,
+                  icon: cardMeta.icon,
+                ),
+                _pill(
+                  text: subject.isEmpty ? 'General' : subject,
+                  background: Colors.indigo.withValues(alpha: 0.1),
+                  foreground: Colors.indigo.shade800,
+                ),
+              ],
+            ),
+            if (relatedUserId.isNotEmpty && relatedUserId != 'app') ...[
+              const SizedBox(height: 14),
+              _userProfileLink(userId: relatedUserId, blocked: isBlockCard),
+            ],
+            if (canUnblock) ...[
+              const SizedBox(height: 14),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFFBEB),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFFDE68A)),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(
+                      Icons.visibility_off_outlined,
+                      size: 18,
+                      color: Color(0xFFB45309),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'This user is hidden from your feed. Unblock them to allow their content to appear again.',
+                        style: TextStyle(
+                          color: Colors.orange.shade900,
+                          height: 1.4,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             if (details.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              Text(details),
+              const SizedBox(height: 14),
+              Text(
+                details,
+                maxLines: canUnblock ? 4 : 5,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Color(0xFF334155), height: 1.45),
+              ),
             ],
             if (attachments.isNotEmpty) ...[
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  const Icon(
+                    Icons.attach_file_outlined,
+                    size: 18,
+                    color: Color(0xFF64748B),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Attachments',
+                    style: TextStyle(
+                      color: Colors.blueGrey.shade700,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    '${attachments.length}',
+                    style: const TextStyle(
+                      color: Color(0xFF94A3B8),
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
               const SizedBox(height: 10),
               SizedBox(
-                height: 150,
+                height: 156,
                 child: ListView.separated(
                   scrollDirection: Axis.horizontal,
                   itemCount: attachments.length,
@@ -737,10 +1094,14 @@ class _ReportsPageState extends State<ReportsPage> {
                     final isImage = item['type'] == 'image';
                     final url = item['url'] ?? '';
                     return ClipRRect(
-                      borderRadius: BorderRadius.circular(10),
+                      borderRadius: BorderRadius.circular(14),
                       child: Container(
                         width: 180,
-                        color: Colors.black12,
+                        decoration: BoxDecoration(
+                          color: Colors.black12,
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
                         child: isImage
                             ? Image.network(
                                 url,
@@ -757,12 +1118,14 @@ class _ReportsPageState extends State<ReportsPage> {
                 ),
               ),
             ],
-            const SizedBox(height: 8),
+            const SizedBox(height: 14),
+            const Divider(height: 1),
+            const SizedBox(height: 12),
             Row(
               children: [
                 Expanded(
                   child: Text(
-                    'ID: $id',
+                    'Report ID: $id',
                     style: const TextStyle(color: Colors.grey, fontSize: 11),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -841,6 +1204,18 @@ class _ReportsPageState extends State<ReportsPage> {
                       }
 
                       final docs = snapshot.data!.docs.toList()
+                        ..retainWhere((doc) {
+                          if (_statusFilter == 'block') {
+                            return _isBlockReport(doc.data());
+                          }
+                          if (_statusFilter == 'open') {
+                            final data = doc.data();
+                            return (data['status'] ?? 'open').toString() ==
+                                    'open' &&
+                                !_isBlockReport(data);
+                          }
+                          return true;
+                        })
                         ..sort((a, b) {
                           final ta = a.data()['timestamp'] as Timestamp?;
                           final tb = b.data()['timestamp'] as Timestamp?;

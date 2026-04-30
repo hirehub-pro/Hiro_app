@@ -2579,6 +2579,197 @@ class ChatReportDetailsPage extends StatelessWidget {
     return intl.DateFormat('yyyy-MM-dd HH:mm').format(ts.toDate());
   }
 
+  ({Color bg, Color fg, IconData icon, String label}) _statusMeta(
+    BuildContext context,
+    String status,
+  ) {
+    switch (status) {
+      case 'resolved':
+        return (
+          bg: const Color(0xFFE8F5E9),
+          fg: const Color(0xFF2E7D32),
+          icon: Icons.check_circle_outline,
+          label: _t(
+            context,
+            en: 'Handled',
+            he: 'טופל',
+            ar: 'تمت المعالجة',
+            am: 'ተስተናግዷል',
+            ru: 'Обработано',
+          ),
+        );
+      case 'in_progress':
+        return (
+          bg: const Color(0xFFE3F2FD),
+          fg: const Color(0xFF1565C0),
+          icon: Icons.sync,
+          label: _t(
+            context,
+            en: 'In review',
+            he: 'בבדיקה',
+            ar: 'قيد المراجعة',
+            am: 'በግምገማ ላይ',
+            ru: 'На рассмотрении',
+          ),
+        );
+      default:
+        return (
+          bg: const Color(0xFFFFF3E0),
+          fg: const Color(0xFFEF6C00),
+          icon: Icons.schedule_outlined,
+          label: _t(
+            context,
+            en: 'Open',
+            he: 'פתוח',
+            ar: 'مفتوح',
+            am: 'ክፍት',
+            ru: 'Открыто',
+          ),
+        );
+    }
+  }
+
+  Widget _sectionCard({
+    required String title,
+    String? subtitle,
+    IconData? icon,
+    required Widget child,
+  }) {
+    return Card(
+      elevation: 0,
+      margin: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x0A0F172A),
+              blurRadius: 18,
+              offset: Offset(0, 6),
+            ),
+          ],
+        ),
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (icon != null) ...[
+                  Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEFF6FF),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(icon, color: const Color(0xFF1976D2), size: 20),
+                  ),
+                  const SizedBox(width: 12),
+                ],
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      if (subtitle != null && subtitle.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          subtitle,
+                          style: const TextStyle(
+                            color: Color(0xFF64748B),
+                            height: 1.4,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            child,
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _metaPill({
+    required String text,
+    required Color background,
+    required Color foreground,
+    IconData? icon,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 14, color: foreground),
+            const SizedBox(width: 6),
+          ],
+          Flexible(
+            child: Text(
+              text,
+              style: TextStyle(
+                color: foreground,
+                fontWeight: FontWeight.w600,
+                fontSize: 12,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _labelValue(
+    BuildContext context, {
+    required String label,
+    required String value,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              color: Color(0xFF64748B),
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value.isEmpty ? '-' : value,
+            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+              color: const Color(0xFF0F172A),
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<String> _userNameFromId(String userId) async {
     if (userId.isEmpty) return '-';
     if (userId == 'app') return 'App';
@@ -2693,137 +2884,260 @@ class ChatReportDetailsPage extends StatelessWidget {
           final createdAt = data['timestamp'] as Timestamp?;
           final resolvedAt = data['resolvedAt'] as Timestamp?;
 
+          final statusMeta = _statusMeta(context, status);
+          final visibleTitle = subject.trim().isEmpty
+              ? _t(
+                  context,
+                  en: 'Support report',
+                  he: 'דיווח תמיכה',
+                  ar: 'بلاغ دعم',
+                  am: 'የድጋፍ ሪፖርት',
+                  ru: 'Обращение в поддержку',
+                )
+              : subject.trim();
+
           return SingleChildScrollView(
             padding: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Card(
-                  elevation: 0.5,
-                  child: Padding(
-                    padding: const EdgeInsets.all(14),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          subject,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w800,
+                _sectionCard(
+                  title: visibleTitle,
+                  subtitle: _t(
+                    context,
+                    en: 'Here is the report summary shared in this conversation.',
+                    he: 'כאן מופיע סיכום הדיווח ששויך לשיחה הזו.',
+                    ar: 'هنا يظهر ملخص البلاغ المرتبط بهذه المحادثة.',
+                    am: 'እዚህ ከዚህ ውይይት ጋር የተያያዘ የሪፖርቱ ማጠቃለያ ይታያል።',
+                    ru: 'Здесь показана сводка по жалобе, связанной с этим чатом.',
+                  ),
+                  icon: Icons.assignment_outlined,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          _metaPill(
+                            text: statusMeta.label,
+                            background: statusMeta.bg,
+                            foreground: statusMeta.fg,
+                            icon: statusMeta.icon,
                           ),
-                        ),
-                        const SizedBox(height: 10),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: [
-                            Chip(
-                              label: Text(
-                                '${_t(context, en: 'Status', he: 'סטטוס', ar: 'الحالة', am: 'ሁኔታ', ru: 'Статус')}: $status',
-                              ),
+                          const Spacer(),
+                          _metaPill(
+                            text: _formatTimestamp(createdAt),
+                            background: const Color(0xFFF8FAFC),
+                            foreground: const Color(0xFF475569),
+                            icon: Icons.schedule_outlined,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          if (source.isNotEmpty)
+                            _metaPill(
+                              text: source,
+                              background: const Color(0xFFEFF6FF),
+                              foreground: const Color(0xFF1976D2),
+                              icon: Icons.link_outlined,
                             ),
-                            Chip(
-                              label: Text(
-                                '${_t(context, en: 'Created', he: 'נוצר', ar: 'تم الإنشاء', am: 'የተፈጠረ', ru: 'Создано')}: ${_formatTimestamp(createdAt)}',
-                              ),
+                          if (reportType.isNotEmpty)
+                            _metaPill(
+                              text: reportType,
+                              background: const Color(0xFFF5F3FF),
+                              foreground: const Color(0xFF6D28D9),
+                              icon: Icons.category_outlined,
                             ),
-                            if (source.isNotEmpty)
-                              Chip(
-                                label: Text(
-                                  '${_t(context, en: 'Source', he: 'מקור', ar: 'المصدر', am: 'ምንጭ', ru: 'Источник')}: $source',
-                                ),
-                              ),
-                            if (reportType.isNotEmpty)
-                              Chip(
-                                label: Text(
-                                  '${_t(context, en: 'Type', he: 'סוג', ar: 'النوع', am: 'አይነት', ru: 'Тип')}: $reportType',
-                                ),
-                              ),
-                          ],
-                        ),
-                      ],
-                    ),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
                 const SizedBox(height: 12),
-                Card(
-                  elevation: 0.5,
-                  child: Padding(
-                    padding: const EdgeInsets.all(14),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '${_t(context, en: 'Report ID', he: 'מזהה דיווח', ar: 'معرّف البلاغ', am: 'የሪፖርት መለያ', ru: 'ID жалобы')}: $reportId',
-                        ),
-                        const SizedBox(height: 6),
-                        FutureBuilder<String>(
-                          future: _userNameFromId(reporterId),
-                          builder: (context, snapshot) {
-                            final reporterName = snapshot.data ?? '-';
-                            return Text(
-                              '${_t(context, en: 'Reporter', he: 'מדווח', ar: 'المبلّغ', am: 'ሪፖርተር', ru: 'Заявитель')}: $reporterName',
-                            );
-                          },
-                        ),
-                        const SizedBox(height: 6),
-                        FutureBuilder<String>(
-                          future: _userNameFromId(reportedId),
-                          builder: (context, snapshot) {
-                            final reportedName = snapshot.data ?? '-';
-                            return Text(
-                              '${_t(context, en: 'Reported User', he: 'משתמש מדווח', ar: 'المستخدم المُبلّغ عنه', am: 'የተሪፖርተ ተጠቃሚ', ru: 'Пользователь, на которого пожаловались')}: $reportedName',
-                            );
-                          },
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          '${_t(context, en: 'Resolved By', he: 'טופל על ידי', ar: 'تمت المعالجة بواسطة', am: 'የተፈታ በ', ru: 'Решено пользователем')}: ${resolvedBy.isEmpty ? '-' : resolvedBy}',
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          '${_t(context, en: 'Resolved At', he: 'טופל בתאריך', ar: 'تمت المعالجة في', am: 'የተፈታበት ጊዜ', ru: 'Решено в')}: ${_formatTimestamp(resolvedAt)}',
-                        ),
-                        if (reason.isNotEmpty) ...[
-                          const SizedBox(height: 10),
-                          Text(
-                            '${_t(context, en: 'Reason', he: 'סיבה', ar: 'السبب', am: 'ምክንያት', ru: 'Причина')}: $reason',
+                _sectionCard(
+                  title: _t(
+                    context,
+                    en: 'People involved',
+                    he: 'אנשים מעורבים',
+                    ar: 'الأشخاص المعنيون',
+                    am: 'የተሳተፉ ሰዎች',
+                    ru: 'Участники',
+                  ),
+                  icon: Icons.people_outline,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      FutureBuilder<String>(
+                        future: _userNameFromId(reporterId),
+                        builder: (context, snapshot) {
+                          return _labelValue(
+                            context,
+                            label: _t(
+                              context,
+                              en: 'Reporter',
+                              he: 'המדווח',
+                              ar: 'المبلّغ',
+                              am: 'ሪፖርተር',
+                              ru: 'Заявитель',
+                            ),
+                            value: snapshot.data ?? '-',
+                          );
+                        },
+                      ),
+                      FutureBuilder<String>(
+                        future: _userNameFromId(reportedId),
+                        builder: (context, snapshot) {
+                          return _labelValue(
+                            context,
+                            label: _t(
+                              context,
+                              en: 'Reported person',
+                              he: 'האדם שדווח',
+                              ar: 'الشخص المُبلّغ عنه',
+                              am: 'የተሪፖርተ ሰው',
+                              ru: 'Человек, на которого пожаловались',
+                            ),
+                            value: snapshot.data ?? '-',
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _sectionCard(
+                  title: _t(
+                    context,
+                    en: 'What was reported',
+                    he: 'מה דווח',
+                    ar: 'ما الذي تم الإبلاغ عنه',
+                    am: 'ምን እንደተሪፖርተ',
+                    ru: 'Что было указано в жалобе',
+                  ),
+                  icon: Icons.notes_outlined,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (reason.isNotEmpty)
+                        _labelValue(
+                          context,
+                          label: _t(
+                            context,
+                            en: 'Short reason',
+                            he: 'סיבה קצרה',
+                            ar: 'سبب مختصر',
+                            am: 'አጭር ምክንያት',
+                            ru: 'Краткая причина',
                           ),
-                        ],
-                      ],
+                          value: reason,
+                        ),
+                      _labelValue(
+                        context,
+                        label: _t(
+                          context,
+                          en: 'Details',
+                          he: 'פרטים',
+                          ar: 'التفاصيل',
+                          am: 'ዝርዝሮች',
+                          ru: 'Подробности',
+                        ),
+                        value: details.isEmpty
+                            ? _t(
+                                context,
+                                en: 'No additional details were provided.',
+                                he: 'לא נמסרו פרטים נוספים.',
+                                ar: 'لم يتم تقديم تفاصيل إضافية.',
+                                am: 'ተጨማሪ ዝርዝሮች አልተሰጡም።',
+                                ru: 'Дополнительные подробности не указаны.',
+                              )
+                            : details,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _sectionCard(
+                  title: _t(
+                    context,
+                    en: 'Case progress',
+                    he: 'התקדמות הטיפול',
+                    ar: 'تقدّم المعالجة',
+                    am: 'የጉዳዩ ሂደት',
+                    ru: 'Ход рассмотрения',
+                  ),
+                  icon: Icons.timeline_outlined,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _labelValue(
+                        context,
+                        label: _t(
+                          context,
+                          en: 'Status',
+                          he: 'סטטוס',
+                          ar: 'الحالة',
+                          am: 'ሁኔታ',
+                          ru: 'Статус',
+                        ),
+                        value: statusMeta.label,
+                      ),
+                      _labelValue(
+                        context,
+                        label: _t(
+                          context,
+                          en: 'Submitted',
+                          he: 'נשלח',
+                          ar: 'تم الإرسال',
+                          am: 'ተልኳል',
+                          ru: 'Отправлено',
+                        ),
+                        value: _formatTimestamp(createdAt),
+                      ),
+                      if (resolvedAt != null)
+                        _labelValue(
+                          context,
+                          label: _t(
+                            context,
+                            en: 'Handled on',
+                            he: 'טופל בתאריך',
+                            ar: 'تمت المعالجة في',
+                            am: 'የተስተናገደበት ጊዜ',
+                            ru: 'Обработано',
+                          ),
+                          value: _formatTimestamp(resolvedAt),
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _sectionCard(
+                  title: _t(
+                    context,
+                    en: 'Need to add something?',
+                    he: 'רוצה להוסיף משהו?',
+                    ar: 'هل تريد إضافة شيء؟',
+                    am: 'ተጨማሪ ነገር ማከል ትፈልጋለህ?',
+                    ru: 'Хотите что-то добавить?',
+                  ),
+                  icon: Icons.chat_bubble_outline,
+                  child: Text(
+                    _t(
+                      context,
+                      en: 'Reply in this chat if you want to add context or ask a follow-up question. Our team can continue with you here.',
+                      he: 'אפשר להשיב בצ׳אט אם תרצה/י להוסיף הקשר או לשאול שאלה נוספת. הצוות שלנו יכול להמשיך איתך כאן.',
+                      ar: 'يمكنك الرد في هذه الدردشة إذا أردت إضافة توضيح أو طرح سؤال متابعة. يمكن لفريقنا المتابعة معك هنا.',
+                      am: 'ተጨማሪ አውድ ለመጨመር ወይም ተከታታይ ጥያቄ ለመጠየቅ በዚህ ውይይት ውስጥ ይመልሱ። ቡድናችን እዚህ ሊቀጥል ይችላል።',
+                      ru: 'Ответьте в этом чате, если хотите добавить детали или задать уточняющий вопрос. Наша команда сможет продолжить общение здесь.',
+                    ),
+                    style: const TextStyle(
+                      color: Color(0xFF334155),
+                      height: 1.45,
                     ),
                   ),
                 ),
-                if (details.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  Card(
-                    elevation: 0.5,
-                    child: Padding(
-                      padding: const EdgeInsets.all(14),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            _t(
-                              context,
-                              en: 'Details',
-                              he: 'פרטים',
-                              ar: 'التفاصيل',
-                              am: 'ዝርዝሮች',
-                              ru: 'Подробности',
-                            ),
-                            style: TextStyle(
-                              fontWeight: FontWeight.w700,
-                              fontSize: 15,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(details),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
               ],
             ),
           );

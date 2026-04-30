@@ -3146,6 +3146,8 @@ class _BlogCard extends StatelessWidget {
               onLike: onLike,
               onEdit: onEdit,
               onDelete: onDelete,
+              onReport: onReport,
+              onBlockUser: onBlockUser,
               localizedStrings: localizedStrings,
               onGuestDialog: onGuestDialog,
             ),
@@ -3478,6 +3480,8 @@ class PostDetailPage extends StatefulWidget {
   final VoidCallback onLike;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
+  final VoidCallback onReport;
+  final VoidCallback onBlockUser;
   final Map<String, dynamic> localizedStrings;
   final VoidCallback onGuestDialog;
 
@@ -3487,6 +3491,8 @@ class PostDetailPage extends StatefulWidget {
     required this.onLike,
     required this.onEdit,
     required this.onDelete,
+    required this.onReport,
+    required this.onBlockUser,
     required this.localizedStrings,
     required this.onGuestDialog,
   });

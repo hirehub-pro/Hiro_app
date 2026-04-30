@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:untitled1/formu.dart';
 import 'package:untitled1/pages/chat_page.dart';
 import 'package:untitled1/pages/fullscreen_media_viewer.dart';
 import 'package:untitled1/ptofile.dart';
@@ -16,14 +17,31 @@ class AdminReportsPage extends StatefulWidget {
 
 class _AdminReportsPageState extends State<AdminReportsPage> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final TextEditingController _searchController = TextEditingController();
+  final Map<String, Map<String, String>> _userSearchCache = {};
   String _statusFilter = 'all';
+  String _searchQuery = '';
 
-  static const List<String> _filters = ['all', 'open', 'resolved'];
+  static const List<String> _filters = ['all', 'open', 'resolved', 'block'];
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   String _titleCase(String value) {
     final normalized = value.replaceAll('_', ' ');
     if (normalized.isEmpty) return '-';
     return normalized[0].toUpperCase() + normalized.substring(1);
+  }
+
+  String _normalizeSearch(String value) {
+    return value.trim().toLowerCase();
+  }
+
+  String _digitsOnly(String value) {
+    return value.replaceAll(RegExp(r'[^0-9]'), '');
   }
 
   ({Color bg, Color fg, IconData icon}) _statusMeta(String status) {
@@ -47,6 +65,96 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
           icon: Icons.pending_outlined,
         );
     }
+  }
+
+  bool _isResolved(Map<String, dynamic> data) {
+    return (data['status'] ?? 'open').toString() == 'resolved';
+  }
+
+  bool _isBlockReport(Map<String, dynamic> data) {
+    final reportType = (data['reportType'] ?? '').toString();
+    if (reportType == 'user_block') return true;
+    final blockedUid = (data['blockedUid'] ?? '').toString();
+    final blockedByUid = (data['blockedByUid'] ?? '').toString();
+    return blockedUid.isNotEmpty || blockedByUid.isNotEmpty;
+  }
+
+  Future<Map<String, Map<String, String>>> _loadUserSearchData(
+    Iterable<String> userIds,
+  ) async {
+    final ids = userIds
+        .map((id) => id.trim())
+        .where((id) => id.isNotEmpty && id != 'app')
+        .toSet();
+    final missing = ids
+        .where((id) => !_userSearchCache.containsKey(id))
+        .toList();
+
+    if (missing.isNotEmpty) {
+      final docs = await Future.wait(
+        missing.map((id) => _firestore.collection('users').doc(id).get()),
+      );
+      for (final doc in docs) {
+        final data = doc.data() ?? <String, dynamic>{};
+        _userSearchCache[doc.id] = {
+          'id': doc.id,
+          'name': (data['name'] ?? '').toString(),
+          'phone': (data['phone'] ?? '').toString(),
+        };
+      }
+    }
+
+    return _userSearchCache;
+  }
+
+  String _userDisplayLabel(
+    String userId,
+    Map<String, Map<String, String>> users,
+  ) {
+    if (userId.isEmpty) return '-';
+    final user = users[userId] ?? const <String, String>{};
+    final name = (user['name'] ?? '').trim();
+    return name.isNotEmpty ? name : userId;
+  }
+
+  bool _matchesSearch(
+    String reportId,
+    Map<String, dynamic> data,
+    Map<String, Map<String, String>> users,
+  ) {
+    final query = _normalizeSearch(_searchQuery);
+    if (query.isEmpty) return true;
+
+    final digitsQuery = _digitsOnly(_searchQuery);
+    final reporterId = (data['reporterId'] ?? '').toString();
+    final reportedId = (data['reportedId'] ?? '').toString();
+    final reporter = users[reporterId] ?? const <String, String>{};
+    final reported = users[reportedId] ?? const <String, String>{};
+
+    final textFields = <String>[
+      reportId,
+      reporterId,
+      reportedId,
+      reporter['name'] ?? '',
+      reporter['phone'] ?? '',
+      reported['name'] ?? '',
+      reported['phone'] ?? '',
+    ];
+
+    final textMatch = textFields.any(
+      (field) => _normalizeSearch(field).contains(query),
+    );
+    if (textMatch) return true;
+
+    if (digitsQuery.isEmpty) return false;
+    final digitFields = <String>[
+      _digitsOnly(reportId),
+      _digitsOnly(reporterId),
+      _digitsOnly(reportedId),
+      _digitsOnly(reporter['phone'] ?? ''),
+      _digitsOnly(reported['phone'] ?? ''),
+    ];
+    return digitFields.any((field) => field.contains(digitsQuery));
   }
 
   Future<bool> _confirmAction({
@@ -96,8 +204,7 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
       final subject = (reportData['subject'] ?? reportData['reason'] ?? 'דיווח')
           .toString()
           .trim();
-      final wasResolved =
-          (reportData['status'] ?? 'open').toString() == 'resolved';
+      final wasResolved = _isResolved(reportData);
 
       await _firestore.collection('reports').doc(reportId).set({
         'status': 'resolved',
@@ -190,10 +297,19 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
     if (!confirmed) return;
 
     try {
+      final reportDoc = await _firestore
+          .collection('reports')
+          .doc(reportId)
+          .get();
+      final wasResolved = _isResolved(
+        reportDoc.data() ?? const <String, dynamic>{},
+      );
       await _firestore.collection('reports').doc(reportId).delete();
-      await _firestore.collection('metadata').doc('system').set({
-        'reportsCount': FieldValue.increment(-1),
-      }, SetOptions(merge: true));
+      if (!wasResolved) {
+        await _firestore.collection('metadata').doc('system').set({
+          'reportsCount': FieldValue.increment(-1),
+        }, SetOptions(merge: true));
+      }
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
@@ -216,8 +332,9 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
     return '${d.year}-$month-$day $hour:$minute';
   }
 
-  Widget _statusBadge(String status) {
+  Widget _statusBadge(String status, {String? label}) {
     final meta = _statusMeta(status);
+    final displayLabel = label ?? _titleCase(status);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
@@ -230,7 +347,7 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
           Icon(meta.icon, size: 14, color: meta.fg),
           const SizedBox(width: 4),
           Text(
-            _titleCase(status),
+            displayLabel,
             style: TextStyle(color: meta.fg, fontWeight: FontWeight.w600),
           ),
         ],
@@ -238,7 +355,7 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
     );
   }
 
-  Widget _buildSummary(int total, int open, int resolved) {
+  Widget _buildSummary(int total, int open, int resolved, int block) {
     return Container(
       margin: const EdgeInsets.fromLTRB(12, 12, 12, 8),
       padding: const EdgeInsets.all(14),
@@ -256,7 +373,7 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              'Total: $total  |  Open: $open  |  Resolved: $resolved',
+              'Total: $total  |  Open: $open  |  Resolved: $resolved  |  Block: $block',
               style: const TextStyle(
                 color: Colors.white,
                 fontWeight: FontWeight.w700,
@@ -287,10 +404,49 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
     );
   }
 
+  Widget _buildSearchBar() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+      child: TextField(
+        controller: _searchController,
+        onChanged: (value) => setState(() => _searchQuery = value),
+        decoration: InputDecoration(
+          hintText: 'Search by report ID, reporter, reported, phone, or name',
+          prefixIcon: const Icon(Icons.search),
+          suffixIcon: _searchQuery.trim().isEmpty
+              ? null
+              : IconButton(
+                  onPressed: () {
+                    _searchController.clear();
+                    setState(() => _searchQuery = '');
+                  },
+                  icon: const Icon(Icons.close),
+                ),
+          filled: true,
+          fillColor: Colors.white,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide(color: Colors.blue.shade400),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildEmptyState() {
-    final msg = _statusFilter == 'all'
-        ? 'No reports found.'
-        : 'No ${_titleCase(_statusFilter).toLowerCase()} reports.';
+    final msg = switch (_statusFilter) {
+      'all' => 'No reports found.',
+      'block' => 'No block-queue items found.',
+      _ => 'No ${_titleCase(_statusFilter).toLowerCase()} reports.',
+    };
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
@@ -406,165 +562,252 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
 
           final allDocs = snapshot.data!.docs;
           final openCount = allDocs.where((d) {
-            return (d.data()['status'] ?? 'open').toString() != 'resolved';
+            final data = d.data();
+            return !_isResolved(data) && !_isBlockReport(data);
           }).length;
-          final resolvedCount = allDocs.length - openCount;
+          final resolvedCount = allDocs
+              .where((d) => _isResolved(d.data()))
+              .length;
+          final blockCount = allDocs
+              .where((d) => _isBlockReport(d.data()))
+              .length;
 
-          final docs = allDocs.where((d) {
-            if (_statusFilter == 'all') return true;
-            return (d.data()['status'] ?? 'open').toString() == _statusFilter;
-          }).toList();
+          final idsToLoad = <String>{
+            for (final doc in allDocs)
+              (doc.data()['reporterId'] ?? '').toString(),
+            for (final doc in allDocs)
+              (doc.data()['reportedId'] ?? '').toString(),
+          };
 
-          if (docs.isEmpty) {
-            return Column(
-              children: [
-                _buildSummary(allDocs.length, openCount, resolvedCount),
-                _buildFilters(),
-                Expanded(child: _buildEmptyState()),
-              ],
-            );
-          }
+          return FutureBuilder<Map<String, Map<String, String>>>(
+            future: _loadUserSearchData(idsToLoad),
+            builder: (context, userSnapshot) {
+              if (userSnapshot.connectionState == ConnectionState.waiting &&
+                  !userSnapshot.hasData) {
+                return Column(
+                  children: [
+                    _buildSummary(
+                      allDocs.length,
+                      openCount,
+                      resolvedCount,
+                      blockCount,
+                    ),
+                    _buildSearchBar(),
+                    _buildFilters(),
+                    const Expanded(
+                      child: Center(child: CircularProgressIndicator()),
+                    ),
+                  ],
+                );
+              }
 
-          return Column(
-            children: [
-              _buildSummary(allDocs.length, openCount, resolvedCount),
-              _buildFilters(),
-              Expanded(
-                child: ListView.builder(
-                  padding: const EdgeInsets.all(12),
-                  itemCount: docs.length,
-                  itemBuilder: (context, index) {
-                    final doc = docs[index];
-                    final data = doc.data();
+              final users = userSnapshot.data ?? _userSearchCache;
+              final docs = allDocs.where((d) {
+                final data = d.data();
+                final matchesFilter = switch (_statusFilter) {
+                  'all' => true,
+                  'block' => _isBlockReport(data),
+                  'open' =>
+                    (data['status'] ?? 'open').toString() == 'open' &&
+                        !_isBlockReport(data),
+                  _ => (data['status'] ?? 'open').toString() == _statusFilter,
+                };
+                if (!matchesFilter) return false;
+                return _matchesSearch(d.id, data, users);
+              }).toList();
 
-                    final reportId = doc.id;
-                    final reporterId = (data['reporterId'] ?? '').toString();
-                    final reportedId = (data['reportedId'] ?? '').toString();
-                    final subject = (data['subject'] ?? '').toString();
-                    final reason = (data['reason'] ?? '').toString();
-                    final details = (data['details'] ?? '').toString();
-                    final reportType = (data['reportType'] ?? '').toString();
-                    final source = (data['source'] ?? '').toString();
-                    final status = (data['status'] ?? 'open').toString();
-                    final timestamp = data['timestamp'] as Timestamp?;
-                    final attachments = _extractAttachments(data);
+              if (docs.isEmpty) {
+                return Column(
+                  children: [
+                    _buildSummary(
+                      allDocs.length,
+                      openCount,
+                      resolvedCount,
+                      blockCount,
+                    ),
+                    _buildSearchBar(),
+                    _buildFilters(),
+                    Expanded(child: _buildEmptyState()),
+                  ],
+                );
+              }
 
-                    return Card(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      elevation: 0.6,
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(12),
-                        onTap: () => _openReportDetails(reportId, data),
-                        child: Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
+              return Column(
+                children: [
+                  _buildSummary(
+                    allDocs.length,
+                    openCount,
+                    resolvedCount,
+                    blockCount,
+                  ),
+                  _buildSearchBar(),
+                  _buildFilters(),
+                  Expanded(
+                    child: ListView.builder(
+                      padding: const EdgeInsets.all(12),
+                      itemCount: docs.length,
+                      itemBuilder: (context, index) {
+                        final doc = docs[index];
+                        final data = doc.data();
+
+                        final reportId = doc.id;
+                        final reporterId = (data['reporterId'] ?? '')
+                            .toString();
+                        final reportedId = (data['reportedId'] ?? '')
+                            .toString();
+                        final reporterLabel = _userDisplayLabel(
+                          reporterId,
+                          users,
+                        );
+                        final reportedLabel = _userDisplayLabel(
+                          reportedId,
+                          users,
+                        );
+                        final subject = (data['subject'] ?? '').toString();
+                        final reason = (data['reason'] ?? '').toString();
+                        final details = (data['details'] ?? '').toString();
+                        final reportType = (data['reportType'] ?? '')
+                            .toString();
+                        final source = (data['source'] ?? '').toString();
+                        final status = (data['status'] ?? 'open').toString();
+                        final displayStatus =
+                            _isBlockReport(data) && status != 'resolved'
+                            ? 'in_progress'
+                            : status;
+                        final displayStatusLabel =
+                            _isBlockReport(data) && status != 'resolved'
+                            ? 'Blocked'
+                            : null;
+                        final timestamp = data['timestamp'] as Timestamp?;
+                        final attachments = _extractAttachments(data);
+
+                        return Card(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          elevation: 0.6,
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(12),
+                            onTap: () => _openReportDetails(reportId, data),
+                            child: Padding(
+                              padding: const EdgeInsets.all(12),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Expanded(
-                                    child: Text(
-                                      subject.isNotEmpty
-                                          ? subject
-                                          : (reason.isEmpty
-                                                ? 'General issue'
-                                                : reason),
-                                      maxLines: 1,
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          subject.isNotEmpty
+                                              ? subject
+                                              : (reason.isEmpty
+                                                    ? 'General issue'
+                                                    : reason),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 16,
+                                          ),
+                                        ),
+                                      ),
+                                      _statusBadge(
+                                        displayStatus,
+                                        label: displayStatusLabel,
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Reporter: ${reporterId.isEmpty ? '-' : reporterLabel}',
+                                    style: const TextStyle(
+                                      color: Colors.black54,
+                                    ),
+                                  ),
+                                  Text(
+                                    'Reported: ${reportedId.isEmpty ? '-' : reportedLabel}',
+                                    style: const TextStyle(
+                                      color: Colors.black54,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 8,
+                                    children: [
+                                      Chip(
+                                        visualDensity: VisualDensity.compact,
+                                        label: Text(
+                                          'Created: ${_displayTimestamp(timestamp)}',
+                                        ),
+                                      ),
+                                      if (source.isNotEmpty)
+                                        Chip(
+                                          visualDensity: VisualDensity.compact,
+                                          label: Text('Source: $source'),
+                                        ),
+                                      if (reportType.isNotEmpty)
+                                        Chip(
+                                          visualDensity: VisualDensity.compact,
+                                          label: Text('Type: $reportType'),
+                                        ),
+                                    ],
+                                  ),
+                                  if (details.isNotEmpty) ...[
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      details,
+                                      maxLines: 2,
                                       overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 16,
+                                    ),
+                                  ],
+                                  if (attachments.isNotEmpty) ...[
+                                    const SizedBox(height: 10),
+                                    _buildAttachmentsPreview(attachments),
+                                  ],
+                                  const SizedBox(height: 10),
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 8,
+                                    children: [
+                                      FilledButton.icon(
+                                        onPressed: () =>
+                                            _openReportDetails(reportId, data),
+                                        icon: const Icon(Icons.open_in_new),
+                                        label: const Text('Open'),
                                       ),
-                                    ),
-                                  ),
-                                  _statusBadge(status),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                'Reporter: ${reporterId.isEmpty ? '-' : reporterId}',
-                                style: const TextStyle(color: Colors.black54),
-                              ),
-                              Text(
-                                'Reported: ${reportedId.isEmpty ? '-' : reportedId}',
-                                style: const TextStyle(color: Colors.black54),
-                              ),
-                              const SizedBox(height: 8),
-                              Wrap(
-                                spacing: 8,
-                                runSpacing: 8,
-                                children: [
-                                  Chip(
-                                    visualDensity: VisualDensity.compact,
-                                    label: Text(
-                                      'Created: ${_displayTimestamp(timestamp)}',
-                                    ),
-                                  ),
-                                  if (source.isNotEmpty)
-                                    Chip(
-                                      visualDensity: VisualDensity.compact,
-                                      label: Text('Source: $source'),
-                                    ),
-                                  if (reportType.isNotEmpty)
-                                    Chip(
-                                      visualDensity: VisualDensity.compact,
-                                      label: Text('Type: $reportType'),
-                                    ),
-                                ],
-                              ),
-                              if (details.isNotEmpty) ...[
-                                const SizedBox(height: 8),
-                                Text(
-                                  details,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ],
-                              if (attachments.isNotEmpty) ...[
-                                const SizedBox(height: 10),
-                                _buildAttachmentsPreview(attachments),
-                              ],
-                              const SizedBox(height: 10),
-                              Wrap(
-                                spacing: 8,
-                                runSpacing: 8,
-                                children: [
-                                  FilledButton.icon(
-                                    onPressed: () =>
-                                        _openReportDetails(reportId, data),
-                                    icon: const Icon(Icons.open_in_new),
-                                    label: const Text('Take Me to Report'),
-                                  ),
-                                  if (status != 'resolved')
-                                    OutlinedButton.icon(
-                                      onPressed: () => _markResolved(reportId),
-                                      icon: const Icon(
-                                        Icons.check_circle_outline,
+                                      if (status != 'resolved')
+                                        OutlinedButton.icon(
+                                          onPressed: () =>
+                                              _markResolved(reportId),
+                                          icon: const Icon(
+                                            Icons.check_circle_outline,
+                                          ),
+                                          label: const Text('Resolve'),
+                                        ),
+                                      TextButton.icon(
+                                        onPressed: () =>
+                                            _deleteReport(reportId),
+                                        icon: const Icon(
+                                          Icons.delete_outline,
+                                          color: Colors.red,
+                                        ),
+                                        label: const Text(
+                                          'Delete',
+                                          style: TextStyle(color: Colors.red),
+                                        ),
                                       ),
-                                      label: const Text('Resolve'),
-                                    ),
-                                  TextButton.icon(
-                                    onPressed: () => _deleteReport(reportId),
-                                    icon: const Icon(
-                                      Icons.delete_outline,
-                                      color: Colors.red,
-                                    ),
-                                    label: const Text(
-                                      'Delete',
-                                      style: TextStyle(color: Colors.red),
-                                    ),
+                                    ],
                                   ),
                                 ],
                               ),
-                            ],
+                            ),
                           ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ],
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              );
+            },
           );
         },
       ),
@@ -589,6 +832,36 @@ class AdminReportDetailsPage extends StatefulWidget {
 class _AdminReportDetailsPageState extends State<AdminReportDetailsPage> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   late Map<String, dynamic> _data;
+  final Map<String, Map<String, String>> _userDetailsCache = {};
+
+  Map<String, dynamic> get _postDetailStrings => {
+    'anonymous': 'Anonymous',
+    'confirm_choose_worker_title': 'Choose this worker?',
+    'confirm_choose_worker_body':
+        'This will mark the worker as the selected offer for this job request.',
+    'cancel': 'Cancel',
+    'choose_worker': 'Choose Worker',
+    'author': 'Author',
+    'posted': 'Posted',
+    'profession': 'Profession',
+    'location': 'Location',
+    'date_from': 'Date',
+    'time_from': 'Time',
+    'workers_can_offer':
+        'Workers can place bids here, and you can choose the one you want.',
+    'selected_worker': 'Selected Worker',
+    'job_request_comment_restriction':
+        'Only workers with an active subscription can comment on job requests.',
+    'comments': 'Comments / Offers',
+    'login': 'Login',
+    'guest_msg': 'You need to sign in to do this.',
+    'add_comment': 'Add a comment or offer...',
+    'bid_price': 'Bid Price',
+    'bid_price_hint': 'For example 350',
+    'send_bid': 'Send Bid',
+    'update_bid': 'Update Bid',
+    'edit_your_bid': 'You can update your existing bid.',
+  };
 
   @override
   void initState() {
@@ -632,6 +905,66 @@ class _AdminReportDetailsPageState extends State<AdminReportDetailsPage> {
           fg: Colors.orange.shade800,
           icon: Icons.pending_outlined,
         );
+    }
+  }
+
+  bool _isResolved(Map<String, dynamic> data) {
+    return (data['status'] ?? 'open').toString() == 'resolved';
+  }
+
+  Future<Map<String, String>> _loadUserInfo(String userId) async {
+    if (userId.isEmpty || userId == 'app') return const <String, String>{};
+    final cached = _userDetailsCache[userId];
+    if (cached != null) return cached;
+
+    final doc = await _firestore.collection('users').doc(userId).get();
+    final data = doc.data() ?? <String, dynamic>{};
+    final resolved = {
+      'name': (data['name'] ?? '').toString(),
+      'phone': (data['phone'] ?? '').toString(),
+    };
+    _userDetailsCache[userId] = resolved;
+    return resolved;
+  }
+
+  Future<void> _openReportedPost() async {
+    final postId = (_data['postId'] ?? '').toString().trim();
+    if (postId.isEmpty) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final doc = await _firestore.collection('blog_posts').doc(postId).get();
+      if (!doc.exists) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('This post is no longer available.')),
+        );
+        return;
+      }
+
+      final post = Map<String, dynamic>.from(doc.data() ?? <String, dynamic>{});
+      post['id'] = doc.id;
+
+      if (!mounted) return;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => PostDetailPage(
+            post: post,
+            onLike: () {},
+            onEdit: () {},
+            onDelete: () {},
+            onReport: () {},
+            onBlockUser: () {},
+            localizedStrings: _postDetailStrings,
+            onGuestDialog: () {},
+          ),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Failed to open the reported post.')),
+      );
     }
   }
 
@@ -706,10 +1039,7 @@ class _AdminReportDetailsPageState extends State<AdminReportDetailsPage> {
           .collection('reports')
           .doc(widget.reportId)
           .get();
-      final wasResolved =
-          (reportDoc.data()?['status'] ?? _data['status'] ?? 'open')
-              .toString() ==
-          'resolved';
+      final wasResolved = _isResolved(reportDoc.data() ?? _data);
       await _firestore.collection('reports').doc(widget.reportId).set({
         'status': 'resolved',
         'resolvedAt': FieldValue.serverTimestamp(),
@@ -756,10 +1086,17 @@ class _AdminReportDetailsPageState extends State<AdminReportDetailsPage> {
     if (!confirmed) return;
 
     try {
+      final reportDoc = await _firestore
+          .collection('reports')
+          .doc(widget.reportId)
+          .get();
+      final wasResolved = _isResolved(reportDoc.data() ?? _data);
       await _firestore.collection('reports').doc(widget.reportId).delete();
-      await _firestore.collection('metadata').doc('system').set({
-        'reportsCount': FieldValue.increment(-1),
-      }, SetOptions(merge: true));
+      if (!wasResolved) {
+        await _firestore.collection('metadata').doc('system').set({
+          'reportsCount': FieldValue.increment(-1),
+        }, SetOptions(merge: true));
+      }
       if (!mounted) return;
       messenger.showSnackBar(const SnackBar(content: Text('Report deleted.')));
       Navigator.pop(context);
@@ -910,8 +1247,181 @@ class _AdminReportDetailsPageState extends State<AdminReportDetailsPage> {
     );
   }
 
+  Widget _sectionCard({
+    required String title,
+    IconData? icon,
+    String? subtitle,
+    required Widget child,
+  }) {
+    return Card(
+      elevation: 0,
+      margin: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x0A0F172A),
+              blurRadius: 18,
+              offset: Offset(0, 6),
+            ),
+          ],
+        ),
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (icon != null) ...[
+                  Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEFF6FF),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(icon, color: Colors.blue.shade700, size: 20),
+                  ),
+                  const SizedBox(width: 12),
+                ],
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 16,
+                        ),
+                      ),
+                      if (subtitle != null && subtitle.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          subtitle,
+                          style: const TextStyle(
+                            color: Color(0xFF64748B),
+                            height: 1.4,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            child,
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _metaChip(String text, {IconData? icon}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 14, color: const Color(0xFF475569)),
+            const SizedBox(width: 6),
+          ],
+          Text(
+            text,
+            style: const TextStyle(
+              color: Color(0xFF334155),
+              fontWeight: FontWeight.w600,
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _profileLinkField(String label, String userId) {
     final isClickable = userId.isNotEmpty && userId != 'app';
+    return FutureBuilder<Map<String, String>>(
+      future: _loadUserInfo(userId),
+      builder: (context, snapshot) {
+        final info = snapshot.data ?? const <String, String>{};
+        final name = (info['name'] ?? '').trim();
+        final displayLabel = userId.isEmpty
+            ? '-'
+            : (name.isNotEmpty ? name : userId);
+
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: 120,
+                child: Text(
+                  label,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: Colors.black54,
+                  ),
+                ),
+              ),
+              Expanded(
+                child: InkWell(
+                  onTap: isClickable
+                      ? () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => Profile(userId: userId),
+                            ),
+                          );
+                        }
+                      : null,
+                  borderRadius: BorderRadius.circular(8),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Text(
+                      displayLabel,
+                      style: TextStyle(
+                        color: isClickable
+                            ? Colors.blue.shade700
+                            : Colors.black87,
+                        decoration: isClickable
+                            ? TextDecoration.underline
+                            : TextDecoration.none,
+                        decorationColor: isClickable
+                            ? Colors.blue.shade700
+                            : Colors.transparent,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _actionLinkField({
+    required String label,
+    required String value,
+    required VoidCallback? onTap,
+  }) {
+    final isClickable = onTap != null && value.isNotEmpty;
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Row(
@@ -929,21 +1439,12 @@ class _AdminReportDetailsPageState extends State<AdminReportDetailsPage> {
           ),
           Expanded(
             child: InkWell(
-              onTap: isClickable
-                  ? () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => Profile(userId: userId),
-                        ),
-                      );
-                    }
-                  : null,
+              onTap: isClickable ? onTap : null,
               borderRadius: BorderRadius.circular(8),
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 2),
                 child: Text(
-                  userId.isEmpty ? '-' : userId,
+                  value.isEmpty ? '-' : value,
                   style: TextStyle(
                     color: isClickable ? Colors.blue.shade700 : Colors.black87,
                     decoration: isClickable
@@ -1033,12 +1534,20 @@ class _AdminReportDetailsPageState extends State<AdminReportDetailsPage> {
     final status = (_data['status'] ?? 'open').toString();
     final source = (_data['source'] ?? '').toString();
     final reportType = (_data['reportType'] ?? '').toString();
+    final adminSection = (_data['adminSection'] ?? '').toString();
     final reporterId = (_data['reporterId'] ?? '').toString();
     final reportedId = (_data['reportedId'] ?? '').toString();
+    final postId = (_data['postId'] ?? '').toString();
+    final postTitle = (_data['postTitle'] ?? '').toString();
     final resolvedBy = (_data['resolvedBy'] ?? '').toString();
+    final unblockedBy = (_data['unblockedBy'] ?? '').toString();
     final timestamp = _data['timestamp'] as Timestamp?;
     final resolvedAt = _data['resolvedAt'] as Timestamp?;
+    final unblockedAt = _data['unblockedAt'] as Timestamp?;
     final attachments = _extractAttachments(_data);
+    final title = subject.isNotEmpty
+        ? subject
+        : (reason.isEmpty ? 'General issue' : reason);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Report Details')),
@@ -1047,181 +1556,180 @@ class _AdminReportDetailsPageState extends State<AdminReportDetailsPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Card(
-              elevation: 0.5,
-              child: Padding(
-                padding: const EdgeInsets.all(14),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            subject.isNotEmpty
-                                ? subject
-                                : (reason.isEmpty ? 'General issue' : reason),
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
+            _sectionCard(
+              title: title,
+              icon: Icons.assignment_outlined,
+              subtitle:
+                  'Review the report, inspect the people involved, and resolve it when you have enough context.',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      _statusBadge(status),
+                      const Spacer(),
+                      _metaChip(
+                        _displayTimestamp(timestamp),
+                        icon: Icons.schedule_outlined,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      if (source.isNotEmpty)
+                        _metaChip('Source: $source', icon: Icons.link_outlined),
+                      if (adminSection.isNotEmpty)
+                        _metaChip(
+                          'Queue: ${_titleCase(adminSection)}',
+                          icon: Icons.inbox_outlined,
                         ),
-                        _statusBadge(status),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        Chip(
-                          label: Text(
-                            'Created: ${_displayTimestamp(timestamp)}',
-                          ),
+                      if (reportType.isNotEmpty)
+                        _metaChip(
+                          'Type: $reportType',
+                          icon: Icons.category_outlined,
                         ),
-                        if (source.isNotEmpty)
-                          Chip(label: Text('Source: $source')),
-                        if (reportType.isNotEmpty)
-                          Chip(label: Text('Type: $reportType')),
-                      ],
-                    ),
-                  ],
-                ),
+                    ],
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 12),
-            Card(
-              elevation: 0.5,
-              child: Padding(
-                padding: const EdgeInsets.all(14),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _field('Report ID', widget.reportId),
-                    _profileLinkField('Reporter ID', reporterId),
-                    _profileLinkField('Reported ID', reportedId),
-                    _field('Resolved At', _displayTimestamp(resolvedAt)),
-                    _field('Resolved By', resolvedBy),
-                    if (reason.isNotEmpty && subject.isNotEmpty)
-                      _field('Reason', reason),
-                  ],
-                ),
+            _sectionCard(
+              title: 'People & Audit',
+              icon: Icons.people_outline,
+              subtitle:
+                  'Open the people involved, verify identity, and review status history.',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _field('Report ID', widget.reportId),
+                  _profileLinkField('Reporter', reporterId),
+                  _profileLinkField('Reported', reportedId),
+                  if (postId.isNotEmpty)
+                    _actionLinkField(
+                      label: 'Post',
+                      value: postTitle.isEmpty ? postId : postTitle,
+                      onTap: _openReportedPost,
+                    ),
+                  if (reason.isNotEmpty && subject.isNotEmpty)
+                    _field('Reason', reason),
+                  _field('Resolved At', _displayTimestamp(resolvedAt)),
+                  _field('Resolved By', resolvedBy),
+                  _field('Unblocked At', _displayTimestamp(unblockedAt)),
+                  _field('Unblocked By', unblockedBy),
+                ],
               ),
             ),
             if (details.isNotEmpty) ...[
               const SizedBox(height: 12),
-              Card(
-                elevation: 0.5,
-                child: Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Details',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 15,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(details),
-                    ],
-                  ),
+              _sectionCard(
+                title: 'Details',
+                icon: Icons.notes_outlined,
+                subtitle: 'Full reporter description and context.',
+                child: Text(
+                  details,
+                  style: const TextStyle(height: 1.5, color: Color(0xFF334155)),
                 ),
               ),
             ],
             if (attachments.isNotEmpty) ...[
               const SizedBox(height: 12),
-              Card(
-                elevation: 0.5,
-                child: Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Attachments',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 15,
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      _buildAttachmentsPreview(attachments),
-                    ],
-                  ),
-                ),
+              _sectionCard(
+                title: 'Attachments',
+                icon: Icons.attach_file_outlined,
+                subtitle:
+                    'Open evidence in full screen to review screenshots or videos.',
+                child: _buildAttachmentsPreview(attachments),
               ),
             ],
             const SizedBox(height: 12),
-            ExpansionTile(
-              tilePadding: EdgeInsets.zero,
-              title: const Text(
-                'Raw Data',
-                style: TextStyle(fontWeight: FontWeight.w700),
-              ),
-              children: _data.entries.map((entry) {
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 6),
-                  child: _field(entry.key, entry.value?.toString() ?? ''),
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                if (reporterId.isNotEmpty && reporterId != 'app')
+            _sectionCard(
+              title: 'Actions',
+              icon: Icons.flash_on_outlined,
+              subtitle:
+                  'Respond, copy context, open the profile, or resolve the case.',
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  if (reporterId.isNotEmpty && reporterId != 'app')
+                    FilledButton.icon(
+                      onPressed: () => _answerReporter(reporterId),
+                      icon: const Icon(Icons.chat_bubble_outline),
+                      label: const Text('Answer Reporter'),
+                    ),
                   FilledButton.icon(
-                    onPressed: () => _answerReporter(reporterId),
-                    icon: const Icon(Icons.chat_bubble_outline),
-                    label: const Text('Answer Reporter'),
-                  ),
-                FilledButton.icon(
-                  onPressed: () async {
-                    final messenger = ScaffoldMessenger.of(context);
-                    await Clipboard.setData(
-                      ClipboardData(text: widget.reportId),
-                    );
-                    if (!mounted) return;
-                    messenger.showSnackBar(
-                      const SnackBar(content: Text('Report ID copied.')),
-                    );
-                  },
-                  icon: const Icon(Icons.copy_outlined),
-                  label: const Text('Copy Report ID'),
-                ),
-                if (reportedId.isNotEmpty && reportedId != 'app')
-                  OutlinedButton.icon(
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => Profile(userId: reportedId),
-                        ),
+                    onPressed: () async {
+                      final messenger = ScaffoldMessenger.of(context);
+                      await Clipboard.setData(
+                        ClipboardData(text: widget.reportId),
+                      );
+                      if (!mounted) return;
+                      messenger.showSnackBar(
+                        const SnackBar(content: Text('Report ID copied.')),
                       );
                     },
-                    icon: const Icon(Icons.visibility_outlined),
-                    label: const Text('Open Profile'),
+                    icon: const Icon(Icons.copy_outlined),
+                    label: const Text('Copy Report ID'),
                   ),
-                if (status != 'resolved')
-                  OutlinedButton.icon(
-                    onPressed: _markResolved,
-                    icon: const Icon(Icons.check_circle_outline),
-                    label: const Text('Mark Resolved'),
+                  if (postId.isNotEmpty)
+                    OutlinedButton.icon(
+                      onPressed: _openReportedPost,
+                      icon: const Icon(Icons.article_outlined),
+                      label: const Text('Open Post'),
+                    ),
+                  if (reportedId.isNotEmpty && reportedId != 'app')
+                    OutlinedButton.icon(
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => Profile(userId: reportedId),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.visibility_outlined),
+                      label: const Text('Open Profile'),
+                    ),
+                  if (status != 'resolved')
+                    OutlinedButton.icon(
+                      onPressed: _markResolved,
+                      icon: const Icon(Icons.check_circle_outline),
+                      label: const Text('Mark Resolved'),
+                    ),
+                  TextButton.icon(
+                    onPressed: _deleteReport,
+                    icon: const Icon(Icons.delete_outline, color: Colors.red),
+                    label: const Text(
+                      'Delete',
+                      style: TextStyle(color: Colors.red),
+                    ),
                   ),
-                TextButton.icon(
-                  onPressed: _deleteReport,
-                  icon: const Icon(Icons.delete_outline, color: Colors.red),
-                  label: const Text(
-                    'Delete',
-                    style: TextStyle(color: Colors.red),
-                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            _sectionCard(
+              title: 'Raw Data',
+              icon: Icons.data_object_outlined,
+              subtitle: 'Full stored payload for debugging and audit review.',
+              child: ExpansionTile(
+                tilePadding: EdgeInsets.zero,
+                childrenPadding: EdgeInsets.zero,
+                title: const Text(
+                  'Show raw fields',
+                  style: TextStyle(fontWeight: FontWeight.w700),
                 ),
-              ],
+                children: _data.entries.map((entry) {
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: _field(entry.key, entry.value?.toString() ?? ''),
+                  );
+                }).toList(),
+              ),
             ),
           ],
         ),

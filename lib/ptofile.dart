@@ -1015,6 +1015,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
         'status': 'open',
         'reportType': 'user_report',
         'source': 'profile',
+        'adminSection': 'block',
         'timestamp': FieldValue.serverTimestamp(),
       });
 
