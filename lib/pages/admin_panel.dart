@@ -687,91 +687,296 @@ class _AdminPanelState extends State<AdminPanel> {
       end: DateTime(now.year, now.month, now.day + 7),
     );
 
+    String formatRangeDate(DateTime date) {
+      return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+    }
+
     showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
-          insetPadding: const EdgeInsets.symmetric(
-            horizontal: 12,
-            vertical: 12,
-          ),
-          contentPadding: const EdgeInsets.fromLTRB(24, 12, 24, 16),
-          title: const Row(
-            children: [
-              Icon(Icons.campaign, color: Colors.red),
-              SizedBox(width: 10),
-              Text('Marketing Ads / Popup'),
-            ],
-          ),
-          content: SizedBox(
-            width: MediaQuery.of(context).size.width * 0.9,
-            height: MediaQuery.of(context).size.height * 0.72,
-            child: SingleChildScrollView(
+        builder: (context, setState) {
+          Future<void> pickImages() async {
+            final picked = await ImagePicker().pickMultiImage(
+              maxWidth: 1600,
+              maxHeight: 1600,
+              imageQuality: 85,
+            );
+            if (picked.isNotEmpty && context.mounted) {
+              setState(() {
+                imageFiles.addAll(picked.map((file) => File(file.path)));
+              });
+            }
+          }
+
+          Future<void> publishBroadcast() async {
+            final messenger = ScaffoldMessenger.of(context);
+            final title = titleController.text.trim();
+            final message = msgController.text.trim();
+            final link = linkController.text.trim();
+            final buttonText = btnTextController.text.trim();
+            final badge = badgeController.text.trim();
+
+            if (title.isEmpty || message.isEmpty) {
+              messenger.showSnackBar(
+                const SnackBar(
+                  content: Text('Title and message are required.'),
+                ),
+              );
+              return;
+            }
+            if (!showPopup && !showBanner) {
+              messenger.showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'Choose at least popup or banner before publishing.',
+                  ),
+                ),
+              );
+              return;
+            }
+            setState(() => isUploading = true);
+
+            try {
+              final startsAt = Timestamp.fromDate(
+                DateTime(
+                  selectedDateRange.start.year,
+                  selectedDateRange.start.month,
+                  selectedDateRange.start.day,
+                ),
+              );
+              final expiresAt = Timestamp.fromDate(
+                DateTime(
+                  selectedDateRange.end.year,
+                  selectedDateRange.end.month,
+                  selectedDateRange.end.day,
+                  23,
+                  59,
+                  59,
+                ),
+              );
+              final imageUrls = <String>[];
+              for (var i = 0; i < imageFiles.length; i++) {
+                final ref = FirebaseStorage.instance.ref().child(
+                  'ads/${DateTime.now().millisecondsSinceEpoch}_$i.jpg',
+                );
+                await ref.putFile(imageFiles[i]);
+                imageUrls.add(await ref.getDownloadURL());
+              }
+
+              await _firestore.collection('system_announcements').add({
+                'title': title,
+                'message': message,
+                'badge': badge,
+                'imageUrl': imageUrls.isEmpty ? null : imageUrls.first,
+                'imageUrls': imageUrls,
+                'link': link,
+                'buttonText': buttonText.isEmpty ? 'Learn More' : buttonText,
+                'timestamp': FieldValue.serverTimestamp(),
+                'startsAt': startsAt,
+                'expiresAt': expiresAt,
+                'isPopup': showPopup,
+                'showBanner': showBanner,
+              });
+
+              if (context.mounted) {
+                Navigator.pop(context);
+                messenger.showSnackBar(
+                  const SnackBar(
+                    content: Text('Broadcast published successfully.'),
+                  ),
+                );
+              }
+            } catch (e) {
+              messenger.showSnackBar(
+                SnackBar(content: Text('Failed to publish broadcast: $e')),
+              );
+            } finally {
+              if (context.mounted) {
+                setState(() => isUploading = false);
+              }
+            }
+          }
+
+          Widget sectionTitle(IconData icon, String title) {
+            return Row(
+              children: [
+                Icon(icon, size: 18, color: const Color(0xFF1D4ED8)),
+                const SizedBox(width: 8),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            );
+          }
+
+          InputDecoration fieldDecoration(
+            String label,
+            String hint, {
+            IconData? icon,
+          }) {
+            return InputDecoration(
+              labelText: label,
+              hintText: hint,
+              prefixIcon: icon == null ? null : Icon(icon),
+              filled: true,
+              fillColor: const Color(0xFFF8FAFC),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: const BorderSide(
+                  color: Color(0xFF1D4ED8),
+                  width: 1.4,
+                ),
+              ),
+            );
+          }
+
+          Widget destinationToggle({
+            required IconData icon,
+            required String title,
+            required String subtitle,
+            required bool value,
+            required ValueChanged<bool> onChanged,
+          }) {
+            return InkWell(
+              borderRadius: BorderRadius.circular(16),
+              onTap: () => onChanged(!value),
+              child: Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: value ? const Color(0xFFEFF6FF) : Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: value
+                        ? const Color(0xFF93C5FD)
+                        : const Color(0xFFE2E8F0),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(icon, color: const Color(0xFF1D4ED8)),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            title,
+                            style: const TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            subtitle,
+                            style: const TextStyle(
+                              color: Color(0xFF64748B),
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Switch(value: value, onChanged: onChanged),
+                  ],
+                ),
+              ),
+            );
+          }
+
+          Widget buildFormPane() {
+            return SingleChildScrollView(
+              padding: const EdgeInsets.all(22),
               child: Column(
-                mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  sectionTitle(Icons.edit_note_rounded, 'Campaign content'),
+                  const SizedBox(height: 14),
                   TextField(
                     controller: titleController,
-                    decoration: const InputDecoration(
-                      labelText: 'Ad Title',
-                      hintText: 'Summer campaign',
+                    onChanged: (_) => setState(() {}),
+                    decoration: fieldDecoration(
+                      'Ad title',
+                      'Summer campaign',
+                      icon: Icons.title_rounded,
                     ),
                   ),
                   const SizedBox(height: 12),
                   TextField(
                     controller: msgController,
-                    decoration: const InputDecoration(
-                      labelText: 'Ad Message',
-                      hintText:
-                          'Describe the offer or update you want users to see.',
+                    onChanged: (_) => setState(() {}),
+                    decoration: fieldDecoration(
+                      'Ad message',
+                      'Describe the offer or update users should see.',
+                      icon: Icons.notes_rounded,
                     ),
-                    maxLines: 4,
+                    minLines: 4,
+                    maxLines: 7,
                   ),
                   const SizedBox(height: 12),
                   TextField(
                     controller: badgeController,
-                    decoration: const InputDecoration(
-                      labelText: 'Badge',
-                      hintText: 'Featured / Update / Limited Time',
+                    onChanged: (_) => setState(() {}),
+                    decoration: fieldDecoration(
+                      'Badge',
+                      'Featured / Update / Limited Time',
+                      icon: Icons.local_offer_outlined,
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 18),
+                  sectionTitle(Icons.ads_click_rounded, 'Action'),
+                  const SizedBox(height: 14),
                   TextField(
                     controller: linkController,
-                    decoration: const InputDecoration(
-                      labelText: 'Action Link (Optional)',
-                      hintText: 'https://...',
+                    onChanged: (_) => setState(() {}),
+                    keyboardType: TextInputType.url,
+                    decoration: fieldDecoration(
+                      'Action link',
+                      'https://...',
+                      icon: Icons.link_rounded,
                     ),
                   ),
                   const SizedBox(height: 12),
                   TextField(
                     controller: btnTextController,
-                    decoration: const InputDecoration(
-                      labelText: 'Button Label',
-                      hintText: 'e.g. Visit Website',
+                    onChanged: (_) => setState(() {}),
+                    decoration: fieldDecoration(
+                      'Button label',
+                      'Visit Website',
+                      icon: Icons.smart_button_rounded,
                     ),
                   ),
-                  const SizedBox(height: 16),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('Show as popup'),
-                    subtitle: const Text('Display immediately in a dialog'),
+                  const SizedBox(height: 18),
+                  sectionTitle(Icons.visibility_rounded, 'Placement'),
+                  const SizedBox(height: 14),
+                  destinationToggle(
+                    icon: Icons.open_in_new_rounded,
+                    title: 'Show as popup',
+                    subtitle: 'Open immediately in a modal dialog',
                     value: showPopup,
                     onChanged: (value) => setState(() => showPopup = value),
                   ),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('Show as banner'),
-                    subtitle: const Text(
-                      'Keep the ad visible in the home feed',
-                    ),
+                  const SizedBox(height: 10),
+                  destinationToggle(
+                    icon: Icons.view_carousel_rounded,
+                    title: 'Show as banner',
+                    subtitle: 'Keep visible in the home feed',
                     value: showBanner,
                     onChanged: (value) => setState(() => showBanner = value),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 18),
+                  sectionTitle(Icons.date_range_rounded, 'Schedule'),
+                  const SizedBox(height: 14),
                   InkWell(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(14),
                     onTap: () async {
                       final picked = await showDateRangePicker(
                         context: context,
@@ -784,17 +989,19 @@ class _AdminPanelState extends State<AdminPanel> {
                       }
                     },
                     child: InputDecorator(
-                      decoration: const InputDecoration(
-                        labelText: 'Ad start and end date',
-                        border: OutlineInputBorder(),
-                        suffixIcon: Icon(Icons.date_range_rounded),
+                      decoration: fieldDecoration(
+                        'Start and end date',
+                        '',
+                        icon: Icons.event_rounded,
                       ),
                       child: Text(
-                        '${selectedDateRange.start.year}-${selectedDateRange.start.month.toString().padLeft(2, '0')}-${selectedDateRange.start.day.toString().padLeft(2, '0')}  ->  ${selectedDateRange.end.year}-${selectedDateRange.end.month.toString().padLeft(2, '0')}-${selectedDateRange.end.day.toString().padLeft(2, '0')}',
+                        '${formatRangeDate(selectedDateRange.start)}  ->  ${formatRangeDate(selectedDateRange.end)}',
                       ),
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 18),
+                  sectionTitle(Icons.photo_library_rounded, 'Images'),
+                  const SizedBox(height: 14),
                   Row(
                     children: [
                       Expanded(
@@ -802,60 +1009,76 @@ class _AdminPanelState extends State<AdminPanel> {
                           icon: const Icon(Icons.add_photo_alternate_outlined),
                           label: Text(
                             imageFiles.isEmpty
-                                ? 'Choose Photos'
-                                : 'Add More Photos',
+                                ? 'Choose photos'
+                                : 'Add more photos',
                           ),
-                          onPressed: () async {
-                            final picked = await ImagePicker().pickMultiImage(
-                              maxWidth: 1600,
-                              maxHeight: 1600,
-                              imageQuality: 85,
-                            );
-                            if (picked.isNotEmpty && context.mounted) {
-                              setState(() {
-                                imageFiles.addAll(
-                                  picked.map((file) => File(file.path)),
-                                );
-                              });
-                            }
-                          },
+                          onPressed: pickImages,
                         ),
                       ),
                       if (imageFiles.isNotEmpty) ...[
                         const SizedBox(width: 12),
-                        TextButton.icon(
+                        IconButton.filledTonal(
+                          tooltip: 'Clear photos',
                           onPressed: () => setState(() => imageFiles.clear()),
-                          icon: const Icon(Icons.delete_outline),
-                          label: const Text('Clear'),
+                          icon: const Icon(Icons.delete_outline_rounded),
                         ),
                       ],
                     ],
                   ),
+                  if (imageFiles.isEmpty) ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(18),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
+                      child: const Column(
+                        children: [
+                          Icon(
+                            Icons.image_outlined,
+                            color: Color(0xFF64748B),
+                            size: 34,
+                          ),
+                          SizedBox(height: 8),
+                          Text(
+                            'Images are optional, but they make popup ads feel much stronger.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: Color(0xFF64748B)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                   if (imageFiles.isNotEmpty) ...[
                     const SizedBox(height: 12),
-                    SizedBox(
-                      height: 148,
-                      child: ListView.separated(
-                        scrollDirection: Axis.horizontal,
-                        itemCount: imageFiles.length,
-                        separatorBuilder: (_, __) => const SizedBox(width: 10),
-                        itemBuilder: (context, index) {
-                          final file = imageFiles[index];
-                          return Stack(
-                            children: [
-                              ClipRRect(
+                    GridView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: imageFiles.length,
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 3,
+                            crossAxisSpacing: 8,
+                            mainAxisSpacing: 8,
+                            childAspectRatio: 1,
+                          ),
+                      itemBuilder: (context, index) {
+                        final file = imageFiles[index];
+                        return Stack(
+                          children: [
+                            Positioned.fill(
+                              child: ClipRRect(
                                 borderRadius: BorderRadius.circular(14),
                                 child: Image.file(
                                   file,
-                                  width: 196,
-                                  height: 148,
                                   fit: BoxFit.cover,
-                                  cacheWidth: 900,
+                                  cacheWidth: 700,
                                   filterQuality: FilterQuality.low,
                                   errorBuilder: (context, error, stackTrace) {
                                     return Container(
-                                      width: 196,
-                                      height: 148,
                                       color: const Color(0xFFF1F5F9),
                                       alignment: Alignment.center,
                                       child: const Icon(
@@ -865,260 +1088,169 @@ class _AdminPanelState extends State<AdminPanel> {
                                   },
                                 ),
                               ),
-                              Positioned(
-                                top: 4,
-                                right: 4,
-                                child: CircleAvatar(
-                                  radius: 14,
-                                  backgroundColor: Colors.black.withValues(
-                                    alpha: 0.55,
+                            ),
+                            Positioned(
+                              top: 4,
+                              right: 4,
+                              child: InkWell(
+                                customBorder: const CircleBorder(),
+                                onTap: () =>
+                                    setState(() => imageFiles.removeAt(index)),
+                                child: Container(
+                                  width: 28,
+                                  height: 28,
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withValues(alpha: 0.58),
+                                    shape: BoxShape.circle,
                                   ),
-                                  child: IconButton(
-                                    padding: EdgeInsets.zero,
-                                    iconSize: 16,
-                                    icon: const Icon(
-                                      Icons.close,
-                                      color: Colors.white,
-                                    ),
-                                    onPressed: () => setState(
-                                      () => imageFiles.removeAt(index),
-                                    ),
+                                  child: const Icon(
+                                    Icons.close_rounded,
+                                    color: Colors.white,
+                                    size: 17,
                                   ),
                                 ),
                               ),
-                            ],
-                          );
-                        },
-                      ),
+                            ),
+                          ],
+                        );
+                      },
                     ),
                   ],
-                  const SizedBox(height: 20),
+                ],
+              ),
+            );
+          }
+
+          final screenSize = MediaQuery.of(context).size;
+
+          return Dialog(
+            insetPadding: const EdgeInsets.symmetric(
+              horizontal: 14,
+              vertical: 18,
+            ),
+            clipBehavior: Clip.antiAlias,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(24),
+            ),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: 1040,
+                maxHeight: screenSize.height * 0.9,
+              ),
+              child: Column(
+                children: [
                   Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(18),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
+                    padding: const EdgeInsets.fromLTRB(22, 18, 14, 18),
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
                         colors: [Color(0xFF0F172A), Color(0xFF1D4ED8)],
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                       ),
-                      borderRadius: BorderRadius.circular(22),
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    child: Row(
                       children: [
-                        const Text(
-                          'Preview',
-                          style: TextStyle(
-                            color: Colors.white70,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        if (badgeController.text.trim().isNotEmpty)
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 6,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                            child: Text(
-                              badgeController.text.trim(),
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        if (badgeController.text.trim().isNotEmpty)
-                          const SizedBox(height: 12),
-                        if (imageFiles.isNotEmpty)
-                          SizedBox(
-                            height: 260,
-                            child: ListView.separated(
-                              scrollDirection: Axis.horizontal,
-                              itemCount: imageFiles.length,
-                              separatorBuilder: (_, __) =>
-                                  const SizedBox(width: 10),
-                              itemBuilder: (context, index) => ClipRRect(
-                                borderRadius: BorderRadius.circular(18),
-                                child: AspectRatio(
-                                  aspectRatio: 16 / 9,
-                                  child: Image.file(
-                                    imageFiles[index],
-                                    fit: BoxFit.cover,
-                                    cacheWidth: 1000,
-                                    filterQuality: FilterQuality.low,
-                                  ),
+                        const Icon(Icons.campaign_rounded, color: Colors.white),
+                        const SizedBox(width: 12),
+                        const Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Marketing Ads / Popup',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w900,
                                 ),
                               ),
-                            ),
-                          ),
-                        if (imageFiles.isNotEmpty) const SizedBox(height: 16),
-                        Text(
-                          titleController.text.trim().isEmpty
-                              ? 'Your ad title'
-                              : titleController.text.trim(),
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
+                              SizedBox(height: 2),
+                              Text(
+                                'Create a timed promotion for popup, banner, or both.',
+                                style: TextStyle(color: Colors.white70),
+                              ),
+                            ],
                           ),
                         ),
-                        const SizedBox(height: 8),
-                        Text(
-                          msgController.text.trim().isEmpty
-                              ? 'Your message preview will appear here.'
-                              : msgController.text.trim(),
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.86),
-                            height: 1.35,
-                          ),
+                        IconButton(
+                          tooltip: 'Close',
+                          onPressed: isUploading
+                              ? null
+                              : () => Navigator.pop(context),
+                          icon: const Icon(Icons.close_rounded),
+                          color: Colors.white,
                         ),
                       ],
+                    ),
+                  ),
+                  Expanded(
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        return ConstrainedBox(
+                          constraints: BoxConstraints(
+                            minHeight: constraints.maxHeight,
+                          ),
+                          child: buildFormPane(),
+                        );
+                      },
+                    ),
+                  ),
+                  DecoratedBox(
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFF8FAFC),
+                      border: Border(top: BorderSide(color: Color(0xFFE2E8F0))),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(18, 12, 18, 14),
+                      child: Row(
+                        children: [
+                          Text(
+                            imageFiles.isEmpty
+                                ? 'No images selected'
+                                : '${imageFiles.length} image${imageFiles.length == 1 ? '' : 's'} selected',
+                            style: const TextStyle(color: Color(0xFF64748B)),
+                          ),
+                          const Spacer(),
+                          TextButton(
+                            onPressed: isUploading
+                                ? null
+                                : () => Navigator.pop(context),
+                            child: const Text('Cancel'),
+                          ),
+                          const SizedBox(width: 10),
+                          ElevatedButton.icon(
+                            onPressed: isUploading ? null : publishBroadcast,
+                            icon: isUploading
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Icon(Icons.send_rounded),
+                            label: Text(
+                              isUploading ? 'Publishing...' : 'Broadcast Now',
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF1D4ED8),
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 18,
+                                vertical: 13,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ],
               ),
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: isUploading
-                  ? null
-                  : () async {
-                      final messenger = ScaffoldMessenger.of(context);
-                      final title = titleController.text.trim();
-                      final message = msgController.text.trim();
-                      final link = linkController.text.trim();
-                      final buttonText = btnTextController.text.trim();
-                      final badge = badgeController.text.trim();
-
-                      if (title.isEmpty || message.isEmpty) {
-                        messenger.showSnackBar(
-                          const SnackBar(
-                            content: Text('Title and message are required.'),
-                          ),
-                        );
-                        return;
-                      }
-                      if (!showPopup && !showBanner) {
-                        messenger.showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'Choose at least popup or banner before publishing.',
-                            ),
-                          ),
-                        );
-                        return;
-                      }
-                      if (link.isNotEmpty) {
-                        final parsed = Uri.tryParse(link);
-                        final isValidHttp =
-                            parsed != null &&
-                            (parsed.scheme == 'http' ||
-                                parsed.scheme == 'https');
-                        if (!isValidHttp) {
-                          messenger.showSnackBar(
-                            const SnackBar(
-                              content: Text(
-                                'Link must start with http:// or https://',
-                              ),
-                            ),
-                          );
-                          return;
-                        }
-                      }
-
-                      setState(() => isUploading = true);
-
-                      try {
-                        final startsAt = Timestamp.fromDate(
-                          DateTime(
-                            selectedDateRange.start.year,
-                            selectedDateRange.start.month,
-                            selectedDateRange.start.day,
-                          ),
-                        );
-                        final expiresAt = Timestamp.fromDate(
-                          DateTime(
-                            selectedDateRange.end.year,
-                            selectedDateRange.end.month,
-                            selectedDateRange.end.day,
-                            23,
-                            59,
-                            59,
-                          ),
-                        );
-                        final imageUrls = <String>[];
-                        for (var i = 0; i < imageFiles.length; i++) {
-                          final ref = FirebaseStorage.instance.ref().child(
-                            'ads/${DateTime.now().millisecondsSinceEpoch}_$i.jpg',
-                          );
-                          await ref.putFile(imageFiles[i]);
-                          imageUrls.add(await ref.getDownloadURL());
-                        }
-
-                        await _firestore
-                            .collection('system_announcements')
-                            .add({
-                              'title': title,
-                              'message': message,
-                              'badge': badge,
-                              'imageUrl': imageUrls.isEmpty
-                                  ? null
-                                  : imageUrls.first,
-                              'imageUrls': imageUrls,
-                              'link': link,
-                              'buttonText': buttonText.isEmpty
-                                  ? 'Learn More'
-                                  : buttonText,
-                              'timestamp': FieldValue.serverTimestamp(),
-                              'startsAt': startsAt,
-                              'expiresAt': expiresAt,
-                              'isPopup': showPopup,
-                              'showBanner': showBanner,
-                            });
-
-                        if (context.mounted) {
-                          Navigator.pop(context);
-                          messenger.showSnackBar(
-                            const SnackBar(
-                              content: Text(
-                                'Broadcast published successfully.',
-                              ),
-                            ),
-                          );
-                        }
-                      } catch (e) {
-                        messenger.showSnackBar(
-                          SnackBar(
-                            content: Text('Failed to publish broadcast: $e'),
-                          ),
-                        );
-                      } finally {
-                        if (context.mounted) {
-                          setState(() => isUploading = false);
-                        }
-                      }
-                    },
-              child: isUploading
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text('Broadcast Now'),
-            ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }

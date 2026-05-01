@@ -17,6 +17,7 @@ import 'package:untitled1/pages/notifications.dart';
 import 'package:untitled1/pages/location_manager_page.dart';
 import 'package:untitled1/pages/subscription.dart';
 import 'package:untitled1/widgets/skeleton.dart';
+import 'package:untitled1/widgets/zoomable_image_viewer.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -158,6 +159,28 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     return diff.inHours < fallbackHours;
   }
 
+  Uri? _normalizeAnnouncementLink(String? rawLink) {
+    if (rawLink == null) return null;
+
+    final condensed = rawLink.replaceAll(RegExp(r'\s+'), '');
+    if (condensed.isEmpty) return null;
+
+    final withScheme = condensed.contains('://')
+        ? condensed
+        : 'https://$condensed';
+    final parsed = Uri.tryParse(withScheme);
+    if (parsed == null || parsed.host.isEmpty) return null;
+    return parsed;
+  }
+
+  Future<void> _openAnnouncementLink(String? rawLink) async {
+    final uri = _normalizeAnnouncementLink(rawLink);
+    if (uri == null) return;
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -266,320 +289,586 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       builder: (context) {
         final adPageController = PageController();
         var currentAdIndex = 0;
+        final imagePageIndexes = <String, int>{};
+        final screenSize = MediaQuery.sizeOf(context);
+        final dialogWidth = math.min(screenSize.width * 0.94, 540.0);
+        final dialogHeight = math.min(screenSize.height * 0.84, 680.0);
 
         return StatefulBuilder(
           builder: (context, setDialogState) => Dialog(
             insetPadding: const EdgeInsets.symmetric(
-              horizontal: 10,
-              vertical: 12,
+              horizontal: 14,
+              vertical: 18,
             ),
+            backgroundColor: Colors.transparent,
+            elevation: 0,
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(32),
+              borderRadius: BorderRadius.circular(28),
             ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(32),
-              child: Container(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
                 color: Colors.white,
-                constraints: BoxConstraints(
-                  maxWidth: MediaQuery.of(context).size.width * 0.96,
-                  maxHeight: MediaQuery.of(context).size.height * 0.9,
-                ),
-                child: SingleChildScrollView(
-                  child: SizedBox(
-                    height: MediaQuery.of(context).size.height * 0.82,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Expanded(
-                          child: PageView.builder(
-                            controller: adPageController,
-                            itemCount: popupDocs.length,
-                            onPageChanged: (index) {
-                              setDialogState(() => currentAdIndex = index);
-                            },
-                            itemBuilder: (context, adIndex) {
-                              final doc = popupDocs[adIndex];
-                              final data = doc.data();
-                              final imageUrls = _announcementImages(data);
-                              final adId = doc.id;
+                borderRadius: BorderRadius.circular(28),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF0F172A).withValues(alpha: 0.24),
+                    blurRadius: 34,
+                    offset: const Offset(0, 18),
+                  ),
+                ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(28),
+                child: SizedBox(
+                  width: dialogWidth,
+                  height: dialogHeight,
+                  child: Column(
+                    children: [
+                      Expanded(
+                        child: PageView.builder(
+                          controller: adPageController,
+                          itemCount: popupDocs.length,
+                          onPageChanged: (index) {
+                            setDialogState(() => currentAdIndex = index);
+                          },
+                          itemBuilder: (context, adIndex) {
+                            final doc = popupDocs[adIndex];
+                            final data = doc.data();
+                            final imageUrls = _announcementImages(data);
+                            final adId = doc.id;
+                            final title = (data['title'] ?? 'Announcement')
+                                .toString();
+                            final message = (data['message'] ?? '').toString();
+                            final badge = (data['badge'] ?? '')
+                                .toString()
+                                .trim();
+                            final hasLink =
+                                data['link'] != null &&
+                                data['link'].toString().isNotEmpty;
+                            final heroHeight = imageUrls.isEmpty
+                                ? math.min(dialogHeight * 0.28, 190.0)
+                                : math.min(dialogHeight * 0.48, 340.0);
 
-                              return SingleChildScrollView(
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Stack(
-                                      children: [
-                                        _buildAnnouncementGallery(
-                                          imageUrls,
-                                          height: imageUrls.isEmpty ? 260 : 400,
+                            void dismissPopup() {
+                              _hiddenPopupIds.add(adId);
+                              if (mounted) setState(() {});
+                              Navigator.of(context).pop();
+                            }
+
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                SizedBox(
+                                  height: heroHeight,
+                                  child: Stack(
+                                    children: [
+                                      if (imageUrls.isEmpty)
+                                        Container(
+                                          width: double.infinity,
+                                          decoration: const BoxDecoration(
+                                            gradient: LinearGradient(
+                                              colors: [
+                                                Color(0xFF0F172A),
+                                                Color(0xFF1D4ED8),
+                                              ],
+                                              begin: Alignment.topLeft,
+                                              end: Alignment.bottomRight,
+                                            ),
+                                          ),
+                                        )
+                                      else
+                                        PageView.builder(
+                                          key: PageStorageKey(
+                                            'popup_images_$adId',
+                                          ),
+                                          itemCount: imageUrls.length,
+                                          onPageChanged: (imageIndex) {
+                                            setDialogState(() {
+                                              imagePageIndexes[adId] =
+                                                  imageIndex;
+                                            });
+                                          },
+                                          itemBuilder: (context, imageIndex) {
+                                            return GestureDetector(
+                                              behavior: HitTestBehavior.opaque,
+                                              onTap: () {
+                                                _showAnnouncementImageViewer(
+                                                  imageUrls,
+                                                  imageIndex,
+                                                );
+                                              },
+                                              child: CachedNetworkImage(
+                                                imageUrl: imageUrls[imageIndex],
+                                                width: double.infinity,
+                                                height: heroHeight,
+                                                fit: BoxFit.cover,
+                                              ),
+                                            );
+                                          },
                                         ),
+                                      Positioned.fill(
+                                        child: IgnorePointer(
+                                          child: DecoratedBox(
+                                            decoration: BoxDecoration(
+                                              gradient: LinearGradient(
+                                                colors: [
+                                                  Colors.black.withValues(
+                                                    alpha: 0.44,
+                                                  ),
+                                                  Colors.transparent,
+                                                  Colors.black.withValues(
+                                                    alpha: 0.22,
+                                                  ),
+                                                ],
+                                                begin: Alignment.topCenter,
+                                                end: Alignment.bottomCenter,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      if (badge.isNotEmpty)
                                         Positioned(
-                                          top: 16,
-                                          left: 16,
-                                          right: 16,
+                                          top: 14,
+                                          left: 14,
+                                          right: 70,
+                                          child: Align(
+                                            alignment: Alignment.centerLeft,
+                                            child: Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 12,
+                                                    vertical: 7,
+                                                  ),
+                                              decoration: BoxDecoration(
+                                                color: Colors.white,
+                                                borderRadius:
+                                                    BorderRadius.circular(999),
+                                                boxShadow: [
+                                                  BoxShadow(
+                                                    color: Colors.black
+                                                        .withValues(
+                                                          alpha: 0.12,
+                                                        ),
+                                                    blurRadius: 14,
+                                                    offset: const Offset(0, 6),
+                                                  ),
+                                                ],
+                                              ),
+                                              child: Text(
+                                                badge,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(
+                                                  color: Color(0xFF1D4ED8),
+                                                  fontSize: 13,
+                                                  fontWeight: FontWeight.w800,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      Positioned(
+                                        top: 14,
+                                        right: 14,
+                                        child: IconButton(
+                                          tooltip: 'Close',
+                                          onPressed: dismissPopup,
+                                          icon: const Icon(Icons.close_rounded),
+                                          color: Colors.white,
+                                          style: IconButton.styleFrom(
+                                            backgroundColor: Colors.black
+                                                .withValues(alpha: 0.42),
+                                          ),
+                                        ),
+                                      ),
+                                      if (imageUrls.length > 1)
+                                        Positioned(
+                                          left: 0,
+                                          right: 0,
+                                          bottom: 12,
                                           child: Row(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              if ((data['badge'] ?? '')
-                                                  .toString()
-                                                  .trim()
-                                                  .isNotEmpty)
-                                                Container(
-                                                  padding:
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
+                                            children: List.generate(
+                                              imageUrls.length,
+                                              (imageIndex) {
+                                                final selected =
+                                                    (imagePageIndexes[adId] ??
+                                                        0) ==
+                                                    imageIndex;
+                                                return AnimatedContainer(
+                                                  duration: const Duration(
+                                                    milliseconds: 180,
+                                                  ),
+                                                  margin:
                                                       const EdgeInsets.symmetric(
-                                                        horizontal: 12,
-                                                        vertical: 8,
+                                                        horizontal: 3,
                                                       ),
+                                                  width: selected ? 18 : 7,
+                                                  height: 7,
                                                   decoration: BoxDecoration(
-                                                    color: Colors.white,
+                                                    color: selected
+                                                        ? Colors.white
+                                                        : Colors.white
+                                                              .withValues(
+                                                                alpha: 0.45,
+                                                              ),
                                                     borderRadius:
                                                         BorderRadius.circular(
                                                           999,
                                                         ),
                                                   ),
-                                                  child: Text(
-                                                    data['badge'].toString(),
-                                                    style: const TextStyle(
-                                                      color: Color(0xFF1D4ED8),
-                                                      fontWeight:
-                                                          FontWeight.w700,
-                                                    ),
-                                                  ),
-                                                ),
-                                              const Spacer(),
-                                              CircleAvatar(
-                                                backgroundColor: Colors.black
-                                                    .withValues(alpha: 0.45),
-                                                child: IconButton(
-                                                  icon: const Icon(
-                                                    Icons.close,
-                                                    color: Colors.white,
-                                                  ),
-                                                  onPressed: () {
-                                                    setState(() {
-                                                      _hiddenPopupIds.add(adId);
-                                                    });
-                                                    Navigator.pop(context);
-                                                  },
-                                                ),
-                                              ),
-                                            ],
+                                                );
+                                              },
+                                            ),
                                           ),
                                         ),
+                                    ],
+                                  ),
+                                ),
+                                Expanded(
+                                  child: SingleChildScrollView(
+                                    padding: const EdgeInsets.fromLTRB(
+                                      22,
+                                      18,
+                                      22,
+                                      18,
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 10,
+                                                    vertical: 6,
+                                                  ),
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xFFEFF6FF),
+                                                borderRadius:
+                                                    BorderRadius.circular(999),
+                                              ),
+                                              child: const Text(
+                                                'System Promotion',
+                                                style: TextStyle(
+                                                  color: Color(0xFF1D4ED8),
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w800,
+                                                ),
+                                              ),
+                                            ),
+                                            const Spacer(),
+                                            if (popupDocs.length > 1)
+                                              Text(
+                                                '${adIndex + 1}/${popupDocs.length}',
+                                                style: const TextStyle(
+                                                  color: Color(0xFF64748B),
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                              ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 14),
+                                        Text(
+                                          title,
+                                          style: const TextStyle(
+                                            color: _kTextMain,
+                                            fontSize: 26,
+                                            fontWeight: FontWeight.w900,
+                                            height: 1.08,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 12),
+                                        Text(
+                                          message,
+                                          style: const TextStyle(
+                                            fontSize: 16,
+                                            color: Color(0xFF475569),
+                                            height: 1.46,
+                                          ),
+                                        ),
+                                        if (popupDocs.length > 1) ...[
+                                          const SizedBox(height: 16),
+                                          const Text(
+                                            'Swipe to view more announcements',
+                                            style: TextStyle(
+                                              color: Color(0xFF64748B),
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                        ],
                                       ],
                                     ),
-                                    Padding(
-                                      padding: const EdgeInsets.fromLTRB(
-                                        24,
-                                        22,
-                                        24,
-                                        20,
-                                      ),
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
+                                  ),
+                                ),
+                                DecoratedBox(
+                                  decoration: const BoxDecoration(
+                                    color: Color(0xFFF8FAFC),
+                                    border: Border(
+                                      top: BorderSide(color: Color(0xFFE2E8F0)),
+                                    ),
+                                  ),
+                                  child: Padding(
+                                    padding: const EdgeInsets.fromLTRB(
+                                      16,
+                                      12,
+                                      16,
+                                      16,
+                                    ),
+                                    child: Column(
+                                      children: [
+                                        if (popupDocs.length > 1) ...[
                                           Row(
-                                            children: [
-                                              Container(
-                                                padding:
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
+                                            children: List.generate(
+                                              popupDocs.length,
+                                              (index) => AnimatedContainer(
+                                                duration: const Duration(
+                                                  milliseconds: 180,
+                                                ),
+                                                margin:
                                                     const EdgeInsets.symmetric(
-                                                      horizontal: 10,
-                                                      vertical: 6,
+                                                      horizontal: 4,
                                                     ),
+                                                width: currentAdIndex == index
+                                                    ? 22
+                                                    : 8,
+                                                height: 8,
                                                 decoration: BoxDecoration(
-                                                  color: const Color(
-                                                    0xFFEFF6FF,
-                                                  ),
+                                                  color: currentAdIndex == index
+                                                      ? const Color(0xFF1D4ED8)
+                                                      : const Color(0xFFCBD5E1),
                                                   borderRadius:
                                                       BorderRadius.circular(
                                                         999,
                                                       ),
                                                 ),
-                                                child: const Text(
-                                                  'System Promotion',
-                                                  style: TextStyle(
-                                                    color: Color(0xFF1D4ED8),
-                                                    fontWeight: FontWeight.w700,
-                                                  ),
-                                                ),
                                               ),
-                                              const Spacer(),
-                                              if (popupDocs.length > 1)
-                                                Text(
-                                                  '${adIndex + 1}/${popupDocs.length}',
-                                                  style: const TextStyle(
-                                                    color: Color(0xFF64748B),
-                                                    fontWeight: FontWeight.w600,
-                                                  ),
-                                                ),
-                                            ],
-                                          ),
-                                          const SizedBox(height: 14),
-                                          Text(
-                                            data['title'] ?? 'Announcement',
-                                            style: const TextStyle(
-                                              fontSize: 30,
-                                              fontWeight: FontWeight.bold,
-                                              height: 1.06,
                                             ),
                                           ),
                                           const SizedBox(height: 12),
-                                          Text(
-                                            data['message'] ?? '',
-                                            style: const TextStyle(
-                                              fontSize: 17,
-                                              color: Color(0xFF475569),
-                                              height: 1.45,
-                                            ),
-                                          ),
-                                          if (popupDocs.length > 1) ...[
-                                            const SizedBox(height: 14),
-                                            const Text(
-                                              'Swipe left or right to see more ads',
-                                              style: TextStyle(
-                                                color: Color(0xFF64748B),
-                                                fontSize: 13,
-                                                fontWeight: FontWeight.w600,
+                                        ],
+                                        Row(
+                                          children: [
+                                            Expanded(
+                                              child: OutlinedButton(
+                                                style: OutlinedButton.styleFrom(
+                                                  foregroundColor: const Color(
+                                                    0xFF334155,
+                                                  ),
+                                                  side: const BorderSide(
+                                                    color: Color(0xFFCBD5E1),
+                                                  ),
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        vertical: 13,
+                                                      ),
+                                                  shape: RoundedRectangleBorder(
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          14,
+                                                        ),
+                                                  ),
+                                                ),
+                                                onPressed: dismissPopup,
+                                                child: const Text('Not Now'),
                                               ),
                                             ),
-                                          ],
-                                          if (imageUrls.length > 1) ...[
-                                            const SizedBox(height: 12),
-                                            SizedBox(
-                                              height: 86,
-                                              child: ListView.separated(
-                                                scrollDirection:
-                                                    Axis.horizontal,
-                                                itemCount: imageUrls.length,
-                                                separatorBuilder: (_, __) =>
-                                                    const SizedBox(width: 8),
-                                                itemBuilder: (context, index) =>
-                                                    ClipRRect(
+                                            if (hasLink) ...[
+                                              const SizedBox(width: 12),
+                                              Expanded(
+                                                child: ElevatedButton.icon(
+                                                  style: ElevatedButton.styleFrom(
+                                                    backgroundColor:
+                                                        const Color(0xFF1D4ED8),
+                                                    foregroundColor:
+                                                        Colors.white,
+                                                    elevation: 0,
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          vertical: 13,
+                                                        ),
+                                                    shape: RoundedRectangleBorder(
                                                       borderRadius:
                                                           BorderRadius.circular(
                                                             14,
                                                           ),
-                                                      child: CachedNetworkImage(
-                                                        imageUrl:
-                                                            imageUrls[index],
-                                                        width: 110,
-                                                        height: 86,
-                                                        fit: BoxFit.cover,
-                                                      ),
                                                     ),
-                                              ),
-                                            ),
-                                          ],
-                                          const SizedBox(height: 24),
-                                          Row(
-                                            children: [
-                                              Expanded(
-                                                child: OutlinedButton(
-                                                  style: OutlinedButton.styleFrom(
-                                                    padding:
-                                                        const EdgeInsets.symmetric(
-                                                          vertical: 14,
-                                                        ),
                                                   ),
-                                                  onPressed: () {
-                                                    setState(
-                                                      () => _hiddenPopupIds.add(
-                                                        adId,
-                                                      ),
+                                                  onPressed: () async {
+                                                    await _openAnnouncementLink(
+                                                      data['link']?.toString(),
                                                     );
-                                                    Navigator.pop(context);
+                                                    if (context.mounted) {
+                                                      Navigator.pop(context);
+                                                    }
                                                   },
-                                                  child: const Text('Not Now'),
-                                                ),
-                                              ),
-                                              if (data['link'] != null &&
-                                                  data['link']
-                                                      .toString()
-                                                      .isNotEmpty) ...[
-                                                const SizedBox(width: 12),
-                                                Expanded(
-                                                  child: ElevatedButton.icon(
-                                                    style: ElevatedButton.styleFrom(
-                                                      backgroundColor:
-                                                          const Color(
-                                                            0xFF1D4ED8,
-                                                          ),
-                                                      foregroundColor:
-                                                          Colors.white,
-                                                      padding:
-                                                          const EdgeInsets.symmetric(
-                                                            vertical: 14,
-                                                          ),
-                                                    ),
-                                                    onPressed: () async {
-                                                      final url = Uri.parse(
-                                                        data['link'],
-                                                      );
-                                                      if (await canLaunchUrl(
-                                                        url,
-                                                      )) {
-                                                        await launchUrl(url);
-                                                      }
-                                                      if (context.mounted) {
-                                                        Navigator.pop(context);
-                                                      }
-                                                    },
-                                                    icon: const Icon(
-                                                      Icons
-                                                          .arrow_outward_rounded,
-                                                    ),
-                                                    label: Text(
-                                                      data['buttonText'] ??
-                                                          'Learn More',
-                                                    ),
+                                                  icon: const Icon(
+                                                    Icons.arrow_outward_rounded,
+                                                  ),
+                                                  label: Text(
+                                                    data['buttonText'] ??
+                                                        'Learn More',
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
                                                   ),
                                                 ),
-                                              ],
+                                              ),
                                             ],
-                                          ),
-                                        ],
-                                      ),
+                                          ],
+                                        ),
+                                      ],
                                     ),
-                                  ],
+                                  ),
                                 ),
-                              );
-                            },
-                          ),
+                              ],
+                            );
+                          },
                         ),
-                        if (popupDocs.length > 1)
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(24, 0, 24, 18),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: List.generate(
-                                popupDocs.length,
-                                (index) => AnimatedContainer(
-                                  duration: const Duration(milliseconds: 180),
-                                  margin: const EdgeInsets.symmetric(
-                                    horizontal: 4,
-                                  ),
-                                  width: currentAdIndex == index ? 22 : 8,
-                                  height: 8,
-                                  decoration: BoxDecoration(
-                                    color: currentAdIndex == index
-                                        ? const Color(0xFF1D4ED8)
-                                        : const Color(0xFFCBD5E1),
-                                    borderRadius: BorderRadius.circular(999),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
               ),
             ),
           ),
+        );
+      },
+    );
+  }
+
+  void _showAnnouncementImageViewer(List<String> imageUrls, int initialIndex) {
+    if (imageUrls.isEmpty) return;
+
+    showDialog<void>(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.92),
+      builder: (context) {
+        final pageController = PageController(initialPage: initialIndex);
+        var currentIndex = initialIndex;
+        var showChrome = true;
+        var isCurrentImageZoomed = false;
+
+        void requestAdjacentPage(int direction) {
+          final target = currentIndex + direction;
+          if (target < 0 || target >= imageUrls.length) return;
+          pageController.animateToPage(
+            target,
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOutCubic,
+          );
+        }
+
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return Dialog.fullscreen(
+              backgroundColor: Colors.black,
+              child: Stack(
+                children: [
+                  PageView.builder(
+                    controller: pageController,
+                    physics: isCurrentImageZoomed
+                        ? const NeverScrollableScrollPhysics()
+                        : const PageScrollPhysics(),
+                    itemCount: imageUrls.length,
+                    onPageChanged: (index) {
+                      setDialogState(() {
+                        currentIndex = index;
+                        isCurrentImageZoomed = false;
+                      });
+                    },
+                    itemBuilder: (context, index) {
+                      return ZoomableImageViewer(
+                        imageUrl: imageUrls[index],
+                        enableHero: true,
+                        heroTag: imageUrls[index],
+                        enableSwipeDismiss: true,
+                        onTap: () {
+                          setDialogState(() => showChrome = !showChrome);
+                        },
+                        onZoomStateChanged: (isZoomed) {
+                          if (index != currentIndex ||
+                              isCurrentImageZoomed == isZoomed) {
+                            return;
+                          }
+                          setDialogState(() => isCurrentImageZoomed = isZoomed);
+                        },
+                        onEdgePageRequest: (direction) {
+                          if (index != currentIndex) return;
+                          requestAdjacentPage(direction);
+                        },
+                      );
+                    },
+                  ),
+                  AnimatedPositioned(
+                    duration: const Duration(milliseconds: 180),
+                    curve: Curves.easeOut,
+                    top: showChrome ? 18 : -70,
+                    right: 18,
+                    child: SafeArea(
+                      child: IconButton(
+                        tooltip: 'Close',
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(Icons.close_rounded),
+                        color: Colors.white,
+                        style: IconButton.styleFrom(
+                          backgroundColor: Colors.white.withValues(alpha: 0.14),
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (imageUrls.length > 1)
+                    AnimatedPositioned(
+                      duration: const Duration(milliseconds: 180),
+                      curve: Curves.easeOut,
+                      left: 0,
+                      right: 0,
+                      bottom: showChrome ? 28 : -90,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            '${currentIndex + 1}/${imageUrls.length}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: List.generate(imageUrls.length, (index) {
+                              final selected = currentIndex == index;
+                              return AnimatedContainer(
+                                duration: const Duration(milliseconds: 180),
+                                margin: const EdgeInsets.symmetric(
+                                  horizontal: 4,
+                                ),
+                                width: selected ? 24 : 8,
+                                height: 8,
+                                decoration: BoxDecoration(
+                                  color: selected
+                                      ? Colors.white
+                                      : Colors.white.withValues(alpha: 0.4),
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                              );
+                            }),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            );
+          },
         );
       },
     );
@@ -872,6 +1161,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           'categories': 'קטגוריות פופולריות',
           'see_all': 'הכל',
           'broadcast_title': 'הודעת מערכת',
+          'read_more': 'קרא עוד',
+          'close': 'סגור',
           'my_requests': 'הבקשות שלי',
           'subscribe_cta_title': 'הפעלת מנוי Pro',
           'subscribe_cta_subtitle':
@@ -1123,6 +1414,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           'categories': 'الفئات الشائعة',
           'see_all': 'الكل',
           'broadcast_title': 'بلاغ النظام',
+          'read_more': 'اقرأ المزيد',
+          'close': 'إغلاق',
           'my_requests': 'طلباتي',
           'subscribe_cta_title': 'تفعيل اشتراك Pro',
           'subscribe_cta_subtitle':
@@ -1389,6 +1682,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           'categories': 'Popular Categories',
           'see_all': 'See all',
           'broadcast_title': 'System Broadcast',
+          'read_more': 'Read more',
+          'close': 'Close',
           'my_requests': 'My Requests',
           'subscribe_cta_title': 'Activate Pro Subscription',
           'subscribe_cta_subtitle':
@@ -1606,7 +1901,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   Widget _buildBroadcastBanner(Map<String, dynamic> strings) {
-    return StreamBuilder<QuerySnapshot>(
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: _firestore
           .collection('system_announcements')
           .orderBy('timestamp', descending: true)
@@ -1618,7 +1913,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         }
 
         final docs = snapshot.data!.docs.where((doc) {
-          final data = doc.data() as Map<String, dynamic>;
+          final data = doc.data();
           final showBanner = data['showBanner'] != false;
           if (!showBanner || _hiddenBannerIds.contains(doc.id)) return false;
           return _isAnnouncementActive(data, fallbackHours: 48);
@@ -1640,8 +1935,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           child: Column(
             children: [
               Container(
-                margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                height: 210,
+                margin: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                height: 178,
                 child: PageView.builder(
                   controller: _bannerPageController,
                   onPageChanged: (index) {
@@ -1650,184 +1945,208 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                   },
                   itemBuilder: (context, index) {
                     final doc = docs[index % docs.length];
-                    final data = doc.data() as Map<String, dynamic>;
+                    final data = doc.data();
                     final docId = doc.id;
                     final imageUrls = _announcementImages(data);
+                    final isPopupBroadcast = data['isPopup'] == true;
+                    void openBroadcast() {
+                      if (isPopupBroadcast) {
+                        _showAdPopup([doc]);
+                      } else {
+                        _showBroadcastDetails(
+                          data: data,
+                          strings: strings,
+                          imageUrls: imageUrls,
+                        );
+                      }
+                    }
 
-                    return Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 2),
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFF0F172A), Color(0xFF1D4ED8)],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                        borderRadius: BorderRadius.circular(24),
-                        boxShadow: [
-                          BoxShadow(
-                            color: const Color(
-                              0xFF1D4ED8,
-                            ).withValues(alpha: 0.28),
-                            blurRadius: 22,
-                            offset: const Offset(0, 10),
+                    return GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: openBroadcast,
+                      child: Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 2),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF0F172A), Color(0xFF1D4ED8)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
                           ),
-                        ],
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(24),
-                        child: Padding(
-                          padding: const EdgeInsets.all(18),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Row(
+                          borderRadius: BorderRadius.circular(20),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(
+                                0xFF1D4ED8,
+                              ).withValues(alpha: 0.2),
+                              blurRadius: 16,
+                              offset: const Offset(0, 8),
+                            ),
+                          ],
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(20),
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
                                           children: [
+                                            Row(
+                                              children: [
+                                                if ((data['badge'] ?? '')
+                                                    .toString()
+                                                    .trim()
+                                                    .isNotEmpty)
+                                                  Container(
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          horizontal: 9,
+                                                          vertical: 4,
+                                                        ),
+                                                    decoration: BoxDecoration(
+                                                      color: Colors.white
+                                                          .withValues(
+                                                            alpha: 0.14,
+                                                          ),
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            999,
+                                                          ),
+                                                    ),
+                                                    child: Text(
+                                                      data['badge'].toString(),
+                                                      maxLines: 1,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                      style: const TextStyle(
+                                                        color: Colors.white,
+                                                        fontWeight:
+                                                            FontWeight.w700,
+                                                        fontSize: 12,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                const Spacer(),
+                                                if (docs.length > 1)
+                                                  Text(
+                                                    '${(index % docs.length) + 1}/${docs.length}',
+                                                    style: TextStyle(
+                                                      color: Colors.white
+                                                          .withValues(
+                                                            alpha: 0.78,
+                                                          ),
+                                                      fontWeight:
+                                                          FontWeight.w700,
+                                                      fontSize: 12,
+                                                    ),
+                                                  ),
+                                              ],
+                                            ),
                                             if ((data['badge'] ?? '')
                                                 .toString()
                                                 .trim()
                                                 .isNotEmpty)
-                                              Container(
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                      horizontal: 10,
-                                                      vertical: 6,
-                                                    ),
-                                                decoration: BoxDecoration(
-                                                  color: Colors.white
-                                                      .withValues(alpha: 0.14),
-                                                  borderRadius:
-                                                      BorderRadius.circular(
-                                                        999,
-                                                      ),
-                                                ),
-                                                child: Text(
-                                                  data['badge'].toString(),
-                                                  style: const TextStyle(
-                                                    color: Colors.white,
-                                                    fontWeight: FontWeight.w700,
-                                                  ),
-                                                ),
+                                              const SizedBox(height: 8),
+                                            Text(
+                                              data['title'] ??
+                                                  strings['broadcast_title'],
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 18,
                                               ),
-                                            const Spacer(),
-                                            if (docs.length > 1)
-                                              Text(
-                                                '${(index % docs.length) + 1}/${docs.length}',
-                                                style: TextStyle(
-                                                  color: Colors.white
-                                                      .withValues(alpha: 0.78),
-                                                  fontWeight: FontWeight.w700,
-                                                ),
-                                              ),
+                                            ),
+                                            const SizedBox(height: 6),
+                                            _buildBroadcastMessagePreview(
+                                              data: data,
+                                              strings: strings,
+                                              onReadMore: openBroadcast,
+                                            ),
                                           ],
                                         ),
-                                        if ((data['badge'] ?? '')
-                                            .toString()
-                                            .trim()
-                                            .isNotEmpty)
-                                          const SizedBox(height: 12),
-                                        Text(
-                                          data['title'] ??
-                                              strings['broadcast_title'],
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 20,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 8),
-                                        Text(
-                                          data['message'] ?? '',
-                                          maxLines: 4,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: TextStyle(
-                                            color: Colors.white.withValues(
-                                              alpha: 0.88,
+                                      ),
+                                      const SizedBox(width: 10),
+                                      if (imageUrls.isNotEmpty)
+                                        SizedBox(
+                                          width: 76,
+                                          height: 76,
+                                          child: _buildAnnouncementGallery(
+                                            imageUrls,
+                                            height: 76,
+                                            thumbnailWidth: 76,
+                                            borderRadius: BorderRadius.circular(
+                                              14,
                                             ),
-                                            fontSize: 14,
-                                            height: 1.35,
                                           ),
                                         ),
-                                      ],
-                                    ),
+                                      IconButton(
+                                        padding: EdgeInsets.zero,
+                                        constraints: const BoxConstraints(
+                                          minWidth: 30,
+                                          minHeight: 30,
+                                        ),
+                                        icon: const Icon(
+                                          Icons.close,
+                                          color: Colors.white70,
+                                          size: 18,
+                                        ),
+                                        onPressed: () {
+                                          setState(
+                                            () => _hiddenBannerIds.add(docId),
+                                          );
+                                        },
+                                      ),
+                                    ],
                                   ),
-                                  const SizedBox(width: 12),
-                                  if (imageUrls.isNotEmpty)
-                                    SizedBox(
-                                      width: 140,
-                                      height: 140,
-                                      child: _buildAnnouncementGallery(
-                                        imageUrls,
-                                        height: 140,
-                                        thumbnailWidth: 140,
-                                        borderRadius: BorderRadius.circular(18),
-                                      ),
-                                    ),
-                                  IconButton(
-                                    icon: const Icon(
-                                      Icons.close,
-                                      color: Colors.white70,
-                                      size: 20,
-                                    ),
-                                    onPressed: () {
-                                      setState(
-                                        () => _hiddenBannerIds.add(docId),
-                                      );
-                                    },
-                                  ),
-                                ],
-                              ),
-                              const Spacer(),
-                              Row(
-                                children: [
-                                  if (docs.length > 1)
-                                    Text(
-                                      'Swipe for more',
-                                      style: TextStyle(
-                                        color: Colors.white.withValues(
-                                          alpha: 0.74,
+                                ),
+                                Row(
+                                  children: [
+                                    const Spacer(),
+                                    if (data['link'] != null &&
+                                        data['link'].toString().isNotEmpty)
+                                      ElevatedButton.icon(
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.white,
+                                          foregroundColor: const Color(
+                                            0xFF0F172A,
+                                          ),
+                                          elevation: 0,
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                            vertical: 6,
+                                          ),
+                                          minimumSize: const Size(0, 32),
                                         ),
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  const Spacer(),
-                                  if (data['link'] != null &&
-                                      data['link'].toString().isNotEmpty)
-                                    ElevatedButton.icon(
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: Colors.white,
-                                        foregroundColor: const Color(
-                                          0xFF0F172A,
+                                        onPressed: () async {
+                                          await _openAnnouncementLink(
+                                            data['link']?.toString(),
+                                          );
+                                        },
+                                        icon: const Icon(
+                                          Icons.arrow_outward_rounded,
+                                          size: 16,
                                         ),
-                                        elevation: 0,
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 16,
-                                          vertical: 12,
+                                        label: Text(
+                                          data['buttonText'] ?? 'Learn More',
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
                                         ),
                                       ),
-                                      onPressed: () async {
-                                        final url = Uri.parse(data['link']);
-                                        if (await canLaunchUrl(url)) {
-                                          await launchUrl(url);
-                                        }
-                                      },
-                                      icon: const Icon(
-                                        Icons.arrow_outward_rounded,
-                                      ),
-                                      label: Text(
-                                        data['buttonText'] ?? 'Learn More',
-                                      ),
-                                    ),
-                                ],
-                              ),
-                            ],
+                                  ],
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),
@@ -1857,6 +2176,263 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 ),
               ],
             ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildBroadcastMessagePreview({
+    required Map<String, dynamic> data,
+    required Map<String, dynamic> strings,
+    required VoidCallback onReadMore,
+  }) {
+    final message = (data['message'] ?? '').toString();
+    final style = TextStyle(
+      color: Colors.white.withValues(alpha: 0.88),
+      fontSize: 14,
+      height: 1.25,
+    );
+    final twoLineHeight = style.fontSize! * style.height! * 2;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final textDirection = Directionality.of(context);
+        final painter = TextPainter(
+          text: TextSpan(text: message, style: style),
+          maxLines: 2,
+          textDirection: textDirection,
+        )..layout(maxWidth: constraints.maxWidth);
+        final isOverflowing = painter.didExceedMaxLines;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              height: twoLineHeight,
+              child: Text(
+                message,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: style,
+              ),
+            ),
+            if (isOverflowing) ...[
+              const SizedBox(height: 4),
+              TextButton(
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  padding: EdgeInsets.zero,
+                  minimumSize: const Size(0, 22),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  textStyle: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                onPressed: onReadMore,
+                child: Text(strings['read_more'] ?? 'Read more'),
+              ),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  void _showBroadcastDetails({
+    required Map<String, dynamic> data,
+    required Map<String, dynamic> strings,
+    required List<String> imageUrls,
+  }) {
+    showDialog<void>(
+      context: context,
+      builder: (context) {
+        final title = (data['title'] ?? strings['broadcast_title']).toString();
+        final message = (data['message'] ?? '').toString();
+        final badge = (data['badge'] ?? '').toString().trim();
+        final screenHeight = MediaQuery.sizeOf(context).height;
+
+        return Dialog(
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 20,
+            vertical: 32,
+          ),
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(26),
+          ),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: 560,
+              maxHeight: screenHeight * 0.82,
+            ),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(26),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF0F172A).withValues(alpha: 0.22),
+                    blurRadius: 30,
+                    offset: const Offset(0, 18),
+                  ),
+                ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(26),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.fromLTRB(20, 16, 12, 18),
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [Color(0xFF0F172A), Color(0xFF1D4ED8)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                if (badge.isNotEmpty) ...[
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 5,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withValues(
+                                        alpha: 0.16,
+                                      ),
+                                      borderRadius: BorderRadius.circular(999),
+                                    ),
+                                    child: Text(
+                                      badge,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 10),
+                                ],
+                                Text(
+                                  title,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.w800,
+                                    height: 1.12,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: strings['close'] ?? 'Close',
+                            onPressed: () => Navigator.pop(context),
+                            icon: const Icon(Icons.close_rounded),
+                            color: Colors.white,
+                            style: IconButton.styleFrom(
+                              backgroundColor: Colors.white.withValues(
+                                alpha: 0.14,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (imageUrls.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(18, 18, 18, 0),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(18),
+                          child: _buildAnnouncementGallery(
+                            imageUrls,
+                            height: 180,
+                            borderRadius: BorderRadius.zero,
+                          ),
+                        ),
+                      ),
+                    Flexible(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.fromLTRB(22, 18, 22, 18),
+                        child: Text(
+                          message,
+                          style: const TextStyle(
+                            color: _kTextMain,
+                            fontSize: 16,
+                            height: 1.48,
+                          ),
+                        ),
+                      ),
+                    ),
+                    DecoratedBox(
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFF8FAFC),
+                        border: Border(
+                          top: BorderSide(color: Color(0xFFE2E8F0)),
+                        ),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+                        child: Row(
+                          children: [
+                            TextButton(
+                              style: TextButton.styleFrom(
+                                foregroundColor: _kTextMuted,
+                              ),
+                              onPressed: () => Navigator.pop(context),
+                              child: Text(strings['close'] ?? 'Close'),
+                            ),
+                            const Spacer(),
+                            if (data['link'] != null &&
+                                data['link'].toString().isNotEmpty)
+                              ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: _kPrimaryBlue,
+                                  foregroundColor: Colors.white,
+                                  elevation: 0,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 12,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                ),
+                                onPressed: () async {
+                                  await _openAnnouncementLink(
+                                    data['link']?.toString(),
+                                  );
+                                },
+                                icon: const Icon(Icons.arrow_outward_rounded),
+                                label: Text(
+                                  data['buttonText'] ?? 'Learn More',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
         );
       },
@@ -4417,138 +4993,248 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   IconData _getIcon(String? name) {
     switch (name) {
-      case 'plumbing':
-        return Icons.plumbing;
-      case 'electrical_services':
-        return Icons.electrical_services;
-      case 'carpenter':
-        return Icons.carpenter;
-      case 'format_paint':
-        return Icons.format_paint;
-      case 'vpn_key':
-        return Icons.vpn_key;
-      case 'park':
-        return Icons.park;
-      case 'ac_unit':
-        return Icons.ac_unit;
-      case 'cleaning_services':
-        return Icons.cleaning_services;
-      case 'build':
-        return Icons.build;
-      case 'handyman':
-        return Icons.handyman;
-      case 'foundation':
-        return Icons.foundation;
-      case 'grid_view':
-        return Icons.grid_view;
-      case 'settings':
-        return Icons.settings;
-      case 'home_repair_service':
-        return Icons.home_repair_service;
-      case 'computer':
-        return Icons.computer;
-      case 'content_cut':
-        return Icons.content_cut;
-      case 'checkroom':
-        return Icons.checkroom;
-      case 'local_shipping':
-        return Icons.local_shipping;
-      case 'pest_control':
-        return Icons.pest_control;
-      case 'solar_power':
-        return Icons.solar_power;
-      case 'chair':
-        return Icons.chair;
-      case 'format_shapes':
-        return Icons.format_shapes;
-      case 'architecture':
-        return Icons.architecture;
-      case 'school':
-        return Icons.school;
-      case 'child_care':
-        return Icons.child_care;
-      case 'photo_camera':
-        return Icons.photo_camera;
-      case 'music_note':
-        return Icons.music_note;
-      case 'face':
-        return Icons.face;
-      case 'medical_services':
-        return Icons.medical_services;
-      case 'self_improvement':
-        return Icons.self_improvement;
-      case 'window':
-        return Icons.window;
-      case 'pool':
-        return Icons.pool;
-      case 'fitness_center':
-        return Icons.fitness_center;
-      case 'pets':
-        return Icons.pets;
-      case 'home':
-        return Icons.home;
-      case 'waves':
-        return Icons.waves;
-      case 'dry_cleaning':
-        return Icons.dry_cleaning;
-      case 'event':
-        return Icons.event;
-      case 'restaurant':
-        return Icons.restaurant;
-      case 'security':
-        return Icons.security;
-      case 'delivery_dining':
-        return Icons.delivery_dining;
-      case 'local_car_wash':
-        return Icons.local_car_wash;
-      case 'spa':
-        return Icons.spa;
-      case 'restaurant_menu':
-        return Icons.restaurant_menu;
-      case 'flight':
-        return Icons.flight;
-      case 'real_estate_agent':
-        return Icons.real_estate_agent;
-      case 'gavel':
-        return Icons.gavel;
-      case 'calculate':
-        return Icons.calculate;
-      case 'translate':
-        return Icons.translate;
-      case 'format_color_fill':
-        return Icons.format_color_fill;
-      case 'square_foot':
-        return Icons.square_foot;
-      case 'videocam':
-        return Icons.videocam;
-      case 'public':
-        return Icons.public;
-      case 'psychology':
-        return Icons.psychology;
-      case 'add_a_photo':
-        return Icons.add_a_photo;
-      case 'flight_takeoff':
-        return Icons.flight_takeoff;
-      case 'piano':
-        return Icons.piano;
-      case 'language':
-        return Icons.language;
-      case 'functions':
-        return Icons.functions;
-      case 'science':
-        return Icons.science;
-      case 'biotech':
-        return Icons.biotech;
-      case 'eco':
-        return Icons.eco;
-      case 'history_edu':
-        return Icons.history_edu;
-      case 'palette':
-        return Icons.palette;
-      case 'pedal_bike':
-        return Icons.pedal_bike;
       case 'engineering':
-        return Icons.engineering;
+    return Icons.engineering;
+  case 'plumbing':
+    return Icons.plumbing;
+  case 'electrical_services':
+    return Icons.electrical_services;
+  case 'electric_bolt':
+    return Icons.electric_bolt;
+  case 'lightbulb':
+    return Icons.lightbulb;
+  case 'carpenter':
+    return Icons.carpenter;
+  case 'handyman':
+    return Icons.handyman;
+  case 'home_repair_service':
+    return Icons.home_repair_service;
+  case 'construction':
+    return Icons.construction;
+  case 'foundation':
+    return Icons.foundation;
+  case 'roofing':
+    return Icons.roofing;
+  case 'hardware':
+    return Icons.hardware;
+  case 'build':
+    return Icons.build;
+  case 'format_paint':
+    return Icons.format_paint;
+  case 'format_color_fill':
+    return Icons.format_color_fill;
+  case 'architecture':
+    return Icons.architecture;
+  case 'design_services':
+    return Icons.design_services;
+  case 'straighten':
+    return Icons.straighten;
+  case 'square_foot':
+    return Icons.square_foot;
+  case 'chair':
+    return Icons.chair;
+  case 'table_restaurant':
+    return Icons.table_restaurant;
+  case 'window':
+    return Icons.window;
+  case 'door_front_door':
+    return Icons.door_front_door;
+  case 'blinds':
+    return Icons.blinds;
+  case 'shower':
+    return Icons.shower;
+  case 'water_drop':
+    return Icons.water_drop;
+  case 'water_damage':
+    return Icons.water_damage;
+  case 'ac_unit':
+    return Icons.ac_unit;
+  case 'air':
+    return Icons.air;
+  case 'cleaning_services':
+    return Icons.cleaning_services;
+  case 'dry_cleaning':
+    return Icons.dry_cleaning;
+  case 'clean_hands':
+    return Icons.clean_hands;
+  case 'pest_control':
+    return Icons.pest_control;
+  case 'bug_report':
+    return Icons.bug_report;
+  case 'solar_power':
+    return Icons.solar_power;
+  case 'computer':
+    return Icons.computer;
+  case 'devices':
+    return Icons.devices;
+  case 'memory':
+    return Icons.memory;
+  case 'router':
+    return Icons.router;
+  case 'wifi':
+    return Icons.wifi;
+  case 'phone_android':
+    return Icons.phone_android;
+  case 'print':
+    return Icons.print;
+  case 'camera_indoor':
+    return Icons.camera_indoor;
+  case 'security':
+    return Icons.security;
+  case 'shield':
+    return Icons.shield;
+  case 'support_agent':
+    return Icons.support_agent;
+  case 'medical_services':
+    return Icons.medical_services;
+  case 'local_hospital':
+    return Icons.local_hospital;
+  case 'monitor_heart':
+    return Icons.monitor_heart;
+  case 'healing':
+    return Icons.healing;
+  case 'psychology':
+    return Icons.psychology;
+  case 'fitness_center':
+    return Icons.fitness_center;
+  case 'spa':
+    return Icons.spa;
+  case 'child_care':
+    return Icons.child_care;
+  case 'elderly':
+    return Icons.elderly;
+  case 'school':
+    return Icons.school;
+  case 'translate':
+    return Icons.translate;
+  case 'calculate':
+    return Icons.calculate;
+  case 'gavel':
+    return Icons.gavel;
+  case 'real_estate_agent':
+    return Icons.real_estate_agent;
+  case 'storefront':
+    return Icons.storefront;
+  case 'shopping_bag':
+    return Icons.shopping_bag;
+  case 'badge':
+    return Icons.badge;
+  case 'restaurant':
+    return Icons.restaurant;
+  case 'restaurant_menu':
+    return Icons.restaurant_menu;
+  case 'lunch_dining':
+    return Icons.lunch_dining;
+  case 'bakery_dining':
+    return Icons.bakery_dining;
+  case 'cake':
+    return Icons.cake;
+  case 'celebration':
+    return Icons.celebration;
+  case 'event':
+    return Icons.event;
+  case 'photo_camera':
+    return Icons.photo_camera;
+  case 'camera_alt':
+    return Icons.camera_alt;
+  case 'add_a_photo':
+    return Icons.add_a_photo;
+  case 'videocam':
+    return Icons.videocam;
+  case 'movie_creation':
+    return Icons.movie_creation;
+  case 'music_note':
+    return Icons.music_note;
+  case 'graphic_eq':
+    return Icons.graphic_eq;
+  case 'piano':
+    return Icons.piano;
+  case 'palette':
+    return Icons.palette;
+  case 'brush':
+    return Icons.brush;
+  case 'face':
+    return Icons.face;
+  case 'checkroom':
+    return Icons.checkroom;
+  case 'content_cut':
+    return Icons.content_cut;
+  case 'iron':
+    return Icons.iron;
+  case 'local_shipping':
+    return Icons.local_shipping;
+  case 'local_moving':
+    return Icons.moving;
+  case 'inventory_2':
+    return Icons.inventory_2;
+  case 'delivery_dining':
+    return Icons.delivery_dining;
+  case 'local_car_wash':
+    return Icons.local_car_wash;
+  case 'directions_car':
+    return Icons.directions_car;
+  case 'car_repair':
+    return Icons.car_repair;
+  case 'airport_shuttle':
+    return Icons.airport_shuttle;
+  case 'two_wheeler':
+    return Icons.two_wheeler;
+  case 'moped':
+    return Icons.moped;
+  case 'pedal_bike':
+    return Icons.pedal_bike;
+  case 'fire_truck':
+    return Icons.fire_truck;
+  case 'park':
+    return Icons.park;
+  case 'pets':
+    return Icons.pets;
+  case 'pool':
+    return Icons.pool;
+  case 'waves':
+    return Icons.waves;
+  case 'home':
+    return Icons.home;
+  case 'house':
+    return Icons.house;
+  case 'apartment':
+    return Icons.apartment;
+  case 'cabin':
+    return Icons.cabin;
+  case 'garage':
+    return Icons.garage;
+  case 'public':
+    return Icons.public;
+  case 'language':
+    return Icons.language;
+  case 'science':
+    return Icons.science;
+  case 'biotech':
+    return Icons.biotech;
+  case 'eco':
+    return Icons.eco;
+  case 'history_edu':
+    return Icons.history_edu;
+  case 'bolt':
+    return Icons.bolt;
+  case 'vpn_key':
+    return Icons.vpn_key;
+  case 'locksmith':
+    return Icons.lock_open;
+  case 'man':
+    return Icons.man;
+  case 'woman':
+    return Icons.woman;
+  case 'weekend':
+    return Icons.weekend;
+  case 'paint_rounded':
+    return Icons.format_paint_rounded;
+  case 'construction_rounded':
+    return Icons.construction_rounded;
+  case 'plumbing_rounded':
+    return Icons.plumbing_rounded;
+  case 'engineering_outlined':
+    return Icons.engineering_outlined;
       default:
         return Icons.work_rounded;
     }

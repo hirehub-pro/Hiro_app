@@ -35,6 +35,13 @@ const Color _uiTitle = Color(0xFF0F172A);
 const Color _uiBody = Color(0xFF334155);
 const Color _uiMuted = Color(0xFF64748B);
 
+class _PostReportDraft {
+  final String subject;
+  final String reason;
+
+  const _PostReportDraft({required this.subject, required this.reason});
+}
+
 List<String> _mediaUrlsFromPost(Map<String, dynamic>? post) {
   if (post == null) return const [];
 
@@ -723,35 +730,135 @@ class _BlogPageState extends State<BlogPage> {
     }
 
     final reasonController = TextEditingController();
-    final reason = await showDialog<String>(
+    final subjectOptions = [
+      strings['report_subject_content'] ?? 'Content Problem',
+      strings['report_subject_spam'] ?? 'Spam or misleading content',
+      strings['report_subject_harassment'] ?? 'Harassment or hate speech',
+      strings['report_subject_scam'] ?? 'Scam or fraud',
+      strings['report_subject_inappropriate'] ?? 'Inappropriate content',
+      strings['report_subject_other'] ?? 'Other',
+    ];
+    String selectedSubject = subjectOptions.first;
+
+    final reportDraft = await showDialog<_PostReportDraft>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(strings['report_content_title'] ?? 'Report content'),
-        content: TextField(
-          controller: reasonController,
-          maxLines: 3,
-          decoration: InputDecoration(
-            hintText:
-                strings['report_reason_hint'] ?? 'Describe what is wrong...',
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
           ),
+          titlePadding: const EdgeInsets.fromLTRB(24, 22, 24, 0),
+          contentPadding: const EdgeInsets.fromLTRB(24, 18, 24, 0),
+          actionsPadding: const EdgeInsets.fromLTRB(24, 14, 24, 22),
+          title: Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(Icons.report_outlined, color: Colors.red.shade700),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  strings['report_content_title'] ?? 'Report content',
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+            ],
+          ),
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 460),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  strings['report_reason_hint'] ??
+                      'Describe what is objectionable about this content.',
+                  style: const TextStyle(color: _uiMuted, height: 1.35),
+                ),
+                const SizedBox(height: 16),
+                DropdownButtonFormField<String>(
+                  initialValue: selectedSubject,
+                  isExpanded: true,
+                  decoration: InputDecoration(
+                    labelText: strings['report_subject'] ?? 'Subject',
+                    prefixIcon: const Icon(Icons.category_outlined),
+                    filled: true,
+                    fillColor: _uiSurfaceBackground,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  items: subjectOptions
+                      .map(
+                        (subject) => DropdownMenuItem<String>(
+                          value: subject,
+                          child: Text(subject, overflow: TextOverflow.ellipsis),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setDialogState(() => selectedSubject = value);
+                  },
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: reasonController,
+                  minLines: 4,
+                  maxLines: 6,
+                  maxLength: 500,
+                  decoration: InputDecoration(
+                    labelText: strings['report_reason'] ?? 'Reason',
+                    hintText:
+                        strings['report_reason_hint'] ??
+                        'Describe what is wrong...',
+                    alignLabelWithHint: true,
+                    prefixIcon: const Padding(
+                      padding: EdgeInsets.only(bottom: 64),
+                      child: Icon(Icons.notes_outlined),
+                    ),
+                    filled: true,
+                    fillColor: _uiSurfaceBackground,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text(strings['cancel']),
+            ),
+            FilledButton.icon(
+              onPressed: () => Navigator.pop(
+                context,
+                _PostReportDraft(
+                  subject: selectedSubject,
+                  reason: reasonController.text,
+                ),
+              ),
+              icon: const Icon(Icons.flag_outlined),
+              label: Text(strings['submit_report'] ?? 'Submit report'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(strings['cancel']),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, reasonController.text),
-            child: Text(strings['submit_report'] ?? 'Submit report'),
-          ),
-        ],
       ),
     );
 
-    if (reason == null || reason.trim().isEmpty) return;
+    if (reportDraft == null || reportDraft.reason.trim().isEmpty) return;
 
     try {
-      final trimmedReason = reason.trim();
+      final trimmedReason = reportDraft.reason.trim();
+      final selectedReportSubject = reportDraft.subject.trim();
       final postTitle = (post['title'] ?? '').toString().trim();
       final postAuthorUid = (post['authorUid'] ?? '').toString().trim();
 
@@ -760,7 +867,9 @@ class _BlogPageState extends State<BlogPage> {
         'reportedId': postAuthorUid,
         'reportType': 'content_report',
         'source': 'post_report',
-        'subject': 'Content Problem',
+        'subject': selectedReportSubject.isEmpty
+            ? (strings['report_subject_content'] ?? 'Content Problem')
+            : selectedReportSubject,
         'reason': trimmedReason,
         'details': postTitle.isEmpty
             ? 'Reported from a post in the feed.'
@@ -800,19 +909,74 @@ class _BlogPageState extends State<BlogPage> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(strings['block_user'] ?? 'Block user'),
-        content: Text(
-          strings['block_user_confirm'] ??
-              'This user will be removed from your feed immediately and sent to moderation.',
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        titlePadding: const EdgeInsets.fromLTRB(24, 22, 24, 0),
+        contentPadding: const EdgeInsets.fromLTRB(24, 18, 24, 0),
+        actionsPadding: const EdgeInsets.fromLTRB(24, 14, 24, 22),
+        title: Row(
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: Colors.orange.shade50,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Icon(Icons.block_outlined, color: Colors.orange.shade800),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                strings['block_user'] ?? 'Block user',
+                style: const TextStyle(fontWeight: FontWeight.w800),
+              ),
+            ),
+          ],
+        ),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 460),
+          child: Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFFBEB),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFFFDE68A)),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(
+                  Icons.visibility_off_outlined,
+                  color: Color(0xFFB45309),
+                  size: 20,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    strings['block_user_confirm'] ??
+                        'This user will be removed from your feed immediately and sent to moderation.',
+                    style: const TextStyle(
+                      color: Color(0xFF92400E),
+                      height: 1.4,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
             child: Text(strings['cancel']),
           ),
-          ElevatedButton(
+          FilledButton.icon(
             onPressed: () => Navigator.pop(context, true),
-            child: Text(strings['block_user'] ?? 'Block user'),
+            icon: const Icon(Icons.block_outlined),
+            label: Text(strings['block_user'] ?? 'Block user'),
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.orange.shade800,
+            ),
           ),
         ],
       ),
@@ -1403,6 +1567,14 @@ class _BlogPageState extends State<BlogPage> {
       'block_user_confirm':
           'Block this user? Their content will be removed from your feed immediately, and moderation will be notified.',
       'report_content_title': 'Report objectionable content',
+      'report_subject': 'Subject',
+      'report_subject_content': 'Content Problem',
+      'report_subject_spam': 'Spam or misleading content',
+      'report_subject_harassment': 'Harassment or hate speech',
+      'report_subject_scam': 'Scam or fraud',
+      'report_subject_inappropriate': 'Inappropriate content',
+      'report_subject_other': 'Other',
+      'report_reason': 'Reason',
       'report_reason_hint': 'What is objectionable about this content?',
       'submit_report': 'Submit report',
       'report_submitted':
@@ -1428,7 +1600,7 @@ class _BlogPageState extends State<BlogPage> {
       'selected_worker': 'Selected Worker',
       'selected_offer': 'Selected Offer',
       'offer_price': 'Offered Price',
-          'job_request_comment_restriction':
+      'job_request_comment_restriction':
           'Only workers with an active subscription can comment on job requests.',
       'rating': 'Rating',
       'reviews': 'Reviews',

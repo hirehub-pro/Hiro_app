@@ -775,163 +775,268 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: Text(strings['report_user_title'] ?? "Report User"),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                DropdownButtonFormField<String>(
-                  initialValue: selectedSubject,
-                  decoration: InputDecoration(
-                    labelText: strings['report_subject'] ?? "Subject",
-                    border: const OutlineInputBorder(),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          titlePadding: const EdgeInsets.fromLTRB(24, 22, 24, 0),
+          contentPadding: const EdgeInsets.fromLTRB(24, 18, 24, 0),
+          actionsPadding: const EdgeInsets.fromLTRB(24, 14, 24, 22),
+          title: Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(Icons.flag_outlined, color: Colors.red.shade700),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  strings['report_user_title'] ?? "Report User",
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+            ],
+          ),
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 520),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    strings['report_hint'] ??
+                        "Describe what happened and why you are reporting.",
+                    style: const TextStyle(color: _kTextMuted, height: 1.35),
                   ),
-                  items: subjectOptions
-                      .map(
-                        (subject) => DropdownMenuItem<String>(
-                          value: subject,
-                          child: Text(subject),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (value) {
-                    if (value == null) return;
-                    setDialogState(() => selectedSubject = value);
-                  },
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: reasonController,
-                  maxLength: 80,
-                  decoration: InputDecoration(
-                    labelText: strings['report_reason'] ?? "Reason",
-                    border: const OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: detailsController,
-                  maxLines: 4,
-                  maxLength: 600,
-                  decoration: InputDecoration(
-                    labelText: strings['report_details'] ?? "Details",
-                    hintText:
-                        strings['report_hint'] ??
-                        "Describe what happened and why you're reporting.",
-                    border: const OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  strings['attachments_title']!,
-                  style: Theme.of(context).textTheme.titleSmall,
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '${attachments.length}/$maxAttachments ${strings['attachments_selected']!}',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    OutlinedButton.icon(
-                      onPressed: () => pickImages(setDialogState),
-                      icon: const Icon(Icons.photo_library_outlined),
-                      label: Text(strings['add_images']!),
+                  const SizedBox(height: 18),
+                  DropdownButtonFormField<String>(
+                    initialValue: selectedSubject,
+                    isExpanded: true,
+                    decoration: InputDecoration(
+                      labelText: strings['report_subject'] ?? "Subject",
+                      prefixIcon: const Icon(Icons.category_outlined),
+                      filled: true,
+                      fillColor: _kPageTint,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
                     ),
-                    OutlinedButton.icon(
-                      onPressed: () => pickVideo(setDialogState),
-                      icon: const Icon(Icons.video_library_outlined),
-                      label: Text(strings['add_video']!),
-                    ),
-                  ],
-                ),
-                if (attachments.isNotEmpty) ...[
-                  const SizedBox(height: 10),
-                  SizedBox(
-                    height: 90,
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
-                        children: List.generate(attachments.length, (index) {
-                          final item = attachments[index];
-                          return Padding(
-                            padding: EdgeInsets.only(
-                              right: index == attachments.length - 1 ? 0 : 8,
+                    items: subjectOptions
+                        .map(
+                          (subject) => DropdownMenuItem<String>(
+                            value: subject,
+                            child: Text(
+                              subject,
+                              overflow: TextOverflow.ellipsis,
                             ),
-                            child: Stack(
-                              children: [
-                                Container(
-                                  width: 120,
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(10),
-                                    border: Border.all(color: Colors.black12),
-                                  ),
-                                  clipBehavior: Clip.antiAlias,
-                                  child: item.type == 'image'
-                                      ? Image.file(
-                                          File(item.file.path),
-                                          fit: BoxFit.cover,
-                                        )
-                                      : Container(
-                                          color: Colors.black87,
-                                          child: Column(
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.center,
-                                            children: [
-                                              const Icon(
-                                                Icons.videocam_rounded,
-                                                color: Colors.white70,
-                                              ),
-                                              const SizedBox(height: 4),
-                                              Text(
-                                                item.file.name,
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: const TextStyle(
-                                                  color: Colors.white70,
-                                                  fontSize: 11,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                ),
-                                Positioned(
-                                  right: 4,
-                                  top: 4,
-                                  child: InkWell(
-                                    onTap: () {
-                                      setDialogState(() {
-                                        attachments.removeAt(index);
-                                      });
-                                    },
-                                    child: Container(
-                                      padding: const EdgeInsets.all(2),
-                                      decoration: const BoxDecoration(
-                                        color: Colors.black54,
-                                        shape: BoxShape.circle,
-                                      ),
-                                      child: const Icon(
-                                        Icons.close,
-                                        color: Colors.white,
-                                        size: 14,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        }),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setDialogState(() => selectedSubject = value);
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: reasonController,
+                    maxLength: 80,
+                    textInputAction: TextInputAction.next,
+                    decoration: InputDecoration(
+                      labelText: strings['report_reason'] ?? "Reason",
+                      hintText: strings['general_issue'] ?? 'General issue',
+                      prefixIcon: const Icon(Icons.short_text_rounded),
+                      filled: true,
+                      fillColor: _kPageTint,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
                       ),
                     ),
                   ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: detailsController,
+                    minLines: 4,
+                    maxLines: 6,
+                    maxLength: 600,
+                    decoration: InputDecoration(
+                      labelText: strings['report_details'] ?? "Details",
+                      hintText:
+                          strings['report_hint'] ??
+                          "Describe what happened and why you're reporting.",
+                      alignLabelWithHint: true,
+                      prefixIcon: const Padding(
+                        padding: EdgeInsets.only(bottom: 72),
+                        child: Icon(Icons.notes_outlined),
+                      ),
+                      filled: true,
+                      fillColor: _kPageTint,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.attach_file_outlined,
+                              size: 20,
+                              color: _kTextMuted,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                strings['attachments_title']!,
+                                style: Theme.of(context).textTheme.titleSmall
+                                    ?.copyWith(fontWeight: FontWeight.w800),
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 5,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(999),
+                                border: Border.all(
+                                  color: const Color(0xFFE2E8F0),
+                                ),
+                              ),
+                              child: Text(
+                                '${attachments.length}/$maxAttachments',
+                                style: const TextStyle(
+                                  color: _kTextMuted,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            OutlinedButton.icon(
+                              onPressed: () => pickImages(setDialogState),
+                              icon: const Icon(Icons.photo_library_outlined),
+                              label: Text(strings['add_images']!),
+                            ),
+                            OutlinedButton.icon(
+                              onPressed: () => pickVideo(setDialogState),
+                              icon: const Icon(Icons.video_library_outlined),
+                              label: Text(strings['add_video']!),
+                            ),
+                          ],
+                        ),
+                        if (attachments.isNotEmpty) ...[
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            height: 104,
+                            child: ListView.separated(
+                              scrollDirection: Axis.horizontal,
+                              itemCount: attachments.length,
+                              separatorBuilder: (context, index) =>
+                                  const SizedBox(width: 10),
+                              itemBuilder: (context, index) {
+                                final item = attachments[index];
+                                return Stack(
+                                  children: [
+                                    Container(
+                                      width: 136,
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(14),
+                                        border: Border.all(
+                                          color: const Color(0xFFE2E8F0),
+                                        ),
+                                      ),
+                                      clipBehavior: Clip.antiAlias,
+                                      child: item.type == 'image'
+                                          ? Image.file(
+                                              File(item.file.path),
+                                              fit: BoxFit.cover,
+                                            )
+                                          : Container(
+                                              color: const Color(0xFF111827),
+                                              padding: const EdgeInsets.all(10),
+                                              child: Column(
+                                                mainAxisAlignment:
+                                                    MainAxisAlignment.center,
+                                                children: [
+                                                  const Icon(
+                                                    Icons.videocam_rounded,
+                                                    color: Colors.white70,
+                                                  ),
+                                                  const SizedBox(height: 4),
+                                                  Text(
+                                                    item.file.name,
+                                                    maxLines: 2,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                    textAlign: TextAlign.center,
+                                                    style: const TextStyle(
+                                                      color: Colors.white70,
+                                                      fontSize: 11,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                    ),
+                                    Positioned(
+                                      right: 6,
+                                      top: 6,
+                                      child: Material(
+                                        color: Colors.black54,
+                                        shape: const CircleBorder(),
+                                        child: InkWell(
+                                          customBorder: const CircleBorder(),
+                                          onTap: () {
+                                            setDialogState(() {
+                                              attachments.removeAt(index);
+                                            });
+                                          },
+                                          child: const Padding(
+                                            padding: EdgeInsets.all(4),
+                                            child: Icon(
+                                              Icons.close,
+                                              color: Colors.white,
+                                              size: 16,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              },
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
                 ],
-              ],
+              ),
             ),
           ),
           actions: [
