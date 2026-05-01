@@ -2,13 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
+import 'package:untitled1/map/israel_location_guard.dart';
 import 'package:untitled1/services/language_provider.dart';
 import 'dart:math';
 
 class MapRadiusPicker extends StatefulWidget {
   final LatLng? initialCenter;
   final double initialRadius;
-
 
   const MapRadiusPicker({
     super.key,
@@ -22,6 +22,7 @@ class MapRadiusPicker extends StatefulWidget {
 
 class _MapRadiusPickerState extends State<MapRadiusPicker> {
   LatLng? _center;
+  LatLng? _lastValidCenter;
   late double _radius;
   GoogleMapController? _mapController;
   Set<Circle> _circles = {};
@@ -38,6 +39,7 @@ class _MapRadiusPickerState extends State<MapRadiusPicker> {
       'save': 'Save',
       'work_radius': 'Work Radius',
       'instruction': 'Tap the map or drag the marker within Israel',
+      'choose_inside_israel': 'Please choose a location inside Israel',
       'stay_within_israel': 'Please stay within Israel bounds',
       'location_services_disabled': 'Location services are disabled.',
       'location_permissions_denied': 'Location permissions are denied.',
@@ -49,6 +51,7 @@ class _MapRadiusPickerState extends State<MapRadiusPicker> {
       'save': 'שמור',
       'work_radius': 'רדיוס עבודה',
       'instruction': 'הקשו על המפה או גררו את הסמן בתוך ישראל',
+      'choose_inside_israel': 'Please choose a location inside Israel',
       'stay_within_israel': 'נא להישאר בתוך גבולות ישראל',
       'location_services_disabled': 'שירותי המיקום כבויים.',
       'location_permissions_denied': 'הרשאות המיקום נדחו.',
@@ -59,6 +62,7 @@ class _MapRadiusPickerState extends State<MapRadiusPicker> {
       'save': 'حفظ',
       'work_radius': 'نطاق العمل',
       'instruction': 'اضغط على الخريطة أو اسحب العلامة داخل إسرائيل',
+      'choose_inside_israel': 'Please choose a location inside Israel',
       'stay_within_israel': 'يرجى البقاء داخل حدود إسرائيل',
       'location_services_disabled': 'خدمات الموقع غير مفعلة.',
       'location_permissions_denied': 'تم رفض أذونات الموقع.',
@@ -70,6 +74,7 @@ class _MapRadiusPickerState extends State<MapRadiusPicker> {
       'save': 'አስቀምጥ',
       'work_radius': 'የስራ ራዲየስ',
       'instruction': 'በካርታው ላይ ይጫኑ ወይም ማርከሩን በእስራኤል ውስጥ ይጎትቱ',
+      'choose_inside_israel': 'Please choose a location inside Israel',
       'stay_within_israel': 'እባክዎ በእስራኤል ድንበር ውስጥ ይቆዩ',
       'location_services_disabled': 'የአካባቢ አገልግሎቶች ተዘግተዋል።',
       'location_permissions_denied': 'የአካባቢ ፍቃድ ተከልክሏል።',
@@ -81,6 +86,7 @@ class _MapRadiusPickerState extends State<MapRadiusPicker> {
       'work_radius': 'Рабочий радиус',
       'instruction':
           'Нажмите на карту или перетащите маркер в пределах Израиля',
+      'choose_inside_israel': 'Please choose a location inside Israel',
       'stay_within_israel': 'Пожалуйста, оставайтесь в пределах Израиля',
       'location_services_disabled': 'Службы геолокации отключены.',
       'location_permissions_denied': 'Доступ к геолокации запрещен.',
@@ -102,12 +108,6 @@ class _MapRadiusPickerState extends State<MapRadiusPicker> {
     }
   }
 
-  // Exact bounds for Israel to lock the map
-  final LatLngBounds _israelBounds = LatLngBounds(
-    southwest: const LatLng(29.4533, 34.2674),
-    northeast: const LatLng(33.3328, 35.8955),
-  );
-
   @override
   void initState() {
     super.initState();
@@ -116,10 +116,12 @@ class _MapRadiusPickerState extends State<MapRadiusPicker> {
 
     // If no initial center or initial center is outside Israel, default to center of Israel (approx Tel Aviv area)
     if (_center == null || !_isWithinIsrael(_center!)) {
-      _center = const LatLng(32.0853, 34.7818);
+      _center = IsraelLocationGuard.fallbackCenter;
     }
+    _lastValidCenter = IsraelLocationGuard.fallbackCenter;
 
     _updateMapElements();
+    _setCenter(_center!, showWarning: false);
     _determinePosition();
   }
 
@@ -155,11 +157,12 @@ class _MapRadiusPickerState extends State<MapRadiusPicker> {
 
       LatLng newCenter = LatLng(position.latitude, position.longitude);
 
-      // Only update if the user is actually in Israel
-      if (_isWithinIsrael(newCenter)) {
+      // Only update if coordinate and reverse geocoding allow Israel.
+      if (await IsraelLocationGuard.isValidIsraelLocation(newCenter)) {
         if (mounted) {
           setState(() {
             _center = newCenter;
+            _lastValidCenter = newCenter;
             _isLoading = false;
             _updateMapElements();
           });
@@ -178,16 +181,41 @@ class _MapRadiusPickerState extends State<MapRadiusPicker> {
   }
 
   bool _isWithinIsrael(LatLng position) {
-    return position.latitude >= _israelBounds.southwest.latitude &&
-        position.latitude <= _israelBounds.northeast.latitude &&
-        position.longitude >= _israelBounds.southwest.longitude &&
-        position.longitude <= _israelBounds.northeast.longitude;
+    return IsraelLocationGuard.isInsideIsrael(position);
+  }
+
+  LatLng _clampToIsrael(LatLng position) {
+    return IsraelLocationGuard.clampToBounds(position);
+  }
+
+  Future<void> _setCenter(LatLng position, {bool showWarning = true}) async {
+    final isValid = await IsraelLocationGuard.isValidIsraelLocation(position);
+    if (!mounted) return;
+
+    if (isValid) {
+      _center = position;
+      _lastValidCenter = position;
+    } else {
+      _center =
+          _lastValidCenter ?? _center ?? IsraelLocationGuard.fallbackCenter;
+      if (showWarning) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_t('choose_inside_israel'))));
+      }
+    }
+
+    _updateMapElements();
+    _moveCameraToCenter();
   }
 
   void _moveCameraToCenter() {
     if (_mapController != null && _center != null) {
       _mapController!.animateCamera(
-        CameraUpdate.newLatLngZoom(_center!, _getZoomLevel(_radius)),
+        CameraUpdate.newLatLngZoom(
+          _clampToIsrael(_center!),
+          _getZoomLevel(_radius),
+        ),
       );
     }
   }
@@ -207,16 +235,14 @@ class _MapRadiusPickerState extends State<MapRadiusPicker> {
           markerId: const MarkerId('center'),
           position: _center!,
           draggable: true,
-          onDragEnd: (newPosition) {
+          onDrag: (newPosition) {
             if (_isWithinIsrael(newPosition)) {
               _center = newPosition;
-            } else {
-              // If dragged out, snap back to a valid position near the edge or keep old center
-              ScaffoldMessenger.of(
-                context,
-              ).showSnackBar(SnackBar(content: Text(_t('stay_within_israel'))));
+              _updateMapElements();
             }
-            _updateMapElements();
+          },
+          onDragEnd: (newPosition) {
+            _setCenter(newPosition);
           },
         ),
       };
@@ -255,7 +281,7 @@ class _MapRadiusPickerState extends State<MapRadiusPicker> {
               child: TextButton(
                 onPressed: () {
                   Navigator.pop(context, {
-                    'center': _center,
+                    'center': _lastValidCenter ?? _clampToIsrael(_center!),
                     'radius': _radius,
                   });
                 },
@@ -280,7 +306,9 @@ class _MapRadiusPickerState extends State<MapRadiusPicker> {
                 zoom: _getZoomLevel(_radius),
               ),
               // Lock the map to Israel bounds
-              cameraTargetBounds: CameraTargetBounds(_israelBounds),
+              cameraTargetBounds: CameraTargetBounds(
+                IsraelLocationGuard.bounds,
+              ),
               // Prevent zooming out too far to keep the focus on Israel
               minMaxZoomPreference: const MinMaxZoomPreference(7.0, 18.0),
               onMapCreated: (controller) {
@@ -288,13 +316,7 @@ class _MapRadiusPickerState extends State<MapRadiusPicker> {
                 _moveCameraToCenter();
               },
               onTap: (latLng) {
-                if (_isWithinIsrael(latLng)) {
-                  setState(() {
-                    _center = latLng;
-                    _updateMapElements();
-                    _moveCameraToCenter();
-                  });
-                }
+                _setCenter(latLng);
               },
               circles: _circles,
               markers: _markers,

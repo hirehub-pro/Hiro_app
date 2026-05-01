@@ -51,6 +51,9 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> {
   final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+  static const Color _brandBlue = Color(0xFF1976D2);
+  static const Color _brandNavy = Color(0xFF0F172A);
+  static const Color _pageBackground = Color(0xFFF6F8FB);
   bool _isInitializing = true;
   bool _isFirebaseInitialized = false;
   Object? _initializationError;
@@ -233,8 +236,84 @@ class _MyAppState extends State<MyApp> {
       locale: Provider.of<LanguageProvider>(context).locale,
       theme: ThemeData(
         useMaterial3: true,
-        primaryColor: const Color(0xFF1976D2),
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1976D2)),
+        fontFamily: 'Rubik',
+        scaffoldBackgroundColor: _pageBackground,
+        primaryColor: _brandBlue,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: _brandBlue,
+          primary: _brandBlue,
+          secondary: const Color(0xFF00A3A3),
+          surface: Colors.white,
+          surfaceContainerHighest: const Color(0xFFEFF4FA),
+        ),
+        visualDensity: VisualDensity.standard,
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Colors.white,
+          foregroundColor: _brandNavy,
+          elevation: 0,
+          surfaceTintColor: Colors.transparent,
+          centerTitle: false,
+          titleTextStyle: TextStyle(
+            color: _brandNavy,
+            fontSize: 20,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 0,
+          ),
+        ),
+        cardTheme: CardThemeData(
+          color: Colors.white,
+          elevation: 0,
+          surfaceTintColor: Colors.transparent,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+            side: const BorderSide(color: Color(0xFFE6ECF2)),
+          ),
+        ),
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: _brandBlue,
+            foregroundColor: Colors.white,
+            elevation: 0,
+            minimumSize: const Size(44, 46),
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+            textStyle: const TextStyle(fontWeight: FontWeight.w800),
+          ),
+        ),
+        outlinedButtonTheme: OutlinedButtonThemeData(
+          style: OutlinedButton.styleFrom(
+            foregroundColor: _brandNavy,
+            minimumSize: const Size(44, 46),
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+            side: const BorderSide(color: Color(0xFFD8E1EA)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+            textStyle: const TextStyle(fontWeight: FontWeight.w800),
+          ),
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: Colors.white,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 15,
+          ),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: const BorderSide(color: Color(0xFFDDE6F0)),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: const BorderSide(color: Color(0xFFDDE6F0)),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: const BorderSide(color: _brandBlue, width: 1.5),
+          ),
+        ),
       ),
       navigatorObservers: _isFirebaseInitialized
           ? [AnalyticsService.observer]
@@ -372,6 +451,11 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
+  static const Color _brandBlue = Color(0xFF1976D2);
+  static const Color _brandNavy = Color(0xFF0F172A);
+  static const Color _mutedText = Color(0xFF64748B);
+  static const Color _shellBackground = Color(0xFFF6F8FB);
+
   int pagenumber = 0;
   bool _isAdminProfile = false;
 
@@ -528,42 +612,43 @@ class _MyHomePageState extends State<MyHomePage> {
     return Directionality(
       textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
       child: Scaffold(
-        appBar: isWide
-            ? AppBar(
-                title: const Text("Hiro"),
-                centerTitle: false,
-                actions: [
-                  _navButton(0, Icons.home, labels['home'] ?? 'Home'),
-                  _navButton(1, Icons.search, labels['search'] ?? 'Search'),
-                  _navButton(2, Icons.article, labels['blog'] ?? 'Blog'),
-                  _navButton(3, Icons.chat, labels['messages'] ?? 'Messages'),
-                  _navButton(4, Icons.person, labels['profile'] ?? 'Profile'),
-                  const SizedBox(width: 20),
-                ],
-              )
-            : null,
-        body: Center(
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxWidth: isWide ? 1000 : double.infinity,
+        backgroundColor: _shellBackground,
+        appBar: isWide ? _buildWebsiteHeader(labels) : null,
+        body: DecoratedBox(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [Color(0xFFFFFFFF), _shellBackground],
+              stops: [0, 0.42],
             ),
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 260),
-              switchInCurve: Curves.easeOutCubic,
-              switchOutCurve: Curves.easeInCubic,
-              transitionBuilder: (child, animation) {
-                final slide = Tween<Offset>(
-                  begin: const Offset(0.05, 0),
-                  end: Offset.zero,
-                ).animate(animation);
-                return FadeTransition(
-                  opacity: animation,
-                  child: SlideTransition(position: slide, child: child),
-                );
-              },
-              child: KeyedSubtree(
-                key: ValueKey<int>(pagenumber),
-                child: _buildCurrentPage(),
+          ),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: isWide ? 1180 : double.infinity,
+              ),
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: isWide ? 24 : 0),
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 260),
+                  switchInCurve: Curves.easeOutCubic,
+                  switchOutCurve: Curves.easeInCubic,
+                  transitionBuilder: (child, animation) {
+                    final slide = Tween<Offset>(
+                      begin: const Offset(0.035, 0),
+                      end: Offset.zero,
+                    ).animate(animation);
+                    return FadeTransition(
+                      opacity: animation,
+                      child: SlideTransition(position: slide, child: child),
+                    );
+                  },
+                  child: KeyedSubtree(
+                    key: ValueKey<int>(pagenumber),
+                    child: _buildCurrentPage(),
+                  ),
+                ),
               ),
             ),
           ),
@@ -571,6 +656,138 @@ class _MyHomePageState extends State<MyHomePage> {
         bottomNavigationBar: isWide
             ? null
             : _buildFloatingNavigationBar(labels),
+      ),
+    );
+  }
+
+  PreferredSizeWidget _buildWebsiteHeader(Map<String, String> labels) {
+    return PreferredSize(
+      preferredSize: const Size.fromHeight(78),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.94),
+          border: const Border(bottom: BorderSide(color: Color(0xFFE7EDF4))),
+          boxShadow: [
+            BoxShadow(
+              color: _brandNavy.withValues(alpha: 0.05),
+              blurRadius: 18,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: SafeArea(
+          bottom: false,
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 1180),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Row(
+                  children: [
+                    _buildBrandMark(),
+                    const SizedBox(width: 34),
+                    Expanded(
+                      child: Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        alignment: WrapAlignment.center,
+                        children: [
+                          _navButton(
+                            0,
+                            Icons.home_rounded,
+                            labels['home'] ?? 'Home',
+                          ),
+                          _navButton(
+                            1,
+                            Icons.search_rounded,
+                            labels['search'] ?? 'Search',
+                          ),
+                          _navButton(
+                            2,
+                            Icons.article_rounded,
+                            labels['blog'] ?? 'Blog',
+                          ),
+                          _navButton(
+                            3,
+                            Icons.chat_bubble_rounded,
+                            labels['messages'] ?? 'Messages',
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 24),
+                    _profileButton(labels['profile'] ?? 'Profile'),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBrandMark() {
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: () => _onTabSelected(0),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 2),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: _brandBlue,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: _brandBlue.withValues(alpha: 0.22),
+                    blurRadius: 18,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: const Text(
+                'H',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            const Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Hiro',
+                  style: TextStyle(
+                    color: _brandNavy,
+                    fontSize: 21,
+                    fontWeight: FontWeight.w900,
+                    height: 1,
+                  ),
+                ),
+                SizedBox(height: 3),
+                Text(
+                  'Home services',
+                  style: TextStyle(
+                    color: _mutedText,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    height: 1,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -594,7 +811,7 @@ class _MyHomePageState extends State<MyHomePage> {
           child: NavigationBarTheme(
             data: NavigationBarThemeData(
               backgroundColor: Colors.white,
-              indicatorColor: const Color(0x1A1976D2),
+              indicatorColor: const Color(0x1F1976D2),
               labelTextStyle: WidgetStateProperty.resolveWith((states) {
                 final selected = states.contains(WidgetState.selected);
                 return TextStyle(
@@ -678,18 +895,56 @@ class _MyHomePageState extends State<MyHomePage> {
 
   Widget _navButton(int index, IconData icon, String label) {
     final isSelected = pagenumber == index;
-    return TextButton.icon(
-      onPressed: () => _onTabSelected(index),
-      icon: Icon(
-        icon,
-        color: isSelected ? const Color(0xFF1976D2) : Colors.grey,
-      ),
-      label: Text(
-        label,
-        style: TextStyle(
-          color: isSelected ? const Color(0xFF1976D2) : Colors.grey,
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOutCubic,
+      decoration: BoxDecoration(
+        color: isSelected ? const Color(0xFFEAF4FF) : Colors.transparent,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: isSelected ? const Color(0xFFD0E7FF) : Colors.transparent,
         ),
       ),
+      child: TextButton.icon(
+        onPressed: () => _onTabSelected(index),
+        style: TextButton.styleFrom(
+          foregroundColor: isSelected ? _brandBlue : _mutedText,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(999),
+          ),
+          textStyle: const TextStyle(fontWeight: FontWeight.w800),
+        ),
+        icon: Icon(icon, size: 20, color: isSelected ? _brandBlue : _mutedText),
+        label: Text(
+          label,
+          style: TextStyle(
+            color: isSelected ? _brandBlue : _mutedText,
+            fontSize: 14,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _profileButton(String label) {
+    final isSelected = pagenumber == 4;
+    return OutlinedButton.icon(
+      onPressed: () => _onTabSelected(4),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: isSelected ? Colors.white : _brandNavy,
+        backgroundColor: isSelected ? _brandBlue : Colors.white,
+        side: BorderSide(
+          color: isSelected ? _brandBlue : const Color(0xFFD8E1EA),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+      ),
+      icon: Icon(
+        isSelected ? Icons.person_rounded : Icons.person_outline_rounded,
+        size: 20,
+      ),
+      label: Text(label, style: const TextStyle(fontWeight: FontWeight.w900)),
     );
   }
 }

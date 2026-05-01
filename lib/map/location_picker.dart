@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
+import 'package:untitled1/map/israel_location_guard.dart';
 import 'package:untitled1/services/language_provider.dart';
 
 class LocationPicker extends StatefulWidget {
@@ -15,6 +16,7 @@ class LocationPicker extends StatefulWidget {
 
 class _LocationPickerState extends State<LocationPicker> {
   LatLng? _selectedLocation;
+  LatLng? _lastValidLocation;
   GoogleMapController? _mapController;
   bool _isLoading = false;
   String _t(String key) {
@@ -26,6 +28,7 @@ class _LocationPickerState extends State<LocationPicker> {
       'pick_location': 'Pick Location',
       'confirm': 'Confirm',
       'select_within_israel': 'Please select a location within Israel',
+      'choose_inside_israel': 'Please choose a location inside Israel',
       'stay_within_israel': 'Please stay within Israel bounds',
       'instruction':
           'Tap the map or drag the marker within Israel to select your location.',
@@ -38,6 +41,7 @@ class _LocationPickerState extends State<LocationPicker> {
       'pick_location': 'בחירת מיקום',
       'confirm': 'אישור',
       'select_within_israel': 'נא לבחור מיקום בתוך גבולות ישראל',
+      'choose_inside_israel': 'Please choose a location inside Israel',
       'stay_within_israel': 'נא להישאר בתוך גבולות ישראל',
       'instruction': 'הקשו על המפה או גררו את הסמן בתוך ישראל כדי לבחור מיקום.',
       'location_services_disabled': 'שירותי המיקום כבויים.',
@@ -48,6 +52,7 @@ class _LocationPickerState extends State<LocationPicker> {
       'pick_location': 'اختيار الموقع',
       'confirm': 'تأكيد',
       'select_within_israel': 'يرجى اختيار موقع داخل حدود إسرائيل',
+      'choose_inside_israel': 'Please choose a location inside Israel',
       'stay_within_israel': 'يرجى البقاء داخل حدود إسرائيل',
       'instruction':
           'اضغط على الخريطة أو اسحب العلامة داخل إسرائيل لاختيار موقعك.',
@@ -60,6 +65,7 @@ class _LocationPickerState extends State<LocationPicker> {
       'pick_location': 'ቦታ ምረጥ',
       'confirm': 'አረጋግጥ',
       'select_within_israel': 'እባክዎ በእስራኤል ድንበር ውስጥ ቦታ ይምረጡ',
+      'choose_inside_israel': 'Please choose a location inside Israel',
       'stay_within_israel': 'እባክዎ በእስራኤል ድንበር ውስጥ ይቆዩ',
       'instruction': 'ቦታዎን ለመምረጥ በእስራኤል ውስጥ በካርታው ላይ ይጫኑ ወይም ማርከሩን ይጎትቱ።',
       'location_services_disabled': 'የአካባቢ አገልግሎቶች ተዘግተዋል።',
@@ -71,6 +77,7 @@ class _LocationPickerState extends State<LocationPicker> {
       'confirm': 'Подтвердить',
       'select_within_israel':
           'Пожалуйста, выберите местоположение в пределах Израиля',
+      'choose_inside_israel': 'Please choose a location inside Israel',
       'stay_within_israel': 'Пожалуйста, оставайтесь в пределах Израиля',
       'instruction':
           'Нажмите на карту или перетащите маркер в пределах Израиля, чтобы выбрать местоположение.',
@@ -94,12 +101,6 @@ class _LocationPickerState extends State<LocationPicker> {
     }
   }
 
-  // Exact bounds for Israel to lock the map
-  final LatLngBounds _israelBounds = LatLngBounds(
-    southwest: const LatLng(29.4533, 34.2674),
-    northeast: const LatLng(33.3328, 35.8955),
-  );
-
   @override
   void initState() {
     super.initState();
@@ -107,8 +108,10 @@ class _LocationPickerState extends State<LocationPicker> {
 
     // Default to Tel Aviv if no location provided or if it's outside Israel
     if (_selectedLocation == null || !_isWithinIsrael(_selectedLocation!)) {
-      _selectedLocation = const LatLng(32.0853, 34.7818);
+      _selectedLocation = IsraelLocationGuard.fallbackCenter;
     }
+    _lastValidLocation = IsraelLocationGuard.fallbackCenter;
+    _selectLocation(_selectedLocation!, showWarning: false);
 
     _determinePosition();
   }
@@ -141,11 +144,12 @@ class _LocationPickerState extends State<LocationPicker> {
       Position position = await Geolocator.getCurrentPosition();
       LatLng newPos = LatLng(position.latitude, position.longitude);
 
-      // Only snap to user location if they are in Israel
-      if (_isWithinIsrael(newPos)) {
+      // Only snap to user location if coordinate and reverse geocoding allow Israel.
+      if (await IsraelLocationGuard.isValidIsraelLocation(newPos)) {
         if (mounted) {
           setState(() {
             _selectedLocation = newPos;
+            _lastValidLocation = newPos;
             _isLoading = false;
           });
           _moveCameraTo(newPos);
@@ -163,14 +167,46 @@ class _LocationPickerState extends State<LocationPicker> {
   }
 
   bool _isWithinIsrael(LatLng position) {
-    return position.latitude >= _israelBounds.southwest.latitude &&
-        position.latitude <= _israelBounds.northeast.latitude &&
-        position.longitude >= _israelBounds.southwest.longitude &&
-        position.longitude <= _israelBounds.northeast.longitude;
+    return IsraelLocationGuard.isInsideIsrael(position);
+  }
+
+  LatLng _clampToIsrael(LatLng position) {
+    return IsraelLocationGuard.clampToBounds(position);
+  }
+
+  Future<void> _selectLocation(
+    LatLng position, {
+    bool showWarning = true,
+  }) async {
+    final isValid = await IsraelLocationGuard.isValidIsraelLocation(position);
+    if (!mounted) return;
+
+    if (isValid) {
+      setState(() {
+        _selectedLocation = position;
+        _lastValidLocation = position;
+      });
+      return;
+    }
+
+    final fallback =
+        _lastValidLocation ??
+        _selectedLocation ??
+        IsraelLocationGuard.fallbackCenter;
+    setState(() => _selectedLocation = fallback);
+    _moveCameraTo(fallback);
+
+    if (showWarning) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_t('choose_inside_israel'))));
+    }
   }
 
   void _moveCameraTo(LatLng pos) {
-    _mapController?.animateCamera(CameraUpdate.newLatLngZoom(pos, 15));
+    _mapController?.animateCamera(
+      CameraUpdate.newLatLngZoom(_clampToIsrael(pos), 15),
+    );
   }
 
   @override
@@ -192,7 +228,10 @@ class _LocationPickerState extends State<LocationPicker> {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8.0),
               child: TextButton(
-                onPressed: () => Navigator.pop(context, _selectedLocation),
+                onPressed: () => Navigator.pop(
+                  context,
+                  _lastValidLocation ?? _clampToIsrael(_selectedLocation!),
+                ),
                 child: Text(
                   _t('confirm'),
                   style: TextStyle(
@@ -214,34 +253,27 @@ class _LocationPickerState extends State<LocationPicker> {
                 zoom: 15,
               ),
               // Lock the map to Israel bounds
-              cameraTargetBounds: CameraTargetBounds(_israelBounds),
+              cameraTargetBounds: CameraTargetBounds(
+                IsraelLocationGuard.bounds,
+              ),
               // Prevent zooming out too far to keep the focus on Israel
               minMaxZoomPreference: const MinMaxZoomPreference(7.0, 18.0),
               onMapCreated: (controller) => _mapController = controller,
               onTap: (pos) {
-                if (_isWithinIsrael(pos)) {
-                  setState(() => _selectedLocation = pos);
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(_t('select_within_israel'))),
-                  );
-                }
+                _selectLocation(pos);
               },
               markers: {
                 Marker(
                   markerId: const MarkerId('selected'),
                   position: _selectedLocation!,
                   draggable: true,
-                  onDragEnd: (pos) {
+                  onDrag: (pos) {
                     if (_isWithinIsrael(pos)) {
                       setState(() => _selectedLocation = pos);
-                    } else {
-                      // Stay at previous location if dragged out
-                      setState(() {});
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text(_t('stay_within_israel'))),
-                      );
                     }
+                  },
+                  onDragEnd: (pos) {
+                    _selectLocation(pos);
                   },
                 ),
               },

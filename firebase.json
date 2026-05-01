@@ -3,8 +3,14 @@
     "source": "functions"
   },
   "hosting": {
-    "public": "public",
+    "public": "build/web",
     "cleanUrls": true,
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ],
     "ignore": [
       "firebase.json",
       "**/.*",
