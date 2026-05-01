@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/schedule_widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/schedule_widget_background"
+    android:orientation="vertical"
+    android:padding="14dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="32dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <TextView
+            android:layout_width="36dp"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:text="‹"
+            android:textColor="#1F2937"
+            android:textSize="30sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/widget_month_title"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:text="@string/schedule_widget_month_placeholder"
+            android:textColor="#111827"
+            android:textSize="18sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="36dp"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:text="›"
+            android:textColor="#1F2937"
+            android:textSize="30sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="26dp"
+        android:layout_marginTop="10dp"
+        android:orientation="horizontal">
+
+        <TextView style="@style/ScheduleWidgetWeekday" android:text="Sun" />
+        <TextView style="@style/ScheduleWidgetWeekday" android:text="Mon" />
+        <TextView style="@style/ScheduleWidgetWeekday" android:text="Tue" />
+        <TextView style="@style/ScheduleWidgetWeekday" android:text="Wed" />
+        <TextView style="@style/ScheduleWidgetWeekday" android:text="Thu" />
+        <TextView style="@style/ScheduleWidgetWeekday" android:text="Fri" />
+        <TextView style="@style/ScheduleWidgetWeekday" android:text="Sat" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/widget_calendar_row_0"
+        style="@style/ScheduleWidgetCalendarRow" />
+
+    <LinearLayout
+        android:id="@+id/widget_calendar_row_1"
+        style="@style/ScheduleWidgetCalendarRow" />
+
+    <LinearLayout
+        android:id="@+id/widget_calendar_row_2"
+        style="@style/ScheduleWidgetCalendarRow" />
+
+    <LinearLayout
+        android:id="@+id/widget_calendar_row_3"
+        style="@style/ScheduleWidgetCalendarRow" />
+
+    <LinearLayout
+        android:id="@+id/widget_calendar_row_4"
+        style="@style/ScheduleWidgetCalendarRow" />
+
+    <LinearLayout
+        android:id="@+id/widget_calendar_row_5"
+        style="@style/ScheduleWidgetCalendarRow" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="22dp"
+        android:layout_marginTop="8dp"
+        android:gravity="center"
+        android:orientation="horizontal">
+
+        <TextView
+            style="@style/ScheduleWidgetLegendDot"
+            android:background="@drawable/schedule_widget_working_dot" />
+
+        <TextView
+            style="@style/ScheduleWidgetLegendText"
+            android:text="@string/schedule_widget_working_day" />
+
+        <TextView
+            style="@style/ScheduleWidgetLegendDot"
+            android:background="@drawable/schedule_widget_vacation_dot" />
+
+        <TextView
+            style="@style/ScheduleWidgetLegendText"
+            android:text="@string/schedule_widget_vacation" />
+
+        <TextView
+            style="@style/ScheduleWidgetLegendDot"
+            android:background="@drawable/schedule_widget_reminder_dot" />
+
+        <TextView
+            style="@style/ScheduleWidgetLegendText"
+            android:text="@string/schedule_widget_reminders" />
+    </LinearLayout>
+</LinearLayout>

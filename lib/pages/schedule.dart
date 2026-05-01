@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -26,6 +27,10 @@ class SchedulePage extends StatefulWidget {
 }
 
 class _SchedulePageState extends State<SchedulePage> {
+  static const MethodChannel _scheduleWidgetChannel = MethodChannel(
+    'com.hirehub.app/schedule_widget',
+  );
+
   DateTime _focusedDay = DateTime.now();
   DateTime _selectedDay = DateTime.now();
   bool _isLoading = false;
@@ -38,6 +43,7 @@ class _SchedulePageState extends State<SchedulePage> {
   List<String> _availableDates = [];
   List<String> _reminderDates = [];
   Map<String, List<Map<String, String>>> _partialWorkDays = {};
+  Map<String, String>? _defaultWorkingHours;
   List<Map<String, String>> _vacations = [];
 
   bool _isOwnSchedule = false;
@@ -101,6 +107,11 @@ class _SchedulePageState extends State<SchedulePage> {
               (k, v) => MapEntry(k.toString(), _normalizePartialRanges(v)),
             );
           }
+          if (data.containsKey('defaultWorkingHours')) {
+            _defaultWorkingHours = Map<String, String>.from(
+              data['defaultWorkingHours'] as Map,
+            );
+          }
           if (data.containsKey('vacations')) {
             _vacations = List<Map<String, String>>.from(
               (data['vacations'] as List).map(
@@ -129,6 +140,7 @@ class _SchedulePageState extends State<SchedulePage> {
 
         if (_isOwnSchedule) {
           await _cleanupPastData();
+          await _updateScheduleWidget();
         }
       }
     } catch (e) {
@@ -270,7 +282,111 @@ class _SchedulePageState extends State<SchedulePage> {
         'dayNotes': _dayNotes,
         'allReminders': _allReminders,
       }, SetOptions(merge: true));
+
+      await _updateScheduleWidget();
     }
+  }
+
+  String _dateKey(DateTime date) => "${date.year}-${date.month}-${date.day}";
+
+  Future<void> _updateScheduleWidget() async {
+    if (!_isOwnSchedule) return;
+    if (!mounted) return;
+
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final calendarCells = _buildWidgetCalendarCells(today);
+    final items = <Map<String, String>>[];
+
+    for (var offset = 0; offset < 21 && items.length < 4; offset++) {
+      final date = today.add(Duration(days: offset));
+      final key = _dateKey(date);
+      final reminders = _allReminders[key] ?? const [];
+      final isWorking = _availableDates.contains(key);
+      final partialHours = _formatPartialRangesText(key);
+      final isVacation = _isVacation(date);
+
+      if (!isWorking && !isVacation) {
+        continue;
+      }
+
+      final details = <String>[];
+      if (isVacation) {
+        details.add('Vacation');
+      } else if (partialHours.isNotEmpty) {
+        details.add('Working $partialHours');
+      } else if (isWorking) {
+        details.add(_formatDefaultWorkingHours());
+      }
+      if (reminders.isNotEmpty) {
+        details.add(
+          reminders.length == 1
+              ? '1 reminder'
+              : '${reminders.length} reminders',
+        );
+      }
+
+      items.add({
+        'date': offset == 0 ? 'Today' : _formatWidgetDate(date),
+        'details': details.where((detail) => detail.isNotEmpty).join(' • '),
+      });
+    }
+
+    try {
+      await _scheduleWidgetChannel.invokeMethod('updateScheduleWidget', {
+        'title': 'My Schedule',
+        'subtitle': 'Updated ${_formatWidgetTime(now)}',
+        'monthTitle': _formatWidgetMonth(today),
+        'emptyMessage': 'No upcoming working days',
+        'cells': calendarCells,
+        'items': items,
+      });
+    } catch (e) {
+      debugPrint('Error updating schedule widget: $e');
+    }
+  }
+
+  List<Map<String, dynamic>> _buildWidgetCalendarCells(DateTime monthDate) {
+    final firstDayOfMonth = DateTime(monthDate.year, monthDate.month);
+    final daysBeforeMonth = firstDayOfMonth.weekday % 7;
+    final gridStart = firstDayOfMonth.subtract(Duration(days: daysBeforeMonth));
+    final today = DateTime.now();
+    final normalizedToday = DateTime(today.year, today.month, today.day);
+
+    return List.generate(42, (index) {
+      final date = gridStart.add(Duration(days: index));
+      final key = _dateKey(date);
+      final note = (_dayNotes[key] ?? '').trim();
+      return {
+        'label': date.day.toString(),
+        'dateTitle':
+            '${_widgetMonthName(date.month)} ${date.day}, ${date.year}',
+        'isCurrentMonth': date.month == monthDate.month,
+        'isToday': date.isAtSameMomentAs(normalizedToday),
+        'isWorking': _availableDates.contains(key),
+        'isVacation': _isVacation(date),
+        'hasReminder': (_allReminders[key] ?? const []).isNotEmpty,
+        'note': note,
+      };
+    });
+  }
+
+  String _widgetMonthName(int month) {
+    const months = [
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
+    ];
+    return months[month - 1];
   }
 
   Map<String, String> _getLocalizedStrings(BuildContext context) {
@@ -578,6 +694,57 @@ class _SchedulePageState extends State<SchedulePage> {
     }
   }
 
+  String _formatDefaultWorkingHours() {
+    final from = _defaultWorkingHours?['from']?.trim();
+    final to = _defaultWorkingHours?['to']?.trim();
+    if (from != null && from.isNotEmpty && to != null && to.isNotEmpty) {
+      return 'Working $from - $to';
+    }
+    return 'Working day';
+  }
+
+  String _formatWidgetDate(DateTime date) {
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return '${months[date.month - 1]} ${date.day}';
+  }
+
+  String _formatWidgetMonth(DateTime date) {
+    const months = [
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
+    ];
+    return '${months[date.month - 1]} ${date.year}';
+  }
+
+  String _formatWidgetTime(DateTime time) {
+    final hour = time.hour.toString().padLeft(2, '0');
+    final minute = time.minute.toString().padLeft(2, '0');
+    return '$hour:$minute';
+  }
+
   String _formatWorkingTime(BuildContext context, TimeOfDay time) {
     return MaterialLocalizations.of(
       context,
@@ -783,6 +950,7 @@ class _SchedulePageState extends State<SchedulePage> {
     });
 
     await _scheduleDoc.set({'vacations': _vacations}, SetOptions(merge: true));
+    await _updateScheduleWidget();
   }
 
   Future<void> _showVacationDialog() async {
@@ -821,6 +989,7 @@ class _SchedulePageState extends State<SchedulePage> {
           {'start': startStr, 'end': endStr},
         ]),
       }, SetOptions(merge: true));
+      await _updateScheduleWidget();
     }
   }
 
@@ -851,6 +1020,7 @@ class _SchedulePageState extends State<SchedulePage> {
         'allReminders': _allReminders,
         'reminderDates': _reminderDates,
       }, SetOptions(merge: true));
+      await _updateScheduleWidget();
     } catch (e) {
       debugPrint("Error adding reminder: $e");
     }
@@ -875,6 +1045,7 @@ class _SchedulePageState extends State<SchedulePage> {
         'allReminders': _allReminders,
         'reminderDates': _reminderDates,
       }, SetOptions(merge: true));
+      await _updateScheduleWidget();
     } catch (e) {
       debugPrint("Error deleting reminder: $e");
     }
@@ -942,6 +1113,8 @@ class _SchedulePageState extends State<SchedulePage> {
         'availableDates': FieldValue.arrayUnion([dateStr]),
       }, SetOptions(merge: true));
     }
+
+    await _updateScheduleWidget();
   }
 
   Future<void> _setPartialHours() async {
@@ -1266,12 +1439,12 @@ class _SchedulePageState extends State<SchedulePage> {
                                 'partialWorkDays': _partialWorkDays,
                               }, SetOptions(merge: true));
 
-                              if (mounted) {
-                                Navigator.pop(context);
-                              }
+                              if (!context.mounted) return;
+                              Navigator.pop(context);
+                              await _updateScheduleWidget();
                             } catch (e) {
                               debugPrint("Error saving partial hours: $e");
-                              if (!mounted) return;
+                              if (!context.mounted) return;
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
                                   content: Text(strings['save_hours_failed']!),

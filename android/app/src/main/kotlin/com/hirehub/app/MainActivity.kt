@@ -11,9 +11,32 @@ import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
 	private val billingStatusChannel = "com.hirehub.app/subscription_status"
+	private val scheduleWidgetChannel = "com.hirehub.app/schedule_widget"
 
 	override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
 		super.configureFlutterEngine(flutterEngine)
+
+		MethodChannel(
+			flutterEngine.dartExecutor.binaryMessenger,
+			scheduleWidgetChannel,
+		).setMethodCallHandler { call, result ->
+			when (call.method) {
+				"updateScheduleWidget" -> {
+					@Suppress("UNCHECKED_CAST")
+					val snapshot = call.arguments as? Map<String, Any?>
+					if (snapshot == null) {
+						result.error("invalid-args", "Schedule widget snapshot is required", null)
+						return@setMethodCallHandler
+					}
+
+					ScheduleWidgetProvider.saveSnapshot(this, snapshot)
+					ScheduleWidgetProvider.updateAllWidgets(this)
+					result.success(null)
+				}
+
+				else -> result.notImplemented()
+			}
+		}
 
 		MethodChannel(
 			flutterEngine.dartExecutor.binaryMessenger,

@@ -42,4 +42,11 @@
     <string name="lowest_price">Lowest Price</string>
     <string name="highest_price">Highest Price</string>
     <string name="most_jobs">Most Jobs</string>
+    <string name="schedule_widget_title">My Schedule</string>
+    <string name="schedule_widget_description">Shows your upcoming schedule items.</string>
+    <string name="schedule_widget_sync_hint">Open your schedule once to sync this widget</string>
+    <string name="schedule_widget_month_placeholder">Schedule</string>
+    <string name="schedule_widget_working_day">Working Day</string>
+    <string name="schedule_widget_vacation">On Vacation</string>
+    <string name="schedule_widget_reminders">Reminders</string>
 </resources>
