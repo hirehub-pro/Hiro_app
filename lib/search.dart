@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -99,6 +100,10 @@ class _SearchBackgroundPainter extends CustomPainter {
 }
 
 class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
+  static const Color _desktopPageBackground = Color(0xFFF5F8FC);
+  static const Color _desktopText = Color(0xFF1F2937);
+  static const Color _desktopMuted = Color(0xFF94A3B8);
+
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -153,6 +158,9 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
       'sort_rating': 'Rating',
       'sort_nearest': 'Nearest to Me',
       'sort_name': 'Name',
+      'filters': 'Filters',
+      'search_button': 'Search',
+      'explore': 'Explore',
     };
     const he = <String, String>{
       'search_worker_hint': 'חפש לפי שם או עיר...',
@@ -170,6 +178,9 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
       'sort_rating': 'דירוג',
       'sort_nearest': 'הכי קרוב אלי',
       'sort_name': 'שם',
+      'filters': 'סינון',
+      'search_button': 'חיפוש',
+      'explore': 'גלה',
     };
     const ar = <String, String>{
       'search_worker_hint': 'ابحث حسب الاسم أو المدينة...',
@@ -187,6 +198,9 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
       'sort_rating': 'التقييم',
       'sort_nearest': 'الأقرب إلي',
       'sort_name': 'الاسم',
+      'filters': 'فلاتر',
+      'search_button': 'بحث',
+      'explore': 'استكشف',
     };
     const am = <String, String>{
       'search_worker_hint': 'በስም ወይም ከተማ ፈልግ...',
@@ -204,6 +218,9 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
       'sort_rating': 'ደረጃ',
       'sort_nearest': 'በጣም ቅርብ',
       'sort_name': 'ስም',
+      'filters': 'ማጣሪያ',
+      'search_button': 'ፈልግ',
+      'explore': 'ያስሱ',
     };
     const ru = <String, String>{
       'search_worker_hint': 'Поиск по имени или городу...',
@@ -222,6 +239,9 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
       'sort_rating': 'Рейтинг',
       'sort_nearest': 'Ближе всего ко мне',
       'sort_name': 'Имя',
+      'filters': 'Фильтры',
+      'search_button': 'Поиск',
+      'explore': 'Открыть',
     };
 
     switch (locale) {
@@ -822,248 +842,248 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
 
   IconData _getIcon(String? name) {
     switch (name) {
-case 'engineering':
-    return Icons.engineering;
-  case 'plumbing':
-    return Icons.plumbing;
-  case 'electrical_services':
-    return Icons.electrical_services;
-  case 'electric_bolt':
-    return Icons.electric_bolt;
-  case 'lightbulb':
-    return Icons.lightbulb;
-  case 'carpenter':
-    return Icons.carpenter;
-  case 'handyman':
-    return Icons.handyman;
-  case 'home_repair_service':
-    return Icons.home_repair_service;
-  case 'construction':
-    return Icons.construction;
-  case 'foundation':
-    return Icons.foundation;
-  case 'roofing':
-    return Icons.roofing;
-  case 'hardware':
-    return Icons.hardware;
-  case 'build':
-    return Icons.build;
-  case 'format_paint':
-    return Icons.format_paint;
-  case 'format_color_fill':
-    return Icons.format_color_fill;
-  case 'architecture':
-    return Icons.architecture;
-  case 'design_services':
-    return Icons.design_services;
-  case 'straighten':
-    return Icons.straighten;
-  case 'square_foot':
-    return Icons.square_foot;
-  case 'chair':
-    return Icons.chair;
-  case 'table_restaurant':
-    return Icons.table_restaurant;
-  case 'window':
-    return Icons.window;
-  case 'door_front_door':
-    return Icons.door_front_door;
-  case 'blinds':
-    return Icons.blinds;
-  case 'shower':
-    return Icons.shower;
-  case 'water_drop':
-    return Icons.water_drop;
-  case 'water_damage':
-    return Icons.water_damage;
-  case 'ac_unit':
-    return Icons.ac_unit;
-  case 'air':
-    return Icons.air;
-  case 'cleaning_services':
-    return Icons.cleaning_services;
-  case 'dry_cleaning':
-    return Icons.dry_cleaning;
-  case 'clean_hands':
-    return Icons.clean_hands;
-  case 'pest_control':
-    return Icons.pest_control;
-  case 'bug_report':
-    return Icons.bug_report;
-  case 'solar_power':
-    return Icons.solar_power;
-  case 'computer':
-    return Icons.computer;
-  case 'devices':
-    return Icons.devices;
-  case 'memory':
-    return Icons.memory;
-  case 'router':
-    return Icons.router;
-  case 'wifi':
-    return Icons.wifi;
-  case 'phone_android':
-    return Icons.phone_android;
-  case 'print':
-    return Icons.print;
-  case 'camera_indoor':
-    return Icons.camera_indoor;
-  case 'security':
-    return Icons.security;
-  case 'shield':
-    return Icons.shield;
-  case 'support_agent':
-    return Icons.support_agent;
-  case 'medical_services':
-    return Icons.medical_services;
-  case 'local_hospital':
-    return Icons.local_hospital;
-  case 'monitor_heart':
-    return Icons.monitor_heart;
-  case 'healing':
-    return Icons.healing;
-  case 'psychology':
-    return Icons.psychology;
-  case 'fitness_center':
-    return Icons.fitness_center;
-  case 'spa':
-    return Icons.spa;
-  case 'child_care':
-    return Icons.child_care;
-  case 'elderly':
-    return Icons.elderly;
-  case 'school':
-    return Icons.school;
-  case 'translate':
-    return Icons.translate;
-  case 'calculate':
-    return Icons.calculate;
-  case 'gavel':
-    return Icons.gavel;
-  case 'real_estate_agent':
-    return Icons.real_estate_agent;
-  case 'storefront':
-    return Icons.storefront;
-  case 'shopping_bag':
-    return Icons.shopping_bag;
-  case 'badge':
-    return Icons.badge;
-  case 'restaurant':
-    return Icons.restaurant;
-  case 'restaurant_menu':
-    return Icons.restaurant_menu;
-  case 'lunch_dining':
-    return Icons.lunch_dining;
-  case 'bakery_dining':
-    return Icons.bakery_dining;
-  case 'cake':
-    return Icons.cake;
-  case 'celebration':
-    return Icons.celebration;
-  case 'event':
-    return Icons.event;
-  case 'photo_camera':
-    return Icons.photo_camera;
-  case 'camera_alt':
-    return Icons.camera_alt;
-  case 'add_a_photo':
-    return Icons.add_a_photo;
-  case 'videocam':
-    return Icons.videocam;
-  case 'movie_creation':
-    return Icons.movie_creation;
-  case 'music_note':
-    return Icons.music_note;
-  case 'graphic_eq':
-    return Icons.graphic_eq;
-  case 'piano':
-    return Icons.piano;
-  case 'palette':
-    return Icons.palette;
-  case 'brush':
-    return Icons.brush;
-  case 'face':
-    return Icons.face;
-  case 'checkroom':
-    return Icons.checkroom;
-  case 'content_cut':
-    return Icons.content_cut;
-  case 'iron':
-    return Icons.iron;
-  case 'local_shipping':
-    return Icons.local_shipping;
-  case 'local_moving':
-    return Icons.moving;
-  case 'inventory_2':
-    return Icons.inventory_2;
-  case 'delivery_dining':
-    return Icons.delivery_dining;
-  case 'local_car_wash':
-    return Icons.local_car_wash;
-  case 'directions_car':
-    return Icons.directions_car;
-  case 'car_repair':
-    return Icons.car_repair;
-  case 'airport_shuttle':
-    return Icons.airport_shuttle;
-  case 'two_wheeler':
-    return Icons.two_wheeler;
-  case 'moped':
-    return Icons.moped;
-  case 'pedal_bike':
-    return Icons.pedal_bike;
-  case 'fire_truck':
-    return Icons.fire_truck;
-  case 'park':
-    return Icons.park;
-  case 'pets':
-    return Icons.pets;
-  case 'pool':
-    return Icons.pool;
-  case 'waves':
-    return Icons.waves;
-  case 'home':
-    return Icons.home;
-  case 'house':
-    return Icons.house;
-  case 'apartment':
-    return Icons.apartment;
-  case 'cabin':
-    return Icons.cabin;
-  case 'garage':
-    return Icons.garage;
-  case 'public':
-    return Icons.public;
-  case 'language':
-    return Icons.language;
-  case 'science':
-    return Icons.science;
-  case 'biotech':
-    return Icons.biotech;
-  case 'eco':
-    return Icons.eco;
-  case 'history_edu':
-    return Icons.history_edu;
-  case 'bolt':
-    return Icons.bolt;
-  case 'vpn_key':
-    return Icons.vpn_key;
-  case 'locksmith':
-    return Icons.lock_open;
-  case 'man':
-    return Icons.man;
-  case 'woman':
-    return Icons.woman;
-  case 'weekend':
-    return Icons.weekend;
-  case 'paint_rounded':
-    return Icons.format_paint_rounded;
-  case 'construction_rounded':
-    return Icons.construction_rounded;
-  case 'plumbing_rounded':
-    return Icons.plumbing_rounded;
-  case 'engineering_outlined':
-    return Icons.engineering_outlined;
+      case 'engineering':
+        return Icons.engineering;
+      case 'plumbing':
+        return Icons.plumbing;
+      case 'electrical_services':
+        return Icons.electrical_services;
+      case 'electric_bolt':
+        return Icons.electric_bolt;
+      case 'lightbulb':
+        return Icons.lightbulb;
+      case 'carpenter':
+        return Icons.carpenter;
+      case 'handyman':
+        return Icons.handyman;
+      case 'home_repair_service':
+        return Icons.home_repair_service;
+      case 'construction':
+        return Icons.construction;
+      case 'foundation':
+        return Icons.foundation;
+      case 'roofing':
+        return Icons.roofing;
+      case 'hardware':
+        return Icons.hardware;
+      case 'build':
+        return Icons.build;
+      case 'format_paint':
+        return Icons.format_paint;
+      case 'format_color_fill':
+        return Icons.format_color_fill;
+      case 'architecture':
+        return Icons.architecture;
+      case 'design_services':
+        return Icons.design_services;
+      case 'straighten':
+        return Icons.straighten;
+      case 'square_foot':
+        return Icons.square_foot;
+      case 'chair':
+        return Icons.chair;
+      case 'table_restaurant':
+        return Icons.table_restaurant;
+      case 'window':
+        return Icons.window;
+      case 'door_front_door':
+        return Icons.door_front_door;
+      case 'blinds':
+        return Icons.blinds;
+      case 'shower':
+        return Icons.shower;
+      case 'water_drop':
+        return Icons.water_drop;
+      case 'water_damage':
+        return Icons.water_damage;
+      case 'ac_unit':
+        return Icons.ac_unit;
+      case 'air':
+        return Icons.air;
+      case 'cleaning_services':
+        return Icons.cleaning_services;
+      case 'dry_cleaning':
+        return Icons.dry_cleaning;
+      case 'clean_hands':
+        return Icons.clean_hands;
+      case 'pest_control':
+        return Icons.pest_control;
+      case 'bug_report':
+        return Icons.bug_report;
+      case 'solar_power':
+        return Icons.solar_power;
+      case 'computer':
+        return Icons.computer;
+      case 'devices':
+        return Icons.devices;
+      case 'memory':
+        return Icons.memory;
+      case 'router':
+        return Icons.router;
+      case 'wifi':
+        return Icons.wifi;
+      case 'phone_android':
+        return Icons.phone_android;
+      case 'print':
+        return Icons.print;
+      case 'camera_indoor':
+        return Icons.camera_indoor;
+      case 'security':
+        return Icons.security;
+      case 'shield':
+        return Icons.shield;
+      case 'support_agent':
+        return Icons.support_agent;
+      case 'medical_services':
+        return Icons.medical_services;
+      case 'local_hospital':
+        return Icons.local_hospital;
+      case 'monitor_heart':
+        return Icons.monitor_heart;
+      case 'healing':
+        return Icons.healing;
+      case 'psychology':
+        return Icons.psychology;
+      case 'fitness_center':
+        return Icons.fitness_center;
+      case 'spa':
+        return Icons.spa;
+      case 'child_care':
+        return Icons.child_care;
+      case 'elderly':
+        return Icons.elderly;
+      case 'school':
+        return Icons.school;
+      case 'translate':
+        return Icons.translate;
+      case 'calculate':
+        return Icons.calculate;
+      case 'gavel':
+        return Icons.gavel;
+      case 'real_estate_agent':
+        return Icons.real_estate_agent;
+      case 'storefront':
+        return Icons.storefront;
+      case 'shopping_bag':
+        return Icons.shopping_bag;
+      case 'badge':
+        return Icons.badge;
+      case 'restaurant':
+        return Icons.restaurant;
+      case 'restaurant_menu':
+        return Icons.restaurant_menu;
+      case 'lunch_dining':
+        return Icons.lunch_dining;
+      case 'bakery_dining':
+        return Icons.bakery_dining;
+      case 'cake':
+        return Icons.cake;
+      case 'celebration':
+        return Icons.celebration;
+      case 'event':
+        return Icons.event;
+      case 'photo_camera':
+        return Icons.photo_camera;
+      case 'camera_alt':
+        return Icons.camera_alt;
+      case 'add_a_photo':
+        return Icons.add_a_photo;
+      case 'videocam':
+        return Icons.videocam;
+      case 'movie_creation':
+        return Icons.movie_creation;
+      case 'music_note':
+        return Icons.music_note;
+      case 'graphic_eq':
+        return Icons.graphic_eq;
+      case 'piano':
+        return Icons.piano;
+      case 'palette':
+        return Icons.palette;
+      case 'brush':
+        return Icons.brush;
+      case 'face':
+        return Icons.face;
+      case 'checkroom':
+        return Icons.checkroom;
+      case 'content_cut':
+        return Icons.content_cut;
+      case 'iron':
+        return Icons.iron;
+      case 'local_shipping':
+        return Icons.local_shipping;
+      case 'local_moving':
+        return Icons.moving;
+      case 'inventory_2':
+        return Icons.inventory_2;
+      case 'delivery_dining':
+        return Icons.delivery_dining;
+      case 'local_car_wash':
+        return Icons.local_car_wash;
+      case 'directions_car':
+        return Icons.directions_car;
+      case 'car_repair':
+        return Icons.car_repair;
+      case 'airport_shuttle':
+        return Icons.airport_shuttle;
+      case 'two_wheeler':
+        return Icons.two_wheeler;
+      case 'moped':
+        return Icons.moped;
+      case 'pedal_bike':
+        return Icons.pedal_bike;
+      case 'fire_truck':
+        return Icons.fire_truck;
+      case 'park':
+        return Icons.park;
+      case 'pets':
+        return Icons.pets;
+      case 'pool':
+        return Icons.pool;
+      case 'waves':
+        return Icons.waves;
+      case 'home':
+        return Icons.home;
+      case 'house':
+        return Icons.house;
+      case 'apartment':
+        return Icons.apartment;
+      case 'cabin':
+        return Icons.cabin;
+      case 'garage':
+        return Icons.garage;
+      case 'public':
+        return Icons.public;
+      case 'language':
+        return Icons.language;
+      case 'science':
+        return Icons.science;
+      case 'biotech':
+        return Icons.biotech;
+      case 'eco':
+        return Icons.eco;
+      case 'history_edu':
+        return Icons.history_edu;
+      case 'bolt':
+        return Icons.bolt;
+      case 'vpn_key':
+        return Icons.vpn_key;
+      case 'locksmith':
+        return Icons.lock_open;
+      case 'man':
+        return Icons.man;
+      case 'woman':
+        return Icons.woman;
+      case 'weekend':
+        return Icons.weekend;
+      case 'paint_rounded':
+        return Icons.format_paint_rounded;
+      case 'construction_rounded':
+        return Icons.construction_rounded;
+      case 'plumbing_rounded':
+        return Icons.plumbing_rounded;
+      case 'engineering_outlined':
+        return Icons.engineering_outlined;
       default:
         return Icons.work_rounded;
     }
@@ -1090,10 +1110,19 @@ case 'engineering':
     );
   }
 
+  bool _useDesktopWebLayout(BuildContext context) {
+    return kIsWeb && MediaQuery.of(context).size.width >= 1100;
+  }
+
   @override
   Widget build(BuildContext context) {
     final locale = Provider.of<LanguageProvider>(context).locale.languageCode;
     final themeColor = _getThemeColor();
+    final useDesktopWebLayout = _useDesktopWebLayout(context);
+
+    if (useDesktopWebLayout) {
+      return _buildDesktopWebSearchPage(locale, themeColor);
+    }
 
     return Scaffold(
       backgroundColor: const Color(0xFFF7FBFF),
@@ -1178,28 +1207,225 @@ case 'engineering':
     );
   }
 
-  Widget _buildProfessionGridSkeleton() {
+  Widget _buildDesktopWebSearchPage(String locale, Color themeColor) {
+    return Scaffold(
+      backgroundColor: _desktopPageBackground,
+      body: Stack(
+        children: [
+          const Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Color(0xFFFFFFFF), _desktopPageBackground],
+                  stops: [0, 0.24],
+                ),
+              ),
+            ),
+          ),
+          Positioned.fill(
+            child: AnimatedBuilder(
+              animation: _backgroundController!,
+              builder: (context, _) {
+                return Opacity(
+                  opacity: 0.36,
+                  child: _SearchBackgroundLayer(
+                    progress: _backgroundController!.value,
+                  ),
+                );
+              },
+            ),
+          ),
+          SafeArea(
+            child: Column(
+              children: [
+                _buildDesktopSearchHeader(locale, themeColor),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(32, 28, 32, 32),
+                    child: Align(
+                      alignment: Alignment.topCenter,
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 1280),
+                        child: _showWorkerList
+                            ? (_isLoadingWorkers
+                                  ? _buildWorkerListSkeleton(isDesktop: true)
+                                  : _buildWorkerList(
+                                      locale,
+                                      themeColor,
+                                      isDesktop: true,
+                                    ))
+                            : (_isLoadingProfessions
+                                  ? _buildProfessionGridSkeleton(
+                                      isDesktop: true,
+                                    )
+                                  : _buildProfessionGrid(
+                                      locale,
+                                      isDesktop: true,
+                                    )),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDesktopSearchHeader(String locale, Color themeColor) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(28, 18, 28, 22),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(bottom: BorderSide(color: Color(0xFFE6EDF5))),
+        boxShadow: [
+          BoxShadow(
+            color: Color(0x120F172A),
+            blurRadius: 28,
+            offset: Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1280),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  if (_showWorkerList)
+                    Padding(
+                      padding: const EdgeInsetsDirectional.only(end: 12),
+                      child: IconButton(
+                        onPressed: () {
+                          setState(() {
+                            _showWorkerList = false;
+                            _selectedProfession = null;
+                            _allWorkers = [];
+                            _filteredWorkers = [];
+                            _searchController.clear();
+                            _applyFilters();
+                          });
+                        },
+                        style: IconButton.styleFrom(
+                          backgroundColor: const Color(0xFFF8FAFC),
+                          foregroundColor: _desktopText,
+                          minimumSize: const Size(48, 48),
+                          side: const BorderSide(color: Color(0xFFE2E8F0)),
+                        ),
+                        icon: const Icon(Icons.arrow_back_rounded),
+                      ),
+                    ),
+                  Expanded(
+                    child: _buildSearchField(
+                      locale,
+                      themeColor,
+                      isDesktop: true,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  _buildDesktopActionButton(
+                    label: _t('filters', locale),
+                    icon: Icons.tune_rounded,
+                    filled: false,
+                    onPressed: () => _showSortOptions(locale, themeColor),
+                  ),
+                  const SizedBox(width: 12),
+                  _buildDesktopActionButton(
+                    label: _t('search_button', locale),
+                    filled: true,
+                    onPressed: _applyFilters,
+                  ),
+                ],
+              ),
+              if (_showWorkerList) ...[
+                const SizedBox(height: 14),
+                _buildWorkerToolbar(locale, themeColor, isDesktop: true),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDesktopActionButton({
+    required String label,
+    required VoidCallback onPressed,
+    IconData? icon,
+    required bool filled,
+  }) {
+    final child = icon == null
+        ? Text(label)
+        : Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 18),
+              const SizedBox(width: 8),
+              Text(label),
+            ],
+          );
+
+    if (filled) {
+      return ElevatedButton(
+        onPressed: onPressed,
+        style: ElevatedButton.styleFrom(
+          minimumSize: const Size(0, 60),
+          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 18),
+          backgroundColor: const Color(0xFF76A9E0),
+          foregroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(22),
+          ),
+          textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+        ),
+        child: child,
+      );
+    }
+
+    return OutlinedButton(
+      onPressed: onPressed,
+      style: OutlinedButton.styleFrom(
+        minimumSize: const Size(0, 60),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
+        foregroundColor: _desktopText,
+        side: const BorderSide(color: Color(0xFFD8E3EE)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+        textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+      ),
+      child: child,
+    );
+  }
+
+  Widget _buildProfessionGridSkeleton({bool isDesktop = false}) {
+    final width = MediaQuery.sizeOf(context).width;
+    final desktopColumns = width >= 1380 ? 5 : 4;
     return GridView.builder(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        crossAxisSpacing: 16,
-        mainAxisSpacing: 16,
-        childAspectRatio: 1.0,
+      padding: EdgeInsets.fromLTRB(0, isDesktop ? 0 : 8, 0, 20),
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: isDesktop ? desktopColumns : 2,
+        crossAxisSpacing: isDesktop ? 20 : 16,
+        mainAxisSpacing: isDesktop ? 20 : 16,
+        childAspectRatio: isDesktop ? 1.14 : 1.0,
       ),
       itemCount: 6,
       itemBuilder: (context, index) {
         return Container(
-          padding: const EdgeInsets.all(14),
-          decoration: _surfaceDecoration(radius: 24),
+          padding: EdgeInsets.all(isDesktop ? 22 : 14),
+          decoration: _surfaceDecoration(radius: isDesktop ? 28 : 24),
           child: const Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.end,
             children: [
-              Skeleton(height: 64, width: 64, borderRadius: 32),
-              SizedBox(height: 12),
-              Skeleton(height: 12, width: 90),
+              Skeleton(height: 64, width: 64, borderRadius: 18),
+              SizedBox(height: 24),
+              Skeleton(height: 14, width: 110),
               SizedBox(height: 8),
-              Skeleton(height: 12, width: 70),
+              Skeleton(height: 12, width: 74),
             ],
           ),
         );
@@ -1207,9 +1433,9 @@ case 'engineering':
     );
   }
 
-  Widget _buildWorkerListSkeleton() {
+  Widget _buildWorkerListSkeleton({bool isDesktop = false}) {
     return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 18),
+      padding: EdgeInsets.fromLTRB(0, isDesktop ? 0 : 8, 0, 18),
       itemCount: 5,
       separatorBuilder: (context, index) => const SizedBox(height: 16),
       itemBuilder: (context, index) {
@@ -1247,18 +1473,22 @@ case 'engineering':
     );
   }
 
-  Widget _buildSearchField(String locale, Color themeColor) {
+  Widget _buildSearchField(
+    String locale,
+    Color themeColor, {
+    bool isDesktop = false,
+  }) {
     return TextField(
       controller: _searchController,
       onChanged: (_) => _applyFilters(),
       style: const TextStyle(
-        color: Color(0xFF111827),
+        color: _desktopText,
         fontSize: 16,
         fontWeight: FontWeight.w600,
       ),
       decoration: InputDecoration(
         hintStyle: const TextStyle(
-          color: Color(0xFF9CA3AF),
+          color: _desktopMuted,
           fontSize: 14,
           fontWeight: FontWeight.w500,
         ),
@@ -1267,25 +1497,31 @@ case 'engineering':
             : _t('search_prof_hint', locale),
         prefixIcon: Icon(Icons.search_rounded, color: themeColor, size: 21),
         filled: true,
-        fillColor: const Color(0xFFF9FAFB),
+        fillColor: isDesktop ? Colors.white : const Color(0xFFF9FAFB),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+          borderRadius: BorderRadius.circular(isDesktop ? 22 : 16),
+          borderSide: const BorderSide(color: Color(0xFFD8E3EE)),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: themeColor, width: 1.3),
+          borderRadius: BorderRadius.circular(isDesktop ? 22 : 16),
+          borderSide: BorderSide(color: themeColor, width: 1.4),
         ),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 14,
-          vertical: 14,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(isDesktop ? 22 : 16),
+        ),
+        contentPadding: EdgeInsets.symmetric(
+          horizontal: isDesktop ? 18 : 14,
+          vertical: isDesktop ? 20 : 14,
         ),
       ),
     );
   }
 
-  Widget _buildWorkerToolbar(String locale, Color themeColor) {
+  Widget _buildWorkerToolbar(
+    String locale,
+    Color themeColor, {
+    bool isDesktop = false,
+  }) {
     return Row(
       children: [
         Expanded(
@@ -1302,7 +1538,10 @@ case 'engineering':
             },
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 180),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              padding: EdgeInsets.symmetric(
+                horizontal: isDesktop ? 18 : 14,
+                vertical: isDesktop ? 14 : 12,
+              ),
               decoration: BoxDecoration(
                 color: _filterByRadius
                     ? themeColor.withValues(alpha: 0.12)
@@ -1372,7 +1611,10 @@ case 'engineering':
           borderRadius: BorderRadius.circular(18),
           onTap: () => _showSortOptions(locale, themeColor),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            padding: EdgeInsets.symmetric(
+              horizontal: isDesktop ? 18 : 14,
+              vertical: isDesktop ? 14 : 12,
+            ),
             decoration: _surfaceDecoration(radius: 18, elevated: false),
             child: Icon(Icons.tune_rounded, color: themeColor),
           ),
@@ -1381,7 +1623,7 @@ case 'engineering':
     );
   }
 
-  Widget _buildProfessionGrid(String locale) {
+  Widget _buildProfessionGrid(String locale, {bool isDesktop = false}) {
     if (_filteredProfessions.isEmpty) {
       return RefreshIndicator(
         onRefresh: _refreshSearchPage,
@@ -1415,16 +1657,19 @@ case 'engineering':
       );
     }
 
+    final width = MediaQuery.sizeOf(context).width;
+    final desktopColumns = width >= 1380 ? 5 : 4;
+
     return RefreshIndicator(
       onRefresh: _refreshSearchPage,
       child: GridView.builder(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          crossAxisSpacing: 16,
-          mainAxisSpacing: 16,
-          childAspectRatio: 1.0,
+        padding: EdgeInsets.fromLTRB(0, isDesktop ? 0 : 8, 0, 20),
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: isDesktop ? desktopColumns : 2,
+          crossAxisSpacing: isDesktop ? 20 : 16,
+          mainAxisSpacing: isDesktop ? 20 : 16,
+          childAspectRatio: isDesktop ? 1.14 : 1.0,
         ),
         itemCount: _filteredProfessions.length,
         itemBuilder: (context, index) {
@@ -1433,35 +1678,60 @@ case 'engineering':
 
           return InkWell(
             onTap: () => _openProfession(p),
-            borderRadius: BorderRadius.circular(24),
+            borderRadius: BorderRadius.circular(isDesktop ? 30 : 24),
             child: Container(
-              decoration: _surfaceDecoration(radius: 24, tint: color),
+              padding: EdgeInsets.all(isDesktop ? 20 : 14),
+              decoration: _surfaceDecoration(
+                radius: isDesktop ? 30 : 24,
+                tint: color,
+              ),
               child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: isDesktop
+                    ? CrossAxisAlignment.start
+                    : CrossAxisAlignment.center,
+                mainAxisAlignment: isDesktop
+                    ? MainAxisAlignment.end
+                    : MainAxisAlignment.center,
                 children: [
                   Container(
-                    padding: const EdgeInsets.all(16),
+                    width: isDesktop ? 64 : null,
+                    height: isDesktop ? 64 : null,
+                    padding: EdgeInsets.all(isDesktop ? 15 : 16),
                     decoration: BoxDecoration(
                       color: color.withValues(alpha: 0.1),
-                      shape: BoxShape.circle,
+                      borderRadius: BorderRadius.circular(isDesktop ? 22 : 999),
                     ),
-                    child: Icon(_getIcon(p['logo']), color: color, size: 32),
+                    child: Icon(
+                      _getIcon(p['logo']),
+                      color: color,
+                      size: isDesktop ? 32 : 32,
+                    ),
                   ),
-                  const SizedBox(height: 12),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    child: Text(
-                      p[locale] ?? p['en'],
+                  SizedBox(height: isDesktop ? 18 : 12),
+                  Text(
+                    p[locale] ?? p['en'],
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: isDesktop ? 16 : 14.5,
+                      color: const Color(0xFF101827),
+                      height: 1.1,
+                    ),
+                    textAlign: isDesktop ? TextAlign.start : TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (isDesktop) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      _t('explore', locale).toUpperCase(),
                       style: const TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 14.5,
-                        color: Color(0xFF101827),
+                        color: Color(0xFF94A3B8),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 2.2,
                       ),
-                      textAlign: TextAlign.center,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
                     ),
-                  ),
+                  ],
                 ],
               ),
             ),
@@ -1471,7 +1741,11 @@ case 'engineering':
     );
   }
 
-  Widget _buildWorkerList(String locale, Color themeColor) {
+  Widget _buildWorkerList(
+    String locale,
+    Color themeColor, {
+    bool isDesktop = false,
+  }) {
     if (_filteredWorkers.isEmpty && !_isLoadingWorkers) {
       return RefreshIndicator(
         onRefresh: _refreshSearchPage,
@@ -1510,7 +1784,7 @@ case 'engineering':
         physics: const BouncingScrollPhysics(
           parent: AlwaysScrollableScrollPhysics(),
         ),
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 18),
+        padding: EdgeInsets.fromLTRB(0, isDesktop ? 0 : 8, 0, 18),
         itemCount: _filteredWorkers.length + (_hasMore ? 1 : 0),
         itemBuilder: (context, index) {
           if (index == _filteredWorkers.length) {

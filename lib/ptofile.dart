@@ -1482,6 +1482,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
       context,
     ).locale.languageCode;
     final isRtl = localeCode == 'he' || localeCode == 'ar';
+    final isDesktop = MediaQuery.sizeOf(context).width >= 1100;
     final profileTheme = theme.copyWith(
       scaffoldBackgroundColor: Colors.transparent,
       colorScheme: theme.colorScheme.copyWith(primary: _kPrimaryBlue),
@@ -1630,275 +1631,287 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
                   },
                 ),
               ),
-              RefreshIndicator(
-                key: _refreshIndicatorKey,
-                color: _kPrimaryBlue,
-                onRefresh: _fetchUserData,
-                child: NestedScrollView(
-                  headerSliverBuilder: (context, innerBoxIsScrolled) => [
-                    SliverAppBar(
-                      expandedHeight: 450,
-                      pinned: true,
-                      stretch: true,
-                      backgroundColor: _kPageTint,
-                      actions: [
-                        IconButton(
-                          icon: const Icon(
-                            Icons.place_outlined,
-                            color: Color(0xFF1E3A8A),
-                          ),
-                          onPressed: _openLocationManager,
-                        ),
-                        if (_isOwnProfile && !_isGuest())
-                          IconButton(
-                            icon: const Icon(
-                              Icons.favorite_outline,
-                              color: Color(0xFF1E3A8A),
-                            ),
-                            onPressed: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const LikedProsPage(),
+              Center(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: isDesktop ? 1180 : double.infinity,
+                  ),
+                  child: RefreshIndicator(
+                    key: _refreshIndicatorKey,
+                    color: _kPrimaryBlue,
+                    onRefresh: _fetchUserData,
+                    child: NestedScrollView(
+                      headerSliverBuilder: (context, innerBoxIsScrolled) => [
+                        SliverAppBar(
+                          expandedHeight: isDesktop ? 320 : 450,
+                          pinned: true,
+                          stretch: true,
+                          backgroundColor: _kPageTint,
+                          actions: [
+                            IconButton(
+                              icon: const Icon(
+                                Icons.place_outlined,
+                                color: Color(0xFF1E3A8A),
                               ),
+                              onPressed: _openLocationManager,
                             ),
-                          ),
-                        IconButton(
-                          icon: const Icon(
-                            Icons.share_outlined,
-                            color: Color(0xFF1E3A8A),
-                          ),
-                          onPressed: () => _shareProfile(strings),
-                        ),
-                        if (!_isOwnProfile)
-                          IconButton(
-                            icon: Icon(
-                              _isFavorite
-                                  ? Icons.favorite
-                                  : Icons.favorite_border,
-                              color: _isFavorite
-                                  ? Colors.redAccent
-                                  : Colors.white,
-                            ),
-                            onPressed: _toggleFavorite,
-                          ),
-                        if (!_isOwnProfile)
-                          IconButton(
-                            tooltip:
-                                strings['report_user_title'] ?? "Report User",
-                            style: IconButton.styleFrom(
-                              backgroundColor: Colors.red.withValues(
-                                alpha: 0.18,
-                              ),
-                            ),
-                            icon: const Icon(
-                              Icons.flag_outlined,
-                              color: Colors.white,
-                            ),
-                            onPressed: () => _reportUser(strings),
-                          ),
-                        if (_isOwnProfile && !_isGuest())
-                          IconButton(
-                            icon: const Icon(
-                              Icons.settings_outlined,
-                              color: Color(0xFF1E3A8A),
-                            ),
-                            onPressed: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const SettingsPage(),
-                              ),
-                            ).then((_) => _fetchUserData()),
-                          ),
-                      ],
-                      flexibleSpace: FlexibleSpaceBar(
-                        stretchModes: const [
-                          StretchMode.zoomBackground,
-                          StretchMode.blurBackground,
-                        ],
-                        background: Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            Hero(
-                              tag:
-                                  widget.userId ??
-                                  (FirebaseAuth.instance.currentUser?.uid ??
-                                      'profile'),
-                              child: _profileImageUrl.isNotEmpty
-                                  ? CachedNetworkImage(
-                                      imageUrl: _profileImageUrl,
-                                      fit: BoxFit.cover,
-                                      placeholder: (context, url) => Container(
-                                        color: const Color(0xFFEAF5FF),
-                                      ),
-                                      errorWidget: (context, url, error) =>
-                                          const Icon(Icons.error),
-                                    )
-                                  : Container(
-                                      color: const Color(0xFFEAF5FF),
-                                      child: const Icon(
-                                        Icons.person,
-                                        size: 100,
-                                        color: Color(0xFF9CA3AF),
-                                      ),
-                                    ),
-                            ),
-                            Container(
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  begin: Alignment.topCenter,
-                                  end: Alignment.bottomCenter,
-                                  colors: [
-                                    Colors.transparent,
-                                    Colors.black.withValues(alpha: 0.2),
-                                    Colors.black.withValues(alpha: 0.8),
-                                  ],
+                            if (_isOwnProfile && !_isGuest())
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.favorite_outline,
+                                  color: Color(0xFF1E3A8A),
+                                ),
+                                onPressed: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const LikedProsPage(),
+                                  ),
                                 ),
                               ),
+                            IconButton(
+                              icon: const Icon(
+                                Icons.share_outlined,
+                                color: Color(0xFF1E3A8A),
+                              ),
+                              onPressed: () => _shareProfile(strings),
                             ),
-                            Positioned(
-                              bottom: 60,
-                              left: 24,
-                              right: 24,
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Flexible(
-                                        child: Text(
-                                          _userName,
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 30,
-                                            fontWeight: FontWeight.bold,
-                                            letterSpacing: -0.5,
-                                          ),
-                                        ),
-                                      ),
-                                      if (_userRole == 'worker')
-                                        const Padding(
-                                          padding: EdgeInsets.symmetric(
-                                            horizontal: 8,
-                                          ),
-                                          child: Icon(
-                                            Icons.verified,
-                                            color: Color(0xFF60A5FA),
-                                            size: 24,
-                                          ),
-                                        ),
-                                    ],
+                            if (!_isOwnProfile)
+                              IconButton(
+                                icon: Icon(
+                                  _isFavorite
+                                      ? Icons.favorite
+                                      : Icons.favorite_border,
+                                  color: _isFavorite
+                                      ? Colors.redAccent
+                                      : Colors.white,
+                                ),
+                                onPressed: _toggleFavorite,
+                              ),
+                            if (!_isOwnProfile)
+                              IconButton(
+                                tooltip:
+                                    strings['report_user_title'] ??
+                                    "Report User",
+                                style: IconButton.styleFrom(
+                                  backgroundColor: Colors.red.withValues(
+                                    alpha: 0.18,
                                   ),
-                                  const SizedBox(height: 6),
-                                  if (_userProfessions.isNotEmpty)
-                                    Text(
-                                      _localizedProfessionList(
-                                        localeCode,
-                                      ).join(' • '),
-                                      style: TextStyle(
-                                        color: Colors.white.withValues(
-                                          alpha: 0.9,
-                                        ),
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w400,
-                                      ),
-                                    ),
-                                  const SizedBox(height: 16),
-                                  Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      _buildStatItem(
-                                        _projects.length.toString(),
-                                        strings['projects']!,
-                                      ),
-                                      _buildStatItem(
-                                        _userReviews.length.toString(),
-                                        strings['reviews']!,
-                                      ),
-                                      _buildStatItem(
-                                        _viewsCount.toString(),
-                                        strings['views']!,
-                                      ),
-                                      if (_userReviews.isNotEmpty)
-                                        _buildStatItem(
-                                          _calculateAverageRating()
-                                              .toStringAsFixed(1),
-                                          strings['rating']!,
-                                        ),
-                                    ],
+                                ),
+                                icon: const Icon(
+                                  Icons.flag_outlined,
+                                  color: Colors.white,
+                                ),
+                                onPressed: () => _reportUser(strings),
+                              ),
+                            if (_isOwnProfile && !_isGuest())
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.settings_outlined,
+                                  color: Color(0xFF1E3A8A),
+                                ),
+                                onPressed: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const SettingsPage(),
                                   ),
-                                  const SizedBox(height: 16),
-                                  SingleChildScrollView(
-                                    scrollDirection: Axis.horizontal,
-                                    child: Row(
-                                      children: [
-                                        if (_isIdVerified)
-                                          _buildHeaderBadge(
-                                            Icons.assignment_ind,
-                                            strings['verified_id']!,
-                                            Colors.greenAccent,
+                                ).then((_) => _fetchUserData()),
+                              ),
+                          ],
+                          flexibleSpace: FlexibleSpaceBar(
+                            stretchModes: const [
+                              StretchMode.zoomBackground,
+                              StretchMode.blurBackground,
+                            ],
+                            background: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                Hero(
+                                  tag:
+                                      widget.userId ??
+                                      (FirebaseAuth.instance.currentUser?.uid ??
+                                          'profile'),
+                                  child: _profileImageUrl.isNotEmpty
+                                      ? CachedNetworkImage(
+                                          imageUrl: _profileImageUrl,
+                                          fit: BoxFit.cover,
+                                          placeholder: (context, url) =>
+                                              Container(
+                                                color: const Color(0xFFEAF5FF),
+                                              ),
+                                          errorWidget: (context, url, error) =>
+                                              const Icon(Icons.error),
+                                        )
+                                      : Container(
+                                          color: const Color(0xFFEAF5FF),
+                                          child: const Icon(
+                                            Icons.person,
+                                            size: 100,
+                                            color: Color(0xFF9CA3AF),
                                           ),
-                                        if (_isBusinessVerified)
-                                          _buildHeaderBadge(
-                                            Icons.business_center,
-                                            strings['verified_biz']!,
-                                            Colors.orangeAccent,
-                                          ),
-                                        if (_isInsured)
-                                          _buildHeaderBadge(
-                                            Icons.shield,
-                                            strings['insured']!,
-                                            Colors.blueAccent,
-                                          ),
+                                        ),
+                                ),
+                                Container(
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      begin: Alignment.topCenter,
+                                      end: Alignment.bottomCenter,
+                                      colors: [
+                                        Colors.transparent,
+                                        Colors.black.withValues(alpha: 0.2),
+                                        Colors.black.withValues(alpha: 0.8),
                                       ],
                                     ),
                                   ),
-                                ],
-                              ),
-                            ),
-                            Positioned(
-                              bottom: -1,
-                              left: 0,
-                              right: 0,
-                              child: Container(
-                                height: 30,
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withValues(alpha: 0.96),
-                                  borderRadius: BorderRadius.vertical(
-                                    top: Radius.circular(30),
+                                ),
+                                Positioned(
+                                  bottom: 60,
+                                  left: 24,
+                                  right: 24,
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Flexible(
+                                            child: Text(
+                                              _userName,
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 30,
+                                                fontWeight: FontWeight.bold,
+                                                letterSpacing: -0.5,
+                                              ),
+                                            ),
+                                          ),
+                                          if (_userRole == 'worker')
+                                            const Padding(
+                                              padding: EdgeInsets.symmetric(
+                                                horizontal: 8,
+                                              ),
+                                              child: Icon(
+                                                Icons.verified,
+                                                color: Color(0xFF60A5FA),
+                                                size: 24,
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 6),
+                                      if (_userProfessions.isNotEmpty)
+                                        Text(
+                                          _localizedProfessionList(
+                                            localeCode,
+                                          ).join(' • '),
+                                          style: TextStyle(
+                                            color: Colors.white.withValues(
+                                              alpha: 0.9,
+                                            ),
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w400,
+                                          ),
+                                        ),
+                                      const SizedBox(height: 16),
+                                      Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          _buildStatItem(
+                                            _projects.length.toString(),
+                                            strings['projects']!,
+                                          ),
+                                          _buildStatItem(
+                                            _userReviews.length.toString(),
+                                            strings['reviews']!,
+                                          ),
+                                          _buildStatItem(
+                                            _viewsCount.toString(),
+                                            strings['views']!,
+                                          ),
+                                          if (_userReviews.isNotEmpty)
+                                            _buildStatItem(
+                                              _calculateAverageRating()
+                                                  .toStringAsFixed(1),
+                                              strings['rating']!,
+                                            ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 16),
+                                      SingleChildScrollView(
+                                        scrollDirection: Axis.horizontal,
+                                        child: Row(
+                                          children: [
+                                            if (_isIdVerified)
+                                              _buildHeaderBadge(
+                                                Icons.assignment_ind,
+                                                strings['verified_id']!,
+                                                Colors.greenAccent,
+                                              ),
+                                            if (_isBusinessVerified)
+                                              _buildHeaderBadge(
+                                                Icons.business_center,
+                                                strings['verified_biz']!,
+                                                Colors.orangeAccent,
+                                              ),
+                                            if (_isInsured)
+                                              _buildHeaderBadge(
+                                                Icons.shield,
+                                                strings['insured']!,
+                                                Colors.blueAccent,
+                                              ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
-                              ),
+                                Positioned(
+                                  bottom: -1,
+                                  left: 0,
+                                  right: 0,
+                                  child: Container(
+                                    height: 30,
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withValues(
+                                        alpha: 0.96,
+                                      ),
+                                      borderRadius: BorderRadius.vertical(
+                                        top: Radius.circular(30),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    SliverPersistentHeader(
-                      pinned: true,
-                      delegate: _SliverAppBarDelegate(
-                        TabBar(
-                          controller: _tabController,
-                          isScrollable: false,
-                          indicatorColor: _kPrimaryBlue,
-                          indicatorWeight: 3,
-                          indicatorSize: TabBarIndicatorSize.label,
-                          labelColor: _kPrimaryBlue,
-                          unselectedLabelColor: const Color(0xFF9CA3AF),
-                          labelStyle: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
                           ),
-                          tabs: _buildTabs(strings),
+                        ),
+                        SliverPersistentHeader(
+                          pinned: true,
+                          delegate: _SliverAppBarDelegate(
+                            TabBar(
+                              controller: _tabController,
+                              isScrollable: false,
+                              indicatorColor: _kPrimaryBlue,
+                              indicatorWeight: 3,
+                              indicatorSize: TabBarIndicatorSize.label,
+                              labelColor: _kPrimaryBlue,
+                              unselectedLabelColor: const Color(0xFF9CA3AF),
+                              labelStyle: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                              ),
+                              tabs: _buildTabs(strings),
+                            ),
+                          ),
+                        ),
+                      ],
+                      body: Container(
+                        color: Colors.white.withValues(alpha: 0.72),
+                        child: TabBarView(
+                          controller: _tabController,
+                          children: _buildTabViews(strings, localeCode),
                         ),
                       ),
-                    ),
-                  ],
-                  body: Container(
-                    color: Colors.white.withValues(alpha: 0.72),
-                    child: TabBarView(
-                      controller: _tabController,
-                      children: _buildTabViews(strings, localeCode),
                     ),
                   ),
                 ),
@@ -2047,14 +2060,17 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
     }
 
     bool canAdd = _isOwnProfile;
+    final width = MediaQuery.sizeOf(context).width;
+    final isDesktop = width >= 1100;
+    final columns = isDesktop ? (width >= 1380 ? 4 : 3) : 2;
 
     return GridView.builder(
-      padding: const EdgeInsets.all(20),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        crossAxisSpacing: 16,
-        mainAxisSpacing: 16,
-        childAspectRatio: 0.85,
+      padding: EdgeInsets.all(isDesktop ? 28 : 20),
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: columns,
+        crossAxisSpacing: isDesktop ? 20 : 16,
+        mainAxisSpacing: isDesktop ? 20 : 16,
+        childAspectRatio: isDesktop ? 1.08 : 0.85,
       ),
       physics: const AlwaysScrollableScrollPhysics(),
       itemCount: _projects.length + (canAdd ? 1 : 0),
@@ -2511,6 +2527,8 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
   Widget _buildAboutSection(Map<String, String> strings) {
     final currentUserId =
         widget.userId ?? FirebaseAuth.instance.currentUser?.uid;
+    final width = MediaQuery.sizeOf(context).width;
+    final isDesktop = width >= 1100;
     final age = _calculateAge(_dateOfBirth);
     final localeCode = Provider.of<LanguageProvider>(
       context,
@@ -2560,7 +2578,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
     final hasBio = _bio.trim().isNotEmpty;
     return SingleChildScrollView(
       controller: _aboutScrollController,
-      padding: const EdgeInsets.all(24),
+      padding: EdgeInsets.all(isDesktop ? 32 : 24),
       physics: const AlwaysScrollableScrollPhysics(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2607,10 +2625,10 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
               GridView.count(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
-                crossAxisCount: 2,
-                crossAxisSpacing: 16,
-                mainAxisSpacing: 16,
-                childAspectRatio: 1.5,
+                crossAxisCount: isDesktop ? 3 : 2,
+                crossAxisSpacing: isDesktop ? 18 : 16,
+                mainAxisSpacing: isDesktop ? 18 : 16,
+                childAspectRatio: isDesktop ? 2.25 : 1.5,
                 children: [
                   if (_hasActiveWorkerSubscription)
                     _buildModernToolCard(

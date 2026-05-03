@@ -398,14 +398,22 @@ class AuthWrapper extends StatefulWidget {
 }
 
 class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
+  StreamSubscription<User?>? _authStateSubscription;
+  User? _currentUser;
+  bool _hasAuthState = false;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _authStateSubscription = FirebaseAuth.instance.authStateChanges().listen(
+      _handleAuthStateChanged,
+    );
   }
 
   @override
   void dispose() {
+    _authStateSubscription?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -417,30 +425,29 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
     }
   }
 
+  Future<void> _handleAuthStateChanged(User? user) async {
+    if (!mounted) return;
+
+    setState(() {
+      _currentUser = user;
+      _hasAuthState = true;
+    });
+
+    if (user != null) {
+      await SubscriptionAccessService.refreshCurrentUserStateInBackground();
+      NotificationService.startListening();
+    } else {
+      NotificationService.stopListening();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<User?>(
-      stream: FirebaseAuth.instance.authStateChanges(),
-      builder: (context, snapshot) {
-        // 1. Loading State: Display custom SplashScreen while Firebase is checking auth status.
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const SplashScreen();
-        }
+    if (!_hasAuthState) {
+      return const SplashScreen();
+    }
 
-        final user = snapshot.data;
-
-        // 2. Authenticated State: Navigate to the Home Page.
-        if (user != null) {
-          SubscriptionAccessService.refreshCurrentUserStateInBackground();
-          NotificationService.startListening();
-          return const MyHomePage();
-        }
-
-        // 3. Unauthenticated State: Navigate to the Sign In Page.
-        NotificationService.stopListening();
-        return const SignInPage();
-      },
-    );
+    return _currentUser != null ? const MyHomePage() : const SignInPage();
   }
 }
 
@@ -626,10 +633,10 @@ class _MyHomePageState extends State<MyHomePage> {
           child: Center(
             child: ConstrainedBox(
               constraints: BoxConstraints(
-                maxWidth: isWide ? 1180 : double.infinity,
+                maxWidth: isWide ? 1440 : double.infinity,
               ),
               child: Padding(
-                padding: EdgeInsets.symmetric(horizontal: isWide ? 24 : 0),
+                padding: EdgeInsets.symmetric(horizontal: isWide ? 32 : 0),
                 child: AnimatedSwitcher(
                   duration: const Duration(milliseconds: 260),
                   switchInCurve: Curves.easeOutCubic,
@@ -679,7 +686,7 @@ class _MyHomePageState extends State<MyHomePage> {
           bottom: false,
           child: Center(
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 1180),
+              constraints: const BoxConstraints(maxWidth: 1440),
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 24),
                 child: Row(

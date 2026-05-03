@@ -216,6 +216,135 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
           'delete_feedback_skip': 'דלג',
           'delete_feedback_send': 'שלח',
           'delete_feedback_sent': 'תודה על המשוב',
+          'change_language': 'שנה שפה',
+          'verification_failed': 'האימות נכשל: {msg}',
+          'generic_error': 'שגיאה: {err}',
+          'invalid_code_error': 'קוד לא תקין או אירעה שגיאה',
+          'sign_in_error': 'שגיאת התחברות: {err}',
+        };
+      case 'ar':
+        return {
+          'welcome': 'مرحبًا',
+          'subtitle': 'أدخل رقم هاتفك وأكد رمز SMS.',
+          'access': 'وصول احترافي',
+          'signin_title': 'تسجيل الدخول',
+          'signin_subtitle': 'اختر أسرع طريقة للمتابعة.',
+          'phone_label': 'رقم الهاتف',
+          'phone_hint': 'مثال: 0501234567',
+          'get_code': 'إرسال رمز التحقق',
+          'enter_code': 'أدخل رمز SMS',
+          'verify': 'تحقق وسجّل الدخول',
+          'or': 'أو',
+          'guest': 'المتابعة كضيف',
+          'signup': 'إنشاء حساب',
+          'no_account': 'ليس لديك حساب؟ ',
+          'not_registered_title': 'المستخدم غير مسجل',
+          'not_registered_body':
+              'رقم الهاتف الذي أدخلته غير مسجل. هل تريد إنشاء حساب؟',
+          'ok': 'موافق',
+          'invalid_phone': 'يرجى إدخال رقم هاتف إسرائيلي صالح (05XXXXXXXX)',
+          'edit_phone': 'تعديل رقم الهاتف',
+          'secure_title': 'تسجيل دخول آمن',
+          'secure_body': 'تحقق عبر الهاتف مصمم للوصول الموثوق.',
+          'mobile_title': 'سريع على الهاتف',
+          'mobile_body': 'مُحسّن للإدخال السريع والإجراءات الواضحة.',
+          'guest_title': 'خيار الضيف',
+          'guest_body': 'تصفح فورًا بدون حساب كامل.',
+          'delete_feedback_title': 'أخبرنا بما حدث',
+          'delete_feedback_body':
+              'تم حذف حسابك. إذا كان لديك وقت، أخبرنا لماذا غادرت حتى نتمكن من تحسين Hiro.',
+          'delete_feedback_hint': 'ما هو السبب الرئيسي؟',
+          'delete_feedback_skip': 'تخطي',
+          'delete_feedback_send': 'إرسال',
+          'delete_feedback_sent': 'شكرًا على ملاحظتك',
+          'change_language': 'تغيير اللغة',
+          'verification_failed': 'فشل التحقق: {msg}',
+          'generic_error': 'خطأ: {err}',
+          'invalid_code_error': 'رمز غير صالح أو حدث خطأ',
+          'sign_in_error': 'خطأ في تسجيل الدخول: {err}',
+        };
+      case 'ru':
+        return {
+          'welcome': 'Добро пожаловать',
+          'subtitle': 'Введите номер телефона и подтвердите SMS-код.',
+          'access': 'Профессиональный доступ',
+          'signin_title': 'Вход',
+          'signin_subtitle': 'Выберите самый быстрый способ продолжить.',
+          'phone_label': 'Номер телефона',
+          'phone_hint': 'например: 0501234567',
+          'get_code': 'Отправить код подтверждения',
+          'enter_code': 'Введите SMS-код',
+          'verify': 'Подтвердить и войти',
+          'or': 'или',
+          'guest': 'Продолжить как гость',
+          'signup': 'Регистрация',
+          'no_account': 'Нет аккаунта? ',
+          'not_registered_title': 'Пользователь не зарегистрирован',
+          'not_registered_body':
+              'Введённый номер телефона не зарегистрирован. Хотите зарегистрироваться?',
+          'ok': 'OK',
+          'invalid_phone':
+              'Введите действительный израильский номер телефона (05XXXXXXXX)',
+          'edit_phone': 'Изменить номер телефона',
+          'secure_title': 'Безопасный вход',
+          'secure_body': 'Проверка по телефону для надежного доступа.',
+          'mobile_title': 'Быстро на телефоне',
+          'mobile_body':
+              'Оптимизировано для быстрого ввода и понятных действий.',
+          'guest_title': 'Гостевой режим',
+          'guest_body': 'Начните просмотр без полного аккаунта.',
+          'delete_feedback_title': 'Расскажите, что произошло',
+          'delete_feedback_body':
+              'Ваш аккаунт удалён. Если у вас есть минутка, расскажите, почему вы ушли, чтобы мы могли улучшить Hiro.',
+          'delete_feedback_hint': 'В чем была основная причина?',
+          'delete_feedback_skip': 'Пропустить',
+          'delete_feedback_send': 'Отправить',
+          'delete_feedback_sent': 'Спасибо за отзыв',
+          'change_language': 'Изменить язык',
+          'verification_failed': 'Ошибка подтверждения: {msg}',
+          'generic_error': 'Ошибка: {err}',
+          'invalid_code_error': 'Неверный код или произошла ошибка',
+          'sign_in_error': 'Ошибка входа: {err}',
+        };
+      case 'am':
+        return {
+          'welcome': 'እንኳን ደህና መጡ',
+          'subtitle': 'የስልክ ቁጥርዎን ያስገቡ እና የSMS ኮድን ያረጋግጡ።',
+          'access': 'ሙያዊ መዳረሻ',
+          'signin_title': 'መግቢያ',
+          'signin_subtitle': 'ለመቀጠል በጣም ፈጣኑን መንገድ ይምረጡ።',
+          'phone_label': 'የስልክ ቁጥር',
+          'phone_hint': 'ለምሳሌ፡ 0501234567',
+          'get_code': 'የማረጋገጫ ኮድ ላክ',
+          'enter_code': 'የSMS ኮድ ያስገቡ',
+          'verify': 'ያረጋግጡ እና ይግቡ',
+          'or': 'ወይም',
+          'guest': 'እንደ እንግዳ ቀጥል',
+          'signup': 'መመዝገብ',
+          'no_account': 'መለያ የለዎትም? ',
+          'not_registered_title': 'ተጠቃሚው አልተመዘገበም',
+          'not_registered_body': 'ያስገቡት የስልክ ቁጥር አልተመዘገበም። መመዝገብ ይፈልጋሉ?',
+          'ok': 'እሺ',
+          'invalid_phone': 'እባክዎ ትክክለኛ የእስራኤል የስልክ ቁጥር ያስገቡ (05XXXXXXXX)',
+          'edit_phone': 'የስልክ ቁጥር ያስተካክሉ',
+          'secure_title': 'ደህንነቱ የተጠበቀ መግቢያ',
+          'secure_body': 'በስልክ የሚደረግ ማረጋገጫ ለታማኝ መዳረሻ።',
+          'mobile_title': 'በሞባይል ፈጣን',
+          'mobile_body': 'ለፈጣን ግቤት እና ግልጽ እርምጃዎች የተመቻቸ።',
+          'guest_title': 'የእንግዳ አማራጭ',
+          'guest_body': 'ያለ ሙሉ መለያ በቀጥታ ይጀምሩ።',
+          'delete_feedback_title': 'የሆነውን ንገሩን',
+          'delete_feedback_body':
+              'መለያዎ ተሰርዟል። ካለዎት ትንሽ ጊዜ ምክንያቱን ያካፍሉን እንዲሁ Hiroን እንሻሻል።',
+          'delete_feedback_hint': 'ዋናው ምክንያት ምን ነበር?',
+          'delete_feedback_skip': 'ዝለል',
+          'delete_feedback_send': 'ላክ',
+          'delete_feedback_sent': 'ለአስተያየትዎ እናመሰግናለን',
+          'change_language': 'ቋንቋ ቀይር',
+          'verification_failed': 'ማረጋገጫ አልተሳካም: {msg}',
+          'generic_error': 'ስህተት: {err}',
+          'invalid_code_error': 'ልክ ያልሆነ ኮድ ወይም ስህተት ተከሰተ',
+          'sign_in_error': 'የመግቢያ ስህተት: {err}',
         };
       default:
         return {
@@ -253,6 +382,11 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
           'delete_feedback_skip': 'Skip',
           'delete_feedback_send': 'Send',
           'delete_feedback_sent': 'Thanks for the feedback',
+          'change_language': 'Change language',
+          'verification_failed': 'Verification Failed: {msg}',
+          'generic_error': 'Error: {err}',
+          'invalid_code_error': 'Invalid code or an error occurred',
+          'sign_in_error': 'Sign in error: {err}',
         };
     }
   }
@@ -472,7 +606,14 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
         verificationFailed: (e) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text("Verification Failed: ${e.message}")),
+              SnackBar(
+                content: Text(
+                  strings['verification_failed']!.replaceAll(
+                    '{msg}',
+                    e.message ?? '',
+                  ),
+                ),
+              ),
             );
             setState(() => _loading = false);
           }
@@ -493,14 +634,19 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
     } catch (e) {
       if (mounted) {
         setState(() => _loading = false);
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text("Error: $e")));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              strings['generic_error']!.replaceAll('{err}', e.toString()),
+            ),
+          ),
+        );
       }
     }
   }
 
   Future<void> _verifyCode() async {
+    final strings = _getLocalizedStrings(context);
     if (_codeController.text.isEmpty) return;
     setState(() => _loading = true);
     try {
@@ -511,9 +657,9 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
       await _signInAndCheckRegistration(credential);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Invalid code or an error occurred")),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(strings['invalid_code_error']!)));
         setState(() => _loading = false);
       }
     }
@@ -588,9 +734,13 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
     } catch (e) {
       debugPrint("SIGN IN ERROR: $e");
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text("Sign in error: $e")));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              strings['sign_in_error']!.replaceAll('{err}', e.toString()),
+            ),
+          ),
+        );
         setState(() => _loading = false);
       }
     }
@@ -667,12 +817,183 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
                     ),
                   ),
                 ),
+                Positioned(
+                  top: 0,
+                  right: 0,
+                  child: SafeArea(
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 10, right: 14),
+                      child: _buildLanguageButton(context),
+                    ),
+                  ),
+                ),
               ],
             );
           },
         ),
       ),
     );
+  }
+
+  Widget _buildLanguageButton(BuildContext context) {
+    final strings = _getLocalizedStrings(context);
+    final localeCode = Provider.of<LanguageProvider>(
+      context,
+    ).locale.languageCode;
+    final currentLabel = _languageShortLabel(localeCode);
+
+    return Theme(
+      data: Theme.of(context).copyWith(
+        popupMenuTheme: PopupMenuThemeData(
+          color: Colors.white,
+          surfaceTintColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+        ),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: PopupMenuButton<String>(
+          tooltip: strings['change_language']!,
+          offset: const Offset(0, 12),
+          onSelected: (code) {
+            Provider.of<LanguageProvider>(
+              context,
+              listen: false,
+            ).setLocale(code);
+          },
+          itemBuilder: (context) => [
+            _buildLanguageMenuItem(
+              value: 'en',
+              label: 'English',
+              currentCode: localeCode,
+            ),
+            _buildLanguageMenuItem(
+              value: 'he',
+              label: 'עברית',
+              currentCode: localeCode,
+            ),
+            _buildLanguageMenuItem(
+              value: 'ar',
+              label: 'العربية',
+              currentCode: localeCode,
+            ),
+            _buildLanguageMenuItem(
+              value: 'ru',
+              label: 'Русский',
+              currentCode: localeCode,
+            ),
+            _buildLanguageMenuItem(
+              value: 'am',
+              label: 'አማርኛ',
+              currentCode: localeCode,
+            ),
+          ],
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOutCubic,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  Colors.white.withValues(alpha: 0.96),
+                  const Color(0xFFF4F8FF).withValues(alpha: 0.96),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.98)),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF0F172A).withValues(alpha: 0.08),
+                  blurRadius: 20,
+                  offset: const Offset(0, 10),
+                ),
+              ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.language_rounded,
+                  size: 18,
+                  color: Color(0xFF1976D2),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  currentLabel,
+                  style: const TextStyle(
+                    color: Color(0xFF0F172A),
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.1,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                const Icon(
+                  Icons.expand_more_rounded,
+                  size: 18,
+                  color: Color(0xFF64748B),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  PopupMenuItem<String> _buildLanguageMenuItem({
+    required String value,
+    required String label,
+    required String currentCode,
+  }) {
+    final isSelected = value == currentCode;
+    return PopupMenuItem<String>(
+      value: value,
+      height: 48,
+      child: Row(
+        children: [
+          Icon(
+            isSelected ? Icons.check_circle_rounded : Icons.circle_outlined,
+            size: 18,
+            color: isSelected
+                ? const Color(0xFF1976D2)
+                : const Color(0xFF94A3B8),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                color: isSelected
+                    ? const Color(0xFF0F172A)
+                    : const Color(0xFF334155),
+                fontSize: 14,
+                fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _languageShortLabel(String localeCode) {
+    switch (localeCode) {
+      case 'he':
+        return 'HE';
+      case 'ar':
+        return 'AR';
+      case 'ru':
+        return 'RU';
+      case 'am':
+        return 'AM';
+      default:
+        return 'EN';
+    }
   }
 
   Widget _buildWideLayout(Map<String, String> strings, bool isRtl) {
@@ -830,25 +1151,31 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
           ),
         ],
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(
-            Icons.auto_awesome_rounded,
-            color: Color(0xFF1976D2),
-            size: 18,
-          ),
-          const SizedBox(width: 10),
-          Text(
-            (strings['access'] ?? 'Professional Access').toUpperCase(),
-            style: const TextStyle(
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.centerLeft,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.auto_awesome_rounded,
               color: Color(0xFF1976D2),
-              fontSize: 13,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 4,
+              size: 18,
             ),
-          ),
-        ],
+            const SizedBox(width: 10),
+            Text(
+              (strings['access'] ?? 'Professional Access').toUpperCase(),
+              maxLines: 1,
+              softWrap: false,
+              style: const TextStyle(
+                color: Color(0xFF1976D2),
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 2,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

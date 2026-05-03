@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 import 'package:in_app_purchase_android/in_app_purchase_android.dart';
 import 'package:in_app_purchase_storekit/in_app_purchase_storekit.dart';
+import 'package:in_app_purchase_storekit/store_kit_wrappers.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -84,6 +85,11 @@ class _SubscriptionPageState extends State<SubscriptionPage>
   static const String _appleStandardEulaUrl =
       'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/';
 
+  bool get _isApplePlatform =>
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.iOS ||
+          defaultTargetPlatform == TargetPlatform.macOS);
+
   Set<String> get _storeProductIds {
     if (!kIsWeb &&
         (defaultTargetPlatform == TargetPlatform.iOS ||
@@ -127,16 +133,34 @@ class _SubscriptionPageState extends State<SubscriptionPage>
       onDone: () => _subscription.cancel(),
       onError: (error) => debugPrint("Purchase Stream Error: $error"),
     );
+    unawaited(_configureStoreKitIfNeeded());
     _initStoreInfo();
     _syncSubscriptionStateFromGooglePlay();
   }
 
   @override
   void dispose() {
+    unawaited(_disposeStoreKitIfNeeded());
     _introController?.dispose();
     _backgroundController?.dispose();
     _subscription.cancel();
     super.dispose();
+  }
+
+  Future<void> _configureStoreKitIfNeeded() async {
+    if (!_isApplePlatform) return;
+
+    final iosPlatformAddition = _inAppPurchase
+        .getPlatformAddition<InAppPurchaseStoreKitPlatformAddition>();
+    await iosPlatformAddition.setDelegate(_AppStorePaymentQueueDelegate());
+  }
+
+  Future<void> _disposeStoreKitIfNeeded() async {
+    if (!_isApplePlatform) return;
+
+    final iosPlatformAddition = _inAppPurchase
+        .getPlatformAddition<InAppPurchaseStoreKitPlatformAddition>();
+    await iosPlatformAddition.setDelegate(null);
   }
 
   Future<void> _initStoreInfo() async {
@@ -280,12 +304,21 @@ class _SubscriptionPageState extends State<SubscriptionPage>
   }
 
   Future<void> _handleSubscriptionOwnedByAnotherAccount() async {
-    await _refreshLinkedAccountNotice();
+    if (!_isApplePlatform) {
+      await _refreshLinkedAccountNotice();
+    } else if (mounted) {
+      setState(() {
+        _storeNotice =
+            'חשבון App Store הזה כבר מחזיק מנוי Hiro שמקושר למספר טלפון אחר. המנוי זמין רק בחשבון המקורי.';
+      });
+    }
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
+      SnackBar(
         content: Text(
-          'חשבון Google Play הזה כבר מחזיק מנוי Hiro שמקושר לחשבון אחר.',
+          _isApplePlatform
+              ? 'חשבון App Store הזה כבר מחזיק מנוי Hiro שמקושר לחשבון אחר.'
+              : 'חשבון Google Play הזה כבר מחזיק מנוי Hiro שמקושר לחשבון אחר.',
         ),
       ),
     );
@@ -299,8 +332,23 @@ class _SubscriptionPageState extends State<SubscriptionPage>
   Future<void> _completeSubscription({
     required PurchaseDetails purchaseDetails,
   }) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final ownerUid =
+        await SubscriptionAccessService.findSubscriptionOwnerUidForPurchase(
+          purchaseDetails,
+        );
+    if (ownerUid != null && ownerUid != user.uid) {
+      await _handleSubscriptionOwnedByAnotherAccount();
+      return;
+    }
+
     final accountToken =
         await SubscriptionAccessService.ensureCurrentUserSubscriptionAccountToken();
+    final ownershipKey = SubscriptionAccessService.ownershipKeyForPurchase(
+      purchaseDetails,
+    );
     if (widget.isNewRegistration) {
       final now = DateTime.now();
       _newRegistrationSubscriptionData = {
@@ -319,6 +367,10 @@ class _SubscriptionPageState extends State<SubscriptionPage>
         'subscriptionTransactionDate': purchaseDetails.transactionDate,
         'subscriptionAccountToken': accountToken,
       };
+      if (ownershipKey != null) {
+        _newRegistrationSubscriptionData!['subscriptionOwnershipKey'] =
+            ownershipKey;
+      }
       await _savePurchaseMetadata(purchaseDetails);
       _showSuccessDialog(isNewReg: true);
     } else {
@@ -345,6 +397,9 @@ class _SubscriptionPageState extends State<SubscriptionPage>
       final now = DateTime.now();
       final accountToken =
           await SubscriptionAccessService.ensureCurrentUserSubscriptionAccountToken();
+      final ownershipKey = SubscriptionAccessService.ownershipKeyForPurchase(
+        purchaseDetails,
+      );
 
       // Fetch existing user data from unified 'users' collection
       final userDoc = await firestore.collection('users').doc(user.uid).get();
@@ -370,6 +425,9 @@ class _SubscriptionPageState extends State<SubscriptionPage>
         ),
         'subscriptionAccountToken': accountToken,
       });
+      if (ownershipKey != null) {
+        userData['subscriptionOwnershipKey'] = ownershipKey;
+      }
 
       if (widget.pendingUserData != null) {
         userData.addAll(widget.pendingUserData!);
@@ -417,6 +475,10 @@ class _SubscriptionPageState extends State<SubscriptionPage>
           'verificationToken':
               purchaseDetails.verificationData.serverVerificationData,
           'subscriptionAccountToken': accountToken,
+          'subscriptionOwnershipKey':
+              SubscriptionAccessService.ownershipKeyForPurchase(
+                purchaseDetails,
+              ),
           'createdAt': FieldValue.serverTimestamp(),
         });
   }
@@ -487,14 +549,36 @@ class _SubscriptionPageState extends State<SubscriptionPage>
       final accountToken = user == null
           ? null
           : await SubscriptionAccessService.ensureCurrentUserSubscriptionAccountToken();
+
+      if (_isApplePlatform) {
+        final iosPlatformAddition = _inAppPurchase
+            .getPlatformAddition<InAppPurchaseStoreKitPlatformAddition>();
+        // Make sure App Store transactions and subscription state are up to date
+        // before asking Flutter IAP to replay restored purchases.
+        await iosPlatformAddition.sync();
+      }
+
       await _inAppPurchase.restorePurchases(applicationUserName: accountToken);
+
+      if (_isApplePlatform) {
+        final iosPlatformAddition = _inAppPurchase
+            .getPlatformAddition<InAppPurchaseStoreKitPlatformAddition>();
+        await iosPlatformAddition.sync();
+      }
+
       await _syncSubscriptionStateFromGooglePlayWithClaim(
         allowClaimUnownedPurchase: true,
       );
       if (mounted) {
         setState(() => _isPurchasing = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('שחזור רכישות הופעל. בודקים זכאות...')),
+          SnackBar(
+            content: Text(
+              _isApplePlatform
+                  ? 'שחזור רכישות הופעל מול App Store. בודקים זכאות...'
+                  : 'שחזור רכישות הופעל. בודקים זכאות...',
+            ),
+          ),
         );
       }
     } catch (e) {
@@ -1962,6 +2046,21 @@ class _SubscriptionPageState extends State<SubscriptionPage>
         'subtitle': s['cap_4_sub']!,
       },
     ];
+  }
+}
+
+class _AppStorePaymentQueueDelegate implements SKPaymentQueueDelegateWrapper {
+  @override
+  bool shouldContinueTransaction(
+    SKPaymentTransactionWrapper transaction,
+    SKStorefrontWrapper storefront,
+  ) {
+    return true;
+  }
+
+  @override
+  bool shouldShowPriceConsent() {
+    return true;
   }
 }
 

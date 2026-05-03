@@ -671,12 +671,16 @@ class _EditProfilePageState extends State<EditProfilePage>
           tooltip: MaterialLocalizations.of(context).backButtonTooltip,
         ),
         const SizedBox(width: 8),
-        Text(
-          strings['title'] ?? 'Edit Profile',
-          style: const TextStyle(
-            color: Color(0xFF101827),
-            fontSize: 22,
-            fontWeight: FontWeight.w800,
+        Expanded(
+          child: Text(
+            strings['title'] ?? 'Edit Profile',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Color(0xFF101827),
+              fontSize: 22,
+              fontWeight: FontWeight.w800,
+            ),
           ),
         ),
       ],

@@ -3,6 +3,7 @@
     "source": "functions"
   },
   "hosting": {
+    "site": "hiro-service",
     "public": "build/web",
     "cleanUrls": true,
     "rewrites": [

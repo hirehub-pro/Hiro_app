@@ -344,7 +344,7 @@ class _SettingsPageState extends State<SettingsPage>
           'available_from': 'זמין מ-',
           'available_to': 'זמין עד',
           'select_off_days': 'בחר ימי חופש קבועים',
-          'days': 'א,ב,ג,ד,ה,ו,ש',
+          'days': '1,2,3,4,5,6,7',
           'permission_denied':
               'התראות חסומות בהגדרות המכשיר. האם תרצה לפתוח את ההגדרות?',
           'permission_controlled_by_phone':
@@ -373,7 +373,7 @@ class _SettingsPageState extends State<SettingsPage>
           'available_from': 'متاح من',
           'available_to': 'متاح حتى',
           'select_off_days': 'اختر أيام العطلة الثابتة',
-          'days': 'ح,ن,ث,ر,خ,ج,س',
+          'days': '1,2,3,4,5,6,7',
           'permission_denied':
               'الإشعارات محظورة في إعدادات الجهاز. هل تريد فتح الإعدادات؟',
           'permission_controlled_by_phone':
@@ -402,7 +402,7 @@ class _SettingsPageState extends State<SettingsPage>
           'available_from': 'Доступен с',
           'available_to': 'Доступен до',
           'select_off_days': 'Выберите постоянные выходные',
-          'days': 'Вс,Пн,Вт,Ср,Чт,Пт,Сб',
+          'days': '1,2,3,4,5,6,7',
           'permission_denied':
               'Уведомления заблокированы в настройках устройства. Открыть настройки?',
           'permission_controlled_by_phone':
@@ -431,7 +431,7 @@ class _SettingsPageState extends State<SettingsPage>
           'available_from': 'ዝግጁ ከ',
           'available_to': 'ዝግጁ እስከ',
           'select_off_days': 'ቋሚ የእረፍት ቀናትን ይምረጡ',
-          'days': 'እ,ሰ,ማ,ረ,ሐ,ዓ,ቅ',
+          'days': '1,2,3,4,5,6,7',
           'permission_denied': 'ማሳወቂያዎች በመሣሪያው ቅንብሮች ውስጥ ታግደዋል። ቅንብሮቹን ልክፈት?',
           'permission_controlled_by_phone':
               'ማሳወቂያዎችን ለማጥፋት በመሣሪያው ቅንብሮች ውስጥ የማሳወቂያ ፈቃዱን ይቀይሩ።',
@@ -459,7 +459,7 @@ class _SettingsPageState extends State<SettingsPage>
           'available_from': 'Available from',
           'available_to': 'Available to',
           'select_off_days': 'Select fixed days off',
-          'days': 'Su,Mo,Tu,We,Th,Fr,Sa',
+          'days': '1,2,3,4,5,6,7',
           'permission_denied':
               'Notifications are blocked in system settings. Would you like to open settings?',
           'permission_controlled_by_phone':

@@ -875,7 +875,7 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
           'desc_label': 'ספר על עצמך',
           'desc_helper':
               'כתוב בקצרה מה הניסיון שלך, באילו עבודות אתה מתמחה, ואיזה שירות אתה נותן.',
-          'desc_generate_button': 'יצירה אוטומטית',
+          'desc_generate_button': 'צור תיאור',
           'desc_assistant_title': 'יצירת תיאור אוטומטית',
           'desc_assistant_subtitle':
               'ענה על כמה שאלות קצרות, ו-Firebase AI יכין עבורך תיאור מקצועי שאפשר לערוך.',
@@ -926,10 +926,320 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
           'available_from': 'זמין מ-',
           'available_to': 'זמין עד',
           'select_off_days': 'בחר ימי חופש קבועים',
-          'days': 'א,ב,ג,ד,ה,ו,ש',
+          'days': '1,2,3,4,5,6,7',
           'radius_val': 'רדיוס: {val} ק"מ',
           'select_radius': 'בחר רדיוס על המפה',
           'edit_phone': 'ערוך מספר טלפון',
+          'phone_hint': 'לדוגמה: 0501234567',
+          'sms_failed': 'שליחת ה-SMS נכשלה: {msg}',
+          'auth_error': 'שגיאת אימות: {err}',
+          'db_error': 'שגיאת מסד נתונים: {err}',
+          'location_services_disabled': 'שירותי המיקום כבויים.',
+          'location_permissions_denied': 'הרשאות המיקום נדחו',
+          'location_permissions_denied_forever': 'הרשאות המיקום נדחו לצמיתות.',
+        };
+      case 'ar':
+        return {
+          'title': 'إنشاء حساب',
+          'subtitle': 'أنشئ ملفًا موثقًا وواصل إلى Hiro.',
+          'access': 'تسجيل آمن',
+          'profile_card_title': 'تفاصيل الحساب',
+          'profile_card_subtitle': 'بضع تفاصيل سريعة قبل التحقق من الهاتف.',
+          'phone_card_title': 'التحقق عبر الهاتف',
+          'phone_card_subtitle': 'أدخل رمز SMS لإكمال إنشاء الحساب.',
+          'feature_profile_title': 'ملف واضح',
+          'feature_profile_body': 'تفاصيل أساسية تجهز حسابك.',
+          'feature_phone_title': 'تحقق سريع',
+          'feature_phone_body': 'رمز SMS قصير يحافظ على أمان الوصول.',
+          'feature_pro_title': 'جاهز للمحترفين',
+          'feature_pro_body': 'نطاق العمل، الساعات، والمهن في مسار واحد.',
+          'phone_label': 'رقم الهاتف',
+          'phone_subtitle': 'أدخل رقم هاتفك للتحقق والإكمال',
+          'send_code': 'إرسال رمز التحقق',
+          'verify_code': 'تحقق وأكمل',
+          'enter_code': 'أدخل رمز SMS',
+          'name_label': 'الاسم الكامل',
+          'email_label': 'البريد الإلكتروني (اختياري)',
+          'dob_label': 'تاريخ الميلاد',
+          'dob_hint': 'اختر تاريخ الميلاد',
+          'dob_required': 'تاريخ الميلاد مطلوب',
+          'town_label': 'المدينة',
+          'user_type': 'نوع المستخدم',
+          'normal': 'عميل',
+          'pro': 'محترف',
+          'professions': 'اختر المهن',
+          'spoken_languages': 'اللغات المحكية',
+          'spoken_languages_required': 'اختر لغة واحدة على الأقل',
+          'alt_phone': 'هاتف إضافي (اختياري)',
+          'desc_label': 'الوصف',
+          'desc_helper':
+              'اكتب ملخصًا قصيرًا عن خبرتك وتخصصاتك والخدمة التي تقدمها.',
+          'desc_generate_button': 'أنشئ وصفًا',
+          'desc_assistant_title': 'توليد الوصف',
+          'desc_assistant_subtitle':
+              'أجب عن بضع أسئلة قصيرة وسيقوم Firebase AI بإنشاء وصف مصقول يمكنك تعديله.',
+          'desc_assistant_section_background': 'الخلفية',
+          'desc_assistant_section_service': 'تفاصيل الخدمة',
+          'desc_assistant_validation': 'املأ جميع الحقول لتوليد الوصف.',
+          'desc_question_years': 'كم سنة من الخبرة لديك؟',
+          'desc_question_years_hint': 'مثال: 6',
+          'desc_question_specialties': 'ما تخصصك؟',
+          'desc_question_specialties_hint':
+              'مثال: إصلاحات كهربائية، تركيب، استكشاف الأعطال',
+          'desc_question_service_style': 'كيف تصف أسلوب خدمتك؟',
+          'desc_question_service_style_hint': 'مثال: ودود، دقيق، نظيف، موثوق',
+          'desc_question_things_you_do': 'اكتب عن الأشياء التي تقوم بها',
+          'desc_question_things_you_do_hint':
+              'مثال: تركيب، إصلاحات، صيانة، فحوصات',
+          'desc_question_things_you_dont_do':
+              'اكتب عن الأشياء التي لا تقوم بها',
+          'desc_question_things_you_dont_do_hint':
+              'مثال: لا أعمال طارئة، لا أعمال صناعية، لا اتصالات في عطلة نهاية الأسبوع',
+          'desc_generate_action': 'أنشئ بالذكاء الاصطناعي',
+          'desc_generate_loading': 'جارٍ التوليد...',
+          'desc_ai_generation_error':
+              'تعذر علينا توليد وصف الآن. تأكد من إعداد Firebase AI Logic ثم حاول مرة أخرى.',
+          'desc_generated_profession_fallback': 'مقدم خدمة',
+          'desc_generated_town': ' أعمل في منطقة {town}.',
+          'agree_prefix': 'أوافق على ',
+          'and': ' و',
+          'terms_link': 'شروط الاستخدام',
+          'privacy_link': 'سياسة الخصوصية',
+          'finish': 'المتابعة إلى التحقق من الهاتف',
+          'pay': 'المتابعة إلى الاشتراك',
+          'req': 'مطلوب',
+          'policy_err': 'يجب أن توافق على الشروط',
+          'invalid_phone': 'يرجى إدخال رقم هاتف إسرائيلي صالح (05XXXXXXXX)',
+          'error_verify': 'خطأ في التحقق من الرمز',
+          'search_hint': 'بحث...',
+          'terms_title': 'شروط الاستخدام',
+          'terms_content': 'شروط الاستخدام...',
+          'privacy_title': 'سياسة الخصوصية',
+          'privacy_content': 'سياسة الخصوصية...',
+          'cancel': 'إلغاء',
+          'close': 'إغلاق',
+          'current_loc': 'الموقع الحالي',
+          'pick_map': 'اختر من الخريطة',
+          'work_radius': 'نطاق العمل',
+          'hide_schedule': 'إخفاء الجدول عن الآخرين',
+          'working_hours': 'ساعات العمل',
+          'available_from': 'متاح من',
+          'available_to': 'متاح حتى',
+          'select_off_days': 'اختر أيام العطلة الثابتة',
+          'days': '1,2,3,4,5,6,7',
+          'radius_val': 'النطاق: {val} كم',
+          'select_radius': 'اختر النطاق على الخريطة',
+          'edit_phone': 'تعديل رقم الهاتف',
+          'phone_hint': 'مثال: 0501234567',
+          'sms_failed': 'فشل إرسال SMS: {msg}',
+          'auth_error': 'خطأ في المصادقة: {err}',
+          'db_error': 'خطأ في قاعدة البيانات: {err}',
+          'location_services_disabled': 'خدمات الموقع معطلة.',
+          'location_permissions_denied': 'تم رفض أذونات الموقع',
+          'location_permissions_denied_forever':
+              'تم رفض أذونات الموقع نهائيًا.',
+        };
+      case 'ru':
+        return {
+          'title': 'Создать аккаунт',
+          'subtitle': 'Создайте подтвержденный профиль и продолжайте в Hiro.',
+          'access': 'Безопасная регистрация',
+          'profile_card_title': 'Данные аккаунта',
+          'profile_card_subtitle':
+              'Несколько быстрых данных перед проверкой телефона.',
+          'phone_card_title': 'Проверка телефона',
+          'phone_card_subtitle':
+              'Введите SMS-код, чтобы завершить создание аккаунта.',
+          'feature_profile_title': 'Понятный профиль',
+          'feature_profile_body': 'Базовые данные, подготавливающие аккаунт.',
+          'feature_phone_title': 'Быстрая проверка',
+          'feature_phone_body':
+              'Короткий SMS-код обеспечивает надежный доступ.',
+          'feature_pro_title': 'Готово для профи',
+          'feature_pro_body': 'Радиус работы, часы и профессии в одном потоке.',
+          'phone_label': 'Номер телефона',
+          'phone_subtitle': 'Введите номер телефона для проверки и завершения',
+          'send_code': 'Отправить код подтверждения',
+          'verify_code': 'Подтвердить и завершить',
+          'enter_code': 'Введите SMS-код',
+          'name_label': 'Полное имя',
+          'email_label': 'Электронная почта (необязательно)',
+          'dob_label': 'Дата рождения',
+          'dob_hint': 'Выберите дату рождения',
+          'dob_required': 'Дата рождения обязательна',
+          'town_label': 'Город',
+          'user_type': 'Тип пользователя',
+          'normal': 'Клиент',
+          'pro': 'Профессионал',
+          'professions': 'Выберите профессии',
+          'spoken_languages': 'Разговорные языки',
+          'spoken_languages_required': 'Выберите хотя бы один язык',
+          'alt_phone': 'Дополнительный телефон (необязательно)',
+          'desc_label': 'Описание',
+          'desc_helper':
+              'Кратко опишите ваш опыт, специализацию и услуги, которые вы предоставляете.',
+          'desc_generate_button': 'Создать описание',
+          'desc_assistant_title': 'Генерация описания',
+          'desc_assistant_subtitle':
+              'Ответьте на несколько коротких вопросов, и Firebase AI создаст отредактируемое описание.',
+          'desc_assistant_section_background': 'Опыт и фон',
+          'desc_assistant_section_service': 'Детали услуги',
+          'desc_assistant_validation':
+              'Заполните все поля, чтобы сгенерировать описание.',
+          'desc_question_years': 'Сколько у вас лет опыта?',
+          'desc_question_years_hint': 'Пример: 6',
+          'desc_question_specialties': 'В чем вы специализируетесь?',
+          'desc_question_specialties_hint':
+              'Пример: электромонтаж, установка, поиск неисправностей',
+          'desc_question_service_style': 'Как вы описали бы свой стиль работы?',
+          'desc_question_service_style_hint':
+              'Пример: вежливый, точный, аккуратный, надежный',
+          'desc_question_things_you_do': 'Расскажите, что вы делаете',
+          'desc_question_things_you_do_hint':
+              'Пример: установка, ремонт, обслуживание, проверки',
+          'desc_question_things_you_dont_do': 'Расскажите, чего вы не делаете',
+          'desc_question_things_you_dont_do_hint':
+              'Пример: без срочных выездов, без промышленной работы, без звонков в выходные',
+          'desc_generate_action': 'Сгенерировать с AI',
+          'desc_generate_loading': 'Генерируется...',
+          'desc_ai_generation_error':
+              'Сейчас не удалось сгенерировать описание. Убедитесь, что Firebase AI Logic настроен, и попробуйте снова.',
+          'desc_generated_profession_fallback': 'специалист',
+          'desc_generated_town': ' Я работаю в районе {town}.',
+          'agree_prefix': 'Я согласен с ',
+          'and': ' и ',
+          'terms_link': 'Условиями использования',
+          'privacy_link': 'Политикой конфиденциальности',
+          'finish': 'Продолжить к проверке телефона',
+          'pay': 'Перейти к подписке',
+          'req': 'Обязательно',
+          'policy_err': 'Вы должны согласиться с условиями',
+          'invalid_phone':
+              'Введите действительный израильский номер телефона (05XXXXXXXX)',
+          'error_verify': 'Ошибка проверки кода',
+          'search_hint': 'Поиск...',
+          'terms_title': 'Условия использования',
+          'terms_content': 'Условия использования...',
+          'privacy_title': 'Политика конфиденциальности',
+          'privacy_content': 'Политика конфиденциальности...',
+          'cancel': 'Отмена',
+          'close': 'Закрыть',
+          'current_loc': 'Текущее местоположение',
+          'pick_map': 'Выбрать на карте',
+          'work_radius': 'Радиус работы',
+          'hide_schedule': 'Скрыть расписание от других',
+          'working_hours': 'Рабочие часы',
+          'available_from': 'Доступен с',
+          'available_to': 'Доступен до',
+          'select_off_days': 'Выберите фиксированные выходные дни',
+          'days': '1,2,3,4,5,6,7',
+          'radius_val': 'Радиус: {val} км',
+          'select_radius': 'Выберите радиус на карте',
+          'edit_phone': 'Изменить номер телефона',
+          'phone_hint': 'например: 0501234567',
+          'sms_failed': 'Ошибка SMS: {msg}',
+          'auth_error': 'Ошибка аутентификации: {err}',
+          'db_error': 'Ошибка базы данных: {err}',
+          'location_services_disabled': 'Службы геолокации отключены.',
+          'location_permissions_denied': 'Разрешение на геолокацию отклонено',
+          'location_permissions_denied_forever':
+              'Разрешение на геолокацию отклонено навсегда.',
+        };
+      case 'am':
+        return {
+          'title': 'መለያ ፍጠር',
+          'subtitle': 'የተረጋገጠ መገለጫ ፍጠሩ እና ወደ Hiro ይቀጥሉ።',
+          'access': 'ደህንነቱ የተጠበቀ ምዝገባ',
+          'profile_card_title': 'የመለያ ዝርዝሮች',
+          'profile_card_subtitle': 'የስልክ ማረጋገጫ በፊት ጥቂት ፈጣን ዝርዝሮች።',
+          'phone_card_title': 'የስልክ ማረጋገጫ',
+          'phone_card_subtitle': 'መለያዎን ለማጠናቀቅ የSMS ኮድ ያስገቡ።',
+          'feature_profile_title': 'ግልጽ መገለጫ',
+          'feature_profile_body': 'መለያዎን የሚያዘጋጁ መሠረታዊ ዝርዝሮች።',
+          'feature_phone_title': 'ፈጣን ማረጋገጫ',
+          'feature_phone_body': 'አጭር የSMS ኮድ የታማኝ መዳረሻን ይጠብቃል።',
+          'feature_pro_title': 'ለሙያዊዎች ዝግጁ',
+          'feature_pro_body': 'የስራ ክልል፣ ሰዓታት እና ሙያዎች በአንድ ሂደት።',
+          'phone_label': 'የስልክ ቁጥር',
+          'phone_subtitle': 'ለማረጋገጥ እና ለማጠናቀቅ የስልክ ቁጥርዎን ያስገቡ',
+          'send_code': 'የማረጋገጫ ኮድ ላክ',
+          'verify_code': 'ያረጋግጡ እና ያጠናቅቁ',
+          'enter_code': 'የSMS ኮድ ያስገቡ',
+          'name_label': 'ሙሉ ስም',
+          'email_label': 'ኢሜይል (አማራጭ)',
+          'dob_label': 'የትውልድ ቀን',
+          'dob_hint': 'የትውልድ ቀን ይምረጡ',
+          'dob_required': 'የትውልድ ቀን ያስፈልጋል',
+          'town_label': 'ከተማ',
+          'user_type': 'የተጠቃሚ አይነት',
+          'normal': 'ደንበኛ',
+          'pro': 'ባለሙያ',
+          'professions': 'ሙያዎችን ይምረጡ',
+          'spoken_languages': 'የሚነገሩ ቋንቋዎች',
+          'spoken_languages_required': 'ቢያንስ አንድ ቋንቋ ይምረጡ',
+          'alt_phone': 'ተጨማሪ ስልክ (አማራጭ)',
+          'desc_label': 'መግለጫ',
+          'desc_helper': 'ስለ ተሞክሮዎ ፣ ልዩነቶችዎ እና የሚሰጡት አገልግሎት አጭር ማጠቃለያ ይጻፉ።',
+          'desc_generate_button': 'መግለጫ ፍጠር',
+          'desc_assistant_title': 'መግለጫ ማዘጋጀት',
+          'desc_assistant_subtitle':
+              'ጥቂት አጭር ጥያቄዎችን ይመልሱ፣ Firebase AI የሚታረም መግለጫ ያቀርባል እና ማስተካከል ይችላሉ።',
+          'desc_assistant_section_background': 'ተሞክሮ እና ታሪክ',
+          'desc_assistant_section_service': 'የአገልግሎት ዝርዝሮች',
+          'desc_assistant_validation': 'መግለጫ ለመፍጠር ሁሉንም መስኮች ይሙሉ።',
+          'desc_question_years': 'ስንት ዓመት ተሞክሮ አለዎት?',
+          'desc_question_years_hint': 'ምሳሌ፡ 6',
+          'desc_question_specialties': 'በምን ይለያያሉ?',
+          'desc_question_specialties_hint': 'ምሳሌ፡ የኤሌክትሪክ ጥገና፣ መጫን፣ ችግኝ መፈለግ',
+          'desc_question_service_style': 'የአገልግሎትዎን ዘይቤ እንዴት ይገልጹታል?',
+          'desc_question_service_style_hint': 'ምሳሌ፡ ወዳጃዊ፣ ትክክለኛ፣ ንጹህ፣ ታማኝ',
+          'desc_question_things_you_do': 'የሚያደርጉትን ነገሮች ይጻፉ',
+          'desc_question_things_you_do_hint': 'ምሳሌ፡ መጫን፣ ጥገና፣ ጥገና ሥራ፣ ምርመራ',
+          'desc_question_things_you_dont_do': 'የማያደርጉትን ነገሮች ይጻፉ',
+          'desc_question_things_you_dont_do_hint':
+              'ምሳሌ፡ አስቸኳይ ስራ የለም፣ ኢንዱስትሪያል ስራ የለም፣ በሳምንት መጨረሻ ጥሪ የለም',
+          'desc_generate_action': 'በAI ፍጠር',
+          'desc_generate_loading': 'በመፍጠር ላይ...',
+          'desc_ai_generation_error':
+              'አሁን መግለጫ ማፍጠር አልቻልንም። Firebase AI Logic ተዘጋጅቶ መኖሩን ያረጋግጡ እና ድጋሚ ይሞክሩ።',
+          'desc_generated_profession_fallback': 'አገልግሎት ሰጪ',
+          'desc_generated_town': 'በ{town} አካባቢ እሰራለሁ።',
+          'agree_prefix': 'እስማማለሁ ',
+          'and': 'እና ',
+          'terms_link': 'የአጠቃቀም ውል',
+          'privacy_link': 'የግላዊነት ፖሊሲ',
+          'finish': 'ወደ የስልክ ማረጋገጫ ቀጥል',
+          'pay': 'ወደ ምዝገባ ቀጥል',
+          'req': 'ያስፈልጋል',
+          'policy_err': 'ከቃላቱ ጋር መስማማት አለብዎት',
+          'invalid_phone': 'እባክዎ ትክክለኛ የእስራኤል የስልክ ቁጥር ያስገቡ (05XXXXXXXX)',
+          'error_verify': 'የኮድ ማረጋገጫ ስህተት',
+          'search_hint': 'ፈልግ...',
+          'terms_title': 'የአጠቃቀም ውል',
+          'terms_content': 'የአጠቃቀም ውል...',
+          'privacy_title': 'የግላዊነት ፖሊሲ',
+          'privacy_content': 'የግላዊነት ፖሊሲ...',
+          'cancel': 'ሰርዝ',
+          'close': 'ዝጋ',
+          'current_loc': 'የአሁኑ ቦታ',
+          'pick_map': 'በካርታ ላይ ምረጥ',
+          'work_radius': 'የስራ ክልል',
+          'hide_schedule': 'መርሃ ግብርን ከሌሎች ሰዎች ደብቅ',
+          'working_hours': 'የስራ ሰዓታት',
+          'available_from': 'የሚገኝ ከ',
+          'available_to': 'የሚገኝ እስከ',
+          'select_off_days': 'ቋሚ እረፍት ቀናት ይምረጡ',
+          'days': '1,2,3,4,5,6,7',
+          'radius_val': 'ክልል: {val} ኪሜ',
+          'select_radius': 'በካርታ ላይ ክልል ይምረጡ',
+          'edit_phone': 'የስልክ ቁጥር ያስተካክሉ',
+          'phone_hint': 'ለምሳሌ፡ 0501234567',
+          'sms_failed': 'የSMS መላክ አልተሳካም: {msg}',
+          'auth_error': 'የማረጋገጫ ስህተት: {err}',
+          'db_error': 'የውሂብ ጎታ ስህተት: {err}',
+          'location_services_disabled': 'የቦታ አገልግሎቶች ተዘግተዋል።',
+          'location_permissions_denied': 'የቦታ ፈቃዶች ተከልክለዋል',
+          'location_permissions_denied_forever': 'የቦታ ፈቃዶች በቋሚነት ተከልክለዋል።',
         };
       default:
         return {
@@ -970,7 +1280,7 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
           'desc_label': 'Description',
           'desc_helper':
               'Write a short summary of your experience, specialties, and the service you provide.',
-          'desc_generate_button': 'Generate for me',
+          'desc_generate_button': 'Generate description',
           'desc_assistant_title': 'Generate Description',
           'desc_assistant_subtitle':
               'Answer a few short questions and Firebase AI will create a polished description you can edit.',
@@ -1026,10 +1336,18 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
           'available_from': 'Available from',
           'available_to': 'Available to',
           'select_off_days': 'Select fixed days off',
-          'days': 'Su,Mo,Tu,We,Th,Fr,Sa',
+          'days': '1,2,3,4,5,6,7',
           'radius_val': 'Radius: {val} km',
           'select_radius': 'Select radius on Map',
           'edit_phone': 'Edit Phone Number',
+          'phone_hint': 'e.g. 0501234567',
+          'sms_failed': 'SMS failed: {msg}',
+          'auth_error': 'Auth Error: {err}',
+          'db_error': 'Database Error: {err}',
+          'location_services_disabled': 'Location services are disabled.',
+          'location_permissions_denied': 'Location permissions are denied',
+          'location_permissions_denied_forever':
+              'Location permissions are permanently denied.',
         };
     }
   }
@@ -1102,9 +1420,13 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
         verificationFailed: (e) {
           if (mounted) {
             setState(() => _loading = false);
-            ScaffoldMessenger.of(
-              context,
-            ).showSnackBar(SnackBar(content: Text("SMS failed: ${e.message}")));
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  strings['sms_failed']!.replaceAll('{msg}', e.message ?? ''),
+                ),
+              ),
+            );
           }
         },
         codeSent: (verificationId, resendToken) {
@@ -1126,9 +1448,13 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
     } catch (e) {
       if (mounted) {
         setState(() => _loading = false);
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text("Auth Error: $e")));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              strings['auth_error']!.replaceAll('{err}', e.toString()),
+            ),
+          ),
+        );
       }
     }
   }
@@ -1219,21 +1545,22 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
   }
 
   Future<void> _getCurrentLocation() async {
+    final strings = _getLocalizedStrings(context);
     setState(() => _loading = true);
     try {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) throw 'Location services are disabled.';
+      if (!serviceEnabled) throw strings['location_services_disabled']!;
 
       LocationPermission permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
         if (permission == LocationPermission.denied) {
-          throw 'Location permissions are denied';
+          throw strings['location_permissions_denied']!;
         }
       }
 
       if (permission == LocationPermission.deniedForever) {
-        throw 'Location permissions are permanently denied.';
+        throw strings['location_permissions_denied_forever']!;
       }
 
       Position position = await Geolocator.getCurrentPosition();
@@ -1270,6 +1597,7 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
   }
 
   Future<void> _commitUserDataToDatabase({bool navigateToHome = true}) async {
+    final strings = _getLocalizedStrings(context);
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) {
@@ -1455,9 +1783,13 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
     } catch (e) {
       if (mounted) {
         setState(() => _loading = false);
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text("Database Error: $e")));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              strings['db_error']!.replaceAll('{err}', e.toString()),
+            ),
+          ),
+        );
       }
     }
   }
@@ -1771,25 +2103,31 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
           ),
         ],
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(
-            Icons.auto_awesome_rounded,
-            color: Color(0xFF1976D2),
-            size: 18,
-          ),
-          const SizedBox(width: 10),
-          Text(
-            strings['access']!.toUpperCase(),
-            style: const TextStyle(
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.centerLeft,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.auto_awesome_rounded,
               color: Color(0xFF1976D2),
-              fontSize: 13,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 4,
+              size: 18,
             ),
-          ),
-        ],
+            const SizedBox(width: 10),
+            Text(
+              strings['access']!.toUpperCase(),
+              maxLines: 1,
+              softWrap: false,
+              style: const TextStyle(
+                color: Color(0xFF1976D2),
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 2,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1895,7 +2233,7 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
             labelText: strings['phone_label']!,
             icon: Icons.phone_iphone_rounded,
             keyboardType: TextInputType.phone,
-            hintText: 'e.g. 0501234567',
+            hintText: strings['phone_hint'],
             enabled: !_codeSent,
           ),
           AnimatedSwitcher(
@@ -2502,7 +2840,7 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
   }
 
   Widget _buildScheduleSection(Map<String, String> strings) {
-    final dayNames = strings['days']!.split(',');
+    final dayNames = _parseDayNames(strings['days']);
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -2603,6 +2941,21 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
         ],
       ),
     );
+  }
+
+  List<String> _parseDayNames(String? rawDays) {
+    final fallback = const ['1', '2', '3', '4', '5', '6', '7'];
+    final parsed = (rawDays ?? '')
+        .split(RegExp(r'[,،，፣]'))
+        .map((day) => day.trim())
+        .where((day) => day.isNotEmpty)
+        .toList();
+
+    if (parsed.length >= 7) {
+      return parsed.take(7).toList();
+    }
+
+    return fallback;
   }
 
   Widget _buildMultiSelectProfessions(Map<String, String> strings) {

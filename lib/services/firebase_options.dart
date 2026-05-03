@@ -26,8 +26,8 @@ class DefaultFirebaseOptions {
     projectId: "hire-hub-fe6c4",
     storageBucket: "hire-hub-fe6c4.firebasestorage.app",
     messagingSenderId: "29257648718",
-    appId: "1:29257648718:web:40cec5d689067d9cb8111f",
-    measurementId: "G-66P0301100",
+    appId: "1:29257648718:web:e57961f6d9dc39fab8111f",
+    measurementId: "G-PNFDV2Z6DG",
   );
 
   static const FirebaseOptions android = FirebaseOptions(

@@ -4,6 +4,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:in_app_purchase/in_app_purchase.dart';
+import 'package:in_app_purchase_storekit/in_app_purchase_storekit.dart';
+import 'package:in_app_purchase_storekit/store_kit_2_wrappers.dart';
 import 'dart:convert';
 
 class SubscriptionAccessState {
@@ -67,6 +70,13 @@ class SubscriptionAccessService {
 
   static const String _subscriptionAccountTokenField =
       'subscriptionAccountToken';
+  static const String _subscriptionOwnershipKeyField =
+      'subscriptionOwnershipKey';
+
+  static bool get _isApplePlatform =>
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.iOS ||
+          defaultTargetPlatform == TargetPlatform.macOS);
 
   static bool hasActiveWorkerSubscriptionFromData(Map<String, dynamic>? data) {
     final role = (data?['role'] ?? 'customer').toString().toLowerCase();
@@ -141,6 +151,108 @@ class SubscriptionAccessService {
     return ownerQuery.docs.isNotEmpty && ownerQuery.docs.first.id != user.uid;
   }
 
+  static String? ownershipKeyForPurchase(PurchaseDetails purchaseDetails) {
+    if (purchaseDetails is AppStorePurchaseDetails) {
+      final originalTransactionId = purchaseDetails
+          .skPaymentTransaction
+          .originalTransaction
+          ?.transactionIdentifier
+          ?.trim();
+      if (originalTransactionId != null && originalTransactionId.isNotEmpty) {
+        return 'appstore:$originalTransactionId';
+      }
+
+      final purchaseId = purchaseDetails.purchaseID?.trim();
+      if (purchaseId != null && purchaseId.isNotEmpty) {
+        return 'appstore:$purchaseId';
+      }
+    }
+
+    if (purchaseDetails is SK2PurchaseDetails) {
+      final appAccountToken = purchaseDetails.appAccountToken?.trim();
+      if (appAccountToken != null && appAccountToken.isNotEmpty) {
+        return 'appstore-account:$appAccountToken';
+      }
+
+      final purchaseId = purchaseDetails.purchaseID?.trim();
+      if (purchaseId != null && purchaseId.isNotEmpty) {
+        return 'appstore-sk2:$purchaseId';
+      }
+    }
+
+    final verificationToken = purchaseDetails
+        .verificationData
+        .serverVerificationData
+        .trim();
+    if (verificationToken.isNotEmpty) {
+      return 'verification:$verificationToken';
+    }
+
+    final purchaseId = purchaseDetails.purchaseID?.trim();
+    if (purchaseId != null && purchaseId.isNotEmpty) {
+      return 'purchase:$purchaseId';
+    }
+
+    return null;
+  }
+
+  static Future<String?> findSubscriptionOwnerUidForPurchase(
+    PurchaseDetails purchaseDetails,
+  ) async {
+    final firestore = FirebaseFirestore.instance;
+    final ownershipKey = ownershipKeyForPurchase(purchaseDetails);
+
+    final lookupValues = <MapEntry<String, String>>[];
+    if (ownershipKey != null && ownershipKey.isNotEmpty) {
+      lookupValues.add(MapEntry(_subscriptionOwnershipKeyField, ownershipKey));
+    }
+
+    final purchaseId = purchaseDetails.purchaseID?.trim();
+    if (purchaseId != null && purchaseId.isNotEmpty) {
+      lookupValues.add(MapEntry('subscriptionPurchaseId', purchaseId));
+    }
+
+    final verificationToken = purchaseDetails
+        .verificationData
+        .serverVerificationData
+        .trim();
+    if (verificationToken.isNotEmpty) {
+      lookupValues.add(
+        MapEntry('subscriptionPurchaseToken', verificationToken),
+      );
+    }
+
+    if (purchaseDetails is AppStorePurchaseDetails) {
+      final originalTransactionId = purchaseDetails
+          .skPaymentTransaction
+          .originalTransaction
+          ?.transactionIdentifier
+          ?.trim();
+      if (originalTransactionId != null && originalTransactionId.isNotEmpty) {
+        lookupValues.add(
+          MapEntry('subscriptionPurchaseId', originalTransactionId),
+        );
+      }
+    }
+
+    final seenLookups = <String>{};
+    for (final lookup in lookupValues) {
+      final key = '${lookup.key}:${lookup.value}';
+      if (!seenLookups.add(key)) continue;
+
+      final ownerQuery = await firestore
+          .collection('users')
+          .where(lookup.key, isEqualTo: lookup.value)
+          .limit(1)
+          .get();
+      if (ownerQuery.docs.isNotEmpty) {
+        return ownerQuery.docs.first.id;
+      }
+    }
+
+    return null;
+  }
+
   static Future<SubscriptionAccessState> getCurrentUserState() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
@@ -182,6 +294,16 @@ class SubscriptionAccessService {
       );
       if (syncedState != null) {
         return syncedState;
+      }
+
+      final appStoreSyncedState = await syncCurrentUserWithAppStore(
+        existingData: {
+          ...data,
+          'subscriptionStatus': normalizedState.subscriptionStatus,
+        },
+      );
+      if (appStoreSyncedState != null) {
+        return appStoreSyncedState;
       }
 
       return normalizedState;
@@ -319,6 +441,132 @@ class SubscriptionAccessService {
     return mapped;
   }
 
+  static String ownershipKeyForAppStoreTransaction(SK2Transaction transaction) {
+    final originalId = transaction.originalId.trim();
+    if (originalId.isNotEmpty) {
+      return 'appstore:$originalId';
+    }
+
+    return 'appstore-sk2:${transaction.id}';
+  }
+
+  static Future<SubscriptionAccessState?> syncCurrentUserWithAppStore({
+    Map<String, dynamic>? existingData,
+  }) async {
+    if (!_isApplePlatform) return null;
+
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return null;
+
+    final firestore = FirebaseFirestore.instance;
+    final userRef = firestore.collection('users').doc(user.uid);
+    final data = existingData ?? (await userRef.get()).data();
+    final role = (data?['role'] ?? 'customer').toString().toLowerCase();
+    if (role != 'worker') return null;
+
+    try {
+      final transactions = await SK2Transaction.transactions();
+      final now = DateTime.now();
+      final matchingTransactions = transactions.where((transaction) {
+        return transaction.productId == _iosWorkerSubscriptionProductId;
+      }).toList();
+
+      matchingTransactions.sort((a, b) {
+        final aExpiry = _parseIsoDate(a.expirationDate);
+        final bExpiry = _parseIsoDate(b.expirationDate);
+        final aSort = aExpiry ?? _parseIsoDate(a.purchaseDate) ?? DateTime(0);
+        final bSort = bExpiry ?? _parseIsoDate(b.purchaseDate) ?? DateTime(0);
+        return bSort.compareTo(aSort);
+      });
+
+      SK2Transaction? activeTransaction;
+      for (final transaction in matchingTransactions) {
+        final expiration = _parseIsoDate(transaction.expirationDate);
+        if (expiration == null || now.isBefore(expiration)) {
+          activeTransaction = transaction;
+          break;
+        }
+      }
+
+      if (activeTransaction == null) {
+        final hasAppleEntitlement =
+            (data?['subscriptionProductId'] ?? '').toString() ==
+                _iosWorkerSubscriptionProductId ||
+            (data?['subscriptionPlatform'] ?? '')
+                .toString()
+                .toLowerCase()
+                .contains('app_store');
+        if (!hasAppleEntitlement) {
+          return null;
+        }
+
+        await userRef.set({
+          'isSubscribed': false,
+          'subscriptionStatus': 'inactive',
+          'subscriptionCanceled': true,
+          'subscriptionUpdatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+        return SubscriptionAccessState(
+          role: role,
+          subscriptionStatus: 'inactive',
+        );
+      }
+
+      final ownershipKey = ownershipKeyForAppStoreTransaction(
+        activeTransaction,
+      );
+      final ownerQuery = await firestore
+          .collection('users')
+          .where(_subscriptionOwnershipKeyField, isEqualTo: ownershipKey)
+          .limit(1)
+          .get();
+      if (ownerQuery.docs.isNotEmpty && ownerQuery.docs.first.id != user.uid) {
+        await userRef.set({
+          'isSubscribed': false,
+          'subscriptionStatus': 'inactive',
+          'subscriptionCanceled': true,
+          'subscriptionUpdatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+        return SubscriptionAccessState(
+          role: role,
+          subscriptionStatus: 'inactive',
+        );
+      }
+
+      final purchaseDate =
+          _parseIsoDate(activeTransaction.purchaseDate) ?? DateTime.now();
+      final expirationDate = _parseIsoDate(activeTransaction.expirationDate);
+
+      await userRef.set({
+        'isSubscribed': true,
+        'subscriptionStatus': 'active',
+        'subscriptionCanceled': false,
+        'subscriptionUpdatedAt': FieldValue.serverTimestamp(),
+        'subscriptionProductId': activeTransaction.productId,
+        'subscriptionPlatform': 'app_store',
+        'subscriptionPurchaseId': activeTransaction.id,
+        _subscriptionOwnershipKeyField: ownershipKey,
+        'subscriptionTransactionDate': activeTransaction.purchaseDate,
+        'subscriptionDate': Timestamp.fromDate(purchaseDate),
+        if (expirationDate != null)
+          'subscriptionExpiresAt': Timestamp.fromDate(expirationDate),
+        if ((activeTransaction.receiptData ?? '').trim().isNotEmpty)
+          'subscriptionPurchaseToken': activeTransaction.receiptData!.trim(),
+        if ((activeTransaction.appAccountToken ?? '').trim().isNotEmpty)
+          _subscriptionAccountTokenField: activeTransaction.appAccountToken!
+              .trim(),
+      }, SetOptions(merge: true));
+
+      return SubscriptionAccessState(role: role, subscriptionStatus: 'active');
+    } on PlatformException catch (e) {
+      debugPrint('App Store state read failed: ${e.message}');
+      return null;
+    } catch (e) {
+      debugPrint('App Store state read failed: $e');
+      return null;
+    }
+  }
+
   static bool _hasNonGooglePlayEntitlement(Map<String, dynamic>? data) {
     if (_resolveSubscriptionStatusFromData(data) == 'inactive') return false;
 
@@ -445,6 +693,12 @@ class SubscriptionAccessService {
     }
 
     return subscriptionDate.add(const Duration(days: 30));
+  }
+
+  static DateTime? _parseIsoDate(String? value) {
+    final trimmed = value?.trim() ?? '';
+    if (trimmed.isEmpty) return null;
+    return DateTime.tryParse(trimmed);
   }
 
   static DateTime? _toDate(dynamic value) {
