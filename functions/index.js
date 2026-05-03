@@ -347,13 +347,40 @@ exports.verifySubscriptionPurchase = onCall(
 
         updates = createPlaySubscriptionUpdates(playState, userData);
       } else if (purchaseProof.productId === APPLE_SUBSCRIPTION_PRODUCT_ID) {
-        const appStoreState = await fetchAppStoreSubscription({
-          appStoreClients: buildAppStoreApiClients(),
-          originalTransactionId:
-            purchaseProof.originalTransactionId || purchaseProof.purchaseId,
-        });
+        let appStoreState = null;
+        try {
+          appStoreState = await fetchAppStoreSubscription({
+            appStoreClients: buildAppStoreApiClients(),
+            originalTransactionId:
+              purchaseProof.originalTransactionId || purchaseProof.purchaseId,
+          });
+        } catch (error) {
+          logger.warn("Direct App Store verification failed", {
+            userId: auth.uid,
+            productId: purchaseProof.productId,
+            purchaseId: purchaseProof.purchaseId || null,
+            originalTransactionId: purchaseProof.originalTransactionId || null,
+            error: error.message || String(error),
+          });
+        }
 
         if (!appStoreState) {
+          const fallbackUserData = await waitForVerifiedAppleEntitlement(
+              userRef,
+              userData,
+          );
+          if (fallbackUserData) {
+            logger.info(
+                "Using App Store notification-backed entitlement after direct verification miss",
+                {
+                  userId: auth.uid,
+                  productId: purchaseProof.productId,
+                  purchaseId: purchaseProof.purchaseId || null,
+                },
+            );
+            return buildSubscriptionVerificationResponse(fallbackUserData);
+          }
+
           throw new HttpsError(
               "not-found",
               "App Store subscription could not be verified.",
@@ -1045,6 +1072,51 @@ function buildSubscriptionVerificationResponse(userData) {
   };
 }
 
+async function waitForVerifiedAppleEntitlement(userRef, initialUserData) {
+  const firstSnapshot = await userRef.get();
+  let candidate = firstSnapshot.data() || initialUserData || {};
+  if (hasVerifiedActiveAppleEntitlement(candidate)) {
+    return candidate;
+  }
+
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    await sleep(1500);
+    const snap = await userRef.get();
+    candidate = snap.data() || {};
+    if (hasVerifiedActiveAppleEntitlement(candidate)) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
+function hasVerifiedActiveAppleEntitlement(userData) {
+  if (!userData || userData.isSubscribed !== true) {
+    return false;
+  }
+
+  const source = normalizeString(userData.subscriptionSource).toLowerCase();
+  const platform = normalizeString(userData.subscriptionPlatform).toLowerCase();
+  const productId = normalizeString(userData.subscriptionProductId);
+  const status = normalizeString(userData.subscriptionStatus).toLowerCase();
+
+  const verifiedAt = toDate(userData.subscriptionVerifiedAt);
+  const freshUntil = toDate(userData.subscriptionVerificationFreshUntil);
+  const now = new Date();
+  const recentlyVerified = Boolean(
+      (freshUntil && freshUntil > now) ||
+      (verifiedAt && now.getTime() - verifiedAt.getTime() < 10 * 60 * 1000),
+  );
+
+  return (
+    recentlyVerified &&
+    (status === "active" || status === "active_canceled") &&
+    productId === APPLE_SUBSCRIPTION_PRODUCT_ID &&
+    (source === "app_store" || platform === "app_store")
+  );
+}
+
 function shouldApplySubscriptionUpdate(previous, nextValues) {
   return (
     previous.isSubscribed !== nextValues.isSubscribed ||
@@ -1307,6 +1379,10 @@ function addDays(date, days) {
 
 function addHours(date, hours) {
   return new Date(date.getTime() + hours * 60 * 60 * 1000);
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function normalizeApplePrivateKey(value) {
