@@ -9,14 +9,15 @@ import 'package:in_app_purchase_storekit/in_app_purchase_storekit.dart';
 import 'package:in_app_purchase_storekit/store_kit_wrappers.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:untitled1/sign_up.dart';
 import 'package:untitled1/main.dart';
 import 'package:untitled1/services/language_provider.dart';
 import 'package:untitled1/services/subscription_access_service.dart';
+import 'package:untitled1/services/subscription_verification_service.dart';
 import 'package:untitled1/utils/constants.dart';
 
 class SubscriptionPage extends StatefulWidget {
@@ -135,7 +136,9 @@ class _SubscriptionPageState extends State<SubscriptionPage>
     );
     unawaited(_configureStoreKitIfNeeded());
     _initStoreInfo();
-    _syncSubscriptionStateFromGooglePlay();
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      unawaited(_refreshLinkedAccountNotice());
+    }
   }
 
   @override
@@ -240,37 +243,13 @@ class _SubscriptionPageState extends State<SubscriptionPage>
         }
       } else if (purchaseDetails.status == PurchaseStatus.canceled) {
         if (mounted) setState(() => _isPurchasing = false);
-        _syncSubscriptionStateFromGooglePlay();
+        if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+          unawaited(_refreshLinkedAccountNotice());
+        }
       }
       if (purchaseDetails.pendingCompletePurchase) {
         _inAppPurchase.completePurchase(purchaseDetails);
       }
-    }
-  }
-
-  Future<void> _syncSubscriptionStateFromGooglePlay() async {
-    await _syncSubscriptionStateFromGooglePlayWithClaim(
-      allowClaimUnownedPurchase: false,
-    );
-  }
-
-  Future<void> _syncSubscriptionStateFromGooglePlayWithClaim({
-    required bool allowClaimUnownedPurchase,
-  }) async {
-    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;
-
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-
-    try {
-      await SubscriptionAccessService.syncCurrentUserWithGooglePlay(
-        allowClaimUnownedPurchase: allowClaimUnownedPurchase,
-      );
-      await _refreshLinkedAccountNotice();
-    } on PlatformException catch (e) {
-      debugPrint('Google Play subscription status sync failed: ${e.message}');
-    } catch (e) {
-      debugPrint('Google Play subscription status sync failed: $e');
     }
   }
 
@@ -332,74 +311,67 @@ class _SubscriptionPageState extends State<SubscriptionPage>
   Future<void> _completeSubscription({
     required PurchaseDetails purchaseDetails,
   }) async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
+    try {
+      if (mounted) setState(() => _isLoading = true);
 
-    final ownerUid =
-        await SubscriptionAccessService.findSubscriptionOwnerUidForPurchase(
-          purchaseDetails,
-        );
-    if (ownerUid != null && ownerUid != user.uid) {
-      await _handleSubscriptionOwnedByAnotherAccount();
-      return;
-    }
+      final verification = await SubscriptionVerificationService.verifyPurchase(
+        purchaseDetails: purchaseDetails,
+        isNewRegistration: widget.isNewRegistration,
+      );
 
-    final accountToken =
-        await SubscriptionAccessService.ensureCurrentUserSubscriptionAccountToken();
-    final ownershipKey = SubscriptionAccessService.ownershipKeyForPurchase(
-      purchaseDetails,
-    );
-    if (widget.isNewRegistration) {
-      final now = DateTime.now();
-      _newRegistrationSubscriptionData = {
-        'isSubscribed': true,
-        'subscriptionStatus': 'active',
-        'subscriptionCanceled': false,
-        'subscriptionDate': now.toIso8601String(),
-        'subscriptionExpiresAt': now
-            .add(const Duration(days: 30))
-            .toIso8601String(),
-        'subscriptionProductId': purchaseDetails.productID,
-        'subscriptionPlatform': purchaseDetails.verificationData.source,
-        'subscriptionPurchaseId': purchaseDetails.purchaseID,
-        'subscriptionPurchaseToken':
-            purchaseDetails.verificationData.serverVerificationData,
-        'subscriptionTransactionDate': purchaseDetails.transactionDate,
-        'subscriptionAccountToken': accountToken,
-      };
-      if (ownershipKey != null) {
-        _newRegistrationSubscriptionData!['subscriptionOwnershipKey'] =
-            ownershipKey;
+      if (!verification.isSubscribed) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('הרכישה אומתה אך המנוי אינו פעיל כרגע.'),
+            ),
+          );
+        }
+        return;
       }
+
       await _savePurchaseMetadata(purchaseDetails);
-      _showSuccessDialog(isNewReg: true);
-    } else {
-      setState(() => _isLoading = true);
-      bool success = await _finalizeWorkerUpgrade(purchaseDetails);
-      setState(() => _isLoading = false);
-      if (success) {
-        _showSuccessDialog(isNewReg: false);
+
+      if (widget.isNewRegistration) {
+        _newRegistrationSubscriptionData = verification.toPendingWorkerData();
+        _showSuccessDialog(isNewReg: true);
+      } else {
+        final success = await _finalizeWorkerUpgrade();
+        if (success) {
+          await SubscriptionAccessService.refreshCurrentUserStateInBackground();
+          _showSuccessDialog(isNewReg: false);
+        } else if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('הרכישה אומתה אך השלמת הפרופיל נכשלה. נסה שוב.'),
+            ),
+          );
+        }
+      }
+    } on FirebaseFunctionsException catch (e) {
+      if (e.code == 'already-exists') {
+        await _handleSubscriptionOwnedByAnotherAccount();
       } else if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('הרכישה זוהתה אך ההפעלה נכשלה. נסה שוב.'),
-          ),
+          SnackBar(content: Text('אימות המנוי נכשל: ${e.message ?? e.code}')),
         );
       }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('אימות המנוי נכשל: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  Future<bool> _finalizeWorkerUpgrade(PurchaseDetails purchaseDetails) async {
+  Future<bool> _finalizeWorkerUpgrade() async {
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) return false;
       final firestore = FirebaseFirestore.instance;
-      final now = DateTime.now();
-      final accountToken =
-          await SubscriptionAccessService.ensureCurrentUserSubscriptionAccountToken();
-      final ownershipKey = SubscriptionAccessService.ownershipKeyForPurchase(
-        purchaseDetails,
-      );
 
       // Fetch existing user data from unified 'users' collection
       final userDoc = await firestore.collection('users').doc(user.uid).get();
@@ -407,27 +379,7 @@ class _SubscriptionPageState extends State<SubscriptionPage>
           ? (userDoc.data() ?? {})
           : {};
 
-      userData.addAll({
-        'role': 'worker',
-        'isSubscribed': true,
-        'subscriptionStatus': 'active',
-        'subscriptionUpdatedAt': FieldValue.serverTimestamp(),
-        'subscriptionCanceled': false,
-        'subscriptionProductId': purchaseDetails.productID,
-        'subscriptionPlatform': purchaseDetails.verificationData.source,
-        'subscriptionPurchaseId': purchaseDetails.purchaseID,
-        'subscriptionPurchaseToken':
-            purchaseDetails.verificationData.serverVerificationData,
-        'subscriptionTransactionDate': purchaseDetails.transactionDate,
-        'subscriptionDate': Timestamp.fromDate(now),
-        'subscriptionExpiresAt': Timestamp.fromDate(
-          now.add(const Duration(days: 30)),
-        ),
-        'subscriptionAccountToken': accountToken,
-      });
-      if (ownershipKey != null) {
-        userData['subscriptionOwnershipKey'] = ownershipKey;
-      }
+      userData.addAll({'role': 'worker'});
 
       if (widget.pendingUserData != null) {
         userData.addAll(widget.pendingUserData!);
@@ -446,8 +398,6 @@ class _SubscriptionPageState extends State<SubscriptionPage>
           .collection('users')
           .doc(user.uid)
           .set(userData, SetOptions(merge: true));
-
-      await _savePurchaseMetadata(purchaseDetails);
       return true;
     } catch (e) {
       debugPrint("Upgrade Error: $e");
@@ -566,9 +516,6 @@ class _SubscriptionPageState extends State<SubscriptionPage>
         await iosPlatformAddition.sync();
       }
 
-      await _syncSubscriptionStateFromGooglePlayWithClaim(
-        allowClaimUnownedPurchase: true,
-      );
       if (mounted) {
         setState(() => _isPurchasing = false);
         ScaffoldMessenger.of(context).showSnackBar(

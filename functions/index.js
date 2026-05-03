@@ -3,12 +3,13 @@ const path = require("path");
 
 const admin = require("firebase-admin");
 const {onDocumentCreated} = require("firebase-functions/v2/firestore");
-const {onRequest} = require("firebase-functions/v2/https");
+const {onCall, HttpsError, onRequest} = require("firebase-functions/v2/https");
 const {onMessagePublished} = require("firebase-functions/v2/pubsub");
 const {onSchedule} = require("firebase-functions/v2/scheduler");
 const logger = require("firebase-functions/logger");
 const {google} = require("googleapis");
 const {
+  AppStoreServerAPIClient,
   AutoRenewStatus,
   Environment,
   SignedDataVerifier,
@@ -23,6 +24,12 @@ const GOOGLE_PLAY_RTDN_TOPIC = "play-subscription-notifications";
 const PLAY_ANDROID_PUBLISHER_SCOPE =
   "https://www.googleapis.com/auth/androidpublisher";
 const SUBSCRIPTION_NOTIFICATION_RETENTION_DAYS = 30;
+const SUBSCRIPTION_VERIFICATION_RETENTION_HOURS = 36;
+const APPLE_SUBSCRIPTION_PRODUCT_ID = "HIRO_SUBSCRIPTION";
+const GOOGLE_PLAY_SUBSCRIPTION_PRODUCT_IDS = new Set([
+  "pro_worker_monthly",
+  "com-hiro-app-pro-worker-monthly",
+]);
 
 exports.sendNotificationPush = onDocumentCreated(
     {
@@ -287,6 +294,105 @@ exports.handleAppStoreServerNotification = onRequest(
     },
 );
 
+exports.verifySubscriptionPurchase = onCall(
+    {
+      region: "us-central1",
+    },
+    async (request) => {
+      const auth = request.auth;
+      if (!auth?.uid) {
+        throw new HttpsError("unauthenticated", "Authentication required.");
+      }
+
+      const payload = request.data || {};
+      const userRef = admin.firestore().collection("users").doc(auth.uid);
+      const userSnap = await userRef.get();
+      const userData = userSnap.data() || {};
+
+      const purchaseProof = normalizePurchaseProof(payload);
+      if (!purchaseProof.productId) {
+        throw new HttpsError("invalid-argument", "Missing productId.");
+      }
+
+      let updates;
+      if (GOOGLE_PLAY_SUBSCRIPTION_PRODUCT_IDS.has(purchaseProof.productId)) {
+        if (!purchaseProof.verificationToken) {
+          throw new HttpsError(
+              "invalid-argument",
+              "Missing Google Play verification token.",
+          );
+        }
+
+        const androidPublisher = await createAndroidPublisherClient();
+        const playState = await fetchGooglePlaySubscription({
+          androidPublisher,
+          purchaseToken: purchaseProof.verificationToken,
+        });
+        if (!playState) {
+          throw new HttpsError(
+              "not-found",
+              "Google Play subscription could not be verified.",
+          );
+        }
+
+        await assertNoConflictingSubscriptionOwner({
+          currentUid: auth.uid,
+          subscriptionOwnershipKey:
+            purchaseProof.ownershipKey || `google_play:${purchaseProof.verificationToken}`,
+          purchaseToken: purchaseProof.verificationToken,
+          accountToken:
+            playState.externalAccountIdentifiers?.obfuscatedExternalAccountId ||
+            purchaseProof.applicationAccountToken,
+        });
+
+        updates = createPlaySubscriptionUpdates(playState, userData);
+      } else if (purchaseProof.productId === APPLE_SUBSCRIPTION_PRODUCT_ID) {
+        const appStoreState = await fetchAppStoreSubscription({
+          appStoreClients: buildAppStoreApiClients(),
+          originalTransactionId:
+            purchaseProof.originalTransactionId || purchaseProof.purchaseId,
+        });
+
+        if (!appStoreState) {
+          throw new HttpsError(
+              "not-found",
+              "App Store subscription could not be verified.",
+          );
+        }
+
+        const originalTransactionId =
+          appStoreState.transaction?.originalTransactionId ||
+          appStoreState.renewalInfo?.originalTransactionId ||
+          purchaseProof.originalTransactionId ||
+          purchaseProof.purchaseId;
+        const ownershipKey =
+          purchaseProof.ownershipKey ||
+          (originalTransactionId ? `appstore:${originalTransactionId}` : null);
+
+        await assertNoConflictingSubscriptionOwner({
+          currentUid: auth.uid,
+          subscriptionOwnershipKey: ownershipKey,
+          originalTransactionId,
+          accountToken:
+            appStoreState.transaction?.appAccountToken ||
+            appStoreState.renewalInfo?.appAccountToken ||
+            purchaseProof.applicationAccountToken,
+        });
+
+        updates = createAppleApiSubscriptionUpdates(appStoreState, userData);
+      } else {
+        throw new HttpsError(
+            "invalid-argument",
+            `Unsupported subscription product: ${purchaseProof.productId}`,
+        );
+      }
+
+      await applyUserSubscriptionUpdates(userRef, userData, updates);
+      const refreshed = (await userRef.get()).data() || {};
+      return buildSubscriptionVerificationResponse(refreshed);
+    },
+);
+
 exports.syncWorkerSubscriptionLifecycle = onSchedule(
     {
       schedule: "every 15 minutes",
@@ -305,6 +411,7 @@ exports.syncWorkerSubscriptionLifecycle = onSchedule(
       let failures = 0;
 
       const androidPublisher = await createAndroidPublisherClient();
+      const appStoreClients = buildAppStoreApiClients();
 
       while (true) {
         let query = db
@@ -333,6 +440,7 @@ exports.syncWorkerSubscriptionLifecycle = onSchedule(
           try {
             const result = await buildSubscriptionUpdate({
               androidPublisher,
+              appStoreClients,
               userData: data,
             });
 
@@ -428,6 +536,57 @@ async function createAndroidPublisherClient() {
   });
 }
 
+function normalizePurchaseProof(payload) {
+  return {
+    productId: normalizeString(payload.productId).trim(),
+    purchaseId: normalizeString(payload.purchaseId).trim(),
+    verificationToken: normalizeString(payload.verificationToken).trim(),
+    verificationSource: normalizeString(payload.verificationSource).trim(),
+    transactionDate: normalizeString(payload.transactionDate).trim(),
+    applicationAccountToken:
+      normalizeString(payload.applicationAccountToken).trim(),
+    ownershipKey: normalizeString(payload.ownershipKey).trim(),
+    originalTransactionId:
+      normalizeString(payload.originalTransactionId).trim(),
+    appAccountToken: normalizeString(payload.appAccountToken).trim(),
+  };
+}
+
+function buildAppStoreApiClients() {
+  const keyId = process.env.APPLE_SUBSCRIPTION_KEY_ID?.trim();
+  const issuerId = process.env.APPLE_SUBSCRIPTION_ISSUER_ID?.trim();
+  const privateKey = normalizeApplePrivateKey(
+      process.env.APPLE_SUBSCRIPTION_PRIVATE_KEY,
+  );
+
+  if (!keyId || !issuerId || !privateKey) {
+    return [];
+  }
+
+  return [
+    {
+      environment: Environment.PRODUCTION,
+      client: new AppStoreServerAPIClient(
+          privateKey,
+          keyId,
+          issuerId,
+          APPLE_BUNDLE_ID,
+          Environment.PRODUCTION,
+      ),
+    },
+    {
+      environment: Environment.SANDBOX,
+      client: new AppStoreServerAPIClient(
+          privateKey,
+          keyId,
+          issuerId,
+          APPLE_BUNDLE_ID,
+          Environment.SANDBOX,
+      ),
+    },
+  ];
+}
+
 async function syncGooglePlayPurchaseToken({
   androidPublisher,
   purchaseToken,
@@ -478,6 +637,43 @@ async function syncGooglePlayPurchaseToken({
   };
 }
 
+async function assertNoConflictingSubscriptionOwner({
+  currentUid,
+  subscriptionOwnershipKey,
+  purchaseToken,
+  originalTransactionId,
+  accountToken,
+}) {
+  const lookups = [
+    ["subscriptionOwnershipKey", subscriptionOwnershipKey],
+    ["subscriptionPurchaseToken", purchaseToken],
+    ["subscriptionOriginalTransactionId", originalTransactionId],
+    ["subscriptionAccountToken", accountToken],
+  ];
+  const seen = new Set();
+
+  for (const [field, rawValue] of lookups) {
+    const value = normalizeString(rawValue).trim();
+    if (!value) continue;
+
+    const signature = `${field}:${value}`;
+    if (seen.has(signature)) continue;
+    seen.add(signature);
+
+    const snap = await admin.firestore()
+        .collection("users")
+        .where(field, "==", value)
+        .limit(1)
+        .get();
+    if (!snap.empty && snap.docs[0].id !== currentUid) {
+      throw new HttpsError(
+          "already-exists",
+          "This subscription is already linked to another account.",
+      );
+    }
+  }
+}
+
 function shouldSyncWorkerSubscription(data) {
   if ((data.role || "").toString().toLowerCase() !== "worker") {
     return false;
@@ -495,7 +691,11 @@ function shouldSyncWorkerSubscription(data) {
     status === "active_canceled";
 }
 
-async function buildSubscriptionUpdate({androidPublisher, userData}) {
+async function buildSubscriptionUpdate({
+  androidPublisher,
+  appStoreClients,
+  userData,
+}) {
   const purchaseToken = userData.subscriptionPurchaseToken?.trim();
   if (purchaseToken) {
     const playState = await fetchGooglePlaySubscription({
@@ -511,10 +711,88 @@ async function buildSubscriptionUpdate({androidPublisher, userData}) {
     }
   }
 
+  const originalTransactionId =
+    userData.subscriptionOriginalTransactionId?.trim();
+  if (originalTransactionId) {
+    const appleState = await fetchAppStoreSubscription({
+      appStoreClients,
+      originalTransactionId,
+    });
+
+    if (appleState) {
+      return {
+        source: "app_store",
+        updates: createAppleApiSubscriptionUpdates(appleState, userData),
+      };
+    }
+  }
+
   return {
     source: "firestore",
     updates: createFallbackSubscriptionUpdates(userData),
   };
+}
+
+async function fetchAppStoreSubscription({
+  appStoreClients,
+  originalTransactionId,
+}) {
+  if (!Array.isArray(appStoreClients) || appStoreClients.length === 0) {
+    return null;
+  }
+
+  let lastError = null;
+  for (const clientInfo of appStoreClients) {
+    try {
+      const response = await clientInfo.client.getAllSubscriptionStatuses(
+          originalTransactionId,
+      );
+      const lastTransactions = (response.data || [])
+          .flatMap((group) => group.lastTransactions || []);
+      if (lastTransactions.length === 0) {
+        return null;
+      }
+
+      const decodedItems = [];
+      for (const item of lastTransactions) {
+        const decoded = await decodeAppleStatusItem(item);
+        if (decoded) {
+          decodedItems.push(decoded);
+        }
+      }
+
+      if (decodedItems.length === 0) {
+        return null;
+      }
+
+      decodedItems.sort((left, right) => {
+        const leftExpiry = firstValidDate(
+            left.transaction?.expiresDate,
+            left.renewalInfo?.gracePeriodExpiresDate,
+            left.renewalInfo?.renewalDate,
+        ) || new Date(0);
+        const rightExpiry = firstValidDate(
+            right.transaction?.expiresDate,
+            right.renewalInfo?.gracePeriodExpiresDate,
+            right.renewalInfo?.renewalDate,
+        ) || new Date(0);
+        return rightExpiry - leftExpiry;
+      });
+
+      return {
+        environment: clientInfo.environment,
+        ...decodedItems[0],
+      };
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  if (lastError) {
+    throw lastError;
+  }
+
+  return null;
 }
 
 async function fetchGooglePlaySubscription({androidPublisher, purchaseToken}) {
@@ -568,11 +846,16 @@ function createPlaySubscriptionUpdates(playState, userData) {
     subscriptionPurchaseOrderId:
       playState.latestOrderId || userData.subscriptionPurchaseOrderId || null,
     subscriptionPlatform: "android_play",
+    subscriptionSource: "google_play",
     subscriptionProviderState: playState.subscriptionState || null,
     subscriptionAccountToken:
       playState.externalAccountIdentifiers?.obfuscatedExternalAccountId ||
       userData.subscriptionAccountToken ||
       null,
+    subscriptionOwnershipKey:
+      playState.externalAccountIdentifiers?.obfuscatedExternalAccountId ?
+        `google_play:${playState.externalAccountIdentifiers.obfuscatedExternalAccountId}` :
+        userData.subscriptionOwnershipKey || null,
   });
 }
 
@@ -622,8 +905,71 @@ function createAppleSubscriptionUpdates({
       userData.subscriptionProductId ||
       null,
     subscriptionPlatform: "app_store",
+    subscriptionSource: "app_store",
     subscriptionProviderState: notificationType || null,
     subscriptionAccountToken: accountToken,
+    subscriptionOriginalTransactionId:
+      transaction?.originalTransactionId ||
+      renewalInfo?.originalTransactionId ||
+      userData.subscriptionOriginalTransactionId ||
+      null,
+    subscriptionTransactionId:
+      transaction?.transactionId ||
+      userData.subscriptionTransactionId ||
+      null,
+  });
+}
+
+function createAppleApiSubscriptionUpdates(appleState, userData) {
+  const now = new Date();
+  const transaction = appleState.transaction;
+  const renewalInfo = appleState.renewalInfo;
+  const statusValue = appleState.status;
+  const expiry = firstValidDate(
+      transaction?.expiresDate,
+      renewalInfo?.gracePeriodExpiresDate,
+      renewalInfo?.renewalDate,
+  );
+  const autoRenewStatus = renewalInfo?.autoRenewStatus;
+
+  const isEntitled = Boolean(
+      expiry &&
+      expiry > now &&
+      statusValue !== Status.EXPIRED &&
+      statusValue !== Status.REVOKED,
+  );
+  const willRenew = autoRenewStatus === AutoRenewStatus.ON;
+  const mappedStatus = isEntitled ?
+    willRenew ? "active" : "active_canceled" :
+    "inactive";
+
+  return withCommonSubscriptionFields(userData, {
+    isSubscribed: isEntitled,
+    subscriptionStatus: mappedStatus,
+    subscriptionCanceled: !willRenew,
+    subscriptionExpiresAt: expiry ?
+      admin.firestore.Timestamp.fromDate(expiry) :
+      null,
+    subscriptionProductId:
+      transaction?.productId ||
+      renewalInfo?.productId ||
+      renewalInfo?.autoRenewProductId ||
+      userData.subscriptionProductId ||
+      null,
+    subscriptionPlatform: "app_store",
+    subscriptionSource: "app_store",
+    subscriptionProviderState: String(statusValue || "") || null,
+    subscriptionAccountToken:
+      transaction?.appAccountToken ||
+      renewalInfo?.appAccountToken ||
+      userData.subscriptionAccountToken ||
+      null,
+    subscriptionOwnershipKey:
+      transaction?.originalTransactionId ?
+        `appstore:${transaction.originalTransactionId}` :
+        renewalInfo?.originalTransactionId ?
+          `appstore:${renewalInfo.originalTransactionId}` :
+          userData.subscriptionOwnershipKey || null,
     subscriptionOriginalTransactionId:
       transaction?.originalTransactionId ||
       renewalInfo?.originalTransactionId ||
@@ -654,6 +1000,7 @@ function createFallbackSubscriptionUpdates(userData) {
     subscriptionExpiresAt: expiry ?
       admin.firestore.Timestamp.fromDate(expiry) :
       null,
+    subscriptionSource: userData.subscriptionSource || null,
   });
 }
 
@@ -661,6 +1008,10 @@ function withCommonSubscriptionFields(userData, nextValues) {
   const updates = {
     ...nextValues,
     subscriptionUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    subscriptionVerifiedAt: admin.firestore.FieldValue.serverTimestamp(),
+    subscriptionVerificationFreshUntil: admin.firestore.Timestamp.fromDate(
+        addHours(new Date(), SUBSCRIPTION_VERIFICATION_RETENTION_HOURS),
+    ),
   };
 
   if (nextValues.isSubscribed === false &&
@@ -670,6 +1021,28 @@ function withCommonSubscriptionFields(userData, nextValues) {
   }
 
   return updates;
+}
+
+function buildSubscriptionVerificationResponse(userData) {
+  return {
+    isSubscribed: userData.isSubscribed === true,
+    subscriptionStatus: normalizeString(userData.subscriptionStatus) || "inactive",
+    subscriptionProductId: userData.subscriptionProductId || null,
+    subscriptionPlatform: userData.subscriptionPlatform || null,
+    subscriptionPurchaseId:
+      userData.subscriptionPurchaseId ||
+      userData.subscriptionTransactionId ||
+      null,
+    subscriptionPurchaseToken: userData.subscriptionPurchaseToken || null,
+    subscriptionTransactionDate:
+      normalizeString(userData.subscriptionTransactionDate) || null,
+    subscriptionAccountToken: userData.subscriptionAccountToken || null,
+    subscriptionOwnershipKey: userData.subscriptionOwnershipKey || null,
+    subscriptionOriginalTransactionId:
+      userData.subscriptionOriginalTransactionId || null,
+    subscriptionDate: toIsoString(userData.subscriptionDate),
+    subscriptionExpiresAt: toIsoString(userData.subscriptionExpiresAt),
+  };
 }
 
 function shouldApplySubscriptionUpdate(previous, nextValues) {
@@ -683,6 +1056,8 @@ function shouldApplySubscriptionUpdate(previous, nextValues) {
       normalizeString(nextValues.subscriptionProviderState) ||
     normalizeString(previous.subscriptionProductId) !==
       normalizeString(nextValues.subscriptionProductId) ||
+    normalizeString(previous.subscriptionSource) !==
+      normalizeString(nextValues.subscriptionSource) ||
     normalizeString(previous.subscriptionPurchaseOrderId) !==
       normalizeString(nextValues.subscriptionPurchaseOrderId) ||
     normalizeString(previous.subscriptionAccountToken) !==
@@ -802,6 +1177,40 @@ async function verifyAppleNotification(signedPayload) {
   throw lastError || new Error("Unable to verify App Store notification");
 }
 
+async function decodeAppleStatusItem(item) {
+  if (!item) return null;
+
+  const verifiers = buildAppleNotificationVerifiers();
+  let lastError = null;
+  for (const verifierInfo of verifiers) {
+    try {
+      const transaction = item.signedTransactionInfo ?
+        await verifierInfo.verifier.verifyAndDecodeTransaction(
+            item.signedTransactionInfo,
+        ) :
+        null;
+      const renewalInfo = item.signedRenewalInfo ?
+        await verifierInfo.verifier.verifyAndDecodeRenewalInfo(
+            item.signedRenewalInfo,
+        ) :
+        null;
+      return {
+        status: item.status,
+        transaction,
+        renewalInfo,
+      };
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  if (lastError) {
+    throw lastError;
+  }
+
+  return null;
+}
+
 function buildAppleNotificationVerifiers() {
   const rootCertificates = loadAppleRootCertificates();
   const appAppleId = process.env.APPLE_APPLE_ID ?
@@ -863,6 +1272,11 @@ function toDate(value) {
   return null;
 }
 
+function toIsoString(value) {
+  const date = toDate(value);
+  return date ? date.toISOString() : null;
+}
+
 function firstValidDate(...values) {
   for (const value of values) {
     const parsed = toDate(value);
@@ -889,6 +1303,16 @@ function resolveFirestoreExpiry(data) {
 
 function addDays(date, days) {
   return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
+}
+
+function addHours(date, hours) {
+  return new Date(date.getTime() + hours * 60 * 60 * 1000);
+}
+
+function normalizeApplePrivateKey(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  return raw.replace(/\\n/g, "\n");
 }
 
 function getLatestLineItem(lineItems) {

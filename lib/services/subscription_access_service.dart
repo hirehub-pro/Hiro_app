@@ -72,6 +72,7 @@ class SubscriptionAccessService {
       'subscriptionAccountToken';
   static const String _subscriptionOwnershipKeyField =
       'subscriptionOwnershipKey';
+  static const String _subscriptionSourceField = 'subscriptionSource';
 
   static bool get _isApplePlatform =>
       !kIsWeb &&
@@ -286,26 +287,6 @@ class SubscriptionAccessService {
         data: data,
       );
 
-      final syncedState = await syncCurrentUserWithGooglePlay(
-        existingData: {
-          ...data,
-          'subscriptionStatus': normalizedState.subscriptionStatus,
-        },
-      );
-      if (syncedState != null) {
-        return syncedState;
-      }
-
-      final appStoreSyncedState = await syncCurrentUserWithAppStore(
-        existingData: {
-          ...data,
-          'subscriptionStatus': normalizedState.subscriptionStatus,
-        },
-      );
-      if (appStoreSyncedState != null) {
-        return appStoreSyncedState;
-      }
-
       return normalizedState;
     }
 
@@ -431,6 +412,7 @@ class SubscriptionAccessService {
       'subscriptionStatus': mapped.subscriptionStatus,
       'subscriptionCanceled': playSnapshot.status == 'active_canceled',
       'subscriptionUpdatedAt': FieldValue.serverTimestamp(),
+      _subscriptionSourceField: 'google_play',
       'subscriptionPurchaseToken': purchaseToken,
       'subscriptionProductId':
           playSnapshot.productId ?? data?['subscriptionProductId'],
@@ -505,6 +487,7 @@ class SubscriptionAccessService {
           'subscriptionStatus': 'inactive',
           'subscriptionCanceled': true,
           'subscriptionUpdatedAt': FieldValue.serverTimestamp(),
+          _subscriptionSourceField: 'app_store',
         }, SetOptions(merge: true));
         return SubscriptionAccessState(
           role: role,
@@ -526,6 +509,7 @@ class SubscriptionAccessService {
           'subscriptionStatus': 'inactive',
           'subscriptionCanceled': true,
           'subscriptionUpdatedAt': FieldValue.serverTimestamp(),
+          _subscriptionSourceField: 'app_store',
         }, SetOptions(merge: true));
         return SubscriptionAccessState(
           role: role,
@@ -542,6 +526,7 @@ class SubscriptionAccessService {
         'subscriptionStatus': 'active',
         'subscriptionCanceled': false,
         'subscriptionUpdatedAt': FieldValue.serverTimestamp(),
+        _subscriptionSourceField: 'app_store',
         'subscriptionProductId': activeTransaction.productId,
         'subscriptionPlatform': 'app_store',
         'subscriptionPurchaseId': activeTransaction.id,
