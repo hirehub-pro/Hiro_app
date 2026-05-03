@@ -151,6 +151,7 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
   }
 
   String _verificationId = "";
+  int? _resendToken;
   bool _codeSent = false;
   bool _loading = false;
 
@@ -203,6 +204,7 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
           'ok': 'אישור',
           'invalid_phone': 'אנא הכנס מספר טלפון ישראלי תקין (05XXXXXXXX)',
           'edit_phone': 'ערוך מספר טלפון',
+          'resend_code': 'שלח SMS שוב',
           'secure_title': 'כניסה מאובטחת',
           'secure_body': 'אימות טלפוני מובנה לגישה אמינה.',
           'mobile_title': 'מהיר בנייד',
@@ -244,6 +246,7 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
           'ok': 'موافق',
           'invalid_phone': 'يرجى إدخال رقم هاتف إسرائيلي صالح (05XXXXXXXX)',
           'edit_phone': 'تعديل رقم الهاتف',
+          'resend_code': 'إرسال SMS مرة أخرى',
           'secure_title': 'تسجيل دخول آمن',
           'secure_body': 'تحقق عبر الهاتف مصمم للوصول الموثوق.',
           'mobile_title': 'سريع على الهاتف',
@@ -286,6 +289,7 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
           'invalid_phone':
               'Введите действительный израильский номер телефона (05XXXXXXXX)',
           'edit_phone': 'Изменить номер телефона',
+          'resend_code': 'Отправить SMS снова',
           'secure_title': 'Безопасный вход',
           'secure_body': 'Проверка по телефону для надежного доступа.',
           'mobile_title': 'Быстро на телефоне',
@@ -327,6 +331,7 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
           'ok': 'እሺ',
           'invalid_phone': 'እባክዎ ትክክለኛ የእስራኤል የስልክ ቁጥር ያስገቡ (05XXXXXXXX)',
           'edit_phone': 'የስልክ ቁጥር ያስተካክሉ',
+          'resend_code': 'SMS እንደገና ላክ',
           'secure_title': 'ደህንነቱ የተጠበቀ መግቢያ',
           'secure_body': 'በስልክ የሚደረግ ማረጋገጫ ለታማኝ መዳረሻ።',
           'mobile_title': 'በሞባይል ፈጣን',
@@ -369,6 +374,7 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
           'invalid_phone':
               'Please enter a valid Israeli phone number (05XXXXXXXX)',
           'edit_phone': 'Edit Phone Number',
+          'resend_code': 'Send SMS Again',
           'secure_title': 'Secure sign-in',
           'secure_body': 'Phone verification built for trusted access.',
           'mobile_title': 'Fast on mobile',
@@ -600,6 +606,7 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
       await AnalyticsService.logSignInCodeRequested();
       await FirebaseAuth.instance.verifyPhoneNumber(
         phoneNumber: phone,
+        forceResendingToken: _resendToken,
         verificationCompleted: (PhoneAuthCredential credential) async {
           await _signInAndCheckRegistration(credential);
         },
@@ -622,6 +629,7 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
           if (mounted) {
             setState(() {
               _verificationId = verificationId;
+              _resendToken = resendToken;
               _codeSent = true;
               _loading = false;
             });
@@ -1032,8 +1040,6 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
         ),
         const SizedBox(height: 22),
         _buildFeatureHighlights(strings, compact: true),
-        const SizedBox(height: 22),
-        _buildSignUpLink(strings),
       ],
     );
   }
@@ -1129,8 +1135,6 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
         if (!compact) ...[
           const SizedBox(height: 48),
           _buildFeatureHighlights(strings, compact: false),
-          const SizedBox(height: 92),
-          _buildSignUpLink(strings),
         ],
       ],
     );
@@ -1417,6 +1421,8 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
               ),
             ),
           ),
+          const SizedBox(height: 18),
+          _buildSignUpLink(strings),
         ],
       ),
     );
@@ -1573,15 +1579,31 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
         ),
         const SizedBox(height: 8),
         Center(
-          child: TextButton(
-            onPressed: () => setState(() => _codeSent = false),
-            child: Text(
-              strings['edit_phone'] ?? 'Edit Phone Number',
-              style: const TextStyle(
-                color: Color(0xFF1976D2),
-                fontWeight: FontWeight.w700,
+          child: Wrap(
+            alignment: WrapAlignment.center,
+            spacing: 4,
+            children: [
+              TextButton(
+                onPressed: _loading ? null : _sendCode,
+                child: Text(
+                  strings['resend_code'] ?? 'Send SMS Again',
+                  style: const TextStyle(
+                    color: Color(0xFF1976D2),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
               ),
-            ),
+              TextButton(
+                onPressed: () => setState(() => _codeSent = false),
+                child: Text(
+                  strings['edit_phone'] ?? 'Edit Phone Number',
+                  style: const TextStyle(
+                    color: Color(0xFF1976D2),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ],
@@ -1664,30 +1686,40 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
   }
 
   Widget _buildSignUpLink(Map<String, String> strings) {
-    return Wrap(
-      alignment: WrapAlignment.center,
-      crossAxisAlignment: WrapCrossAlignment.center,
+    return Column(
       children: [
         Text(
           strings['no_account'] ?? "Don't have an account? ",
+          textAlign: TextAlign.center,
           style: const TextStyle(
             color: Color(0xFF6B7280),
             fontSize: 16,
             height: 1.4,
           ),
         ),
-        GestureDetector(
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const SignUpPage()),
-          ),
-          child: Text(
-            strings['signup'] ?? 'Sign Up',
-            style: const TextStyle(
-              color: Color(0xFF1976D2),
-              fontSize: 16,
-              fontWeight: FontWeight.w800,
-              height: 1.4,
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          height: 54,
+          child: OutlinedButton(
+            style: OutlinedButton.styleFrom(
+              foregroundColor: const Color(0xFF1976D2),
+              side: const BorderSide(color: Color(0xFFBFD7F2)),
+              backgroundColor: Colors.white.withValues(alpha: 0.78),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+            ),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const SignUpPage()),
+            ),
+            child: Text(
+              strings['signup'] ?? 'Sign Up',
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+              ),
             ),
           ),
         ),

@@ -22,6 +22,7 @@ class _PhoneAuthPageState extends State<PhoneAuthPage>
   final _phoneController = TextEditingController();
   final _codeController = TextEditingController();
   String _verificationId = "";
+  int? _resendToken;
   bool _codeSent = false;
   bool _loading = false;
   AnimationController? _introController;
@@ -37,6 +38,7 @@ class _PhoneAuthPageState extends State<PhoneAuthPage>
           'phone_label': 'מספר טלפון',
           'phone_hint': '05X-XXXXXXX',
           'send_code': 'שלח קוד',
+          'resend_code': 'שלח SMS שוב',
           'code_label': 'קוד אימות',
           'code_hint': 'הכנס את הקוד שקיבלת',
           'verify': 'אמת והתחבר',
@@ -49,6 +51,7 @@ class _PhoneAuthPageState extends State<PhoneAuthPage>
           'phone_label': 'የስልክ ቁጥር',
           'phone_hint': '05X-XXXXXXX',
           'send_code': 'ኮድ ላክ',
+          'resend_code': 'SMS እንደገና ላክ',
           'code_label': 'የማረጋገጫ ኮድ',
           'code_hint': 'የተቀበሉትን ኮድ ያስገቡ',
           'verify': 'አረጋግጥ እና ግባ',
@@ -63,6 +66,7 @@ class _PhoneAuthPageState extends State<PhoneAuthPage>
           'phone_label': 'Phone Number',
           'phone_hint': '05X-XXXXXXX',
           'send_code': 'Send Code',
+          'resend_code': 'Send SMS Again',
           'code_label': 'Verification Code',
           'code_hint': 'Enter the code you received',
           'verify': 'Verify & Sign In',
@@ -151,6 +155,7 @@ class _PhoneAuthPageState extends State<PhoneAuthPage>
     try {
       await FirebaseAuth.instance.verifyPhoneNumber(
         phoneNumber: formattedPhone,
+        forceResendingToken: _resendToken,
         verificationCompleted: (PhoneAuthCredential credential) async {
           if (widget.isReauth) {
             if (widget.onVerified != null) {
@@ -175,6 +180,7 @@ class _PhoneAuthPageState extends State<PhoneAuthPage>
         codeSent: (String verificationId, int? resendToken) {
           setState(() {
             _verificationId = verificationId;
+            _resendToken = resendToken;
             _codeSent = true;
             _loading = false;
           });
@@ -490,6 +496,19 @@ class _PhoneAuthPageState extends State<PhoneAuthPage>
               : strings['verify']!,
           icon: Icons.verified_rounded,
           onPressed: _signInWithCode,
+        ),
+        const SizedBox(height: 8),
+        Center(
+          child: TextButton(
+            onPressed: _loading ? null : _verifyPhone,
+            child: Text(
+              strings['resend_code'] ?? 'Send SMS Again',
+              style: const TextStyle(
+                color: Color(0xFF1976D2),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
         ),
       ],
     );

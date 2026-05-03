@@ -76,6 +76,7 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
   bool _agreedToPolicy = false;
   bool _codeSent = false;
   String _verificationId = "";
+  int? _resendToken;
   File? _image;
   final ImagePicker _picker = ImagePicker();
   DateTime? _dateOfBirth;
@@ -930,6 +931,7 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
           'radius_val': 'רדיוס: {val} ק"מ',
           'select_radius': 'בחר רדיוס על המפה',
           'edit_phone': 'ערוך מספר טלפון',
+          'resend_code': 'שלח SMS שוב',
           'phone_hint': 'לדוגמה: 0501234567',
           'sms_failed': 'שליחת ה-SMS נכשלה: {msg}',
           'auth_error': 'שגיאת אימות: {err}',
@@ -1030,6 +1032,7 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
           'radius_val': 'النطاق: {val} كم',
           'select_radius': 'اختر النطاق على الخريطة',
           'edit_phone': 'تعديل رقم الهاتف',
+          'resend_code': 'إرسال SMS مرة أخرى',
           'phone_hint': 'مثال: 0501234567',
           'sms_failed': 'فشل إرسال SMS: {msg}',
           'auth_error': 'خطأ في المصادقة: {err}',
@@ -1136,6 +1139,7 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
           'radius_val': 'Радиус: {val} км',
           'select_radius': 'Выберите радиус на карте',
           'edit_phone': 'Изменить номер телефона',
+          'resend_code': 'Отправить SMS снова',
           'phone_hint': 'например: 0501234567',
           'sms_failed': 'Ошибка SMS: {msg}',
           'auth_error': 'Ошибка аутентификации: {err}',
@@ -1233,6 +1237,7 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
           'radius_val': 'ክልል: {val} ኪሜ',
           'select_radius': 'በካርታ ላይ ክልል ይምረጡ',
           'edit_phone': 'የስልክ ቁጥር ያስተካክሉ',
+          'resend_code': 'SMS እንደገና ላክ',
           'phone_hint': 'ለምሳሌ፡ 0501234567',
           'sms_failed': 'የSMS መላክ አልተሳካም: {msg}',
           'auth_error': 'የማረጋገጫ ስህተት: {err}',
@@ -1340,6 +1345,7 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
           'radius_val': 'Radius: {val} km',
           'select_radius': 'Select radius on Map',
           'edit_phone': 'Edit Phone Number',
+          'resend_code': 'Send SMS Again',
           'phone_hint': 'e.g. 0501234567',
           'sms_failed': 'SMS failed: {msg}',
           'auth_error': 'Auth Error: {err}',
@@ -1361,6 +1367,34 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
       digits = digits.substring(1);
     }
     return '+972$digits';
+  }
+
+  Future<bool> _isPhoneRegistered(String normalizedPhone) async {
+    final snapshot = await FirebaseFirestore.instance
+        .collection('users')
+        .where('phone', isEqualTo: normalizedPhone)
+        .limit(1)
+        .get();
+    return snapshot.docs.isNotEmpty;
+  }
+
+  String _phoneAlreadyExistsMessage() {
+    final localeCode = Provider.of<LanguageProvider>(
+      context,
+      listen: false,
+    ).locale.languageCode;
+    switch (localeCode) {
+      case 'he':
+        return 'מספר הטלפון הזה כבר רשום במערכת.';
+      case 'ar':
+        return 'رقم الهاتف هذا مسجل بالفعل في النظام.';
+      case 'ru':
+        return 'Этот номер телефона уже зарегистрирован в системе.';
+      case 'am':
+        return 'ይህ የስልክ ቁጥር ቀድሞ በስርዓቱ ውስጥ ተመዝግቧል።';
+      default:
+        return 'This phone number is already registered.';
+    }
   }
 
   DateTime? _parseDateOfBirth(dynamic value) {
@@ -1411,8 +1445,20 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
 
     setState(() => _loading = true);
     try {
+      final isRegistered = await _isPhoneRegistered(phone);
+      if (isRegistered) {
+        if (mounted) {
+          setState(() => _loading = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(_phoneAlreadyExistsMessage())),
+          );
+        }
+        return;
+      }
+
       await FirebaseAuth.instance.verifyPhoneNumber(
         phoneNumber: phone,
+        forceResendingToken: _resendToken,
         verificationCompleted: (PhoneAuthCredential credential) async {
           await FirebaseAuth.instance.signInWithCredential(credential);
           await _onPhoneVerifiedAndSignedIn();
@@ -1433,6 +1479,7 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
           if (mounted) {
             setState(() {
               _verificationId = verificationId;
+              _resendToken = resendToken;
               _codeSent = true;
               _loading = false;
             });
@@ -2264,15 +2311,31 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
           ),
           if (_codeSent)
             Center(
-              child: TextButton(
-                onPressed: () => setState(() => _codeSent = false),
-                child: Text(
-                  strings['edit_phone']!,
-                  style: const TextStyle(
-                    color: Color(0xFF1976D2),
-                    fontWeight: FontWeight.w700,
+              child: Wrap(
+                alignment: WrapAlignment.center,
+                spacing: 4,
+                children: [
+                  TextButton(
+                    onPressed: _loading ? null : _handleSendCode,
+                    child: Text(
+                      strings['resend_code']!,
+                      style: const TextStyle(
+                        color: Color(0xFF1976D2),
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                   ),
-                ),
+                  TextButton(
+                    onPressed: () => setState(() => _codeSent = false),
+                    child: Text(
+                      strings['edit_phone']!,
+                      style: const TextStyle(
+                        color: Color(0xFF1976D2),
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
         ],

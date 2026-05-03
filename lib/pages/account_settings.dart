@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:untitled1/services/language_provider.dart';
 import 'package:untitled1/pages/edit_profile.dart';
+import 'package:untitled1/pages/help_page.dart';
 import 'package:untitled1/services/phone_auth_page.dart';
 import 'package:untitled1/pages/verify_business.dart';
 import 'package:untitled1/sign_in.dart';
@@ -57,6 +58,22 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
           'admin': 'מנהל',
           'change_phone': 'שנה מספר טלפון',
           'phone_updated': 'מספר הטלפון עודכן בהצלחה',
+          'change_phone_verify_title': 'אמת את המספר הנוכחי',
+          'change_phone_verify_body':
+              'לפני שינוי מספר הטלפון, אמת את המספר שמחובר כרגע לחשבון שלך.',
+          'change_phone_verify_cta': 'אמת מספר נוכחי',
+          'change_phone_confirm_title': 'להחליף מספר טלפון?',
+          'change_phone_confirm_body':
+              'לאחר שתמשיך, נעביר אותך למסך שבו תוכל להזין את מספר הטלפון החדש שלך.',
+          'change_phone_confirm_continue': 'כן, המשך',
+          'change_phone_code_failed': 'אימות מספר הטלפון נכשל',
+          'change_phone_phone_mismatch':
+              'המספר שהוזן לא תואם למספר הנוכחי של החשבון',
+          'change_phone_no_access': 'אין לי גישה למספר הנוכחי',
+          'change_phone_contact_title': 'אין גישה למספר הנוכחי?',
+          'change_phone_contact_body':
+              'כדי לשנות את מספר הטלפון בלי גישה למספר הנוכחי, צריך ליצור איתנו קשר.',
+          'change_phone_open_help': 'פתח עזרה',
           'delete_account': 'מחיקת חשבון',
           'change_business': 'עדכן פרטי עסק',
           'cancel': 'ביטול',
@@ -74,15 +91,22 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
           'delete_invoices_download': 'הבנתי, המשך',
           'delete_losses_next': 'הבא: חשבוניות',
           'delete_verify_title': 'אימות טלפוני למחיקה',
-          'delete_verify_body': 'נשלח קוד SMS למספר {phone}.',
+          'delete_verify_body': 'הקלד את מספר הטלפון שלך ולאחר מכן נשלח אליו קוד SMS.',
+          'delete_phone_label': 'מספר טלפון',
+          'delete_phone_hint': 'לדוגמה: 0501234567',
           'delete_code_label': 'קוד SMS',
           'delete_send_code': 'שלח קוד',
+          'delete_resend_code': 'שלח SMS שוב',
           'delete_verify_code': 'אמת קוד',
           'delete_final_title': 'אישור אחרון',
           'delete_final_body':
               'זה השלב האחרון. אחרי אישור, נמחק את החשבון וננתק אותך מהאפליקציה.',
           'delete_failed': 'מחיקת החשבון נכשלה',
           'delete_code_failed': 'האימות נכשל',
+          'delete_phone_invalid':
+              'אנא הכנס מספר טלפון ישראלי תקין (05XXXXXXXX)',
+          'delete_phone_mismatch':
+              'מספר הטלפון לא תואם למספר שמחובר לחשבון הזה',
           'delete_customer_loss_1': 'הפרופיל ופרטי החשבון שלך יימחקו',
           'delete_customer_loss_2': 'הודעות, בקשות ושיחות לא יהיו זמינות',
           'delete_customer_loss_3': 'פרויקטים שמורים ומועדפים יוסרו',
@@ -104,6 +128,22 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
           'admin': 'مسؤول',
           'change_phone': 'تغيير رقم الهاتف',
           'phone_updated': 'تم تحديث رقم الهاتف بنجاح',
+          'change_phone_verify_title': 'تحقق من الرقم الحالي',
+          'change_phone_verify_body':
+              'قبل تغيير رقم الهاتف، قم بتأكيد الرقم المرتبط حاليًا بحسابك.',
+          'change_phone_verify_cta': 'تحقق من الرقم الحالي',
+          'change_phone_confirm_title': 'تغيير رقم الهاتف؟',
+          'change_phone_confirm_body':
+              'عند المتابعة سننقلك إلى الشاشة التي يمكنك فيها إدخال رقم الهاتف الجديد.',
+          'change_phone_confirm_continue': 'نعم، تابع',
+          'change_phone_code_failed': 'فشل التحقق من رقم الهاتف',
+          'change_phone_phone_mismatch':
+              'الرقم الذي أدخلته لا يطابق الرقم الحالي للحساب',
+          'change_phone_no_access': 'ليس لدي وصول إلى الرقم الحالي',
+          'change_phone_contact_title': 'لا يمكنك الوصول إلى الرقم الحالي؟',
+          'change_phone_contact_body':
+              'لتغيير رقم الهاتف بدون الوصول إلى الرقم الحالي، يجب التواصل معنا.',
+          'change_phone_open_help': 'افتح صفحة المساعدة',
           'delete_account': 'حذف الحساب',
           'change_business': 'تحديث بيانات العمل',
           'na': 'غير متوفر',
@@ -123,15 +163,22 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
           'delete_invoices_download': 'فهمت، تابع',
           'delete_losses_next': 'التالي: الفواتير',
           'delete_verify_title': 'تأكيد الهاتف للحذف',
-          'delete_verify_body': 'سنرسل رمز SMS إلى {phone}.',
+          'delete_verify_body': 'اكتب رقم هاتفك أولاً ثم سنرسل إليه رمز SMS.',
+          'delete_phone_label': 'رقم الهاتف',
+          'delete_phone_hint': 'مثال: 0501234567',
           'delete_code_label': 'رمز SMS',
           'delete_send_code': 'إرسال الرمز',
+          'delete_resend_code': 'إرسال SMS مرة أخرى',
           'delete_verify_code': 'تأكيد الرمز',
           'delete_final_title': 'تأكيد أخير',
           'delete_final_body':
               'هذه هي الخطوة الأخيرة. بعد التأكيد سنحذف حسابك ونسجل خروجك من التطبيق.',
           'delete_failed': 'فشل حذف الحساب',
           'delete_code_failed': 'فشل التحقق',
+          'delete_phone_invalid':
+              'يرجى إدخال رقم هاتف إسرائيلي صالح (05XXXXXXXX)',
+          'delete_phone_mismatch':
+              'رقم الهاتف لا يطابق الرقم المرتبط بهذا الحساب',
           'delete_customer_loss_1': 'سيتم حذف ملفك وبيانات حسابك',
           'delete_customer_loss_2': 'لن تتوفر الرسائل والطلبات والمحادثات',
           'delete_customer_loss_3': 'ستتم إزالة المحفوظات والمفضلات',
@@ -154,6 +201,22 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
           'admin': 'አስተዳዳሪ',
           'change_phone': 'የስልክ ቁጥር ቀይር',
           'phone_updated': 'የስልክ ቁጥር በተሳካ ሁኔታ ተዘምኗል',
+          'change_phone_verify_title': 'ያለውን ቁጥር ያረጋግጡ',
+          'change_phone_verify_body':
+              'የስልክ ቁጥርዎን ከመቀየርዎ በፊት አሁን ከመለያዎ ጋር የተገናኘውን ቁጥር ያረጋግጡ።',
+          'change_phone_verify_cta': 'ያለውን ቁጥር ያረጋግጡ',
+          'change_phone_confirm_title': 'የስልክ ቁጥር ይቀየር?',
+          'change_phone_confirm_body':
+              'ከቀጠሉ አዲሱን የስልክ ቁጥርዎን ማስገባት ወደሚችሉበት ገጽ እንወስድዎታለን።',
+          'change_phone_confirm_continue': 'አዎ፣ ቀጥል',
+          'change_phone_code_failed': 'የስልክ ቁጥር ማረጋገጫ አልተሳካም',
+          'change_phone_phone_mismatch':
+              'ያስገቡት ቁጥር ከመለያው አሁን ካለው ቁጥር ጋር አይዛመድም',
+          'change_phone_no_access': 'አሁን ያለውን ቁጥር ማግኘት አልችልም',
+          'change_phone_contact_title': 'ያለውን ቁጥር ማግኘት አልቻሉም?',
+          'change_phone_contact_body':
+              'አሁን ያለውን ቁጥር ሳይደርሱበት የስልክ ቁጥርዎን ለመቀየር እባክዎ ከእኛ ጋር ይገናኙ።',
+          'change_phone_open_help': 'የእገዛ ገጽ ክፈት',
           'delete_account': 'መለያ ሰርዝ',
           'change_business': 'የንግድ መረጃ አዘምን',
           'na': 'አይገኝም',
@@ -172,14 +235,21 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
           'delete_invoices_download': 'ገባኝ፣ ቀጥል',
           'delete_losses_next': 'ቀጣይ: ደረሰኞች',
           'delete_verify_title': 'ለመሰረዝ ስልክ ያረጋግጡ',
-          'delete_verify_body': 'የSMS ኮድ ወደ {phone} እንልካለን።',
+          'delete_verify_body': 'መጀመሪያ የስልክ ቁጥርዎን ያስገቡ ከዚያ የSMS ኮድ እንልካለን።',
+          'delete_phone_label': 'ስልክ ቁጥር',
+          'delete_phone_hint': 'ለምሳሌ፡ 0501234567',
           'delete_code_label': 'SMS ኮድ',
           'delete_send_code': 'ኮድ ላክ',
+          'delete_resend_code': 'SMS እንደገና ላክ',
           'delete_verify_code': 'ኮድ አረጋግጥ',
           'delete_final_title': 'የመጨረሻ ማረጋገጫ',
           'delete_final_body': 'ይህ የመጨረሻው ደረጃ ነው። ካረጋገጡ መለያዎን እንሰርዛለን።',
           'delete_failed': 'መለያውን መሰረዝ አልተሳካም',
           'delete_code_failed': 'ማረጋገጫው አልተሳካም',
+          'delete_phone_invalid':
+              'እባክዎ ትክክለኛ የእስራኤል የስልክ ቁጥር ያስገቡ (05XXXXXXXX)',
+          'delete_phone_mismatch':
+              'የስልክ ቁጥሩ ከዚህ መለያ ጋር ከተገናኘው ቁጥር ጋር አይዛመድም',
           'delete_customer_loss_1': 'መገለጫዎ እና የመለያ መረጃዎ ይሰረዛሉ',
           'delete_customer_loss_2': 'መልዕክቶች እና ጥያቄዎች አይገኙም',
           'delete_customer_loss_3': 'የተቀመጡ ነገሮች ይወገዳሉ',
@@ -201,6 +271,22 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
           'admin': 'Администратор',
           'change_phone': 'Изменить номер телефона',
           'phone_updated': 'Номер телефона успешно обновлен',
+          'change_phone_verify_title': 'Подтвердите текущий номер',
+          'change_phone_verify_body':
+              'Перед изменением номера телефона подтвердите номер, который сейчас привязан к аккаунту.',
+          'change_phone_verify_cta': 'Подтвердить текущий номер',
+          'change_phone_confirm_title': 'Изменить номер телефона?',
+          'change_phone_confirm_body':
+              'После продолжения мы переведем вас на экран, где можно будет ввести новый номер телефона.',
+          'change_phone_confirm_continue': 'Да, продолжить',
+          'change_phone_code_failed': 'Не удалось подтвердить номер телефона',
+          'change_phone_phone_mismatch':
+              'Введенный номер не совпадает с текущим номером аккаунта',
+          'change_phone_no_access': 'У меня нет доступа к текущему номеру',
+          'change_phone_contact_title': 'Нет доступа к текущему номеру?',
+          'change_phone_contact_body':
+              'Чтобы изменить номер телефона без доступа к текущему номеру, нужно связаться с нами.',
+          'change_phone_open_help': 'Открыть помощь',
           'delete_account': 'Удалить аккаунт',
           'change_business': 'Обновить данные бизнеса',
           'na': 'Недоступно',
@@ -220,15 +306,23 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
           'delete_invoices_download': 'Понятно, продолжить',
           'delete_losses_next': 'Далее: счета',
           'delete_verify_title': 'Подтвердите телефон для удаления',
-          'delete_verify_body': 'Мы отправим SMS-код на {phone}.',
+          'delete_verify_body':
+              'Сначала введите свой номер телефона, затем мы отправим на него SMS-код.',
+          'delete_phone_label': 'Номер телефона',
+          'delete_phone_hint': 'например: 0501234567',
           'delete_code_label': 'SMS-код',
           'delete_send_code': 'Отправить код',
+          'delete_resend_code': 'Отправить SMS снова',
           'delete_verify_code': 'Подтвердить код',
           'delete_final_title': 'Последнее подтверждение',
           'delete_final_body':
               'Это последний шаг. После подтверждения мы удалим аккаунт и выйдем из приложения.',
           'delete_failed': 'Не удалось удалить аккаунт',
           'delete_code_failed': 'Проверка не удалась',
+          'delete_phone_invalid':
+              'Введите корректный израильский номер телефона (05XXXXXXXX)',
+          'delete_phone_mismatch':
+              'Номер телефона не совпадает с номером этого аккаунта',
           'delete_customer_loss_1':
               'Ваш профиль и данные аккаунта будут удалены',
           'delete_customer_loss_2': 'Сообщения, заявки и чаты будут недоступны',
@@ -253,6 +347,22 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
           'admin': 'Admin',
           'change_phone': 'Change Phone Number',
           'phone_updated': 'Phone number updated successfully',
+          'change_phone_verify_title': 'Verify your current number',
+          'change_phone_verify_body':
+              'Before changing your phone number, verify the number currently connected to your account.',
+          'change_phone_verify_cta': 'Verify Current Number',
+          'change_phone_confirm_title': 'Change phone number?',
+          'change_phone_confirm_body':
+              'If you continue, we will take you to the page where you can enter your new phone number.',
+          'change_phone_confirm_continue': 'Yes, continue',
+          'change_phone_code_failed': 'Phone number verification failed',
+          'change_phone_phone_mismatch':
+              'The number you entered does not match the current account number',
+          'change_phone_no_access': "I don't have access to my current number",
+          'change_phone_contact_title': "Can't access your current number?",
+          'change_phone_contact_body':
+              'To change your phone number without access to the current number, you need to contact us.',
+          'change_phone_open_help': 'Open Help Page',
           'delete_account': 'Delete Account',
           'change_business': 'Update Business Info',
           'na': 'N/A',
@@ -272,15 +382,23 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
           'delete_invoices_download': 'I understand, continue',
           'delete_losses_next': 'Next: invoices',
           'delete_verify_title': 'Verify your phone to delete',
-          'delete_verify_body': 'We will send an SMS code to {phone}.',
+          'delete_verify_body':
+              'Type your phone number first, then we will send an SMS code.',
+          'delete_phone_label': 'Phone Number',
+          'delete_phone_hint': 'e.g. 0501234567',
           'delete_code_label': 'SMS Code',
           'delete_send_code': 'Send Code',
+          'delete_resend_code': 'Send SMS Again',
           'delete_verify_code': 'Verify Code',
           'delete_final_title': 'Final confirmation',
           'delete_final_body':
               'This is the last step. If you confirm, we will delete your account and sign you out.',
           'delete_failed': 'Failed to delete account',
           'delete_code_failed': 'Verification failed',
+          'delete_phone_invalid':
+              'Please enter a valid Israeli phone number (05XXXXXXXX)',
+          'delete_phone_mismatch':
+              'The phone number does not match this account',
           'delete_customer_loss_1':
               'Your profile and account details are deleted',
           'delete_customer_loss_2':
@@ -329,15 +447,37 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => PhoneAuthPage(
-          isReauth: true,
-          onVerified: (newPhone) {
-            _updatePhoneInFirestore(newPhone);
-            Navigator.pop(context);
-          },
+        builder: (context) => _CurrentPhoneVerificationPage(
+          currentPhone: _currentPhone,
+          strings: _getLocalizedStrings(context, listen: false),
         ),
       ),
-    );
+    ).then((verified) async {
+      if (verified != true || !mounted) return;
+
+      final strings = _getLocalizedStrings(context, listen: false);
+      final wantsToChange = await _showDeleteStepDialog(
+        title: strings['change_phone_confirm_title']!,
+        body: strings['change_phone_confirm_body']!,
+        primaryLabel: strings['change_phone_confirm_continue']!,
+        secondaryLabel: strings['cancel']!,
+        icon: Icons.phone_android_outlined,
+      );
+      if (wantsToChange != true || !mounted) return;
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => PhoneAuthPage(
+            isReauth: true,
+            onVerified: (newPhone) {
+              _updatePhoneInFirestore(newPhone);
+              Navigator.pop(context);
+            },
+          ),
+        ),
+      );
+    });
   }
 
   Future<void> _startDeleteAccountFlow() async {
@@ -1018,6 +1158,20 @@ class _DeletePhoneVerificationPage extends StatefulWidget {
       _DeletePhoneVerificationPageState();
 }
 
+class _CurrentPhoneVerificationPage extends StatefulWidget {
+  final String currentPhone;
+  final Map<String, String> strings;
+
+  const _CurrentPhoneVerificationPage({
+    required this.currentPhone,
+    required this.strings,
+  });
+
+  @override
+  State<_CurrentPhoneVerificationPage> createState() =>
+      _CurrentPhoneVerificationPageState();
+}
+
 class _DeleteDialogIcon extends StatelessWidget {
   final IconData icon;
   final bool destructive;
@@ -1046,33 +1200,347 @@ class _DeleteDialogIcon extends StatelessWidget {
   }
 }
 
-class _DeletePhoneVerificationPageState
-    extends State<_DeletePhoneVerificationPage> {
+class _CurrentPhoneVerificationPageState
+    extends State<_CurrentPhoneVerificationPage> {
+  final _phoneController = TextEditingController();
   final _codeController = TextEditingController();
   String _verificationId = '';
+  int? _resendToken;
   bool _loading = false;
   bool _codeSent = false;
 
   @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _sendCode());
-  }
-
-  @override
   void dispose() {
+    _phoneController.dispose();
     _codeController.dispose();
     super.dispose();
   }
 
+  String _normalizePhone(String input) {
+    String digits = input.replaceAll(RegExp(r'\D'), '');
+    if (digits.startsWith('972')) {
+      digits = digits.substring(3);
+    }
+    while (digits.startsWith('0')) {
+      digits = digits.substring(1);
+    }
+    return '+972$digits';
+  }
+
   Future<void> _sendCode() async {
-    final phone = widget.phoneNumber.trim();
-    if (phone.isEmpty || phone == 'N/A') return;
+    final enteredPhone = _phoneController.text.trim();
+    if (enteredPhone.isEmpty) return;
+
+    final phone = _normalizePhone(enteredPhone);
+    final expectedPhone = _normalizePhone(widget.currentPhone.trim());
+    final regExp = RegExp(r'^\+9725\d{8}$');
+
+    if (!regExp.hasMatch(phone)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(widget.strings['delete_phone_invalid']!)),
+      );
+      return;
+    }
+
+    if (phone != expectedPhone) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(widget.strings['change_phone_phone_mismatch']!)),
+      );
+      return;
+    }
 
     setState(() => _loading = true);
     try {
       await FirebaseAuth.instance.verifyPhoneNumber(
         phoneNumber: phone,
+        forceResendingToken: _resendToken,
+        verificationCompleted: (credential) async {
+          await _reauthenticate(credential);
+        },
+        verificationFailed: (e) {
+          if (!mounted) return;
+          setState(() => _loading = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                '${widget.strings['change_phone_code_failed']!}: ${e.message ?? e.code}',
+              ),
+            ),
+          );
+        },
+        codeSent: (verificationId, resendToken) {
+          if (!mounted) return;
+          setState(() {
+            _verificationId = verificationId;
+            _resendToken = resendToken;
+            _codeSent = true;
+            _loading = false;
+          });
+        },
+        codeAutoRetrievalTimeout: (verificationId) {
+          _verificationId = verificationId;
+        },
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${widget.strings['change_phone_code_failed']!}: $e'),
+        ),
+      );
+    }
+  }
+
+  Future<void> _verifyCode() async {
+    if (_verificationId.isEmpty || _codeController.text.trim().isEmpty) return;
+    setState(() => _loading = true);
+    try {
+      final credential = PhoneAuthProvider.credential(
+        verificationId: _verificationId,
+        smsCode: _codeController.text.trim(),
+      );
+      await _reauthenticate(credential);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${widget.strings['change_phone_code_failed']!}: $e'),
+        ),
+      );
+    }
+  }
+
+  Future<void> _reauthenticate(PhoneAuthCredential credential) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    await user.reauthenticateWithCredential(credential);
+    if (!mounted) return;
+    Navigator.pop(context, true);
+  }
+
+  Future<void> _showContactDialog() async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(widget.strings['change_phone_contact_title']!),
+        content: Text(widget.strings['change_phone_contact_body']!),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              Navigator.push(
+                this.context,
+                MaterialPageRoute(builder: (_) => const HelpPage()),
+              );
+            },
+            child: Text(widget.strings['change_phone_open_help']!),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(widget.strings['close'] ?? widget.strings['cancel']!),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF7FBFF),
+      appBar: AppBar(
+        title: Text(widget.strings['change_phone_verify_title']!),
+        backgroundColor: Colors.white,
+        foregroundColor: const Color(0xFF111827),
+        elevation: 0,
+      ),
+      body: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 520),
+            child: Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.08),
+                    blurRadius: 24,
+                    offset: const Offset(0, 12),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Icon(
+                    Icons.phone_locked_outlined,
+                    color: Color(0xFF1976D2),
+                    size: 42,
+                  ),
+                  const SizedBox(height: 18),
+                  Text(
+                    widget.strings['change_phone_verify_title']!,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF111827),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    widget.strings['change_phone_verify_body']!,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Color(0xFF6B7280),
+                      height: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  TextField(
+                    controller: _phoneController,
+                    enabled: !_codeSent && !_loading,
+                    keyboardType: TextInputType.phone,
+                    textAlign: TextAlign.center,
+                    decoration: InputDecoration(
+                      labelText: widget.strings['phone']!,
+                      hintText: widget.currentPhone,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: _codeController,
+                    enabled: _codeSent && !_loading,
+                    keyboardType: TextInputType.number,
+                    textAlign: TextAlign.center,
+                    decoration: InputDecoration(
+                      labelText: widget.strings['delete_code_label']!,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  ElevatedButton.icon(
+                    onPressed: _loading
+                        ? null
+                        : (_codeSent ? _verifyCode : _sendCode),
+                    icon: _loading
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Icon(
+                            _codeSent
+                                ? Icons.verified_outlined
+                                : Icons.sms_outlined,
+                          ),
+                    label: Text(
+                      _codeSent
+                          ? widget.strings['delete_verify_code']!
+                          : widget.strings['change_phone_verify_cta']!,
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF1976D2),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                  ),
+                  if (_codeSent) ...[
+                    const SizedBox(height: 8),
+                    Center(
+                      child: TextButton(
+                        onPressed: _loading ? null : _sendCode,
+                        child: Text(widget.strings['delete_resend_code']!),
+                      ),
+                    ),
+                  ] else ...[
+                    const SizedBox(height: 8),
+                    Center(
+                      child: TextButton(
+                        onPressed: _loading ? null : _showContactDialog,
+                        child: Text(widget.strings['change_phone_no_access']!),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DeletePhoneVerificationPageState
+    extends State<_DeletePhoneVerificationPage> {
+  final _phoneController = TextEditingController();
+  final _codeController = TextEditingController();
+  String _verificationId = '';
+  int? _resendToken;
+  bool _loading = false;
+  bool _codeSent = false;
+
+  @override
+  void dispose() {
+    _phoneController.dispose();
+    _codeController.dispose();
+    super.dispose();
+  }
+
+  String _normalizePhone(String input) {
+    String digits = input.replaceAll(RegExp(r'\D'), '');
+    if (digits.startsWith('972')) {
+      digits = digits.substring(3);
+    }
+    while (digits.startsWith('0')) {
+      digits = digits.substring(1);
+    }
+    return '+972$digits';
+  }
+
+  Future<void> _sendCode() async {
+    final enteredPhone = _phoneController.text.trim();
+    if (enteredPhone.isEmpty) return;
+
+    final phone = _normalizePhone(enteredPhone);
+    final expectedPhone = _normalizePhone(widget.phoneNumber.trim());
+    final regExp = RegExp(r'^\+9725\d{8}$');
+
+    if (!regExp.hasMatch(phone)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(widget.strings['delete_phone_invalid']!)),
+      );
+      return;
+    }
+
+    if (phone != expectedPhone) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(widget.strings['delete_phone_mismatch']!)),
+      );
+      return;
+    }
+
+    setState(() => _loading = true);
+    try {
+      await FirebaseAuth.instance.verifyPhoneNumber(
+        phoneNumber: phone,
+        forceResendingToken: _resendToken,
         verificationCompleted: (credential) async {
           await _reauthenticate(credential);
         },
@@ -1091,6 +1559,7 @@ class _DeletePhoneVerificationPageState
           if (!mounted) return;
           setState(() {
             _verificationId = verificationId;
+            _resendToken = resendToken;
             _codeSent = true;
             _loading = false;
           });
@@ -1184,10 +1653,7 @@ class _DeletePhoneVerificationPageState
                   ),
                   const SizedBox(height: 10),
                   Text(
-                    widget.strings['delete_verify_body']!.replaceFirst(
-                      '{phone}',
-                      widget.phoneNumber,
-                    ),
+                    widget.strings['delete_verify_body']!,
                     textAlign: TextAlign.center,
                     style: const TextStyle(
                       color: Color(0xFF6B7280),
@@ -1195,6 +1661,20 @@ class _DeletePhoneVerificationPageState
                     ),
                   ),
                   const SizedBox(height: 24),
+                  TextField(
+                    controller: _phoneController,
+                    enabled: !_codeSent && !_loading,
+                    keyboardType: TextInputType.phone,
+                    textAlign: TextAlign.center,
+                    decoration: InputDecoration(
+                      labelText: widget.strings['delete_phone_label']!,
+                      hintText: widget.strings['delete_phone_hint'],
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
                   TextField(
                     controller: _codeController,
                     enabled: _codeSent && !_loading,
@@ -1237,6 +1717,15 @@ class _DeletePhoneVerificationPageState
                       ),
                     ),
                   ),
+                  if (_codeSent) ...[
+                    const SizedBox(height: 8),
+                    Center(
+                      child: TextButton(
+                        onPressed: _loading ? null : _sendCode,
+                        child: Text(widget.strings['delete_resend_code']!),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
