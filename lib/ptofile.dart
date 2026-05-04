@@ -2665,20 +2665,19 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
                         );
                       },
                     ),
-                  if (_hasActiveWorkerSubscription)
-                    _buildModernToolCard(
-                      Icons.folder_copy_outlined,
-                      strings['saved_invoices']!,
-                      Colors.cyan,
-                      () async {
-                        await Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const SavedInvoicesPage(),
-                          ),
-                        );
-                      },
-                    ),
+                  _buildModernToolCard(
+                    Icons.folder_copy_outlined,
+                    strings['saved_invoices']!,
+                    Colors.cyan,
+                    () async {
+                      await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const SavedInvoicesPage(),
+                        ),
+                      );
+                    },
+                  ),
                   if (_hasActiveWorkerSubscription)
                     _buildModernToolCard(
                       Icons.verified_user_outlined,
