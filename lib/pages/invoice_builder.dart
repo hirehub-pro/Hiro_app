@@ -365,8 +365,19 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'date': dateStr,
           'amount': signedTotalAmount,
           'vatAmount': vatAmount,
+          'discountAmount': _discountAmount,
           'customerId': customerId,
           'clientName': _clientNameController.text,
+          'items': _items
+              .map(
+                (item) => {
+                  'description': item.description,
+                  'quantity': item.quantity,
+                  'unitPriceWithoutTax': _unitPriceBeforeTax(item),
+                  'amount': _itemTotalBeforeTax(item),
+                },
+              )
+              .toList(),
           'fileName': '',
           'storagePath': '',
           'url': '',
@@ -477,8 +488,16 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     return item.isPriceBeforeTax ? item.price * (1 + _vatRate) : item.price;
   }
 
+  double _unitPriceBeforeTax(InvoiceItem item) {
+    if (!_usesVat) return item.price;
+    return item.isPriceBeforeTax ? item.price : item.price / (1 + _vatRate);
+  }
+
   double _itemTotalAfterTax(InvoiceItem item) =>
       _unitPriceAfterTax(item) * item.quantity;
+
+  double _itemTotalBeforeTax(InvoiceItem item) =>
+      _unitPriceBeforeTax(item) * item.quantity;
 
   double get _itemsTotalBeforeDiscount =>
       _items.fold<double>(0, (sum, item) => sum + _itemTotalAfterTax(item));

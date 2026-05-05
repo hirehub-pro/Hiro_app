@@ -58,14 +58,14 @@ class _InvoiceItemRecord {
   final String description;
   final double quantity;
   final double unitPrice;
+  final double lineTotal;
 
   const _InvoiceItemRecord({
     required this.description,
     required this.quantity,
     required this.unitPrice,
+    required this.lineTotal,
   });
-
-  double get total => quantity * unitPrice;
 }
 
 class BkmvExportService {
@@ -329,6 +329,7 @@ class BkmvExportService {
 
       if (bucket == 'invoices' || bucket == 'credit_notes') {
         final items = _extractItems(invoiceData, subtotal, vatAmount);
+        final discountAmount = _num(invoiceData['discountAmount']).abs();
         var detailLine = 1;
         for (final item in items) {
           addRecord(
@@ -344,7 +345,8 @@ class BkmvExportService {
               description: item.description,
               quantity: item.quantity,
               unitPrice: item.unitPrice,
-              lineTotal: item.total,
+              discountAmount: detailLine == 1 ? discountAmount : 0,
+              lineTotal: item.lineTotal,
               vatRate: vatAmount > 0 ? 17 : 0,
               documentDate: documentDate,
               linkId: linkId,
@@ -697,6 +699,7 @@ class BkmvExportService {
     required String description,
     required double quantity,
     required double unitPrice,
+    required double discountAmount,
     required double lineTotal,
     required int vatRate,
     required String documentDate,
@@ -719,7 +722,7 @@ class BkmvExportService {
       _fitAlpha('UNIT', 20),
       _fitSignedAmount(quantity, wholeDigits: 12, decimalDigits: 4),
       _fitSignedAmount(unitPrice, wholeDigits: 12, decimalDigits: 2),
-      _fitSignedAmount(0, wholeDigits: 12, decimalDigits: 2),
+      _fitSignedAmount(discountAmount, wholeDigits: 12, decimalDigits: 2),
       _fitSignedAmount(lineTotal, wholeDigits: 12, decimalDigits: 2),
       _fitNumeric(vatRate.toString(), 4),
       _fitAlpha('', 7),
@@ -786,7 +789,10 @@ class BkmvExportService {
             (item) => _InvoiceItemRecord(
               description: (item['description'] ?? 'Item').toString(),
               quantity: _num(item['quantity'], fallback: 1),
-              unitPrice: _num(item['price']),
+              unitPrice: _num(
+                item['unitPriceWithoutTax'] ?? item['price'],
+              ).abs(),
+              lineTotal: _num(item['amount']).abs(),
             ),
           )
           .where((item) => item.quantity > 0)
@@ -804,6 +810,7 @@ class BkmvExportService {
         description: 'General item',
         quantity: 1,
         unitPrice: fallbackSubtotal,
+        lineTotal: fallbackSubtotal,
       ),
     ];
   }
