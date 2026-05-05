@@ -565,7 +565,7 @@ class BkmvExportService {
       _fitNumeric(totalBkmvRecords.toString(), 15),
       _fitNumeric(context.businessNumber, 9),
       _fitNumeric(mainId, 15),
-      _fitAlpha('OF1.31', 8),
+      _fitAlpha('&OF1.31&', 8),
       _fitNumeric(context.softwareRegistrationNumber, 8),
       _fitAlpha(context.softwareName, 20),
       _fitAlpha(context.softwareVersion, 20),
@@ -607,7 +607,7 @@ class BkmvExportService {
       _fitNumeric(recordNumber.toString(), 9),
       _fitNumeric(businessNumber, 9),
       _fitNumeric(mainId, 15),
-      _fitAlpha('OF1.31', 8),
+      _fitAlpha('&OF1.31&', 8),
       _fitAlpha('', 50),
     ], 95);
   }
@@ -623,7 +623,7 @@ class BkmvExportService {
       _fitNumeric(recordNumber.toString(), 9),
       _fitNumeric(businessNumber, 9),
       _fitNumeric(mainId, 15),
-      _fitAlpha('OF1.31', 8),
+      _fitAlpha('&OF1.31&', 8),
       _fitNumeric(totalRecords.toString(), 15),
       _fitAlpha('', 50),
     ], 110);
