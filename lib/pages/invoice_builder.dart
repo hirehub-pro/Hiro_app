@@ -184,21 +184,21 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     switch (docType) {
       case 'receipt':
         return [
-          {'bucket': 'receipts', 'type': 'D120'},
+          {'bucket': 'receipts'},
         ];
       case 'credit_note':
         return [
-          {'bucket': 'credit_notes', 'type': 'C300'},
+          {'bucket': 'credit_notes'},
         ];
       case 'invoice_receipt':
         return [
-          {'bucket': 'invoices', 'type': 'C100'},
-          {'bucket': 'receipts', 'type': 'D120'},
+          {'bucket': 'invoices'},
+          {'bucket': 'receipts'},
         ];
       case 'invoice':
       default:
         return [
-          {'bucket': 'invoices', 'type': 'C100'},
+          {'bucket': 'invoices'},
         ];
     }
   }
@@ -266,11 +266,72 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           .doc(target['bucket']!);
       return {
         'bucket': target['bucket']!,
-        'type': target['type']!,
         'bucketRef': logBucketRef,
         'fileRef': logBucketRef.collection('files').doc(),
       };
     }).toList();
+    final paymentMethodsData = _paymentMethods
+        .map((entry) => entry.toMap())
+        .toList();
+    final paymentAmountTotal = _paymentMethodsAmountTotal();
+    final hasDiscount = _hasDiscount && _discountAmount > 0;
+    final discountAmount = hasDiscount ? _discountAmount : 0.0;
+    final signedDiscountAmount =
+        discountAmount == 0 ? 0.0 : (docType == 'credit_note' ? discountAmount : -discountAmount);
+    final itemsGrossTotal = _items.fold<double>(
+      0,
+      (sum, item) => sum + _itemTotalAfterTax(item),
+    );
+    final subtotalBeforeTax = _usesVat ? (_totalAmount / (1 + _vatRate)) : _totalAmount;
+    final subtotalAfterTax = _totalAmount;
+    final signedSubtotalBeforeTax =
+        docType == 'credit_note' ? -subtotalBeforeTax : subtotalBeforeTax;
+    final signedSubtotalAfterTax =
+        docType == 'credit_note' ? -subtotalAfterTax : subtotalAfterTax;
+    var remainingDiscount = discountAmount;
+    final logItems = _items.asMap().entries.map((entry) {
+      final index = entry.key;
+      final item = entry.value;
+      final isLastItem = index == _items.length - 1;
+      final lineSubtotalAfterTax = _itemTotalAfterTax(item);
+      final proportionalDiscount =
+          hasDiscount && itemsGrossTotal > 0
+              ? discountAmount * (lineSubtotalAfterTax / itemsGrossTotal)
+              : 0.0;
+      final lineDiscount =
+          hasDiscount
+              ? (isLastItem ? remainingDiscount : proportionalDiscount)
+              : 0.0;
+      if (hasDiscount) {
+        remainingDiscount -= lineDiscount;
+      }
+      final lineTotalAfterTax = lineSubtotalAfterTax - lineDiscount;
+      final lineTaxPaid =
+          _usesVat ? (lineTotalAfterTax - (lineTotalAfterTax / (1 + _vatRate))) : 0.0;
+
+      return {
+        'description': item.description,
+        'quantity': item.quantity,
+        'unitPrice': _unitPriceAfterTax(item),
+        'unitPriceWithoutTax': _unitPriceBeforeTax(item),
+        'discount': lineDiscount == 0 ? 0.0 : -lineDiscount,
+        'taxPaid': _isCreditNote ? -lineTaxPaid : lineTaxPaid,
+        'total': _isCreditNote ? -lineTotalAfterTax : lineTotalAfterTax,
+        'priceTaxMode': item.isPriceBeforeTax ? 'before_tax' : 'after_tax',
+      };
+    }).toList();
+    final clientDetails = {
+      'id': customerId,
+      'name': _clientNameController.text,
+      'address': _clientAddressController.text,
+      'phone': _clientPhoneController.text,
+    };
+    final businessDetails = {
+      'businessId': _businessId,
+      'businessAddress': _businessAddress,
+      'dealerType': _dealerType,
+      'isBusinessVerified': _isBusinessVerified,
+    };
 
     late int nextNumber;
 
@@ -318,10 +379,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         'paymentMethod': _paymentMethods.isNotEmpty
             ? _paymentMethods.first.method
             : 'cash',
-        'paymentMethods': _paymentMethods
-            .map((entry) => entry.toMap())
-            .toList(),
-        'paymentAmountTotal': _paymentMethodsAmountTotal(),
+        'paymentMethods': paymentMethodsData,
+        'paymentAmountTotal': paymentAmountTotal,
         'invoiceNumber': nextNumber,
         'date': dateStr,
         'createdAt': timestamp,
@@ -359,25 +418,28 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'userId': userId,
           'bucket': entry['bucket'],
           'docType': docType,
-          'type': entry['type'],
           'counter': logCounter,
           'documentNumber': nextNumber,
           'date': dateStr,
+          'issueDate': dateStr,
+          'clientDetails': clientDetails,
+          'businessDetails': businessDetails,
           'amount': signedTotalAmount,
+          'subtotalBeforeTax': signedSubtotalBeforeTax,
+          'subtotalAfterTax': signedSubtotalAfterTax,
           'vatAmount': vatAmount,
-          'discountAmount': _discountAmount,
+          'grandTotal': signedTotalAmount,
+          'discountAmount': signedDiscountAmount,
           'customerId': customerId,
           'clientName': _clientNameController.text,
-          'items': _items
-              .map(
-                (item) => {
-                  'description': item.description,
-                  'quantity': item.quantity,
-                  'unitPriceWithoutTax': _unitPriceBeforeTax(item),
-                  'amount': _itemTotalBeforeTax(item),
-                },
-              )
-              .toList(),
+          'clientAddress': _clientAddressController.text,
+          'clientPhone': _clientPhoneController.text,
+          'paymentMethod': _paymentMethods.isNotEmpty
+              ? _paymentMethods.first.method
+              : 'cash',
+          'paymentMethods': paymentMethodsData,
+          'paymentAmountTotal': paymentAmountTotal,
+          'items': logItems,
           'fileName': '',
           'storagePath': '',
           'url': '',

@@ -58,13 +58,11 @@ class _InvoiceItemRecord {
   final String description;
   final double quantity;
   final double unitPrice;
-  final double lineTotal;
 
   const _InvoiceItemRecord({
     required this.description,
     required this.quantity,
     required this.unitPrice,
-    required this.lineTotal,
   });
 }
 
@@ -271,11 +269,11 @@ class BkmvExportService {
         continue;
       }
 
-      final amount = _absNum(invoiceData['amount'] ?? logData['amount']);
-      final vatAmount = _absNum(
-        invoiceData['vatAmount'] ?? logData['vatAmount'],
-      );
-      final subtotal = max(0, amount - vatAmount).toDouble();
+      final amount = _num(invoiceData['amount'] ?? logData['amount']);
+      final vatAmount = _num(invoiceData['vatAmount'] ?? logData['vatAmount']);
+      final subtotal = amount;
+      final discount = _num(invoiceData['discountAmount'] ?? 0);
+
       final documentDate = _normalizeDate(
         (invoiceData['date'] ?? logData['date']).toString(),
       );
@@ -317,7 +315,8 @@ class BkmvExportService {
             clientVatNumber: (invoiceData['customerVatNumber'] ?? '')
                 .toString(),
             valueDate: documentDate,
-            subtotal: subtotal,
+            subtotal: subtotal, 
+            discount: discount,
             vatAmount: vatAmount,
             totalAmount: amount,
             customerKey: customerKey,
@@ -329,7 +328,7 @@ class BkmvExportService {
 
       if (bucket == 'invoices' || bucket == 'credit_notes') {
         final items = _extractItems(invoiceData, subtotal, vatAmount);
-        final discountAmount = _num(invoiceData['discountAmount']).abs();
+        final discountAmount = _num(invoiceData['discountAmount']);
         var detailLine = 1;
         for (final item in items) {
           addRecord(
@@ -346,7 +345,9 @@ class BkmvExportService {
               quantity: item.quantity,
               unitPrice: item.unitPrice,
               discountAmount: detailLine == 1 ? discountAmount : 0,
-              lineTotal: item.lineTotal,
+              lineTotal:
+                  (item.quantity * item.unitPrice) -
+                  (detailLine == 1 ? discountAmount : 0),
               vatRate: vatAmount > 0 ? 17 : 0,
               documentDate: documentDate,
               linkId: linkId,
@@ -644,6 +645,7 @@ class BkmvExportService {
     required String clientVatNumber,
     required String valueDate,
     required double subtotal,
+    required double discount,
     required double vatAmount,
     required double totalAmount,
     required String customerKey,
@@ -669,11 +671,11 @@ class BkmvExportService {
       _fitAlpha(clientPhone, 15),
       _fitNumeric(clientVatNumber, 9),
       _fitNumeric(valueDate, 8),
-      _fitSignedAmount(0, wholeDigits: 12, decimalDigits: 2),
+      _fitSignedAmount(totalAmount, wholeDigits: 12, decimalDigits: 2),
       _fitAlpha('ILS', 3),
-      _fitSignedAmount(subtotal, wholeDigits: 12, decimalDigits: 2),
-      _fitSignedAmount(0, wholeDigits: 12, decimalDigits: 2),
-      _fitSignedAmount(subtotal, wholeDigits: 12, decimalDigits: 2),
+      _fitSignedAmount(totalAmount+discount, wholeDigits: 12, decimalDigits: 2),
+      _fitSignedAmount(discount, wholeDigits: 12, decimalDigits: 2),
+      _fitSignedAmount(subtotal-vatAmount, wholeDigits: 12, decimalDigits: 2),
       _fitSignedAmount(vatAmount, wholeDigits: 12, decimalDigits: 2),
       _fitSignedAmount(totalAmount, wholeDigits: 12, decimalDigits: 2),
       _fitSignedAmount(0, wholeDigits: 9, decimalDigits: 2),
@@ -789,10 +791,7 @@ class BkmvExportService {
             (item) => _InvoiceItemRecord(
               description: (item['description'] ?? 'Item').toString(),
               quantity: _num(item['quantity'], fallback: 1),
-              unitPrice: _num(
-                item['unitPriceWithoutTax'] ?? item['price'],
-              ).abs(),
-              lineTotal: _num(item['amount']).abs(),
+              unitPrice: _num(item['unitPriceWithoutTax'] ?? item['price']),
             ),
           )
           .where((item) => item.quantity > 0)
@@ -810,7 +809,6 @@ class BkmvExportService {
         description: 'General item',
         quantity: 1,
         unitPrice: fallbackSubtotal,
-        lineTotal: fallbackSubtotal,
       ),
     ];
   }
@@ -975,12 +973,13 @@ class BkmvExportService {
   }) {
     final factor = pow(10, decimalDigits).toInt();
     final scaled = (value.abs() * factor).round().toString();
-    final totalDigits = wholeDigits + decimalDigits + 1;
-    final padded = scaled.padLeft(totalDigits, '0');
-    if (padded.length > totalDigits) {
-      return padded.substring(padded.length - totalDigits);
+    final digitsLength = wholeDigits + decimalDigits;
+    final sign = value < 0 ? '-' : '+';
+    final padded = scaled.padLeft(digitsLength, '0');
+    if (padded.length > digitsLength) {
+      return sign + padded.substring(padded.length - digitsLength);
     }
-    return padded;
+    return '$sign$padded';
   }
 
   static String _normalizeDate(String raw) {
