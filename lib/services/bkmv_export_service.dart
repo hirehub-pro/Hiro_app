@@ -58,11 +58,15 @@ class _InvoiceItemRecord {
   final String description;
   final double quantity;
   final double unitPrice;
+  final double discountAmount;
+  final double lineTotal;
 
   const _InvoiceItemRecord({
     required this.description,
     required this.quantity,
     required this.unitPrice,
+    required this.discountAmount,
+    required this.lineTotal,
   });
 }
 
@@ -269,27 +273,52 @@ class BkmvExportService {
         continue;
       }
 
-      final amount = _num(invoiceData['amount'] ?? logData['amount']);
-      final vatAmount = _num(invoiceData['vatAmount'] ?? logData['vatAmount']);
-      final subtotal = amount;
-      final discount = _num(invoiceData['discountAmount'] ?? 0);
+      final amount = _num(
+        logData['grandTotal'] ?? invoiceData['amount'] ?? logData['amount'],
+      );
+      final vatAmount = _num(logData['vatAmount'] ?? invoiceData['vatAmount']);
+      final subtotal = _num(
+        logData['subtotalAfterTax'] ?? invoiceData['amount'] ?? amount,
+      );
+      final discount = _num(
+        logData['discountAmount'] ?? invoiceData['discountAmount'] ?? 0,
+      );
 
       final documentDate = _normalizeDate(
-        (invoiceData['date'] ?? logData['date']).toString(),
+        (logData['issueDate'] ?? invoiceData['date'] ?? logData['date'])
+            .toString(),
       );
       final documentTime = _timestampToTime(
         invoiceData['createdAt'] ?? logData['timestamp'],
       );
+      final clientDetails =
+          (logData['clientDetails'] is Map)
+              ? Map<String, dynamic>.from(logData['clientDetails'] as Map)
+              : const <String, dynamic>{};
       final clientName =
-          (invoiceData['clientName'] ?? logData['clientName'] ?? '').toString();
+          (clientDetails['name'] ??
+                  invoiceData['clientName'] ??
+                  logData['clientName'] ??
+                  '')
+              .toString();
       final clientAddress =
-          (invoiceData['clientAddress'] ?? logData['clientAddress'] ?? '')
+          (clientDetails['address'] ??
+                  invoiceData['clientAddress'] ??
+                  logData['clientAddress'] ??
+                  '')
               .toString();
       final clientPhone = _normalizeIsraeliPhone(
-        (invoiceData['clientPhone'] ?? logData['clientPhone'] ?? '').toString(),
+        (clientDetails['phone'] ??
+                invoiceData['clientPhone'] ??
+                logData['clientPhone'] ??
+                '')
+            .toString(),
       );
       final customerKey =
-          (logData['customerId'] ?? invoiceData['customerId'] ?? clientName)
+          (clientDetails['id'] ??
+                  logData['customerId'] ??
+                  invoiceData['customerId'] ??
+                  clientName)
               .toString();
       final linkKey = '$documentNumber|$documentDate';
       final linkId = documentLinkIds.putIfAbsent(linkKey, () => linkNumber++);
@@ -327,8 +356,7 @@ class BkmvExportService {
       }
 
       if (bucket == 'invoices' || bucket == 'credit_notes') {
-        final items = _extractItems(invoiceData, subtotal, vatAmount);
-        final discountAmount = _num(invoiceData['discountAmount']);
+        final items = _extractItems(logData, invoiceData, subtotal, vatAmount);
         var detailLine = 1;
         for (final item in items) {
           addRecord(
@@ -344,10 +372,8 @@ class BkmvExportService {
               description: item.description,
               quantity: item.quantity,
               unitPrice: item.unitPrice,
-              discountAmount: detailLine == 1 ? discountAmount : 0,
-              lineTotal:
-                  (item.quantity * item.unitPrice) -
-                  (detailLine == 1 ? discountAmount : 0),
+              discountAmount: item.discountAmount,
+              lineTotal: item.lineTotal,
               vatRate: vatAmount > 0 ? 17 : 0,
               documentDate: documentDate,
               linkId: linkId,
@@ -358,31 +384,35 @@ class BkmvExportService {
       }
 
       if (bucket == 'receipts') {
-        final paymentDetails = _paymentDetails(invoiceData);
-        addRecord(
-          'D120',
-          _buildD120(
-            recordNumber: recordNumber,
-            businessNumber: context.businessNumber,
-            documentType: docTypeCode,
-            documentNumber: documentNumber,
-            lineNumber: 1,
-            paymentType: paymentDetails.typeCode,
-            bankNumber: paymentDetails.bankNumber,
-            branchNumber: paymentDetails.branchNumber,
-            accountNumber: paymentDetails.accountNumber,
-            chequeNumber: paymentDetails.chequeNumber,
-            paymentDate: paymentDetails.paymentDate.isEmpty
-                ? documentDate
-                : paymentDetails.paymentDate,
-            amount: amount,
-            creditCompany: paymentDetails.creditCompanyCode,
-            cardName: paymentDetails.cardName,
-            creditDealType: paymentDetails.creditDealType,
-            documentDate: documentDate,
-            linkId: linkId,
-          ),
-        );
+        final paymentDetailsList = _paymentDetails(logData, invoiceData, amount);
+        var paymentLine = 1;
+        for (final paymentDetails in paymentDetailsList) {
+          addRecord(
+            'D120',
+            _buildD120(
+              recordNumber: recordNumber,
+              businessNumber: context.businessNumber,
+              documentType: docTypeCode,
+              documentNumber: documentNumber,
+              lineNumber: paymentLine,
+              paymentType: paymentDetails.typeCode,
+              bankNumber: paymentDetails.bankNumber,
+              branchNumber: paymentDetails.branchNumber,
+              accountNumber: paymentDetails.accountNumber,
+              chequeNumber: paymentDetails.chequeNumber,
+              paymentDate: paymentDetails.paymentDate.isEmpty
+                  ? documentDate
+                  : paymentDetails.paymentDate,
+              amount: paymentDetails.amount,
+              creditCompany: paymentDetails.creditCompanyCode,
+              cardName: paymentDetails.cardName,
+              creditDealType: paymentDetails.creditDealType,
+              documentDate: documentDate,
+              linkId: linkId,
+            ),
+          );
+          paymentLine += 1;
+        }
       }
     }
 
@@ -779,20 +809,30 @@ class BkmvExportService {
   }
 
   static List<_InvoiceItemRecord> _extractItems(
+    Map<String, dynamic> logData,
     Map<String, dynamic> invoiceData,
     double subtotal,
     double vatAmount,
   ) {
-    final rawItems = invoiceData['items'];
+    final rawItems = logData['items'] ?? invoiceData['items'];
     if (rawItems is List) {
       final items = rawItems
           .whereType<Map>()
           .map(
-            (item) => _InvoiceItemRecord(
-              description: (item['description'] ?? 'Item').toString(),
-              quantity: _num(item['quantity'], fallback: 1),
-              unitPrice: _num(item['unitPriceWithoutTax'] ?? item['price']),
-            ),
+            (item) {
+              final quantity = _num(item['quantity'], fallback: 1);
+              final unitPrice = _num(
+                item['unitPriceWithoutTax'] ?? item['unitPrice'] ?? item['price'],
+              );
+              final discountAmount = _num(item['discount']);
+              return _InvoiceItemRecord(
+                description: (item['description'] ?? 'Item').toString(),
+                quantity: quantity,
+                unitPrice: unitPrice,
+                discountAmount: discountAmount,
+                lineTotal: (quantity * unitPrice) +discountAmount,
+              );
+            },
           )
           .where((item) => item.quantity > 0)
           .toList();
@@ -809,19 +849,96 @@ class BkmvExportService {
         description: 'General item',
         quantity: 1,
         unitPrice: fallbackSubtotal,
+        discountAmount: 0,
+        lineTotal: fallbackSubtotal,
       ),
     ];
   }
 
-  static _PaymentDetails _paymentDetails(Map<String, dynamic> invoiceData) {
-    final paymentMethod = (invoiceData['paymentMethod'] ?? 'cash').toString();
+  static List<_PaymentDetails> _paymentDetails(
+    Map<String, dynamic> logData,
+    Map<String, dynamic> invoiceData,
+    double defaultAmount,
+  ) {
+    final rawMethods = logData['paymentMethods'] ?? invoiceData['paymentMethods'];
+    if (rawMethods is List) {
+      final methods = rawMethods
+          .whereType<Map>()
+          .map(
+            (entry) => _paymentDetailsFromEntry(
+              Map<String, dynamic>.from(entry),
+              defaultAmount,
+            ),
+          )
+          .toList();
+      if (methods.isNotEmpty) {
+        return methods;
+      }
+    }
+
+    return [
+      _paymentDetailsFromLegacy(
+        invoiceData['paymentMethod'] ?? logData['paymentMethod'],
+        invoiceData,
+        defaultAmount,
+      ),
+    ];
+  }
+
+  static _PaymentDetails _paymentDetailsFromEntry(
+    Map<String, dynamic> entry,
+    double defaultAmount,
+  ) {
+    final paymentMethod = (entry['method'] ?? 'cash').toString();
+    switch (paymentMethod) {
+      case 'credit':
+        return _PaymentDetails(
+          typeCode: 3,
+          amount: _num(entry['amount'], fallback: defaultAmount),
+          creditCompanyCode: 1,
+          cardName: (entry['cardName'] ?? 'CREDIT').toString(),
+          creditDealType: _mapCreditDealType(entry['dealType']?.toString()),
+        );
+      case 'transfer':
+        return _PaymentDetails(
+          typeCode: 4,
+          amount: _num(entry['amount'], fallback: defaultAmount),
+          bankNumber: (entry['bank'] ?? '').toString(),
+          branchNumber: (entry['branch'] ?? '').toString(),
+          accountNumber: (entry['account'] ?? '').toString(),
+        );
+      case 'check':
+        return _PaymentDetails(
+          typeCode: 2,
+          amount: _num(entry['amount'], fallback: defaultAmount),
+          bankNumber: (entry['bank'] ?? '').toString(),
+          branchNumber: (entry['branch'] ?? '').toString(),
+          accountNumber: (entry['account'] ?? '').toString(),
+          chequeNumber: (entry['checkNumber'] ?? '').toString(),
+        );
+      case 'cash':
+      default:
+        return _PaymentDetails(
+          typeCode: 1,
+          amount: _num(entry['amount'], fallback: defaultAmount),
+        );
+    }
+  }
+
+  static _PaymentDetails _paymentDetailsFromLegacy(
+    Object? paymentMethodValue,
+    Map<String, dynamic> invoiceData,
+    double defaultAmount,
+  ) {
+    final paymentMethod = (paymentMethodValue ?? 'cash').toString();
     final transferDetails = (invoiceData['transferDetails'] ?? '').toString();
     final checkNumber = (invoiceData['checkNumber'] ?? '').toString();
 
     switch (paymentMethod) {
       case 'credit':
-        return const _PaymentDetails(
+        return _PaymentDetails(
           typeCode: 3,
+          amount: defaultAmount,
           creditCompanyCode: 1,
           cardName: 'CREDIT',
           creditDealType: 1,
@@ -829,6 +946,7 @@ class BkmvExportService {
       case 'transfer':
         return _PaymentDetails(
           typeCode: 4,
+          amount: defaultAmount,
           bankNumber: _extractTransferPart(transferDetails, 0),
           branchNumber: _extractTransferPart(transferDetails, 1),
           accountNumber: _digitsOnly(transferDetails),
@@ -837,6 +955,7 @@ class BkmvExportService {
       case 'check':
         return _PaymentDetails(
           typeCode: 2,
+          amount: defaultAmount,
           bankNumber: _extractTransferPart(checkNumber, 0),
           branchNumber: _extractTransferPart(checkNumber, 1),
           chequeNumber: _digitsOnly(checkNumber),
@@ -844,7 +963,7 @@ class BkmvExportService {
         );
       case 'cash':
       default:
-        return const _PaymentDetails(typeCode: 1);
+        return _PaymentDetails(typeCode: 1, amount: defaultAmount);
     }
   }
 
@@ -1081,6 +1200,20 @@ class BkmvExportService {
     return '';
   }
 
+  static int? _mapCreditDealType(String? value) {
+    switch (value) {
+      case 'installments':
+        return 2;
+      case 'credit':
+        return 3;
+      case 'other':
+        return 4;
+      case 'regular':
+      default:
+        return 1;
+    }
+  }
+
   static double _num(Object? value, {double fallback = 0}) {
     if (value is num) {
       return value.toDouble();
@@ -1091,6 +1224,7 @@ class BkmvExportService {
 
 class _PaymentDetails {
   final int typeCode;
+  final double amount;
   final String bankNumber;
   final String branchNumber;
   final String accountNumber;
@@ -1102,6 +1236,7 @@ class _PaymentDetails {
 
   const _PaymentDetails({
     required this.typeCode,
+    required this.amount,
     this.bankNumber = '',
     this.branchNumber = '',
     this.accountNumber = '',
