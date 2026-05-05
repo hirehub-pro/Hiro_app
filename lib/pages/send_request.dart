@@ -12,6 +12,7 @@ import 'package:untitled1/map/location_picker.dart';
 import 'package:untitled1/pages/my_requests_page.dart';
 import 'package:untitled1/services/ai_description_service.dart';
 import 'package:untitled1/services/language_provider.dart';
+import 'package:untitled1/services/notification_service.dart';
 import 'package:untitled1/utils/booking_mode.dart';
 
 class SendRequestPage extends StatefulWidget {
@@ -590,14 +591,6 @@ class _SendRequestPageState extends State<SendRequestPage> {
     }
   }
 
-  Future<void> _sendFCMNotification(
-    String targetToken,
-    String title,
-    String body,
-  ) async {
-    debugPrint('FCM trigger would happen here for token: $targetToken');
-  }
-
   String _getChatRoomId(String user1, String user2) {
     final ids = [user1, user2]..sort();
     return ids.join('_');
@@ -1016,7 +1009,6 @@ class _SendRequestPageState extends State<SendRequestPage> {
         return;
       }
       final workerData = workerDoc.data();
-      final workerFcmToken = workerData?['fcmToken'] as String?;
 
       final fStr = !widget.isQuoteRequest && _fromTime != null
           ? '${_fromTime!.hour.toString().padLeft(2, '0')}:${_fromTime!.minute.toString().padLeft(2, '0')}'
@@ -1155,9 +1147,11 @@ class _SendRequestPageState extends State<SendRequestPage> {
             },
           }, SetOptions(merge: true));
 
-      if (workerFcmToken != null) {
-        await _sendFCMNotification(workerFcmToken, notifTitle, notifBody);
-      }
+      await NotificationService.sendPushNotification(
+        targetUserId: widget.workerId,
+        title: notifTitle,
+        body: notifBody,
+      );
 
       if (mounted) {
         ScaffoldMessenger.of(

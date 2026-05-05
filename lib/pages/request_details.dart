@@ -487,7 +487,6 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
           ).showSnackBar(SnackBar(content: Text(strings['error_not_found']!)));
         return;
       }
-      final String? clientFcmToken = clientDoc.data()?['fcmToken'];
       final notifTitle = strings['send_quote']!;
       final notifBody =
           "${user.displayName ?? 'The professional'} sent you a quote: $price";
@@ -535,13 +534,11 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
         );
       }
       await batch.commit();
-      if (clientFcmToken != null) {
-        await NotificationService.sendPushNotification(
-          targetToken: clientFcmToken,
-          title: notifTitle,
-          body: notifBody,
-        );
-      }
+      await NotificationService.sendPushNotification(
+        targetUserId: clientId,
+        title: notifTitle,
+        body: notifBody,
+      );
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -738,7 +735,6 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
     final String date = widget.data['date'];
 
     try {
-      // 1. Get Client's FCM Token for push notification from unified 'users' collection
       final clientDoc = await firestore.collection('users').doc(clientId).get();
       if (!clientDoc.exists) {
         if (mounted)
@@ -747,8 +743,6 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
           ).showSnackBar(SnackBar(content: Text(strings['error_not_found']!)));
         return;
       }
-      final String? clientFcmToken = clientDoc.data()?['fcmToken'];
-
       final batch = firestore.batch();
       String? notifTitle;
       String? notifBody;
@@ -858,13 +852,11 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
       await batch.commit();
 
       // 5. Send FCM Push Notification to Client
-      if (clientFcmToken != null) {
-        await NotificationService.sendPushNotification(
-          targetToken: clientFcmToken,
-          title: notifTitle,
-          body: notifBody,
-        );
-      }
+      await NotificationService.sendPushNotification(
+        targetUserId: clientId,
+        title: notifTitle,
+        body: notifBody,
+      );
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

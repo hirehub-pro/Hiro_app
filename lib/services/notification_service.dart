@@ -111,18 +111,16 @@ class NotificationService {
           final firestore = FirebaseFirestore.instance;
           final platform = Platform.isAndroid ? 'android' : 'ios';
           final tokenId = sha256.convert(utf8.encode(token)).toString();
-          final data = {
-            'fcmToken': token,
-            'lastTokenUpdate': FieldValue.serverTimestamp(),
-            'platform': platform,
-          };
           final userRef = firestore.collection('users').doc(user.uid);
           final deviceTokenRef = userRef
               .collection('deviceTokens')
               .doc(tokenId);
 
           await firestore.runTransaction((transaction) async {
-            transaction.set(userRef, data, SetOptions(merge: true));
+            transaction.set(userRef, {
+              'fcmToken': FieldValue.delete(),
+              'lastTokenUpdate': FieldValue.delete(),
+            }, SetOptions(merge: true));
             transaction.set(deviceTokenRef, {
               'token': token,
               'platform': platform,
@@ -175,24 +173,17 @@ class NotificationService {
     try {
       final token = await _messaging.getToken();
       if (token == null || token.isEmpty) return;
-
+         
       final userRef = FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid);
       final tokenId = sha256.convert(utf8.encode(token)).toString();
       final batch = FirebaseFirestore.instance.batch();
-
       batch.delete(userRef.collection('deviceTokens').doc(tokenId));
-
-      final userSnapshot = await userRef.get();
-      final legacyToken = (userSnapshot.data()?['fcmToken'] ?? '').toString();
-      if (legacyToken == token) {
-        batch.set(userRef, {
-          'fcmToken': FieldValue.delete(),
-          'lastTokenUpdate': FieldValue.delete(),
-        }, SetOptions(merge: true));
-      }
-
+      batch.set(userRef, {
+        'fcmToken': FieldValue.delete(),
+        'lastTokenUpdate': FieldValue.delete(),
+      }, SetOptions(merge: true));
       await batch.commit();
       debugPrint("Removed current FCM token for user ${user.uid}");
     } catch (e) {
@@ -355,7 +346,7 @@ class NotificationService {
   }
 
   static Future<void> sendPushNotification({
-    required String targetToken,
+    required String targetUserId,
     required String title,
     required String body,
     Map<String, dynamic>? data,
@@ -363,7 +354,14 @@ class NotificationService {
     try {
       // Push delivery is handled by backend Cloud Functions when a notification
       // document is created. This method is currently diagnostic only.
-      debugPrint("FCM notification request for token: $targetToken");
+      final tokenSnapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(targetUserId)
+          .collection('deviceTokens')
+          .get();
+      debugPrint(
+        "FCM notification request for user $targetUserId with ${tokenSnapshot.docs.length} device token(s)",
+      );
       debugPrint("Title: $title, Body: $body");
     } catch (e) {
       debugPrint("Error sending push notification: $e");

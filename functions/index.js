@@ -25,6 +25,7 @@ const PLAY_ANDROID_PUBLISHER_SCOPE =
   "https://www.googleapis.com/auth/androidpublisher";
 const SUBSCRIPTION_NOTIFICATION_RETENTION_DAYS = 30;
 const SUBSCRIPTION_VERIFICATION_RETENTION_HOURS = 36;
+const DEVICE_TOKEN_RETENTION_DAYS = 90;
 const APPLE_SUBSCRIPTION_PRODUCT_ID = "HIRO_SUBSCRIPTION";
 const GOOGLE_PLAY_SUBSCRIPTION_PRODUCT_IDS = new Set([
   "pro_worker_monthly",
@@ -62,9 +63,10 @@ exports.sendNotificationPush = onDocumentCreated(
         return;
       }
 
+      await cleanupStaleDeviceTokens(userDoc.ref);
       const fcmTokens = await getUserFcmTokens(userDoc);
       if (fcmTokens.length === 0) {
-        logger.info("No FCM token for user", {userId});
+        logger.info("No device tokens for user", {userId});
         return;
       }
 
@@ -115,6 +117,7 @@ exports.sendNotificationPush = onDocumentCreated(
         const response = await admin.messaging().sendEachForMulticast(message);
         await cleanupInvalidFcmTokens(userDoc.ref, fcmTokens, response.responses);
         const failureCodes = summarizeMessagingFailures(response.responses);
+        const failureSamples = summarizeTokenFailures(fcmTokens, response.responses);
         const logPayload = {
           userId,
           notificationId: snap.id,
@@ -122,6 +125,7 @@ exports.sendNotificationPush = onDocumentCreated(
           successCount: response.successCount,
           failureCount: response.failureCount,
           failureCodes,
+          failureSamples,
         };
         if (response.successCount > 0) {
           logger.info("Notification push sent", logPayload);
@@ -148,14 +152,28 @@ async function getUserFcmTokens(userDoc) {
     }
   });
 
-  if (tokens.size === 0) {
-    const legacyToken = userDoc.get("fcmToken");
-    if (typeof legacyToken === "string" && legacyToken.trim()) {
-      tokens.add(legacyToken.trim());
-    }
+  return Array.from(tokens).slice(0, 500);
+}
+
+async function cleanupStaleDeviceTokens(userRef) {
+  const cutoff = Date.now() - (DEVICE_TOKEN_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+  const snapshot = await userRef.collection("deviceTokens").limit(500).get();
+  const staleDocs = snapshot.docs.filter((doc) => {
+    const updatedAt = doc.get("updatedAt");
+    if (!updatedAt?.toMillis) return true;
+    return updatedAt.toMillis() < cutoff;
+  });
+
+  if (staleDocs.length === 0) {
+    return;
   }
 
-  return Array.from(tokens).slice(0, 500);
+  await Promise.all(staleDocs.map((doc) => doc.ref.delete()));
+  logger.info("Removed stale device tokens", {
+    userId: userRef.id,
+    removedCount: staleDocs.length,
+    retentionDays: DEVICE_TOKEN_RETENTION_DAYS,
+  });
 }
 
 async function cleanupInvalidFcmTokens(userRef, tokens, responses) {
@@ -190,6 +208,27 @@ function summarizeMessagingFailures(responses) {
     summary[code] = (summary[code] || 0) + 1;
     return summary;
   }, {});
+}
+
+function summarizeTokenFailures(tokens, responses) {
+  return responses
+      .map((response, index) => {
+        const code = response.error?.code;
+        if (!code) return null;
+        return {
+          code,
+          tokenSuffix: maskToken(tokens[index]),
+        };
+      })
+      .filter(Boolean)
+      .slice(0, 10);
+}
+
+function maskToken(token) {
+  if (typeof token !== "string" || !token) {
+    return "unknown";
+  }
+  return token.length <= 8 ? token : token.slice(-8);
 }
 
 exports.handleGooglePlaySubscriptionNotification = onMessagePublished(
