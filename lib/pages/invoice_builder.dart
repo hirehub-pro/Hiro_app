@@ -247,9 +247,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     final signedTotalAmount = docType == 'credit_note'
         ? -_totalAmount
         : _totalAmount;
-    final calculatedVat = _usesVat
-        ? (_totalAmount - (_totalAmount / (1 + _vatRate)))
-        : 0.0;
+    final calculatedVat = _vatAmount;
     final vatAmount = docType == 'credit_note' ? -calculatedVat : calculatedVat;
     final logTargets = _logTargetsForDocType(docType);
 
@@ -278,11 +276,11 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     final discountAmount = hasDiscount ? _discountAmount : 0.0;
     final signedDiscountAmount =
         discountAmount == 0 ? 0.0 : (docType == 'credit_note' ? discountAmount : -discountAmount);
-    final itemsGrossTotal = _items.fold<double>(
+    final itemsNetTotal = _items.fold<double>(
       0,
-      (sum, item) => sum + _itemTotalAfterTax(item),
+      (runningTotal, item) => runningTotal + _itemTotalBeforeTax(item),
     );
-    final subtotalBeforeTax = _usesVat ? (_totalAmount / (1 + _vatRate)) : _totalAmount;
+    final subtotalBeforeTax = _subtotalAmount;
     final subtotalAfterTax = _totalAmount;
     final signedSubtotalBeforeTax =
         docType == 'credit_note' ? -subtotalBeforeTax : subtotalBeforeTax;
@@ -293,10 +291,10 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       final index = entry.key;
       final item = entry.value;
       final isLastItem = index == _items.length - 1;
-      final lineSubtotalAfterTax = _itemTotalAfterTax(item);
+      final lineSubtotalBeforeTax = _itemTotalBeforeTax(item);
       final proportionalDiscount =
-          hasDiscount && itemsGrossTotal > 0
-              ? discountAmount * (lineSubtotalAfterTax / itemsGrossTotal)
+          hasDiscount && itemsNetTotal > 0
+              ? discountAmount * (lineSubtotalBeforeTax / itemsNetTotal)
               : 0.0;
       final lineDiscount =
           hasDiscount
@@ -305,9 +303,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       if (hasDiscount) {
         remainingDiscount -= lineDiscount;
       }
-      final lineTotalAfterTax = lineSubtotalAfterTax - lineDiscount;
-      final lineTaxPaid =
-          _usesVat ? (lineTotalAfterTax - (lineTotalAfterTax / (1 + _vatRate))) : 0.0;
+      final lineTotalBeforeTax = lineSubtotalBeforeTax - lineDiscount;
+      final lineTaxPaid = _usesVat ? lineTotalBeforeTax * _vatRate : 0.0;
+      final lineTotalAfterTax = lineTotalBeforeTax + lineTaxPaid;
 
       return {
         'description': item.description,
@@ -561,8 +559,15 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   double _itemTotalBeforeTax(InvoiceItem item) =>
       _unitPriceBeforeTax(item) * item.quantity;
 
+  double get _itemsSubtotalBeforeTax =>
+      _items.fold<double>(0, (runningTotal, item) {
+        return runningTotal + _itemTotalBeforeTax(item);
+      });
+
   double get _itemsTotalBeforeDiscount =>
-      _items.fold<double>(0, (sum, item) => sum + _itemTotalAfterTax(item));
+      _items.fold<double>(0, (runningTotal, item) {
+        return runningTotal + _itemTotalAfterTax(item);
+      });
 
   double get _discountAmount {
     if (!_hasDiscount) return 0.0;
@@ -570,27 +575,28 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       _discountController.text.trim().replaceAll(',', '.'),
     );
     if (parsed == null || parsed <= 0) return 0.0;
-    final maxDiscount = _itemsTotalBeforeDiscount;
+    final maxDiscount = _itemsSubtotalBeforeTax;
     return parsed > maxDiscount ? maxDiscount : parsed;
   }
 
-  double get _totalAmount {
-    final total = _itemsTotalBeforeDiscount - _discountAmount;
-    return total < 0 ? 0 : total;
+  double get _subtotalAmount {
+    final subtotal = _itemsSubtotalBeforeTax - _discountAmount;
+    return subtotal < 0 ? 0 : subtotal;
   }
+
+  double get _vatAmount =>
+      _usesVat ? _subtotalAmount * _vatRate : 0.0;
+
+  double get _totalAmount => _subtotalAmount + _vatAmount;
 
   double get _signedTotalAmount => _isCreditNote ? -_totalAmount : _totalAmount;
 
   double get _signedSubtotalAmount {
-    final subtotal = _usesVat ? (_totalAmount / (1 + _vatRate)) : _totalAmount;
-    return _isCreditNote ? -subtotal : subtotal;
+    return _isCreditNote ? -_subtotalAmount : _subtotalAmount;
   }
 
   double get _signedVatAmount {
-    final vat = _usesVat
-        ? (_totalAmount - (_totalAmount / (1 + _vatRate)))
-        : 0.0;
-    return _isCreditNote ? -vat : vat;
+    return _isCreditNote ? -_vatAmount : _vatAmount;
   }
 
   double _signedItemTotal(InvoiceItem item) =>

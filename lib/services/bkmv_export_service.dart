@@ -274,11 +274,22 @@ class BkmvExportService {
       }
 
       final amount = _num(
-        logData['grandTotal'] ?? invoiceData['amount'] ?? logData['amount'],
+        logData['subtotalAfterTax'] ??
+            invoiceData['subtotalAfterTax'] ??
+            logData['grandTotal'] ??
+            invoiceData['amount'],
+      );
+      final beforeTaxAmount = _num(
+        logData['subtotalBeforeTax'] ??
+            invoiceData['subtotalBeforeTax'] ??
+            _sumBeforeTaxAmount(logData, invoiceData),
       );
       final vatAmount = _num(logData['vatAmount'] ?? invoiceData['vatAmount']);
       final subtotal = _num(
-        logData['subtotalAfterTax'] ?? invoiceData['amount'] ?? amount,
+        logData['subtotalAfterTax'] ??
+            invoiceData['subtotalAfterTax'] ??
+            invoiceData['amount'] ??
+            amount,
       );
       final discount = _num(
         logData['discountAmount'] ?? invoiceData['discountAmount'] ?? 0,
@@ -347,6 +358,7 @@ class BkmvExportService {
             subtotal: subtotal, 
             discount: discount,
             vatAmount: vatAmount,
+            beforeTaxAmount: beforeTaxAmount,
             totalAmount: amount,
             customerKey: customerKey,
             documentDate: documentDate,
@@ -677,6 +689,7 @@ class BkmvExportService {
     required double subtotal,
     required double discount,
     required double vatAmount,
+    required double beforeTaxAmount,
     required double totalAmount,
     required String customerKey,
     required String documentDate,
@@ -703,9 +716,9 @@ class BkmvExportService {
       _fitNumeric(valueDate, 8),
       _fitSignedAmount(totalAmount, wholeDigits: 12, decimalDigits: 2),
       _fitAlpha('ILS', 3),
-      _fitSignedAmount(totalAmount+discount, wholeDigits: 12, decimalDigits: 2),
-      _fitSignedAmount(discount, wholeDigits: 12, decimalDigits: 2),
-      _fitSignedAmount(subtotal-vatAmount, wholeDigits: 12, decimalDigits: 2),
+      _fitSignedAmount(beforeTaxAmount, wholeDigits: 12, decimalDigits: 2),
+      _fitSignedAmount(0, wholeDigits: 12, decimalDigits: 2),
+      _fitSignedAmount(beforeTaxAmount, wholeDigits: 12, decimalDigits: 2),
       _fitSignedAmount(vatAmount, wholeDigits: 12, decimalDigits: 2),
       _fitSignedAmount(totalAmount, wholeDigits: 12, decimalDigits: 2),
       _fitSignedAmount(0, wholeDigits: 9, decimalDigits: 2),
@@ -822,7 +835,7 @@ class BkmvExportService {
             (item) {
               final quantity = _num(item['quantity'], fallback: 1);
               final unitPrice = _num(
-                item['unitPriceWithoutTax'] ?? item['unitPrice'] ?? item['price'],
+                item['unitPriceWithoutTax'] 
               );
               final discountAmount = _num(item['discount']);
               return _InvoiceItemRecord(
@@ -830,7 +843,7 @@ class BkmvExportService {
                 quantity: quantity,
                 unitPrice: unitPrice,
                 discountAmount: discountAmount,
-                lineTotal: (quantity * unitPrice) +discountAmount,
+                lineTotal: (quantity * unitPrice)+discountAmount,
               );
             },
           )
@@ -853,6 +866,27 @@ class BkmvExportService {
         lineTotal: fallbackSubtotal,
       ),
     ];
+  }
+
+  static double _sumBeforeTaxAmount(
+    Map<String, dynamic> logData,
+    Map<String, dynamic> invoiceData,
+  ) {
+    final rawItems = logData['items'] ?? invoiceData['items'];
+    if (rawItems is List) {
+      return rawItems.whereType<Map>().fold<double>(0, (runningTotal, item) {
+        final quantity = _num(item['quantity'], fallback: 1);
+        final unitPriceWithoutTax = _num(
+          item['unitPriceWithoutTax'] ?? item['unitPrice'] ?? item['price'],
+        );
+        return runningTotal + (quantity * unitPriceWithoutTax);
+      });
+    }
+    return _num(
+      logData['subtotalBeforeTax'] ??
+          invoiceData['subtotalBeforeTax'] ??
+          invoiceData['amount'],
+    );
   }
 
   static List<_PaymentDetails> _paymentDetails(
