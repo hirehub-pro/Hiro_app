@@ -257,6 +257,14 @@ class BkmvExportService {
       ),
     );
 
+    addRecord(
+      'B110',
+      _buildB110(
+        recordNumber: recordNumber,
+        businessNumber: context.businessNumber,
+      ),
+    );
+
     for (final logDoc in sortedLogs) {
       final logData = logDoc.data();
       final documentNumber = (logData['documentNumber'] ?? '').toString();
@@ -325,6 +333,7 @@ class BkmvExportService {
                 '')
             .toString(),
       );
+      
       final customerKey =
           (clientDetails['id'] ??
                   logData['customerId'] ??
@@ -455,7 +464,7 @@ class BkmvExportService {
       ),
     ];
 
-    for (final code in ['C100', 'D110', 'D120']) {
+    for (final code in ['B110', 'C100', 'D110', 'D120']) {
       final count = recordCounts[code];
       if (count != null && count > 0) {
         iniLines.add(_fitAlpha(code, 4) + _fitNumeric(count.toString(), 15));
@@ -672,6 +681,36 @@ class BkmvExportService {
       _fitNumeric(totalRecords.toString(), 15),
       _fitAlpha('', 50),
     ], 110);
+  }
+
+  static String _buildB110({
+    required int recordNumber,
+    required String businessNumber,
+  }) {
+    return _joinFixed([
+      _fitAlpha('B110', 4),
+      _fitNumeric(recordNumber.toString(), 9),
+      _fitNumeric(businessNumber, 9),
+      _fitAlpha('aaaaaaaaaaaa', 15),
+      _fitAlpha('aaaaaaaaaaaa', 50),
+      _fitAlpha('aaaaaaaaaaaa', 15), 
+      _fitAlpha('aaaaaaaaaaaa', 30),
+      _fitAlpha('aaaaaaaaaaaa', 50),
+      _fitAlpha('aaaaaaaa', 10),
+      _fitAlpha('aaaaaaaaaaaa', 30),
+      _fitAlpha('aaaaaaaa', 8),
+      _fitAlpha('aaaaaaaaaaaa', 30),
+      _fitAlpha('aa', 2),
+      _fitAlpha('aaaaaaaaaaaa', 15),
+      _fitSignedAmount(0, wholeDigits: 12, decimalDigits: 2),
+      _fitSignedAmount(0, wholeDigits: 12, decimalDigits: 2),
+      _fitSignedAmount(0, wholeDigits: 12, decimalDigits: 2),
+      _fitNumeric('0', 4),
+      _fitNumeric('', 9),
+      _fitAlpha('', 7),
+      _fitSignedAmount(0, wholeDigits: 12, decimalDigits: 2),
+      _fitAlpha('', 3),
+    ], 360);
   }
 
   static String _buildC100({

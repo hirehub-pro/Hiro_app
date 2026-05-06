@@ -28,6 +28,8 @@ class _AdminProfileState extends State<AdminProfile>
   String _appVersion = "1.0.0";
   String _businessName = "";
   String _businessNumber = "";
+  String _softwareRegistrationNumber = "";
+  String _softwareMakerVatNumber = "";
 
   @override
   void initState() {
@@ -46,11 +48,17 @@ class _AdminProfileState extends State<AdminProfile>
           _appVersion = doc.data()?['minRequiredVersion'] ?? "1.0.0";
           _businessName = (doc.data()?['businessName'] ?? '').toString();
           _businessNumber = (doc.data()?['businessNumber'] ?? '').toString();
+          _softwareRegistrationNumber =
+              (doc.data()?['softwareRegistrationNumber'] ?? '').toString();
+          _softwareMakerVatNumber =
+              (doc.data()?['softwareMakerVatNumber'] ?? '').toString();
         });
       } else if (mounted) {
         setState(() {
           _businessName = '';
           _businessNumber = '';
+          _softwareRegistrationNumber = '';
+          _softwareMakerVatNumber = '';
         });
       }
     } catch (e) {
@@ -378,6 +386,12 @@ class _AdminProfileState extends State<AdminProfile>
                 "System Config",
                 Colors.purple,
                 _showSystemConfig,
+              ),
+              _buildQuickActionCard(
+                Icons.receipt_long_rounded,
+                "A000 Info",
+                Colors.indigo,
+                _showA000InfoDialog,
               ),
             ],
           ),
@@ -856,6 +870,88 @@ class _AdminProfileState extends State<AdminProfile>
                     if (context.mounted) Navigator.pop(context);
                   },
                   child: const Text("Save Business Info"),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showA000InfoDialog() {
+    final softwareRegistrationController = TextEditingController(
+      text: _softwareRegistrationNumber,
+    );
+    final softwareMakerVatController = TextEditingController(
+      text: _softwareMakerVatNumber,
+    );
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                "A000 Export Info",
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 20),
+              TextField(
+                controller: softwareRegistrationController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Software Registration Number',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: softwareMakerVatController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Software Maker VAT Number',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red[900],
+                    foregroundColor: Colors.white,
+                  ),
+                  onPressed: () async {
+                    await _firestore.collection('metadata').doc('system').set({
+                      'softwareRegistrationNumber': softwareRegistrationController
+                          .text
+                          .trim(),
+                      'softwareMakerVatNumber': softwareMakerVatController.text
+                          .trim(),
+                    }, SetOptions(merge: true));
+                    await _logActivity(
+                      'Updated A000 export identifiers',
+                    );
+                    setState(() {
+                      _softwareRegistrationNumber =
+                          softwareRegistrationController.text.trim();
+                      _softwareMakerVatNumber =
+                          softwareMakerVatController.text.trim();
+                    });
+                    if (context.mounted) Navigator.pop(context);
+                  },
+                  child: const Text("Save A000 Info"),
                 ),
               ),
             ],
