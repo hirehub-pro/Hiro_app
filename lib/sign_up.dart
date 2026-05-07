@@ -57,7 +57,6 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
   final _codeController = TextEditingController();
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
-  final _dobController = TextEditingController();
   final _altPhoneController = TextEditingController();
   final _descriptionController = TextEditingController();
 
@@ -79,7 +78,6 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
   int? _resendToken;
   File? _image;
   final ImagePicker _picker = ImagePicker();
-  DateTime? _dateOfBirth;
 
   AnimationController? _introController;
   AnimationController? _backgroundController;
@@ -620,12 +618,6 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
         widget.pendingWorkerData!['defaultWorkingHours']?['to']?.toString(),
         fallback: const TimeOfDay(hour: 16, minute: 0),
       );
-      _dateOfBirth = _parseDateOfBirth(
-        widget.pendingWorkerData!['dateOfBirth'],
-      );
-      if (_dateOfBirth != null) {
-        _dobController.text = _formatDate(_dateOfBirth!);
-      }
       _phoneController.text =
           widget.pendingWorkerData!['phone'] ??
           (FirebaseAuth.instance.currentUser?.phoneNumber ?? '');
@@ -828,7 +820,6 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
     _codeController.dispose();
     _nameController.dispose();
     _emailController.dispose();
-    _dobController.dispose();
     _altPhoneController.dispose();
     _descriptionController.dispose();
     super.dispose();
@@ -862,9 +853,6 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
           'enter_code': 'הכנס קוד שקיבלת ב-SMS',
           'name_label': 'שם מלא',
           'email_label': 'אימייל (אופציונלי)',
-          'dob_label': 'תאריך לידה',
-          'dob_hint': 'בחר תאריך לידה',
-          'dob_required': 'יש לבחור תאריך לידה',
           'town_label': 'עיר',
           'user_type': 'סוג חשבון',
           'normal': 'לקוח',
@@ -962,9 +950,6 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
           'enter_code': 'أدخل رمز SMS',
           'name_label': 'الاسم الكامل',
           'email_label': 'البريد الإلكتروني (اختياري)',
-          'dob_label': 'تاريخ الميلاد',
-          'dob_hint': 'اختر تاريخ الميلاد',
-          'dob_required': 'تاريخ الميلاد مطلوب',
           'town_label': 'المدينة',
           'user_type': 'نوع المستخدم',
           'normal': 'عميل',
@@ -1067,9 +1052,6 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
           'enter_code': 'Введите SMS-код',
           'name_label': 'Полное имя',
           'email_label': 'Электронная почта (необязательно)',
-          'dob_label': 'Дата рождения',
-          'dob_hint': 'Выберите дату рождения',
-          'dob_required': 'Дата рождения обязательна',
           'town_label': 'Город',
           'user_type': 'Тип пользователя',
           'normal': 'Клиент',
@@ -1171,9 +1153,6 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
           'enter_code': 'የSMS ኮድ ያስገቡ',
           'name_label': 'ሙሉ ስም',
           'email_label': 'ኢሜይል (አማራጭ)',
-          'dob_label': 'የትውልድ ቀን',
-          'dob_hint': 'የትውልድ ቀን ይምረጡ',
-          'dob_required': 'የትውልድ ቀን ያስፈልጋል',
           'town_label': 'ከተማ',
           'user_type': 'የተጠቃሚ አይነት',
           'normal': 'ደንበኛ',
@@ -1271,9 +1250,6 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
           'enter_code': 'Enter SMS Code',
           'name_label': 'Full Name',
           'email_label': 'Email (Optional)',
-          'dob_label': 'Date of Birth',
-          'dob_hint': 'Select date of birth',
-          'dob_required': 'Date of birth is required',
           'town_label': 'City',
           'user_type': 'User Type',
           'normal': 'Client',
@@ -1397,37 +1373,6 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
     }
   }
 
-  DateTime? _parseDateOfBirth(dynamic value) {
-    if (value == null) return null;
-    if (value is Timestamp) return value.toDate();
-    if (value is DateTime) return value;
-    if (value is String) return DateTime.tryParse(value);
-    return null;
-  }
-
-  String _formatDate(DateTime date) {
-    final day = date.day.toString().padLeft(2, '0');
-    final month = date.month.toString().padLeft(2, '0');
-    return '$day/$month/${date.year}';
-  }
-
-  Future<void> _pickDateOfBirth() async {
-    final now = DateTime.now();
-    final initial = _dateOfBirth ?? DateTime(now.year - 18, now.month, now.day);
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: initial,
-      firstDate: DateTime(1900),
-      lastDate: now,
-    );
-
-    if (picked == null || !mounted) return;
-    setState(() {
-      _dateOfBirth = DateTime(picked.year, picked.month, picked.day);
-      _dobController.text = _formatDate(_dateOfBirth!);
-    });
-  }
-
   Future<void> _handleSendCode() async {
     final strings = _getLocalizedStrings(context);
     String input = _phoneController.text.trim();
@@ -1532,9 +1477,6 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
     return {
       'name': _nameController.text.trim(),
       'email': _emailController.text.trim(),
-      'dateOfBirth': _dateOfBirth != null
-          ? Timestamp.fromDate(_dateOfBirth!)
-          : null,
       'phone': _normalizePhone(_phoneController.text.trim()),
       'town': _selectedTown,
       'role': 'worker',
@@ -1686,9 +1628,6 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
         'uid': user.uid,
         'name': finalName,
         'email': _emailController.text.trim(),
-        'dateOfBirth': _dateOfBirth != null
-            ? Timestamp.fromDate(_dateOfBirth!)
-            : null,
         'phone': _normalizePhone(_phoneController.text.trim()),
         'town': _selectedTown,
         'lat': lat,
@@ -2370,18 +2309,6 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
               labelText: strings['email_label']!,
               icon: Icons.email_outlined,
               keyboardType: TextInputType.emailAddress,
-            ),
-            const SizedBox(height: 16),
-            _buildStyledTextField(
-              controller: _dobController,
-              labelText: strings['dob_label']!,
-              hintText: strings['dob_hint']!,
-              icon: Icons.cake_outlined,
-              readOnly: true,
-              onTap: _pickDateOfBirth,
-              validator: (v) => (v == null || v.trim().isEmpty)
-                  ? strings['dob_required']
-                  : null,
             ),
             const SizedBox(height: 16),
             _buildLocationSelectionSection(strings),
