@@ -11,6 +11,7 @@ class BkmvExportPackage {
   final File bkmvFile;
   final File iniFile;
   final BkmvPrintedSummary summary;
+  final BkmvAnnex4Summary annex4Summary;
 
   const BkmvExportPackage({
     required this.userId,
@@ -20,6 +21,7 @@ class BkmvExportPackage {
     required this.bkmvFile,
     required this.iniFile,
     required this.summary,
+    required this.annex4Summary,
   });
 }
 
@@ -69,6 +71,44 @@ class BkmvPrintedSummary {
       rows.fold(0, (total, row) => total + row.quantity);
 }
 
+class BkmvAnnex4SummaryRow {
+  final String recordCode;
+  final String recordLabel;
+  final int quantity;
+
+  const BkmvAnnex4SummaryRow({
+    required this.recordCode,
+    required this.recordLabel,
+    required this.quantity,
+  });
+}
+
+class BkmvAnnex4Summary {
+  final String userId;
+  final String businessName;
+  final String businessNumber;
+  final String exportDirectory;
+  final String fromDate;
+  final String toDate;
+  final String exportDate;
+  final String exportTime;
+  final List<BkmvAnnex4SummaryRow> rows;
+  final int totalRecords;
+
+  const BkmvAnnex4Summary({
+    required this.userId,
+    required this.businessName,
+    required this.businessNumber,
+    required this.exportDirectory,
+    required this.fromDate,
+    required this.toDate,
+    required this.exportDate,
+    required this.exportTime,
+    required this.rows,
+    required this.totalRecords,
+  });
+}
+
 class _BusinessContext {
   final String userId;
   final String businessNumber;
@@ -111,6 +151,14 @@ class _InvoiceItemRecord {
 
 class BkmvExportService {
   static const _bucketNames = ['invoices', 'receipts', 'credit_notes'];
+  static const List<(String, String)> _annex4Rows = [
+    ('A100', 'רשומת פתיחה'),
+    ('B110', 'חשבון בהנהלת חשבונות'),
+    ('C100', 'כותרת מסמך'),
+    ('D110', 'פרטי מסמך'),
+    ('D120', 'פרטי קבלה'),
+    ('Z900', 'רשומת סגירה'),
+  ];
   static const List<(int, String)> _printedSummaryRows = [
     (100, 'הזמנה'),
     (200, 'תעודת משלוח'),
@@ -624,6 +672,17 @@ class BkmvExportService {
     await bkmvFile.writeAsString('${records.join('\r\n')}\r\n');
     await iniFile.writeAsString('${iniLines.join('\r\n')}\r\n');
 
+    final annex4Summary = _buildAnnex4Summary(
+      context: context,
+      exportDirectory: exportDirectory.path,
+      fromDate: fromDate,
+      toDate: toDate,
+      exportDate: exportDate,
+      exportTime: exportTime,
+      recordCounts: recordCounts,
+      totalRecords: records.length,
+    );
+
     return BkmvExportPackage(
       userId: context.userId,
       businessName: context.businessName,
@@ -632,6 +691,7 @@ class BkmvExportService {
       bkmvFile: bkmvFile,
       iniFile: iniFile,
       summary: summary,
+      annex4Summary: annex4Summary,
     );
   }
 
@@ -727,6 +787,42 @@ class BkmvExportService {
       toDate: toDate,
       c100RecordCount: c100RecordCount,
       rows: rows,
+    );
+  }
+
+  static BkmvAnnex4Summary _buildAnnex4Summary({
+    required _BusinessContext context,
+    required String exportDirectory,
+    required String fromDate,
+    required String toDate,
+    required String exportDate,
+    required String exportTime,
+    required Map<String, int> recordCounts,
+    required int totalRecords,
+  }) {
+    final rows = _annex4Rows
+        .map(
+          (entry) => BkmvAnnex4SummaryRow(
+            recordCode: entry.$1,
+            recordLabel: entry.$2,
+            quantity: entry.$1 == 'A100' || entry.$1 == 'Z900'
+                ? 1
+                : (recordCounts[entry.$1] ?? 0),
+          ),
+        )
+        .toList(growable: false);
+
+    return BkmvAnnex4Summary(
+      userId: context.userId,
+      businessName: context.businessName,
+      businessNumber: context.businessNumber,
+      exportDirectory: exportDirectory,
+      fromDate: fromDate,
+      toDate: toDate,
+      exportDate: exportDate,
+      exportTime: exportTime,
+      rows: rows,
+      totalRecords: totalRecords,
     );
   }
 

@@ -156,6 +156,16 @@ class _AdminPanelState extends State<AdminPanel> {
     return formatter.format(value);
   }
 
+  String _formatCompactDateForDisplay(String yyyymmdd) {
+    if (yyyymmdd.length != 8) return yyyymmdd;
+    return '${yyyymmdd.substring(6, 8)}/${yyyymmdd.substring(4, 6)}/${yyyymmdd.substring(2, 4)}';
+  }
+
+  String _formatCompactTimeForDisplay(String hhmm) {
+    if (hhmm.length != 4) return hhmm;
+    return '${hhmm.substring(0, 2)}:${hhmm.substring(2, 4)}';
+  }
+
   Future<pw.Font> _loadPdfFont() async {
     final fontData = await rootBundle.load(
       'assets/fonts/Rubik-VariableFont_wght.ttf',
@@ -328,6 +338,216 @@ class _AdminPanelState extends State<AdminPanel> {
             'לשים לב שסך"כ רשומות בטופס 2.6 (=${summary.totalDocumentQuantity}) מתאים לכמות רשומות מסוג C100 (=${summary.c100RecordCount}).',
             textDirection: pw.TextDirection.rtl,
             style: pw.TextStyle(font: font, fontSize: 10.5),
+          ),
+        ],
+      ),
+    );
+  }
+
+  pw.Widget _buildAnnex4Page(
+    BkmvAnnex4Summary summary, {
+    required pw.Font font,
+  }) {
+    final displayFromDate = _formatCompactDateForDisplay(summary.fromDate);
+    final displayToDate = _formatCompactDateForDisplay(summary.toDate);
+    final displayExportDate = _formatCompactDateForDisplay(summary.exportDate);
+    final displayExportTime = _formatCompactTimeForDisplay(summary.exportTime);
+
+    return pw.Directionality(
+      textDirection: pw.TextDirection.rtl,
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+        children: [
+          pw.SizedBox(height: 24),
+          pw.Center(
+            child: pw.Text(
+              'הפקת קבצים במבנה אחיד',
+              style: pw.TextStyle(
+                font: font,
+                fontSize: 20,
+                fontWeight: pw.FontWeight.bold,
+                decoration: pw.TextDecoration.underline,
+              ),
+            ),
+          ),
+          pw.SizedBox(height: 26),
+          pw.Align(
+            alignment: pw.Alignment.centerRight,
+            child: pw.Text(
+              'עבור:',
+              style: pw.TextStyle(
+                font: font,
+                fontSize: 15,
+                fontWeight: pw.FontWeight.bold,
+              ),
+            ),
+          ),
+          pw.SizedBox(height: 12),
+          pw.Text(
+            'מספר עוסק מורשה: ${summary.businessNumber}',
+            style: pw.TextStyle(font: font, fontSize: 14),
+          ),
+          pw.SizedBox(height: 10),
+          pw.Text(
+            'שם בית העסק: ${summary.businessName}',
+            style: pw.TextStyle(font: font, fontSize: 14),
+          ),
+          pw.SizedBox(height: 28),
+          pw.Center(
+            child: pw.Text(
+              '** ביצוע ממשק פתוח הסתיים בהצלחה **',
+              style: pw.TextStyle(
+                font: font,
+                fontSize: 15,
+                fontWeight: pw.FontWeight.bold,
+              ),
+            ),
+          ),
+          pw.SizedBox(height: 22),
+          pw.Row(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Expanded(
+                flex: 3,
+                child: pw.Text(
+                  'הנתונים נשמרו בנתיב:',
+                  style: pw.TextStyle(
+                    font: font,
+                    fontSize: 14,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+              ),
+              pw.SizedBox(width: 16),
+              pw.Expanded(
+                flex: 5,
+                child: pw.Text(
+                  summary.exportDirectory,
+                  textDirection: pw.TextDirection.ltr,
+                  style: pw.TextStyle(font: font, fontSize: 14),
+                ),
+              ),
+            ],
+          ),
+          pw.SizedBox(height: 18),
+          pw.Row(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Expanded(
+                flex: 3,
+                child: pw.Text(
+                  'טווח תאריכים:',
+                  style: pw.TextStyle(
+                    font: font,
+                    fontSize: 14,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+              ),
+              pw.SizedBox(width: 16),
+              pw.Expanded(
+                flex: 5,
+                child: pw.Row(
+                  children: [
+                    pw.Text(
+                      'מתאריך: $displayFromDate',
+                      style: pw.TextStyle(font: font, fontSize: 14),
+                    ),
+                    pw.SizedBox(width: 28),
+                    pw.Text(
+                      'ועד תאריך: $displayToDate',
+                      style: pw.TextStyle(font: font, fontSize: 14),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          pw.SizedBox(height: 24),
+          pw.Text(
+            'פירוט סך סוגי הרשומות בקובץ BKMVDATA.TXT:',
+            style: pw.TextStyle(
+              font: font,
+              fontSize: 14,
+              fontWeight: pw.FontWeight.bold,
+            ),
+          ),
+          pw.SizedBox(height: 10),
+          pw.Padding(
+            padding: const pw.EdgeInsets.symmetric(horizontal: 42),
+            child: pw.Table(
+              border: const pw.TableBorder(
+                horizontalInside: pw.BorderSide(width: 0.6),
+                top: pw.BorderSide(width: 0.6),
+                bottom: pw.BorderSide(width: 0.6),
+              ),
+              columnWidths: const {
+                0: pw.FixedColumnWidth(90),
+                1: pw.FlexColumnWidth(2.2),
+                2: pw.FixedColumnWidth(80),
+              },
+              children: [
+                _buildPdfTableRow(
+                  ['סוג רשומה', 'תיאור', 'כמות'],
+                  font: font,
+                  isHeader: true,
+                ),
+                for (final row in summary.rows)
+                  _buildPdfTableRow(
+                    [
+                      row.recordCode,
+                      row.recordLabel,
+                      row.quantity.toString(),
+                    ],
+                    font: font,
+                  ),
+                _buildPdfTableRow(
+                  ['סה"כ', '', summary.totalRecords.toString()],
+                  font: font,
+                  isHeader: true,
+                ),
+              ],
+            ),
+          ),
+          pw.SizedBox(height: 28),
+          pw.Divider(thickness: 2),
+          pw.SizedBox(height: 10),
+          pw.Row(
+            children: [
+              pw.Expanded(
+                flex: 4,
+                child: pw.Text(
+                  'הנתונים הופקו באמצעות תוכנת',
+                  style: pw.TextStyle(font: font, fontSize: 14),
+                ),
+              ),
+              pw.Expanded(
+                flex: 4,
+                child: pw.Text(
+                  ', מספר תעודת הרישום:',
+                  style: pw.TextStyle(font: font, fontSize: 14),
+                ),
+              ),
+            ],
+          ),
+          pw.SizedBox(height: 12),
+          pw.Row(
+            children: [
+              pw.Expanded(
+                flex: 4,
+                child: pw.Text(
+                  'בתאריך: $displayExportDate',
+                  style: pw.TextStyle(font: font, fontSize: 14),
+                ),
+              ),
+              pw.Expanded(
+                flex: 4,
+                child: pw.Text(
+                  'בשעה: $displayExportTime',
+                  style: pw.TextStyle(font: font, fontSize: 14),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -610,6 +830,13 @@ class _AdminPanelState extends State<AdminPanel> {
               title: 'Generate BKMV printed PDF',
               subtitle: 'Export the printed summary for section 2.6',
               onTap: _generateBkmvPrintedPdf,
+            ),
+            _buildAdminTile(
+              context,
+              icon: Icons.receipt_long_rounded,
+              title: 'Generate Annex 4 PDF',
+              subtitle: 'Export the printed summary for section 5.4',
+              onTap: _generateBkmvAnnex4Pdf,
             ),
             const SizedBox(height: 20),
             _buildSectionTitle('Content Moderation'),
@@ -2015,6 +2242,77 @@ class _AdminPanelState extends State<AdminPanel> {
           SnackBar(
             content: Text(
               'Prepared ${summaries.length} printed summary page(s) in: ${file.path}',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  Future<void> _generateBkmvAnnex4Pdf() async {
+    try {
+      final selectedRange = await _pickExportDateRange();
+      if (selectedRange == null) return;
+
+      final fromDate = _formatCompactDate(selectedRange.start);
+      final toDate = _formatCompactDate(selectedRange.end);
+      final directory = await _getBkmvExportDirectory();
+      final result = await BkmvExportService.exportForAllUsers(
+        firestore: _firestore,
+        fromDate: fromDate,
+        toDate: toDate,
+        rootDirectory: directory,
+      );
+
+      if (!result.hasFiles) {
+        throw StateError(
+          result.warnings.isNotEmpty
+              ? result.warnings.join('\n')
+              : 'No BKMVDATA files were generated.',
+        );
+      }
+
+      final font = await _loadPdfFont();
+      final document = pw.Document();
+      for (final package in result.packages) {
+        document.addPage(
+          pw.MultiPage(
+            pageFormat: pdf.PdfPageFormat.a4,
+            margin: const pw.EdgeInsets.fromLTRB(36, 32, 36, 28),
+            build: (_) => [
+              _buildAnnex4Page(package.annex4Summary, font: font),
+            ],
+          ),
+        );
+      }
+
+      final timestamp = DateTime.now();
+      final fileName =
+          'BKMV_annex_4_${_formatCompactDate(timestamp)}_${timestamp.hour.toString().padLeft(2, '0')}${timestamp.minute.toString().padLeft(2, '0')}.pdf';
+      final file = File('${directory.path}${Platform.pathSeparator}$fileName');
+      await file.writeAsBytes(await document.save(), flush: true);
+
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(file.path)],
+          text: 'BKMV Annex 4 PDF',
+        ),
+      );
+
+      if (mounted) {
+        final warningSuffix = result.warnings.isEmpty
+            ? ''
+            : '\nWarnings: ${result.warnings.join(' | ')}';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Prepared ${result.packages.length} Annex 4 page(s) in: ${file.path}$warningSuffix',
             ),
           ),
         );
