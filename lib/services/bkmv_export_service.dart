@@ -10,6 +10,7 @@ class BkmvExportPackage {
   final Directory directory;
   final File bkmvFile;
   final File iniFile;
+  final BkmvPrintedSummary summary;
 
   const BkmvExportPackage({
     required this.userId,
@@ -18,6 +19,7 @@ class BkmvExportPackage {
     required this.directory,
     required this.bkmvFile,
     required this.iniFile,
+    required this.summary,
   });
 }
 
@@ -28,6 +30,43 @@ class BkmvExportResult {
   const BkmvExportResult({required this.packages, required this.warnings});
 
   bool get hasFiles => packages.isNotEmpty;
+}
+
+class BkmvPrintedSummaryRow {
+  final int documentTypeCode;
+  final String documentTypeLabel;
+  final int quantity;
+  final double totalAmountIncludingVat;
+
+  const BkmvPrintedSummaryRow({
+    required this.documentTypeCode,
+    required this.documentTypeLabel,
+    required this.quantity,
+    required this.totalAmountIncludingVat,
+  });
+}
+
+class BkmvPrintedSummary {
+  final String userId;
+  final String businessName;
+  final String businessNumber;
+  final String fromDate;
+  final String toDate;
+  final int c100RecordCount;
+  final List<BkmvPrintedSummaryRow> rows;
+
+  const BkmvPrintedSummary({
+    required this.userId,
+    required this.businessName,
+    required this.businessNumber,
+    required this.fromDate,
+    required this.toDate,
+    required this.c100RecordCount,
+    required this.rows,
+  });
+
+  int get totalDocumentQuantity =>
+      rows.fold(0, (total, row) => total + row.quantity);
 }
 
 class _BusinessContext {
@@ -72,6 +111,36 @@ class _InvoiceItemRecord {
 
 class BkmvExportService {
   static const _bucketNames = ['invoices', 'receipts', 'credit_notes'];
+  static const List<(int, String)> _printedSummaryRows = [
+    (100, 'הזמנה'),
+    (200, 'תעודת משלוח'),
+    (205, 'תעודת משלוח סוכן'),
+    (210, 'תעודת החזרה'),
+    (300, 'חשבונית/חשבונית עסקה'),
+    (305, 'חשבונית-מס'),
+    (310, 'חשבונית ריכוז'),
+    (320, 'חשבונית מס / קבלה'),
+    (330, 'חשבונית מס זיכוי'),
+    (340, 'חשבונית סיום'),
+    (345, 'חשבונית סוכן'),
+    (400, 'קבלה'),
+    (405, 'קבלה על תרומות'),
+    (406, 'קבלה לפיקדון'),
+    (410, 'יציאה מקופה'),
+    (420, 'הפקדת בנק'),
+    (500, 'הזמנת רכש'),
+    (600, 'תעודת משלוח רכש'),
+    (610, 'החזרת רכש'),
+    (700, 'חשבונית מס רכש'),
+    (710, 'זיכוי רכש'),
+    (800, 'יונית פנימית'),
+    (810, 'כניסה כללית למלאי'),
+    (820, 'יציאה כללית מהמלאי'),
+    (830, 'העברה בין מחסנים'),
+    (840, 'עדכון בעקבות ספירה'),
+    (900, 'דוח ייצור-כניסה'),
+    (910, 'דוח ייצור-יציאה'),
+  ];
 
   static Future<BkmvExportResult> exportForUser({
     required FirebaseFirestore firestore,
@@ -207,6 +276,73 @@ class BkmvExportService {
     return BkmvExportResult(packages: packages, warnings: warnings);
   }
 
+  static Future<List<BkmvPrintedSummary>> buildPrintedSummaryForAllUsers({
+    required FirebaseFirestore firestore,
+    required String fromDate,
+    required String toDate,
+  }) async {
+    final snapshots = await Future.wait(
+      _bucketNames.map(
+        (bucket) => firestore
+            .collection('logs')
+            .doc(bucket)
+            .collection('files')
+            .where('date', isGreaterThanOrEqualTo: fromDate)
+            .where('date', isLessThanOrEqualTo: toDate)
+            .orderBy('date')
+            .orderBy('timestamp')
+            .get(),
+      ),
+    );
+
+    final allDocs = snapshots.expand((snapshot) => snapshot.docs).toList();
+    if (allDocs.isEmpty) {
+      return const [];
+    }
+
+    final grouped =
+        <String, List<QueryDocumentSnapshot<Map<String, dynamic>>>>{};
+    for (final doc in allDocs) {
+      final userId = (doc.data()['userId'] ?? '').toString().trim();
+      if (userId.isEmpty) {
+        continue;
+      }
+      grouped.putIfAbsent(userId, () => []).add(doc);
+    }
+
+    final metadata = await _loadSystemMetadata(firestore);
+    final summaries = <BkmvPrintedSummary>[];
+
+    for (final entry in grouped.entries) {
+      final context = await _loadBusinessContext(
+        firestore: firestore,
+        userId: entry.key,
+        metadata: metadata,
+      );
+      if (context == null) {
+        continue;
+      }
+
+      final summary = await _buildPrintedSummary(
+        firestore: firestore,
+        context: context,
+        logDocs: entry.value,
+        fromDate: fromDate,
+        toDate: toDate,
+      );
+      if (summary != null) {
+        summaries.add(summary);
+      }
+    }
+
+    summaries.sort(
+      (a, b) => a.businessName.toLowerCase().compareTo(
+        b.businessName.toLowerCase(),
+      ),
+    );
+    return summaries;
+  }
+
   static Future<BkmvExportPackage?> _buildPackage({
     required FirebaseFirestore firestore,
     required _BusinessContext context,
@@ -220,6 +356,13 @@ class BkmvExportService {
       firestore: firestore,
       userId: context.userId,
       logDocs: sortedLogs,
+    );
+    final summary = _buildPrintedSummaryFromSortedLogs(
+      context: context,
+      sortedLogs: sortedLogs,
+      invoiceMap: invoiceMap,
+      fromDate: fromDate,
+      toDate: toDate,
     );
 
     final mainId = _randomDigits(15);
@@ -488,6 +631,102 @@ class BkmvExportService {
       directory: exportDirectory,
       bkmvFile: bkmvFile,
       iniFile: iniFile,
+      summary: summary,
+    );
+  }
+
+  static Future<BkmvPrintedSummary?> _buildPrintedSummary({
+    required FirebaseFirestore firestore,
+    required _BusinessContext context,
+    required List<QueryDocumentSnapshot<Map<String, dynamic>>> logDocs,
+    required String fromDate,
+    required String toDate,
+  }) async {
+    final sortedLogs = [...logDocs]..sort(_compareLogDocs);
+    final invoiceMap = await _loadInvoicesForLogs(
+      firestore: firestore,
+      userId: context.userId,
+      logDocs: sortedLogs,
+    );
+
+    return _buildPrintedSummaryFromSortedLogs(
+      context: context,
+      sortedLogs: sortedLogs,
+      invoiceMap: invoiceMap,
+      fromDate: fromDate,
+      toDate: toDate,
+    );
+  }
+
+  static BkmvPrintedSummary _buildPrintedSummaryFromSortedLogs({
+    required _BusinessContext context,
+    required List<QueryDocumentSnapshot<Map<String, dynamic>>> sortedLogs,
+    required Map<String, Map<String, dynamic>> invoiceMap,
+    required String fromDate,
+    required String toDate,
+  }) {
+    final typeCounts = <int, int>{};
+    final typeAmounts = <int, double>{};
+    var c100RecordCount = 0;
+
+    for (final logDoc in sortedLogs) {
+      final logData = logDoc.data();
+      final documentNumber = (logData['documentNumber'] ?? '').toString().trim();
+      if (documentNumber.isEmpty) {
+        continue;
+      }
+
+      final invoiceData = invoiceMap[documentNumber] ?? logData;
+      final docType = (invoiceData['type'] ?? logData['docType'] ?? '')
+          .toString();
+      final bucket = (logData['bucket'] ?? '').toString();
+      final docTypeCode = _mapDocumentType(docType);
+      if (docTypeCode == null) {
+        continue;
+      }
+
+      final includesHeader =
+          bucket == 'invoices' ||
+          bucket == 'credit_notes' ||
+          (bucket == 'receipts' && docType == 'receipt');
+      if (!includesHeader) {
+        continue;
+      }
+
+      c100RecordCount += 1;
+      final amount = _num(
+        logData['subtotalAfterTax'] ??
+            invoiceData['subtotalAfterTax'] ??
+            logData['grandTotal'] ??
+            invoiceData['amount'],
+      );
+      typeCounts.update(docTypeCode, (value) => value + 1, ifAbsent: () => 1);
+      typeAmounts.update(
+        docTypeCode,
+        (value) => value + amount,
+        ifAbsent: () => amount,
+      );
+    }
+
+    final rows = _printedSummaryRows
+        .map(
+          (entry) => BkmvPrintedSummaryRow(
+            documentTypeCode: entry.$1,
+            documentTypeLabel: entry.$2,
+            quantity: typeCounts[entry.$1] ?? 0,
+            totalAmountIncludingVat: typeAmounts[entry.$1] ?? 0,
+          ),
+        )
+        .toList(growable: false);
+
+    return BkmvPrintedSummary(
+      userId: context.userId,
+      businessName: context.businessName,
+      businessNumber: context.businessNumber,
+      fromDate: fromDate,
+      toDate: toDate,
+      c100RecordCount: c100RecordCount,
+      rows: rows,
     );
   }
 

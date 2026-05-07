@@ -1,12 +1,16 @@
 import 'dart:io';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:pdf/pdf.dart' as pdf;
+import 'package:pdf/widgets.dart' as pw;
 import 'package:share_plus/share_plus.dart';
+import 'package:intl/intl.dart' as intl;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:untitled1/ptofile.dart';
 import 'package:untitled1/pages/admin_reports_page.dart';
@@ -145,6 +149,189 @@ class _AdminPanelState extends State<AdminPanel> {
     );
     await directory.create(recursive: true);
     return directory;
+  }
+
+  String _formatAmountForPdf(double value) {
+    final formatter = intl.NumberFormat('#,##0.##', 'en_US');
+    return formatter.format(value);
+  }
+
+  Future<pw.Font> _loadPdfFont() async {
+    final fontData = await rootBundle.load(
+      'assets/fonts/Rubik-VariableFont_wght.ttf',
+    );
+    return pw.Font.ttf(fontData);
+  }
+
+  pw.Widget _buildPdfCell(
+    String text, {
+    required pw.Font font,
+    bool isHeader = false,
+    pw.Alignment alignment = pw.Alignment.centerRight,
+  }) {
+    return pw.Container(
+      alignment: alignment,
+      padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      child: pw.Text(
+        text,
+        textDirection: pw.TextDirection.rtl,
+        style: pw.TextStyle(
+          font: font,
+          fontSize: isHeader ? 11 : 10.5,
+          fontWeight: isHeader ? pw.FontWeight.bold : pw.FontWeight.normal,
+        ),
+      ),
+    );
+  }
+
+  pw.TableRow _buildPdfTableRow(
+    List<String> values, {
+    required pw.Font font,
+    bool isHeader = false,
+  }) {
+    return pw.TableRow(
+      decoration: pw.BoxDecoration(
+        color: isHeader ? pdf.PdfColors.grey200 : null,
+      ),
+      children: values
+          .map(
+            (value) => _buildPdfCell(
+              value,
+              font: font,
+              isHeader: isHeader,
+              alignment: value == values.first
+                  ? pw.Alignment.centerLeft
+                  : pw.Alignment.centerRight,
+            ),
+          )
+          .toList(growable: false),
+    );
+  }
+
+  pw.Widget _buildPrintedSummaryPage(
+    BkmvPrintedSummary summary, {
+    required pw.Font font,
+  }) {
+    final visibleRows = summary.rows;
+    return pw.Directionality(
+      textDirection: pw.TextDirection.rtl,
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+        children: [
+          pw.Align(
+            alignment: pw.Alignment.centerRight,
+            child: pw.Text(
+              'פלט מודפס לפי המבנה הנדרש בסעיף 2.6',
+              style: pw.TextStyle(
+                font: font,
+                fontSize: 14,
+                fontWeight: pw.FontWeight.bold,
+              ),
+            ),
+          ),
+          pw.SizedBox(height: 6),
+          pw.Align(
+            alignment: pw.Alignment.centerRight,
+            child: pw.Text(
+              '${summary.businessName} | ח.פ. ${summary.businessNumber} | ${summary.fromDate}-${summary.toDate}',
+              style: pw.TextStyle(font: font, fontSize: 10),
+            ),
+          ),
+          pw.SizedBox(height: 20),
+          pw.Align(
+            alignment: pw.Alignment.centerRight,
+            child: pw.Text(
+              'חלק מטופס 5.4',
+              style: pw.TextStyle(
+                font: font,
+                fontSize: 12,
+                fontWeight: pw.FontWeight.bold,
+              ),
+            ),
+          ),
+          pw.SizedBox(height: 8),
+          pw.Align(
+            alignment: pw.Alignment.centerRight,
+            child: pw.SizedBox(
+              width: 230,
+              child: pw.Table(
+                border: pw.TableBorder.all(width: 0.6),
+                columnWidths: const {
+                  0: pw.FixedColumnWidth(72),
+                  1: pw.FixedColumnWidth(92),
+                  2: pw.FixedColumnWidth(66),
+                },
+                children: [
+                  _buildPdfTableRow(
+                    ['סך רשומות', 'תיאור רשומה', 'קוד רשומה'],
+                    font: font,
+                    isHeader: true,
+                  ),
+                  _buildPdfTableRow(
+                    [
+                      summary.c100RecordCount.toString(),
+                      'כותרת מסמך',
+                      'C100',
+                    ],
+                    font: font,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          pw.SizedBox(height: 28),
+          pw.Align(
+            alignment: pw.Alignment.centerRight,
+            child: pw.Text(
+              'טבלה מטופס 2.6',
+              style: pw.TextStyle(
+                font: font,
+                fontSize: 12,
+                fontWeight: pw.FontWeight.bold,
+              ),
+            ),
+          ),
+          pw.SizedBox(height: 8),
+          pw.Table(
+            border: pw.TableBorder.all(width: 0.6),
+            columnWidths: const {
+              0: pw.FlexColumnWidth(1.35),
+              1: pw.FlexColumnWidth(0.8),
+              2: pw.FlexColumnWidth(1.45),
+              3: pw.FlexColumnWidth(0.7),
+            },
+            children: [
+              _buildPdfTableRow(
+                [
+                  'סה"כ כספי כולל מע"מ\n(שדה 1223)',
+                  'סה"כ כמותי',
+                  'סוג המסמך',
+                  'מספר המסמך',
+                ],
+                font: font,
+                isHeader: true,
+              ),
+              for (final row in visibleRows)
+                _buildPdfTableRow(
+                  [
+                    _formatAmountForPdf(row.totalAmountIncludingVat),
+                    row.quantity.toString(),
+                    row.documentTypeLabel,
+                    row.documentTypeCode.toString(),
+                  ],
+                  font: font,
+                ),
+            ],
+          ),
+          pw.SizedBox(height: 20),
+          pw.Text(
+            'לשים לב שסך"כ רשומות בטופס 2.6 (=${summary.totalDocumentQuantity}) מתאים לכמות רשומות מסוג C100 (=${summary.c100RecordCount}).',
+            textDirection: pw.TextDirection.rtl,
+            style: pw.TextStyle(font: font, fontSize: 10.5),
+          ),
+        ],
+      ),
+    );
   }
 
   late final Map<String, IconData> _availableIcons = _buildProfessionIcons();
@@ -416,6 +603,13 @@ class _AdminPanelState extends State<AdminPanel> {
               title: 'Generate BKMVDATA.txt',
               subtitle: 'Export BKMVDATA.txt and INI.txt',
               onTap: _generateBkmvDataFile,
+            ),
+            _buildAdminTile(
+              context,
+              icon: Icons.picture_as_pdf_rounded,
+              title: 'Generate BKMV printed PDF',
+              subtitle: 'Export the printed summary for section 2.6',
+              onTap: _generateBkmvPrintedPdf,
             ),
             const SizedBox(height: 20),
             _buildSectionTitle('Content Moderation'),
@@ -1758,6 +1952,69 @@ class _AdminPanelState extends State<AdminPanel> {
           SnackBar(
             content: Text(
               'Prepared ${result.packages.length} BKMVDATA export package(s) in: ${directory.path}$warningSuffix',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  Future<void> _generateBkmvPrintedPdf() async {
+    try {
+      final selectedRange = await _pickExportDateRange();
+      if (selectedRange == null) return;
+
+      final fromDate = _formatCompactDate(selectedRange.start);
+      final toDate = _formatCompactDate(selectedRange.end);
+      final summaries = await BkmvExportService.buildPrintedSummaryForAllUsers(
+        firestore: _firestore,
+        fromDate: fromDate,
+        toDate: toDate,
+      );
+
+      if (summaries.isEmpty) {
+        throw StateError('No BKMV summary records were found for this range.');
+      }
+
+      final font = await _loadPdfFont();
+      final document = pw.Document();
+
+      for (var i = 0; i < summaries.length; i += 1) {
+        final summary = summaries[i];
+        document.addPage(
+          pw.MultiPage(
+            pageFormat: pdf.PdfPageFormat.a4,
+            margin: const pw.EdgeInsets.all(28),
+            build: (_) => [_buildPrintedSummaryPage(summary, font: font)],
+          ),
+        );
+      }
+
+      final directory = await _getBkmvExportDirectory();
+      final timestamp = DateTime.now();
+      final fileName =
+          'BKMV_printed_summary_${_formatCompactDate(timestamp)}_${timestamp.hour.toString().padLeft(2, '0')}${timestamp.minute.toString().padLeft(2, '0')}.pdf';
+      final file = File('${directory.path}${Platform.pathSeparator}$fileName');
+      await file.writeAsBytes(await document.save(), flush: true);
+
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(file.path)],
+          text: 'BKMV printed summary PDF',
+        ),
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Prepared ${summaries.length} printed summary page(s) in: ${file.path}',
             ),
           ),
         );
