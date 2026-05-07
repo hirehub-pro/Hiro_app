@@ -25,6 +25,44 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
   String _selectedDocType = 'all';
   DateTimeRange? _selectedDateRange;
 
+  String _paymentStatusLabel(String? status, bool isRtl) {
+    switch (status) {
+      case 'paid':
+        return isRtl ? 'שולם' : 'Paid';
+      case 'partial':
+        return isRtl ? 'שולם חלקית' : 'Partly Paid';
+      case 'unpaid':
+      default:
+        return isRtl ? 'עדיין לא שולם' : 'Still Not Paid';
+    }
+  }
+
+  Color _paymentStatusColor(String? status) {
+    switch (status) {
+      case 'paid':
+        return const Color(0xFF15803D);
+      case 'partial':
+        return const Color(0xFFD97706);
+      case 'unpaid':
+      default:
+        return const Color(0xFFB91C1C);
+    }
+  }
+
+  String _paymentMethodLabel(String method, bool isRtl) {
+    switch (method) {
+      case 'credit':
+        return isRtl ? 'אשראי' : 'Credit Card';
+      case 'transfer':
+        return isRtl ? 'העברה בנקאית' : 'Bank Transfer';
+      case 'check':
+        return isRtl ? 'צ׳ק' : 'Check';
+      case 'cash':
+      default:
+        return isRtl ? 'מזומן' : 'Cash';
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -146,14 +184,15 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
     if (invoiceNumber.isEmpty) return;
 
     try {
+      final navigator = Navigator.of(context);
       final userRef = FirebaseFirestore.instance
           .collection('users')
           .doc(currentUser.uid);
       final detailRef = userRef.collection('invoices').doc(invoiceNumber);
 
       final results = await Future.wait([userRef.get(), detailRef.get()]);
-      final userSnap = results[0] as DocumentSnapshot<Map<String, dynamic>>;
-      final detailSnap = results[1] as DocumentSnapshot<Map<String, dynamic>>;
+      final userSnap = results[0];
+      final detailSnap = results[1];
 
       final userData = userSnap.data() ?? <String, dynamic>{};
       final detailData = detailSnap.data() ?? <String, dynamic>{};
@@ -184,8 +223,7 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
           : 'Auto-created from saved document #$invoiceNumber. Update with the actual delivery proof before legal use.';
 
       if (!mounted) return;
-      await Navigator.push(
-        context,
+      await navigator.push(
         MaterialPageRoute(
           builder: (_) => InvoiceBuilderPage(
             workerName: workerName,
@@ -222,6 +260,221 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
         ),
       );
     }
+  }
+
+  Future<void> _openReceiptFromInvoice(
+    String savedDocId,
+    Map<String, dynamic> savedData,
+    bool isRtl,
+  ) async {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) return;
+
+    final invoiceNumber = (savedData['invoiceNumber'] ?? '').toString().trim();
+    if (invoiceNumber.isEmpty) return;
+
+    final invoiceAmount = (savedData['amount'] as num?)?.toDouble() ?? 0.0;
+    final paidAmount = (savedData['paidAmount'] as num?)?.toDouble() ?? 0.0;
+    final remainingAmount = (invoiceAmount - paidAmount).clamp(
+      0.0,
+      invoiceAmount,
+    );
+    if (remainingAmount <= 0) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            isRtl
+                ? 'החשבונית הזו כבר סומנה כששולמה במלואה.'
+                : 'This invoice is already marked as fully paid.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    final paymentDraft = await _showReceiptPaymentDialog(
+      isRtl: isRtl,
+      remainingAmount: remainingAmount,
+    );
+    if (paymentDraft == null || !mounted) return;
+
+    try {
+      final navigator = Navigator.of(context);
+      final userRef = FirebaseFirestore.instance
+          .collection('users')
+          .doc(currentUser.uid);
+      final detailRef = userRef.collection('invoices').doc(invoiceNumber);
+      final results = await Future.wait([userRef.get(), detailRef.get()]);
+      final userSnap = results[0];
+      final detailSnap = results[1];
+
+      final userData = userSnap.data() ?? <String, dynamic>{};
+      final detailData = detailSnap.data() ?? <String, dynamic>{};
+      final clientName =
+          (detailData['clientName'] ?? savedData['clientName'] ?? '')
+              .toString();
+      final clientPhone = (detailData['clientPhone'] ?? '').toString();
+      final clientAddress = (detailData['clientAddress'] ?? '').toString();
+      final workerName =
+          (userData['name'] ?? currentUser.displayName ?? 'Worker').toString();
+      final workerPhone = (userData['phone'] ?? userData['phoneNumber'] ?? '')
+          .toString();
+      final workerEmail = (userData['email'] ?? currentUser.email ?? '')
+          .toString();
+      final itemDescription = isRtl
+          ? 'תשלום עבור חשבונית מספר $invoiceNumber'
+          : 'Payment for Invoice #$invoiceNumber';
+      final paymentNote = isRtl
+          ? 'קבלה שנוצרה מחשבונית שמורה #$invoiceNumber'
+          : 'Receipt created from saved invoice #$invoiceNumber';
+
+      await navigator.push(
+        MaterialPageRoute(
+          builder: (_) => InvoiceBuilderPage(
+            workerName: workerName,
+            workerPhone: workerPhone.isEmpty ? null : workerPhone,
+            workerEmail: workerEmail.isEmpty ? null : workerEmail,
+            receiverName: clientName.isEmpty ? null : clientName,
+            receiverPhone: clientPhone.isEmpty ? null : clientPhone,
+            receiverAddress: clientAddress.isEmpty ? null : clientAddress,
+            initialDocType: 'receipt',
+            initialItems: [
+              {
+                'description': itemDescription,
+                'quantity': 1,
+                'price': paymentDraft.amount,
+                'priceTaxMode': 'after_tax',
+              },
+            ],
+            initialNotes: paymentNote,
+            initialPaymentMethod: paymentDraft.method,
+            initialPaymentAmount: paymentDraft.amount,
+            sourceInvoiceNumber: invoiceNumber,
+            sourceInvoiceSavedDocId: savedDocId,
+            sourceInvoiceTotalAmount: invoiceAmount,
+          ),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            isRtl
+                ? 'לא הצלחנו לפתוח קבלה אוטומטית עבור החשבונית.'
+                : 'Could not open an automatic receipt for this invoice.',
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<_ReceiptPaymentDraft?> _showReceiptPaymentDialog({
+    required bool isRtl,
+    required double remainingAmount,
+  }) async {
+    final amountController = TextEditingController(
+      text: remainingAmount.toStringAsFixed(2),
+    );
+    String selectedMethod = 'cash';
+    String? validationMessage;
+
+    final result = await showDialog<_ReceiptPaymentDraft>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: Text(isRtl ? 'צור קבלה' : 'Create Receipt'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: amountController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: isRtl
+                          ? 'כמה הלקוח שילם?'
+                          : 'How much was paid?',
+                      helperText: isRtl
+                          ? 'יתרה לתשלום: ${remainingAmount.toStringAsFixed(2)} ₪'
+                          : 'Remaining due: ${remainingAmount.toStringAsFixed(2)} ₪',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    initialValue: selectedMethod,
+                    decoration: InputDecoration(
+                      labelText: isRtl ? 'אמצעי תשלום' : 'Payment Method',
+                    ),
+                    items: ['cash', 'credit', 'transfer', 'check']
+                        .map(
+                          (method) => DropdownMenuItem(
+                            value: method,
+                            child: Text(_paymentMethodLabel(method, isRtl)),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (value) {
+                      if (value == null) return;
+                      selectedMethod = value;
+                    },
+                  ),
+                  if (validationMessage != null) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      validationMessage!,
+                      style: const TextStyle(
+                        color: Color(0xFFB91C1C),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: Text(isRtl ? 'ביטול' : 'Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    final parsedAmount = double.tryParse(
+                      amountController.text.trim().replaceAll(',', '.'),
+                    );
+                    if (parsedAmount == null ||
+                        parsedAmount <= 0 ||
+                        parsedAmount > remainingAmount + 0.01) {
+                      setDialogState(
+                        () => validationMessage = isRtl
+                            ? 'יש להזין סכום תקין שלא גדול מהיתרה לתשלום.'
+                            : 'Enter a valid amount that does not exceed the remaining due.',
+                      );
+                      return;
+                    }
+                    Navigator.pop(
+                      dialogContext,
+                      _ReceiptPaymentDraft(
+                        amount: parsedAmount,
+                        method: selectedMethod,
+                      ),
+                    );
+                  },
+                  child: Text(isRtl ? 'המשך' : 'Continue'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    amountController.dispose();
+    return result;
   }
 
   void _clearDateRange() {
@@ -349,9 +602,9 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
               return _matchesSearch(data, searchTerms, isRtl);
             }).toList();
 
-            final totalAmount = docs.fold<double>(0, (sum, doc) {
+            final totalAmount = docs.fold<double>(0, (runningTotal, doc) {
               final amount = (doc.data()['amount'] as num?)?.toDouble() ?? 0;
-              return sum + amount;
+              return runningTotal + amount;
             });
 
             return Column(
@@ -511,10 +764,11 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                       : ListView.separated(
                           padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
                           itemCount: filteredDocs.length,
-                          separatorBuilder: (_, __) =>
+                          separatorBuilder: (_, separatorIndex) =>
                               const SizedBox(height: 10),
                           itemBuilder: (context, index) {
-                            final data = filteredDocs[index].data();
+                            final savedDoc = filteredDocs[index];
+                            final data = savedDoc.data();
                             final name = (data['name'] ?? 'Invoice').toString();
                             final fileName = (data['fileName'] ?? '$name.pdf')
                                 .toString();
@@ -530,6 +784,30 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                             final canCreateCreditNote =
                                 docType == 'invoice' ||
                                 docType == 'invoice_receipt';
+                            final canCreateReceipt = docType == 'invoice';
+                            final paidAmount =
+                                (data['paidAmount'] as num?)?.toDouble() ??
+                                (docType == 'invoice_receipt'
+                                    ? ((amount ?? 0).abs())
+                                    : 0.0);
+                            final invoiceAmount = (amount ?? 0).abs();
+                            final remainingAmount = (invoiceAmount - paidAmount)
+                                .clamp(0.0, invoiceAmount);
+                            final paymentStatus =
+                                (data['paymentStatus'] ?? '')
+                                    .toString()
+                                    .trim()
+                                    .isNotEmpty
+                                ? (data['paymentStatus'] ?? '')
+                                      .toString()
+                                      .trim()
+                                : (docType == 'invoice_receipt'
+                                      ? 'paid'
+                                      : (paidAmount <= 0
+                                            ? 'unpaid'
+                                            : (remainingAmount <= 0.01
+                                                  ? 'paid'
+                                                  : 'partial')));
                             final createdText = createdAt == null
                                 ? ''
                                 : intl.DateFormat(
@@ -656,6 +934,41 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                                         ),
                                                       ),
                                                     ),
+                                                  if (docType == 'invoice')
+                                                    Container(
+                                                      padding:
+                                                          const EdgeInsets.symmetric(
+                                                            horizontal: 10,
+                                                            vertical: 5,
+                                                          ),
+                                                      decoration: BoxDecoration(
+                                                        color:
+                                                            _paymentStatusColor(
+                                                              paymentStatus,
+                                                            ).withValues(
+                                                              alpha: 0.12,
+                                                            ),
+                                                        borderRadius:
+                                                            BorderRadius.circular(
+                                                              999,
+                                                            ),
+                                                      ),
+                                                      child: Text(
+                                                        _paymentStatusLabel(
+                                                          paymentStatus,
+                                                          isRtl,
+                                                        ),
+                                                        style: TextStyle(
+                                                          color:
+                                                              _paymentStatusColor(
+                                                                paymentStatus,
+                                                              ),
+                                                          fontSize: 11,
+                                                          fontWeight:
+                                                              FontWeight.w700,
+                                                        ),
+                                                      ),
+                                                    ),
                                                 ],
                                               ),
                                               const SizedBox(height: 8),
@@ -728,32 +1041,71 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                     ),
                                     if (canCreateCreditNote) ...[
                                       const SizedBox(height: 12),
-                                      Align(
-                                        alignment:
-                                            AlignmentDirectional.centerStart,
-                                        child: TextButton.icon(
-                                          onPressed: () =>
-                                              _openCreditNoteFromDocument(
-                                                data,
-                                                isRtl,
+                                      Wrap(
+                                        spacing: 12,
+                                        runSpacing: 4,
+                                        children: [
+                                          if (canCreateReceipt)
+                                            TextButton.icon(
+                                              onPressed: () =>
+                                                  _openReceiptFromInvoice(
+                                                    savedDoc.id,
+                                                    data,
+                                                    isRtl,
+                                                  ),
+                                              icon: const Icon(
+                                                Icons.receipt_long_outlined,
+                                                size: 18,
                                               ),
-                                          icon: const Icon(
-                                            Icons.assignment_return_rounded,
-                                            size: 18,
-                                          ),
-                                          label: Text(
-                                            isRtl
-                                                ? 'צור הודעת זיכוי'
-                                                : 'Create Credit Note',
-                                          ),
-                                          style: TextButton.styleFrom(
-                                            foregroundColor: accent,
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 0,
-                                              vertical: 4,
+                                              label: Text(
+                                                isRtl
+                                                    ? 'צור קבלה'
+                                                    : 'Create Receipt',
+                                              ),
+                                              style: TextButton.styleFrom(
+                                                foregroundColor: accent,
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 0,
+                                                      vertical: 4,
+                                                    ),
+                                              ),
+                                            ),
+                                          TextButton.icon(
+                                            onPressed: () =>
+                                                _openCreditNoteFromDocument(
+                                                  data,
+                                                  isRtl,
+                                                ),
+                                            icon: const Icon(
+                                              Icons.assignment_return_rounded,
+                                              size: 18,
+                                            ),
+                                            label: Text(
+                                              isRtl
+                                                  ? 'צור הודעת זיכוי'
+                                                  : 'Create Credit Note',
+                                            ),
+                                            style: TextButton.styleFrom(
+                                              foregroundColor: accent,
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 0,
+                                                    vertical: 4,
+                                                  ),
                                             ),
                                           ),
-                                        ),
+                                        ],
+                                      ),
+                                    ],
+                                    if (docType == 'invoice') ...[
+                                      const SizedBox(height: 8),
+                                      _buildMetaRow(
+                                        icon: Icons.payments_outlined,
+                                        text:
+                                            '${isRtl ? 'שולם' : 'Paid'}: ${paidAmount.toStringAsFixed(2)} ₪'
+                                            '  |  '
+                                            '${isRtl ? 'נותר' : 'Remaining'}: ${remainingAmount.toStringAsFixed(2)} ₪',
                                       ),
                                     ],
                                   ],
@@ -949,6 +1301,13 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
       ),
     );
   }
+}
+
+class _ReceiptPaymentDraft {
+  final double amount;
+  final String method;
+
+  const _ReceiptPaymentDraft({required this.amount, required this.method});
 }
 
 class SavedInvoicePreviewPage extends StatefulWidget {

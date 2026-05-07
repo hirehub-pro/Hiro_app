@@ -24,6 +24,8 @@ import 'package:untitled1/services/subscription_access_service.dart';
 import 'package:untitled1/sign_in.dart';
 import 'services/firebase_options.dart';
 
+final GlobalKey<NavigatorState> _rootNavigatorKey = GlobalKey<NavigatorState>();
+
 void main() async {
   WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
 
@@ -50,13 +52,14 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> {
-  final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
   static const Color _brandBlue = Color(0xFF1976D2);
   static const Color _brandNavy = Color(0xFF0F172A);
   static const Color _pageBackground = Color(0xFFF6F8FB);
   bool _isInitializing = true;
   bool _isFirebaseInitialized = false;
   Object? _initializationError;
+  Map<String, dynamic>? _pendingDeepLink;
+  bool _pendingDeepLinkFlushScheduled = false;
 
   StreamSubscription<String?>? _notificationTapSubscription;
 
@@ -191,7 +194,9 @@ class _MyAppState extends State<MyApp> {
           if (payload != null && payload.isNotEmpty) {
             try {
               final data = jsonDecode(payload);
-              _handleDeepLink(data);
+              if (data is Map<String, dynamic>) {
+                _handleDeepLink(data);
+              }
             } catch (e) {
               debugPrint("Error parsing notification payload: $e");
             }
@@ -200,8 +205,15 @@ class _MyAppState extends State<MyApp> {
   }
 
   void _handleDeepLink(Map<String, dynamic> data) {
+    final navigator = _rootNavigatorKey.currentState;
+    if (navigator == null || !navigator.mounted) {
+      _pendingDeepLink = data;
+      _schedulePendingDeepLinkFlush();
+      return;
+    }
+
     if (data['type'] == 'chat' && data['senderId'] != null) {
-      navigatorKey.currentState?.push(
+      navigator.push(
         MaterialPageRoute(
           builder: (context) => ChatPage(
             receiverId: data['senderId'],
@@ -228,10 +240,40 @@ class _MyAppState extends State<MyApp> {
     }
   }
 
+  void _flushPendingDeepLink() {
+    _pendingDeepLinkFlushScheduled = false;
+
+    final pendingDeepLink = _pendingDeepLink;
+    if (pendingDeepLink == null) return;
+
+    final navigator = _rootNavigatorKey.currentState;
+    if (navigator == null || !navigator.mounted) return;
+
+    _pendingDeepLink = null;
+    _handleDeepLink(pendingDeepLink);
+  }
+
+  void _schedulePendingDeepLinkFlush() {
+    if (_pendingDeepLinkFlushScheduled) return;
+
+    _pendingDeepLinkFlushScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        _pendingDeepLinkFlushScheduled = false;
+        return;
+      }
+      _flushPendingDeepLink();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (_pendingDeepLink != null) {
+      _schedulePendingDeepLinkFlush();
+    }
+
     return MaterialApp(
-      navigatorKey: navigatorKey,
+      navigatorKey: _rootNavigatorKey,
       debugShowCheckedModeBanner: false,
       locale: Provider.of<LanguageProvider>(context).locale,
       theme: ThemeData(

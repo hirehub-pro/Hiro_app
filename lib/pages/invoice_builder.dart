@@ -27,7 +27,7 @@ class _SavedInvoiceResult {
     required this.wasCreated,
   });
 }
-
+           
 class InvoiceItem {
   final String description;
   final int quantity;
@@ -140,6 +140,10 @@ class InvoiceBuilderPage extends StatefulWidget {
   final String? initialCreditReason;
   final String? initialCreditDeliveryMethod;
   final String? initialCreditReceiptConfirmation;
+  final double? initialPaymentAmount;
+  final String? sourceInvoiceNumber;
+  final String? sourceInvoiceSavedDocId;
+  final double? sourceInvoiceTotalAmount;
 
   const InvoiceBuilderPage({
     super.key,
@@ -161,6 +165,10 @@ class InvoiceBuilderPage extends StatefulWidget {
     this.initialCreditReason,
     this.initialCreditDeliveryMethod,
     this.initialCreditReceiptConfirmation,
+    this.initialPaymentAmount,
+    this.sourceInvoiceNumber,
+    this.sourceInvoiceSavedDocId,
+    this.sourceInvoiceTotalAmount,
   });
 
   @override
@@ -274,32 +282,33 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     final paymentAmountTotal = _paymentMethodsAmountTotal();
     final hasDiscount = _hasDiscount && _discountAmount > 0;
     final discountAmount = hasDiscount ? _discountAmount : 0.0;
-    final signedDiscountAmount =
-        discountAmount == 0 ? 0.0 : (docType == 'credit_note' ? discountAmount : -discountAmount);
+    final signedDiscountAmount = discountAmount == 0
+        ? 0.0
+        : (docType == 'credit_note' ? discountAmount : -discountAmount);
     final itemsNetTotal = _items.fold<double>(
       0,
       (runningTotal, item) => runningTotal + _itemTotalBeforeTax(item),
     );
     final subtotalBeforeTax = _subtotalAmount;
     final subtotalAfterTax = _totalAmount;
-    final signedSubtotalBeforeTax =
-        docType == 'credit_note' ? -subtotalBeforeTax : subtotalBeforeTax;
-    final signedSubtotalAfterTax =
-        docType == 'credit_note' ? -subtotalAfterTax : subtotalAfterTax;
+    final signedSubtotalBeforeTax = docType == 'credit_note'
+        ? -subtotalBeforeTax
+        : subtotalBeforeTax;
+    final signedSubtotalAfterTax = docType == 'credit_note'
+        ? -subtotalAfterTax
+        : subtotalAfterTax;
     var remainingDiscount = discountAmount;
     final logItems = _items.asMap().entries.map((entry) {
       final index = entry.key;
       final item = entry.value;
       final isLastItem = index == _items.length - 1;
       final lineSubtotalBeforeTax = _itemTotalBeforeTax(item);
-      final proportionalDiscount =
-          hasDiscount && itemsNetTotal > 0
-              ? discountAmount * (lineSubtotalBeforeTax / itemsNetTotal)
-              : 0.0;
-      final lineDiscount =
-          hasDiscount
-              ? (isLastItem ? remainingDiscount : proportionalDiscount)
-              : 0.0;
+      final proportionalDiscount = hasDiscount && itemsNetTotal > 0
+          ? discountAmount * (lineSubtotalBeforeTax / itemsNetTotal)
+          : 0.0;
+      final lineDiscount = hasDiscount
+          ? (isLastItem ? remainingDiscount : proportionalDiscount)
+          : 0.0;
       if (hasDiscount) {
         remainingDiscount -= lineDiscount;
       }
@@ -379,9 +388,16 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
             : 'cash',
         'paymentMethods': paymentMethodsData,
         'paymentAmountTotal': paymentAmountTotal,
+        'sourceInvoiceNumber': widget.sourceInvoiceNumber,
+        'sourceInvoiceSavedDocId': widget.sourceInvoiceSavedDocId,
+        'sourceInvoiceTotalAmount': widget.sourceInvoiceTotalAmount,
         'invoiceNumber': nextNumber,
         'date': dateStr,
         'createdAt': timestamp,
+        if (docType == 'invoice') 'paymentStatus': 'unpaid',
+        if (docType == 'invoice') 'paidAmount': 0.0,
+        if (docType == 'invoice_receipt') 'paymentStatus': 'paid',
+        if (docType == 'invoice_receipt') 'paidAmount': signedTotalAmount.abs(),
         if (creditNoteLegalData != null) 'creditNoteLegal': creditNoteLegalData,
       };
 
@@ -437,11 +453,19 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
               : 'cash',
           'paymentMethods': paymentMethodsData,
           'paymentAmountTotal': paymentAmountTotal,
+          'sourceInvoiceNumber': widget.sourceInvoiceNumber,
+          'sourceInvoiceSavedDocId': widget.sourceInvoiceSavedDocId,
+          'sourceInvoiceTotalAmount': widget.sourceInvoiceTotalAmount,
           'items': logItems,
           'fileName': '',
           'storagePath': '',
           'url': '',
           'timestamp': timestamp,
+          if (docType == 'invoice') 'paymentStatus': 'unpaid',
+          if (docType == 'invoice') 'paidAmount': 0.0,
+          if (docType == 'invoice_receipt') 'paymentStatus': 'paid',
+          if (docType == 'invoice_receipt')
+            'paidAmount': signedTotalAmount.abs(),
           if (creditNoteLegalData != null)
             'creditNoteLegal': creditNoteLegalData,
         };
@@ -473,7 +497,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     final savedInvoiceName = clientName.isNotEmpty
         ? '${_labelForDocType(docType)} #$savedNumber - $clientName'
         : '${_labelForDocType(docType)} #$savedNumber';
-    await savedInvoicesRef.add({
+    final savedInvoiceData = {
       'name': savedInvoiceName,
       'fileName': fileName,
       'url': downloadUrl,
@@ -482,10 +506,23 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'invoiceNumber': savedNumber,
       'docType': docType,
       'clientName': clientName,
+      'paymentMethod': _paymentMethods.isNotEmpty
+          ? _paymentMethods.first.method
+          : 'cash',
+      'paymentMethods': paymentMethodsData,
+      'paymentAmountTotal': paymentAmountTotal,
+      'sourceInvoiceNumber': widget.sourceInvoiceNumber,
+      'sourceInvoiceSavedDocId': widget.sourceInvoiceSavedDocId,
+      'sourceInvoiceTotalAmount': widget.sourceInvoiceTotalAmount,
       'date': dateStr,
       'createdAt': FieldValue.serverTimestamp(),
+      if (docType == 'invoice') 'paymentStatus': 'unpaid',
+      if (docType == 'invoice') 'paidAmount': 0.0,
+      if (docType == 'invoice_receipt') 'paymentStatus': 'paid',
+      if (docType == 'invoice_receipt') 'paidAmount': signedTotalAmount.abs(),
       if (creditNoteLegalData != null) 'creditNoteLegal': creditNoteLegalData,
-    });
+    };
+    await savedInvoicesRef.add(savedInvoiceData);
     await _addToTotalEarned(userId: userId, amount: signedTotalAmount);
     await Future.wait(
       logEntries.map((entry) async {
@@ -498,6 +535,75 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         });
       }),
     );
+
+    if (docType == 'receipt' &&
+        widget.sourceInvoiceNumber != null &&
+        widget.sourceInvoiceSavedDocId != null &&
+        widget.sourceInvoiceTotalAmount != null) {
+      await _updateLinkedInvoicePaymentStatus(
+        userId: userId,
+        paidAmount: paymentAmountTotal,
+      );
+    }
+  }
+
+  Future<void> _updateLinkedInvoicePaymentStatus({
+    required String userId,
+    required double paidAmount,
+  }) async {
+    final sourceInvoiceNumber = widget.sourceInvoiceNumber?.trim();
+    final sourceInvoiceSavedDocId = widget.sourceInvoiceSavedDocId?.trim();
+    final sourceInvoiceTotalAmount = widget.sourceInvoiceTotalAmount;
+    if (sourceInvoiceNumber == null ||
+        sourceInvoiceNumber.isEmpty ||
+        sourceInvoiceSavedDocId == null ||
+        sourceInvoiceSavedDocId.isEmpty ||
+        sourceInvoiceTotalAmount == null ||
+        sourceInvoiceTotalAmount <= 0 ||
+        paidAmount <= 0) {
+      return;
+    }
+
+    final userRef = FirebaseFirestore.instance.collection('users').doc(userId);
+    final invoiceRef = userRef.collection('invoices').doc(sourceInvoiceNumber);
+    final savedInvoiceRef = userRef
+        .collection('saved_invoices')
+        .doc(sourceInvoiceSavedDocId);
+
+    await FirebaseFirestore.instance.runTransaction((transaction) async {
+      final invoiceSnap = await transaction.get(invoiceRef);
+      final savedInvoiceSnap = await transaction.get(savedInvoiceRef);
+      final currentPaidAmount =
+          ((savedInvoiceSnap.data()?['paidAmount'] as num?)?.toDouble() ??
+          (invoiceSnap.data()?['paidAmount'] as num?)?.toDouble() ??
+          0.0);
+      final nextPaidAmount = (currentPaidAmount + paidAmount).clamp(
+        0.0,
+        sourceInvoiceTotalAmount,
+      );
+      final nextStatus = nextPaidAmount <= 0
+          ? 'unpaid'
+          : (nextPaidAmount + 0.01 >= sourceInvoiceTotalAmount
+                ? 'paid'
+                : 'partial');
+
+      final paymentUpdate = {
+        'paidAmount': nextPaidAmount,
+        'paymentStatus': nextStatus,
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+
+      if (invoiceSnap.exists) {
+        transaction.set(invoiceRef, paymentUpdate, SetOptions(merge: true));
+      }
+      if (savedInvoiceSnap.exists) {
+        transaction.set(
+          savedInvoiceRef,
+          paymentUpdate,
+          SetOptions(merge: true),
+        );
+      }
+    });
   }
 
   String _labelForDocType(String docType) {
@@ -584,8 +690,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     return subtotal < 0 ? 0 : subtotal;
   }
 
-  double get _vatAmount =>
-      _usesVat ? _subtotalAmount * _vatRate : 0.0;
+  double get _vatAmount => _usesVat ? _subtotalAmount * _vatRate : 0.0;
 
   double get _totalAmount => _subtotalAmount + _vatAmount;
 
@@ -684,6 +789,11 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       _paymentMethods.first.method = _normalizePaymentMethod(
         widget.initialPaymentMethod,
       );
+    }
+    if (widget.initialPaymentAmount != null &&
+        widget.initialPaymentAmount! > 0) {
+      _paymentMethods.first.amountController.text = widget.initialPaymentAmount!
+          .toStringAsFixed(2);
     }
     if (widget.initialCheckNumber != null) {
       _paymentMethods.first.checkNumberController.text =
