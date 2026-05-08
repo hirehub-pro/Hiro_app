@@ -151,6 +151,10 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
       'worker_fallback': 'Worker',
       'available_now': 'Available now',
       'not_available_now': 'Not available now',
+      'not_available_today': 'Not available today',
+      'busy_today': 'Busy today',
+      'available_after': 'Available after {time}',
+      'not_available_in': "Won't be available in {duration}",
       'rating_for_service': 'Rating for service',
       'new_badge': 'NEW',
       'filter_radius_title': 'Filter by Work Radius',
@@ -171,6 +175,10 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
       'worker_fallback': 'בעל מקצוע',
       'available_now': 'זמין עכשיו',
       'not_available_now': 'לא זמין עכשיו',
+      'not_available_today': 'לא זמין היום',
+      'busy_today': 'עסוק היום',
+      'available_after': 'זמין אחרי {time}',
+      'not_available_in': 'לא יהיה זמין בעוד {duration}',
       'rating_for_service': 'דירוג לשירות זה',
       'new_badge': 'חדש',
       'filter_radius_title': 'סנן לפי רדיוס עבודה',
@@ -191,6 +199,10 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
       'worker_fallback': 'عامل',
       'available_now': 'متاح الآن',
       'not_available_now': 'غير متاح الآن',
+      'not_available_today': 'غير متاح اليوم',
+      'busy_today': 'مشغول اليوم',
+      'available_after': 'متاح بعد {time}',
+      'not_available_in': 'لن يكون متاحًا خلال {duration}',
       'rating_for_service': 'تقييم لهذه الخدمة',
       'new_badge': 'جديد',
       'filter_radius_title': 'تصفية حسب نطاق العمل',
@@ -211,6 +223,10 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
       'worker_fallback': 'ሰራተኛ',
       'available_now': 'አሁን ይገኛል',
       'not_available_now': 'አሁን አይገኝም',
+      'not_available_today': 'ዛሬ አይገኝም',
+      'busy_today': 'ዛሬ ተጠምዷል',
+      'available_after': 'ከ{time} በኋላ ይገኛል',
+      'not_available_in': 'በ{duration} ውስጥ አይገኝም',
       'rating_for_service': 'ለዚህ አገልግሎት ደረጃ',
       'new_badge': 'አዲስ',
       'filter_radius_title': 'በስራ ራዲየስ ማጣራት',
@@ -231,6 +247,10 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
       'worker_fallback': 'Специалист',
       'available_now': 'Сейчас доступен',
       'not_available_now': 'Сейчас недоступен',
+      'not_available_today': 'Сегодня недоступен',
+      'busy_today': 'Сегодня занят',
+      'available_after': 'Доступен после {time}',
+      'not_available_in': 'Будет недоступен еще {duration}',
       'rating_for_service': 'Рейтинг по этой услуге',
       'new_badge': 'НОВЫЙ',
       'filter_radius_title': 'Фильтр по радиусу работы',
@@ -598,6 +618,21 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
               scheduleData['defaultWorkingHours'] as Map,
             );
           }
+          if (scheduleData != null && scheduleData['disabledDays'] is List) {
+            enriched['disabledDays'] = List<int>.from(
+              scheduleData['disabledDays'] as List,
+            );
+          }
+          if (scheduleData != null && scheduleData['partialWorkDays'] is Map) {
+            enriched['partialWorkDays'] = Map<String, dynamic>.from(
+              scheduleData['partialWorkDays'] as Map,
+            );
+          }
+          if (scheduleData != null && scheduleData['availableDates'] is List) {
+            enriched['availableDates'] = List<String>.from(
+              scheduleData['availableDates'] as List,
+            );
+          }
         } catch (_) {}
 
         return enriched;
@@ -698,24 +733,174 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
     return (hour * 60) + minute;
   }
 
-  bool _isWorkerAvailableNow(Map<String, dynamic> worker) {
-    final hours = worker['defaultWorkingHours'];
-    if (hours is! Map) return false;
-
-    final fromMinutes = _parseTimeStringToMinutes(hours['from']?.toString());
-    final toMinutes = _parseTimeStringToMinutes(hours['to']?.toString());
-    if (fromMinutes == null || toMinutes == null) return false;
-
-    final now = DateTime.now();
-    final currentMinutes = (now.hour * 60) + now.minute;
-    return currentMinutes >= fromMinutes && currentMinutes < toMinutes;
-  }
-
   bool _hasWorkingHours(Map<String, dynamic> worker) {
     final hours = worker['defaultWorkingHours'];
     if (hours is! Map) return false;
     return _parseTimeStringToMinutes(hours['from']?.toString()) != null &&
         _parseTimeStringToMinutes(hours['to']?.toString()) != null;
+  }
+
+  String _todayKey(DateTime date) => '${date.year}-${date.month}-${date.day}';
+
+  String _todayKeyPadded(DateTime date) {
+    final month = date.month.toString().padLeft(2, '0');
+    final day = date.day.toString().padLeft(2, '0');
+    return '${date.year}-$month-$day';
+  }
+
+  List<Map<String, String>> _normalizePartialRanges(dynamic value) {
+    if (value is List) {
+      final ranges = value
+          .whereType<Map>()
+          .map((item) => Map<String, String>.from(item))
+          .where((item) => item['from'] != null && item['to'] != null)
+          .toList();
+      ranges.sort((a, b) {
+        final aFrom = _parseTimeStringToMinutes(a['from']?.toString()) ?? -1;
+        final bFrom = _parseTimeStringToMinutes(b['from']?.toString()) ?? -1;
+        return aFrom.compareTo(bFrom);
+      });
+      return ranges;
+    }
+
+    if (value is Map) {
+      final range = Map<String, String>.from(value);
+      if (range['from'] != null && range['to'] != null) return [range];
+    }
+
+    return [];
+  }
+
+  String _formatDurationMinutes(int totalMinutes) {
+    final safeMinutes = totalMinutes < 0 ? 0 : totalMinutes;
+    final hours = safeMinutes ~/ 60;
+    final minutes = safeMinutes % 60;
+    if (hours > 0 && minutes > 0) return '${hours}h ${minutes}m';
+    if (hours > 0) return '${hours}h';
+    return '${minutes}m';
+  }
+
+  ({String label, Color color}) _todayAvailabilityStatus(
+    Map<String, dynamic> worker,
+    String locale,
+  ) {
+    final now = DateTime.now();
+    final disabledDays = List<int>.from(worker['disabledDays'] ?? const []);
+    if (disabledDays.contains(now.weekday)) {
+      return (
+        label: _t('not_available_today', locale),
+        color: const Color(0xFFDC2626),
+      );
+    }
+
+    final hours = worker['defaultWorkingHours'];
+    if (hours is! Map) {
+      return (label: _t('busy_today', locale), color: const Color(0xFFF59E0B));
+    }
+
+    final defaultFrom = _parseTimeStringToMinutes(hours['from']?.toString());
+    final defaultTo = _parseTimeStringToMinutes(hours['to']?.toString());
+    if (defaultFrom == null || defaultTo == null) {
+      return (label: _t('busy_today', locale), color: const Color(0xFFF59E0B));
+    }
+
+    final partialMap = worker['partialWorkDays'] is Map
+        ? Map<String, dynamic>.from(worker['partialWorkDays'] as Map)
+        : <String, dynamic>{};
+    final availableDates = List<String>.from(
+      worker['availableDates'] ?? const <String>[],
+    );
+    final todayKey = _todayKey(now);
+    final todayKeyPadded = _todayKeyPadded(now);
+    final isWorkingDay =
+        availableDates.isEmpty ||
+        availableDates.contains(todayKey) ||
+        availableDates.contains(todayKeyPadded);
+    final todayRanges = _normalizePartialRanges(
+      partialMap[todayKey] ?? partialMap[todayKeyPadded],
+    );
+    final currentMinutes = (now.hour * 60) + now.minute;
+    final minutesUntilDefaultEnd = defaultTo - currentMinutes;
+
+    if (!isWorkingDay) {
+      if (minutesUntilDefaultEnd > 0 &&
+          minutesUntilDefaultEnd < 120 &&
+          currentMinutes < defaultTo) {
+        return (
+          label: _t('not_available_in', locale).replaceAll(
+            '{duration}',
+            _formatDurationMinutes(minutesUntilDefaultEnd),
+          ),
+          color: const Color(0xFFF59E0B),
+        );
+      }
+      return (
+        label: _t('available_now', locale),
+        color: const Color(0xFF059669),
+      );
+    }
+
+    int? nextStartMinutes;
+    for (final range in todayRanges) {
+      final from = _parseTimeStringToMinutes(range['from']?.toString());
+      if (from != null && from > currentMinutes) {
+        nextStartMinutes = from;
+        break;
+      }
+    }
+    if (nextStartMinutes == null && defaultFrom > currentMinutes) {
+      nextStartMinutes = defaultFrom;
+    }
+
+    if (todayRanges.isEmpty) {
+      final minutesUntilNextStart = nextStartMinutes != null
+          ? (nextStartMinutes - currentMinutes)
+          : -1;
+      if (minutesUntilNextStart > 0 && minutesUntilNextStart < 120) {
+        return (
+          label: _t('not_available_in', locale).replaceAll(
+            '{duration}',
+            _formatDurationMinutes(minutesUntilNextStart),
+          ),
+          color: const Color(0xFFF59E0B),
+        );
+      }
+      return (label: _t('busy_today', locale), color: const Color(0xFFF59E0B));
+    }
+
+    for (int i = 0; i < todayRanges.length; i++) {
+      final currentTo = _parseTimeStringToMinutes(
+        todayRanges[i]['to']?.toString(),
+      );
+      if (currentTo == null) continue;
+
+      if (i < todayRanges.length - 1) {
+        final nextFrom = _parseTimeStringToMinutes(
+          todayRanges[i + 1]['from']?.toString(),
+        );
+        if (nextFrom == null) continue;
+        final gap = nextFrom - currentTo;
+        if (gap > 120) {
+          final endHour = todayRanges[i]['to']!.toString();
+          return (
+            label: _t('available_after', locale).replaceAll('{time}', endHour),
+            color: const Color(0xFF059669),
+          );
+        }
+        continue;
+      }
+
+      final gapToDefaultEnd = defaultTo - currentTo;
+      if (gapToDefaultEnd > 120) {
+        final endHour = todayRanges[i]['to']!.toString();
+        return (
+          label: _t('available_after', locale).replaceAll('{time}', endHour),
+          color: const Color(0xFF059669),
+        );
+      }
+    }
+
+    return (label: _t('busy_today', locale), color: const Color(0xFFF59E0B));
   }
 
   void _applyFilters() {
@@ -1857,8 +2042,8 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
             final diff = DateTime.now().difference(createdAt.toDate());
             isNew = diff.inDays <= 7;
           }
-          final isAvailableNow = _isWorkerAvailableNow(w);
           final hasWorkingHours = _hasWorkingHours(w);
+          final availability = _todayAvailabilityStatus(w, locale);
 
           return Container(
             margin: const EdgeInsets.only(bottom: 16),
@@ -1970,16 +2155,13 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
                             vertical: 4,
                           ),
                           decoration: BoxDecoration(
-                            color: (isAvailableNow ? Colors.green : Colors.red)
-                                .withValues(alpha: 0.1),
+                            color: availability.color.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(999),
                           ),
                           child: Text(
-                            isAvailableNow
-                                ? _t('available_now', locale)
-                                : _t('not_available_now', locale),
+                            availability.label,
                             style: TextStyle(
-                              color: isAvailableNow ? Colors.green : Colors.red,
+                              color: availability.color,
                               fontSize: 11,
                               fontWeight: FontWeight.w700,
                             ),
