@@ -3028,6 +3028,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: _buildEmptyRequestCard(
               strings,
+              isIncomingForWorker: isIncomingForWorker,
               customMessage: isIncomingForWorker
                   ? strings['no_incoming_requests']
                   : null,
@@ -3047,6 +3048,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: _buildEmptyRequestCard(
               strings,
+              isIncomingForWorker: isIncomingForWorker,
               customMessage: isIncomingForWorker
                   ? strings['no_incoming_requests']
                   : null,
@@ -3431,7 +3433,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                         ] else ...[
                           const SizedBox(height: 12),
                         ],
-                        if (status == 'rejected' && profession.isNotEmpty) ...[
+                        if (!isIncomingForWorker &&
+                            status == 'rejected' &&
+                            profession.isNotEmpty) ...[
                           const SizedBox(height: 18),
                           SizedBox(
                             width: double.infinity,
@@ -3519,6 +3523,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   Widget _buildEmptyRequestCard(
     Map<String, dynamic> strings, {
     String? customMessage,
+    bool isIncomingForWorker = false,
   }) {
     return Container(
       padding: const EdgeInsets.all(18),
@@ -3533,31 +3538,69 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           ),
         ],
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 46,
-            height: 46,
-            decoration: const BoxDecoration(
-              color: Color(0xFFE0F2FE),
-              shape: BoxShape.circle,
+          if (_userRole == 'worker') ...[
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _buildRequestModeButton(
+                  selected: !isIncomingForWorker,
+                  onPressed: () => setState(() {
+                    _showRequestsSentToMe = false;
+                    _requestSwipeIndex = 0;
+                  }),
+                  icon: Icons.assignment_outlined,
+                  label: strings['my_requests'] ?? 'My Requests',
+                  activeForeground: const Color(0xFF1976D2),
+                  activeBackground: const Color(0xFFEFF6FF),
+                  activeBorder: const Color(0xFFBFDBFE),
+                ),
+                _buildRequestModeButton(
+                  selected: isIncomingForWorker,
+                  onPressed: () => setState(() {
+                    _showRequestsSentToMe = true;
+                    _requestSwipeIndex = 0;
+                  }),
+                  icon: Icons.mark_email_unread_outlined,
+                  label: strings['requests_to_me'] ?? 'Requests sent to me',
+                  activeForeground: const Color(0xFF0F766E),
+                  activeBackground: const Color(0xFFF0FDFA),
+                  activeBorder: const Color(0xFF99F6E4),
+                ),
+              ],
             ),
-            child: const Icon(
-              Icons.assignment_outlined,
-              color: Color(0xFF1976D2),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              customMessage ??
-                  strings['no_active_requests'] ??
-                  'No active requests yet',
-              style: const TextStyle(
-                fontWeight: FontWeight.w700,
-                color: Color(0xFF334155),
+            const SizedBox(height: 12),
+          ],
+          Row(
+            children: [
+              Container(
+                width: 46,
+                height: 46,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFE0F2FE),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.assignment_outlined,
+                  color: Color(0xFF1976D2),
+                ),
               ),
-            ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  customMessage ??
+                      strings['no_active_requests'] ??
+                      'No active requests yet',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF334155),
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
