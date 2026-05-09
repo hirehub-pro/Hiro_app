@@ -631,6 +631,12 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
     });
   }
 
+  @override
+  void reassemble() {
+    FocusManager.instance.primaryFocus?.unfocus();
+    super.reassemble();
+  }
+
   Future<void> _loadProfessionItems() async {
     try {
       final snapshot = await FirebaseFirestore.instance
