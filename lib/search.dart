@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -114,6 +115,7 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
   List<Map<String, dynamic>> _professions = [];
   List<Map<String, dynamic>> _filteredProfessions = [];
   Map<String, Map<String, dynamic>> _professionByEnLower = {};
+  final Map<String, Map<String, dynamic>> _scheduleByWorkerId = {};
   bool _isLoadingWorkers = false;
   bool _isLoadingProfessions = true;
 
@@ -126,7 +128,7 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
   String _sortBy = 'rating';
   AppLocation? _currentPosition;
   bool _filterByRadius = true;
-  bool _filterByVerified = false;
+  final bool _filterByVerified = false;
   DateTime? _filterByDate;
 
   int _fetchSessionId = 0;
@@ -156,6 +158,7 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
       'available_after': 'Available after {time}',
       'not_available_in': "Won't be available in {duration}",
       'rating_for_service': 'Rating for service',
+      'no_reviews_yet': 'There is no review yet',
       'new_badge': 'NEW',
       'filter_radius_title': 'Filter by Work Radius',
       'filter_radius_subtitle': 'Show only workers who serve your area',
@@ -180,6 +183,7 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
       'available_after': 'זמין אחרי {time}',
       'not_available_in': 'לא יהיה זמין בעוד {duration}',
       'rating_for_service': 'דירוג לשירות זה',
+      'no_reviews_yet': 'אין עדיין ביקורות',
       'new_badge': 'חדש',
       'filter_radius_title': 'סנן לפי רדיוס עבודה',
       'filter_radius_subtitle': 'הצג רק עובדים שמגיעים אליך',
@@ -204,6 +208,7 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
       'available_after': 'متاح بعد {time}',
       'not_available_in': 'لن يكون متاحًا خلال {duration}',
       'rating_for_service': 'تقييم لهذه الخدمة',
+      'no_reviews_yet': 'لا توجد مراجعات بعد',
       'new_badge': 'جديد',
       'filter_radius_title': 'تصفية حسب نطاق العمل',
       'filter_radius_subtitle': 'اعرض فقط العمال الذين يصلون إلى منطقتك',
@@ -228,6 +233,7 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
       'available_after': 'ከ{time} በኋላ ይገኛል',
       'not_available_in': 'በ{duration} ውስጥ አይገኝም',
       'rating_for_service': 'ለዚህ አገልግሎት ደረጃ',
+      'no_reviews_yet': 'እስካሁን ምንም ግምገማ የለም',
       'new_badge': 'አዲስ',
       'filter_radius_title': 'በስራ ራዲየስ ማጣራት',
       'filter_radius_subtitle': 'ወደ አካባቢዎ የሚመጡ ሰራተኞችን ብቻ አሳይ',
@@ -252,6 +258,7 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
       'available_after': 'Доступен после {time}',
       'not_available_in': 'Будет недоступен еще {duration}',
       'rating_for_service': 'Рейтинг по этой услуге',
+      'no_reviews_yet': 'Пока нет отзывов',
       'new_badge': 'НОВЫЙ',
       'filter_radius_title': 'Фильтр по радиусу работы',
       'filter_radius_subtitle':
@@ -345,12 +352,10 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
       _searchController.clear();
     });
 
-    if (shouldFilterByRadius) {
-      await _getCurrentLocation(silent: true);
-      if (!mounted) return;
-    }
-
     await _fetchWorkers(isRefresh: true);
+    if (shouldFilterByRadius && _currentPosition == null) {
+      unawaited(_getCurrentLocation(silent: true));
+    }
     _trackSearch(profession['en']);
   }
 
@@ -394,26 +399,16 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
         .toLowerCase();
 
     await _getCurrentLocation(silent: true);
-    await _loadProfessions();
 
     if (!mounted) return;
 
     if (_showWorkerList && selectedProfessionName != null) {
-      final refreshedProfession = _professions.firstWhere(
-        (p) => p['en'].toString().toLowerCase() == selectedProfessionName,
-        orElse: () => <String, dynamic>{},
-      );
-
-      if (refreshedProfession.isNotEmpty) {
-        setState(() {
-          _selectedProfession = refreshedProfession;
-        });
-      }
-
       await _fetchWorkers(isRefresh: true);
       return;
     }
 
+    await _loadProfessions();
+    if (!mounted) return;
     _applyFilters();
   }
 
@@ -552,27 +547,27 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
               data['uid'] = doc.id;
               data['avgRating'] = (data['avgRating'] ?? 0.0).toDouble();
               data['reviewCount'] = data['reviewCount'] ?? 0;
-              return data;
+              return _withCachedScheduleData(data);
             })
             .where(
               SubscriptionAccessService.hasActiveWorkerSubscriptionFromData,
             )
             .toList();
 
-        final enrichedWorkers = await _attachScheduleInfo(newWorkers);
-
         if (mounted && currentId == _fetchSessionId) {
           setState(() {
             if (isRefresh) {
-              _allWorkers = enrichedWorkers;
+              _allWorkers = newWorkers;
             } else {
-              _allWorkers.addAll(enrichedWorkers);
+              _allWorkers.addAll(newWorkers);
             }
-            _applyFilters();
+            _applyFilters(notify: false);
             _isLoadingWorkers = false;
             _isFetchingMore = false;
           });
         }
+
+        unawaited(_hydrateWorkerSchedules(newWorkers, currentId));
       } else {
         if (mounted && currentId == _fetchSessionId) {
           setState(() {
@@ -593,16 +588,56 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
     }
   }
 
-  Future<List<Map<String, dynamic>>> _attachScheduleInfo(
+  Map<String, dynamic> _withCachedScheduleData(Map<String, dynamic> worker) {
+    final enriched = Map<String, dynamic>.from(worker);
+    final uid = (worker['uid'] ?? '').toString();
+    final cachedSchedule = _scheduleByWorkerId[uid];
+    if (cachedSchedule == null) return enriched;
+
+    if (cachedSchedule['defaultWorkingHours'] is Map) {
+      enriched['defaultWorkingHours'] = Map<String, dynamic>.from(
+        cachedSchedule['defaultWorkingHours'] as Map,
+      );
+    }
+    if (cachedSchedule['disabledDays'] is List) {
+      enriched['disabledDays'] = List<int>.from(
+        cachedSchedule['disabledDays'] as List,
+      );
+    }
+    if (cachedSchedule['partialWorkDays'] is Map) {
+      enriched['partialWorkDays'] = Map<String, dynamic>.from(
+        cachedSchedule['partialWorkDays'] as Map,
+      );
+    }
+    if (cachedSchedule['availableDates'] is List) {
+      enriched['availableDates'] = List<String>.from(
+        cachedSchedule['availableDates'] as List,
+      );
+    }
+    if (cachedSchedule['vacations'] is List) {
+      enriched['vacations'] = List<Map<String, dynamic>>.from(
+        (cachedSchedule['vacations'] as List).map(
+          (item) => Map<String, dynamic>.from(item as Map),
+        ),
+      );
+    }
+
+    return enriched;
+  }
+
+  Future<void> _hydrateWorkerSchedules(
     List<Map<String, dynamic>> workers,
+    int currentId,
   ) async {
-    if (workers.isEmpty) return workers;
+    if (workers.isEmpty) return;
 
     final results = await Future.wait(
       workers.map((worker) async {
         final enriched = Map<String, dynamic>.from(worker);
         final uid = (worker['uid'] ?? '').toString();
-        if (uid.isEmpty) return enriched;
+        if (uid.isEmpty || _scheduleByWorkerId.containsKey(uid)) {
+          return enriched;
+        }
 
         try {
           final scheduleDoc = await _firestore
@@ -633,13 +668,34 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
               scheduleData['availableDates'] as List,
             );
           }
+          if (scheduleData != null && scheduleData['vacations'] is List) {
+            enriched['vacations'] = List<Map<String, dynamic>>.from(
+              (scheduleData['vacations'] as List).map(
+                (item) => Map<String, dynamic>.from(item as Map),
+              ),
+            );
+          }
+          _scheduleByWorkerId[uid] = Map<String, dynamic>.from(
+            scheduleData ?? {},
+          );
         } catch (_) {}
 
         return enriched;
       }),
     );
 
-    return results;
+    if (!mounted || currentId != _fetchSessionId) return;
+
+    setState(() {
+      final enrichedById = <String, Map<String, dynamic>>{
+        for (final worker in results) (worker['uid'] ?? '').toString(): worker,
+      };
+      _allWorkers = _allWorkers.map((worker) {
+        final uid = (worker['uid'] ?? '').toString();
+        return enrichedById[uid] ?? worker;
+      }).toList();
+      _applyFilters(notify: false);
+    });
   }
 
   Future<void> _getCurrentLocation({bool silent = false}) async {
@@ -785,12 +841,44 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
     String locale,
   ) {
     final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
     final disabledDays = List<int>.from(worker['disabledDays'] ?? const []);
     if (disabledDays.contains(now.weekday)) {
       return (
         label: _t('not_available_today', locale),
         color: const Color(0xFFDC2626),
       );
+    }
+
+    final vacations = List<Map<String, dynamic>>.from(
+      worker['vacations'] ?? const <Map<String, dynamic>>[],
+    );
+    for (final vacation in vacations) {
+      try {
+        final startParts = vacation['start'].toString().split('-');
+        final endParts = vacation['end'].toString().split('-');
+        if (startParts.length != 3 || endParts.length != 3) continue;
+
+        final start = DateTime(
+          int.parse(startParts[0]),
+          int.parse(startParts[1]),
+          int.parse(startParts[2]),
+        );
+        final end = DateTime(
+          int.parse(endParts[0]),
+          int.parse(endParts[1]),
+          int.parse(endParts[2]),
+        );
+
+        if (today.isAtSameMomentAs(start) ||
+            today.isAtSameMomentAs(end) ||
+            (today.isAfter(start) && today.isBefore(end))) {
+          return (
+            label: _t('not_available_today', locale),
+            color: const Color(0xFFDC2626),
+          );
+        }
+      } catch (_) {}
     }
 
     final hours = worker['defaultWorkingHours'];
@@ -903,14 +991,14 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
     return (label: _t('busy_today', locale), color: const Color(0xFFF59E0B));
   }
 
-  void _applyFilters() {
+  void _applyFilters({bool notify = true}) {
     final query = _normalizeSearchText(_searchController.text);
     final locale = Provider.of<LanguageProvider>(
       context,
       listen: false,
     ).locale.languageCode;
 
-    setState(() {
+    void updateFilters() {
       if (_showWorkerList) {
         _filteredWorkers = _allWorkers.where((w) {
           if (!SubscriptionAccessService.hasActiveWorkerSubscriptionFromData(
@@ -1006,7 +1094,13 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
           return localized.contains(query);
         }).toList();
       }
-    });
+    }
+
+    if (notify) {
+      setState(updateFilters);
+    } else {
+      updateFilters();
+    }
   }
 
   Color _getThemeColor() {
@@ -1351,7 +1445,7 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
                                     _allWorkers = [];
                                     _filteredWorkers = [];
                                     _searchController.clear();
-                                    _applyFilters();
+                                    _applyFilters(notify: false);
                                   });
                                 },
                               ),
@@ -1493,7 +1587,7 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
                             _allWorkers = [];
                             _filteredWorkers = [];
                             _searchController.clear();
-                            _applyFilters();
+                            _applyFilters(notify: false);
                           });
                         },
                         style: IconButton.styleFrom(
@@ -2184,7 +2278,7 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
                     ],
                   ),
                   trailing: SizedBox(
-                    width: 90,
+                    width: 128,
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -2221,28 +2315,35 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
                                 size: 14,
                               ),
                               const SizedBox(width: 2),
-                              Text(
-                                displayRating.toStringAsFixed(1),
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.amber,
-                                  fontSize: 12,
+                              Flexible(
+                                child: Text(
+                                  displayReviewCount > 0
+                                      ? displayRating.toStringAsFixed(1)
+                                      : _t('no_reviews_yet', locale),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.amber,
+                                    fontSize: 12,
+                                  ),
                                 ),
                               ),
                             ],
                           ),
                         ),
-                        Padding(
-                          padding: const EdgeInsets.only(top: 1, right: 4),
-                          child: Text(
-                            '($displayReviewCount)',
-                            style: const TextStyle(
-                              fontSize: 10,
-                              color: Colors.grey,
-                              fontWeight: FontWeight.w500,
+                        if (displayReviewCount > 0)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 1, right: 4),
+                            child: Text(
+                              '($displayReviewCount)',
+                              style: const TextStyle(
+                                fontSize: 10,
+                                color: Colors.grey,
+                                fontWeight: FontWeight.w500,
+                              ),
                             ),
                           ),
-                        ),
                       ],
                     ),
                   ),

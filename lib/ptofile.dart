@@ -2656,11 +2656,13 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
                         await Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) => InvoiceBuilderPage(
-                              workerName: _userName,
-                              workerPhone: _phoneNumber,
-                              workerEmail: _email,
-                            ),
+                            builder: (_) => _isBusinessVerified
+                                ? InvoiceBuilderPage(
+                                    workerName: _userName,
+                                    workerPhone: _phoneNumber,
+                                    workerEmail: _email,
+                                  )
+                                : const VerifyBusinessPage(),
                           ),
                         );
                       },
@@ -2678,22 +2680,6 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
                       );
                     },
                   ),
-                  if (_hasActiveWorkerSubscription)
-                    _buildModernToolCard(
-                      Icons.verified_user_outlined,
-                      _isBusinessVerified
-                          ? strings['change_business']!
-                          : strings['verify_business']!,
-                      Colors.deepOrange,
-                      () async {
-                        await Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const VerifyBusinessPage(),
-                          ),
-                        );
-                      },
-                    ),
                 ],
               )
             else

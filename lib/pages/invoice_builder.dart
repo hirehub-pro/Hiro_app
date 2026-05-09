@@ -27,7 +27,7 @@ class _SavedInvoiceResult {
     required this.wasCreated,
   });
 }
-           
+
 class InvoiceItem {
   final String description;
   final int quantity;
@@ -142,6 +142,7 @@ class InvoiceBuilderPage extends StatefulWidget {
   final String? initialCreditReceiptConfirmation;
   final double? initialPaymentAmount;
   final String? sourceInvoiceNumber;
+  final String? sourceInvoiceDocId;
   final String? sourceInvoiceSavedDocId;
   final double? sourceInvoiceTotalAmount;
 
@@ -167,6 +168,7 @@ class InvoiceBuilderPage extends StatefulWidget {
     this.initialCreditReceiptConfirmation,
     this.initialPaymentAmount,
     this.sourceInvoiceNumber,
+    this.sourceInvoiceDocId,
     this.sourceInvoiceSavedDocId,
     this.sourceInvoiceTotalAmount,
   });
@@ -176,6 +178,9 @@ class InvoiceBuilderPage extends StatefulWidget {
 }
 
 class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
+  bool get _isLicensedDealerType =>
+      _dealerType == 'licensed' || _dealerType == 'company';
+
   String _normalizePaymentMethod(String? raw) {
     switch (raw) {
       case 'cash':
@@ -209,6 +214,29 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           {'bucket': 'invoices'},
         ];
     }
+  }
+
+  String _counterDocIdForType(String docType) => 'document_counter_$docType';
+
+  DocumentReference<Map<String, dynamic>>? _counterRefForDocType(
+    String docType,
+  ) {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return null;
+    return FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .collection('counters')
+        .doc(_counterDocIdForType(docType));
+  }
+
+  String _formatDocumentNumber(int counter) {
+    final year = intl.DateFormat('yyyy').format(DateTime.now());
+    return '$year-${counter.toString().padLeft(4, '0')}';
+  }
+
+  String _invoiceDocIdFor(String docType, String documentNumber) {
+    return '${docType}_$documentNumber';
   }
 
   /// Generate BKMVDATA.TXT from logs/ collection
@@ -260,7 +288,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     final logTargets = _logTargetsForDocType(docType);
 
     final userDoc = FirebaseFirestore.instance.collection('users').doc(userId);
-    final counterRef = userDoc.collection('counters').doc('invoice');
+    final counterRef = userDoc
+        .collection('counters')
+        .doc(_counterDocIdForType(docType));
     final invoicesRef = userDoc.collection('invoices');
     final savedInvoicesRef = userDoc.collection('saved_invoices');
     final invoiceTotalsRef = FirebaseFirestore.instance
@@ -341,9 +371,10 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     };
 
     late int nextNumber;
+    late String nextDocumentNumber;
+    late String invoiceDocId;
 
     await FirebaseFirestore.instance.runTransaction((transaction) async {
-      // Get and increment counter
       final counterSnap = await transaction.get(counterRef);
       final logCounterSnaps = <DocumentSnapshot<Map<String, dynamic>>>[];
       for (final entry in logEntries) {
@@ -355,11 +386,18 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       nextNumber = 1;
       if (counterSnap.exists) {
         final data = counterSnap.data() as Map<String, dynamic>;
-        nextNumber = (data['value'] as int? ?? 0) + 1;
+        nextNumber = (data['value'] as num?)?.toInt() ?? 1;
       }
-      transaction.set(counterRef, {'value': nextNumber});
+      if (nextNumber < 1) nextNumber = 1;
+      nextDocumentNumber = _formatDocumentNumber(nextNumber);
+      invoiceDocId = _invoiceDocIdFor(docType, nextDocumentNumber);
 
-      // Prepare invoice data
+      transaction.set(counterRef, {
+        'value': nextNumber + 1,
+        'docType': docType,
+        'updatedAt': timestamp,
+      }, SetOptions(merge: true));
+
       final invoiceData = {
         'type': docType,
         'amount': signedTotalAmount,
@@ -389,20 +427,24 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         'paymentMethods': paymentMethodsData,
         'paymentAmountTotal': paymentAmountTotal,
         'sourceInvoiceNumber': widget.sourceInvoiceNumber,
+        'sourceInvoiceDocId': widget.sourceInvoiceDocId,
         'sourceInvoiceSavedDocId': widget.sourceInvoiceSavedDocId,
         'sourceInvoiceTotalAmount': widget.sourceInvoiceTotalAmount,
-        'invoiceNumber': nextNumber,
+        'invoiceNumber': nextDocumentNumber,
+        'sequenceNumber': nextNumber,
+        'invoiceDocId': invoiceDocId,
         'date': dateStr,
         'createdAt': timestamp,
         if (docType == 'invoice') 'paymentStatus': 'unpaid',
         if (docType == 'invoice') 'paidAmount': 0.0,
         if (docType == 'invoice_receipt') 'paymentStatus': 'paid',
         if (docType == 'invoice_receipt') 'paidAmount': signedTotalAmount.abs(),
-        if (creditNoteLegalData != null) 'creditNoteLegal': creditNoteLegalData,
+        ...?creditNoteLegalData == null
+            ? null
+            : {'creditNoteLegal': creditNoteLegalData},
       };
 
-      // Save invoice (metadata only, PDF upload is outside transaction)
-      final invoiceDoc = invoicesRef.doc(nextNumber.toString());
+      final invoiceDoc = invoicesRef.doc(invoiceDocId);
       transaction.set(invoiceDoc, invoiceData);
       transaction.set(invoiceTotalsRef, {
         docType: FieldValue.increment(1),
@@ -434,6 +476,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'docType': docType,
           'counter': logCounter,
           'documentNumber': nextNumber,
+          'sequenceNumber': nextNumber,
+          'invoiceDocId': invoiceDocId,
           'date': dateStr,
           'issueDate': dateStr,
           'clientDetails': clientDetails,
@@ -454,6 +498,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'paymentMethods': paymentMethodsData,
           'paymentAmountTotal': paymentAmountTotal,
           'sourceInvoiceNumber': widget.sourceInvoiceNumber,
+          'sourceInvoiceDocId': widget.sourceInvoiceDocId,
           'sourceInvoiceSavedDocId': widget.sourceInvoiceSavedDocId,
           'sourceInvoiceTotalAmount': widget.sourceInvoiceTotalAmount,
           'items': logItems,
@@ -466,8 +511,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           if (docType == 'invoice_receipt') 'paymentStatus': 'paid',
           if (docType == 'invoice_receipt')
             'paidAmount': signedTotalAmount.abs(),
-          if (creditNoteLegalData != null)
-            'creditNoteLegal': creditNoteLegalData,
+          ...?creditNoteLegalData == null
+              ? null
+              : {'creditNoteLegal': creditNoteLegalData},
         };
         transaction.set(logFileRef, logData);
       }
@@ -483,27 +529,23 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     await ref.putData(pdfBytes);
     final downloadUrl = await ref.getDownloadURL();
 
-    // Update invoice doc with PDF URL
-    final counterSnap = await userDoc
-        .collection('counters')
-        .doc('invoice')
-        .get();
-    final savedNumber = (counterSnap.data()?['value'] as int?) ?? 1;
-    await invoicesRef.doc(savedNumber.toString()).update({
+    await invoicesRef.doc(invoiceDocId).update({
       'fileName': fileName,
       'url': downloadUrl,
     });
     final clientName = _clientNameController.text.trim();
     final savedInvoiceName = clientName.isNotEmpty
-        ? '${_labelForDocType(docType)} #$savedNumber - $clientName'
-        : '${_labelForDocType(docType)} #$savedNumber';
+        ? '${_labelForDocType(docType)} #$nextDocumentNumber - $clientName'
+        : '${_labelForDocType(docType)} #$nextDocumentNumber';
     final savedInvoiceData = {
       'name': savedInvoiceName,
       'fileName': fileName,
       'url': downloadUrl,
       'storagePath': storagePath,
       'amount': signedTotalAmount,
-      'invoiceNumber': savedNumber,
+      'invoiceNumber': nextDocumentNumber,
+      'sequenceNumber': nextNumber,
+      'invoiceDocId': invoiceDocId,
       'docType': docType,
       'clientName': clientName,
       'paymentMethod': _paymentMethods.isNotEmpty
@@ -512,6 +554,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'paymentMethods': paymentMethodsData,
       'paymentAmountTotal': paymentAmountTotal,
       'sourceInvoiceNumber': widget.sourceInvoiceNumber,
+      'sourceInvoiceDocId': widget.sourceInvoiceDocId,
       'sourceInvoiceSavedDocId': widget.sourceInvoiceSavedDocId,
       'sourceInvoiceTotalAmount': widget.sourceInvoiceTotalAmount,
       'date': dateStr,
@@ -520,7 +563,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       if (docType == 'invoice') 'paidAmount': 0.0,
       if (docType == 'invoice_receipt') 'paymentStatus': 'paid',
       if (docType == 'invoice_receipt') 'paidAmount': signedTotalAmount.abs(),
-      if (creditNoteLegalData != null) 'creditNoteLegal': creditNoteLegalData,
+      ...?creditNoteLegalData == null
+          ? null
+          : {'creditNoteLegal': creditNoteLegalData},
     };
     await savedInvoicesRef.add(savedInvoiceData);
     await _addToTotalEarned(userId: userId, amount: signedTotalAmount);
@@ -538,6 +583,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
 
     if (docType == 'receipt' &&
         widget.sourceInvoiceNumber != null &&
+        widget.sourceInvoiceDocId != null &&
         widget.sourceInvoiceSavedDocId != null &&
         widget.sourceInvoiceTotalAmount != null) {
       await _updateLinkedInvoicePaymentStatus(
@@ -552,10 +598,13 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     required double paidAmount,
   }) async {
     final sourceInvoiceNumber = widget.sourceInvoiceNumber?.trim();
+    final sourceInvoiceDocId = widget.sourceInvoiceDocId?.trim();
     final sourceInvoiceSavedDocId = widget.sourceInvoiceSavedDocId?.trim();
     final sourceInvoiceTotalAmount = widget.sourceInvoiceTotalAmount;
     if (sourceInvoiceNumber == null ||
         sourceInvoiceNumber.isEmpty ||
+        sourceInvoiceDocId == null ||
+        sourceInvoiceDocId.isEmpty ||
         sourceInvoiceSavedDocId == null ||
         sourceInvoiceSavedDocId.isEmpty ||
         sourceInvoiceTotalAmount == null ||
@@ -565,7 +614,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     }
 
     final userRef = FirebaseFirestore.instance.collection('users').doc(userId);
-    final invoiceRef = userRef.collection('invoices').doc(sourceInvoiceNumber);
+    final invoiceRef = userRef.collection('invoices').doc(sourceInvoiceDocId);
     final savedInvoiceRef = userRef
         .collection('saved_invoices')
         .doc(sourceInvoiceSavedDocId);
@@ -623,7 +672,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   final _clientNameController = TextEditingController();
   final _clientAddressController = TextEditingController();
   final _clientPhoneController = TextEditingController();
-  final _invoiceCounterController = TextEditingController(text: "1");
   final _itemDescController = TextEditingController();
   final _itemQtyController = TextEditingController(text: "1");
   final _itemPriceController = TextEditingController();
@@ -641,13 +689,14 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   final List<InvoiceItem> _items = [];
   bool _isPreparing = false;
   String _invoiceNumber = "";
+  int? _currentDocumentCounter;
+  bool _isLoadingCounterAssignment = false;
   static const double _vatRate = 0.17;
   String _selectedPriceTaxMode = 'after_tax';
   bool _hasDiscount = false;
 
   bool get _isCreditNote => _selectedDocType == 'credit_note';
-  bool get _usesVat =>
-      _dealerType == 'licensed' && _selectedDocType != 'receipt';
+  bool get _usesVat => _isLicensedDealerType && _selectedDocType != 'receipt';
 
   double _unitPriceAfterTax(InvoiceItem item) {
     if (!_usesVat) return item.price;
@@ -749,15 +798,12 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   Map<String, String>? _cachedStrings;
   String? _lastLocale;
   late final Future<SubscriptionAccessState> _accessFuture;
-  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
-  _invoiceCounterSubscription;
 
   @override
   void initState() {
     super.initState();
     _accessFuture = SubscriptionAccessService.getCurrentUserState();
-    // Temporary invoice number until worker info is fetched
-    _invoiceNumber = "${intl.DateFormat('yyyy').format(DateTime.now())}-0000";
+    _invoiceNumber = "";
 
     // Auto-fill from widget parameters
     if (widget.receiverName != null) {
@@ -771,7 +817,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     }
 
     _applyInitialTemplate();
-    _bindInvoiceCounterLiveSync();
     _fetchWorkerInfo();
     _loadAssets();
   }
@@ -844,36 +889,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       );
   }
 
-  void _bindInvoiceCounterLiveSync() {
-    final ref = _verificationInfoLatestRef();
-    if (ref == null) return;
-
-    _invoiceCounterSubscription?.cancel();
-    _invoiceCounterSubscription = ref.snapshots().listen((snapshot) {
-      final data = snapshot.data();
-      final counter = (data?['invoiceCounter'] as num?)?.toInt() ?? 1;
-      final safeCounter = counter < 1 ? 1 : counter;
-      final counterText = safeCounter.toString();
-
-      if (!mounted) return;
-
-      final currentCounterText = _invoiceCounterController.text;
-      final nextInvoiceNumber =
-          "${intl.DateFormat('yyyy').format(DateTime.now())}-${safeCounter.toString().padLeft(4, '0')}";
-
-      if (currentCounterText != counterText ||
-          _invoiceNumber != nextInvoiceNumber) {
-        setState(() {
-          _invoiceCounterController.text = counterText;
-          _invoiceCounterController.selection = TextSelection.fromPosition(
-            TextPosition(offset: _invoiceCounterController.text.length),
-          );
-          _invoiceNumber = nextInvoiceNumber;
-        });
-      }
-    });
-  }
-
   Future<void> _fetchWorkerInfo() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
@@ -903,15 +918,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
               _businessId = vData?['businessId'];
               _businessAddress = vData?['address'];
 
-              // Sequential Invoice Counter logic
-              int counter = vData?['invoiceCounter'] ?? 1;
-              _invoiceCounterController.text = counter.toString();
-              _invoiceNumber =
-                  "${intl.DateFormat('yyyy').format(DateTime.now())}-${counter.toString().padLeft(4, '0')}";
-
               if (widget.initialDocType == null ||
                   widget.initialDocType!.isEmpty) {
-                if (_isBusinessVerified && _dealerType == 'licensed') {
+                if (_isBusinessVerified && _isLicensedDealerType) {
                   _selectedDocType = 'invoice_receipt';
                 } else {
                   _selectedDocType = 'receipt';
@@ -919,38 +928,11 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
               }
             });
           }
+          await _loadCurrentDocumentNumber(promptIfMissing: true);
         }
       } catch (e) {
         dev.log("Error fetching worker info: $e");
       }
-    }
-  }
-
-  Future<void> _incrementInvoiceCounter() async {
-    final currentCounter = int.tryParse(_invoiceCounterController.text) ?? 1;
-    final nextCounter = (currentCounter < 1 ? 1 : currentCounter) + 1;
-    await _persistInvoiceCounter(nextCounter);
-  }
-
-  DocumentReference<Map<String, dynamic>>? _verificationInfoLatestRef() {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return null;
-    return FirebaseFirestore.instance
-        .collection('users')
-        .doc(user.uid)
-        .collection('verification_info')
-        .doc('latest');
-  }
-
-  Future<void> _persistInvoiceCounter(int counter) async {
-    final ref = _verificationInfoLatestRef();
-    if (ref == null) return;
-
-    final safeCounter = counter < 1 ? 1 : counter;
-    try {
-      await ref.set({'invoiceCounter': safeCounter}, SetOptions(merge: true));
-    } catch (e) {
-      dev.log("Error updating invoiceCounter: $e");
     }
   }
 
@@ -959,8 +941,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     _clientNameController.dispose();
     _clientAddressController.dispose();
     _clientPhoneController.dispose();
-    _invoiceCounterController.dispose();
-    _invoiceCounterSubscription?.cancel();
     _itemDescController.dispose();
     _itemQtyController.dispose();
     _itemPriceController.dispose();
@@ -1063,6 +1043,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'tax_invoice_num': 'חשבונית מס מס\':',
           'licensed_dealer': 'עוסק מורשה',
           'exempt_dealer': 'עוסק פטור',
+          'company_dealer': 'חברה בע״מ',
           'business_address': 'כתובת העסק:',
           'worker_id': 'מזהה עובד:',
           'authorized_dealer_label': 'עובד מורשה:',
@@ -1082,6 +1063,15 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
               'להודעת זיכוי יש למלא מספר חשבונית מקור, תאריך מקור, סיבת זיכוי ואסמכתא למסירה.',
           'credit_note_legal_hint':
               'לשימוש תקין בישראל יש לשמור קישור לחשבונית המקור ואסמכתא למסירת הודעת הזיכוי ללקוח.',
+          'doc_start_title': 'מספר פתיחה למסמך',
+          'doc_start_message':
+              'זו הפעם הראשונה שאתה משתמש ב-{docType}. הזן את המספר שממנו המסמך הזה צריך להתחיל.',
+          'doc_start_warning':
+              'חשוב להזין את המספר הנכון. אם תזין מספר שגוי, האחריות היא שלך ולא תוכל לשנות אותו אחר כך.',
+          'doc_start_field': 'מספר פתיחה',
+          'doc_start_invalid': 'יש להזין מספר תקין גדול מ-0',
+          'continue': 'המשך',
+          'cancel': 'ביטול',
         };
         break;
       default:
@@ -1137,6 +1127,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'tax_invoice_num': 'Tax Invoice No:',
           'licensed_dealer': 'Licensed Dealer',
           'exempt_dealer': 'Exempt Dealer',
+          'company_dealer': 'Limited Company',
           'business_address': 'Business Address:',
           'worker_id': 'Worker ID:',
           'authorized_dealer_label': 'Authorized Dealer:',
@@ -1156,6 +1147,15 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
               'Credit notes require original invoice number, original invoice date, reason for credit, and delivery proof.',
           'credit_note_legal_hint':
               'For Israeli compliance, keep the original invoice reference and proof that the credit note was delivered to the customer.',
+          'doc_start_title': 'Starting Document Number',
+          'doc_start_message':
+              'This is your first time using {docType}. Enter the number this document type should start from.',
+          'doc_start_warning':
+              'It is important to enter the correct number. If you enter the wrong number, it is your responsibility and you will not be able to change it later.',
+          'doc_start_field': 'Starting Number',
+          'doc_start_invalid': 'Enter a valid number greater than 0',
+          'continue': 'Continue',
+          'cancel': 'Cancel',
         };
     }
     return _cachedStrings!;
@@ -1211,6 +1211,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'Generated via hiro. This is a computerized document authorized by the Israel Tax Authority. Original.',
       'licensed_dealer': 'Licensed Dealer',
       'exempt_dealer': 'Exempt Dealer',
+      'company_dealer': 'Limited Company',
       'vat_id': 'VAT ID / Tax ID:',
       'authorized_dealer_label': 'Authorized Dealer:',
       'credit_note_legal': 'Credit Note Details',
@@ -1228,14 +1229,24 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'Credit notes require original invoice number, original invoice date, reason for credit, and delivery proof.',
       'credit_note_legal_hint':
           'For Israeli compliance, keep the original invoice reference and proof that the credit note was delivered to the customer.',
+      'doc_start_title': 'Starting Document Number',
+      'doc_start_message':
+          'This is your first time using {docType}. Enter the number this document type should start from.',
+      'doc_start_warning':
+          'It is important to enter the correct number. If you enter the wrong number, it is your responsibility and you will not be able to change it later.',
+      'doc_start_field': 'Starting Number',
+      'doc_start_invalid': 'Enter a valid number greater than 0',
+      'continue': 'Continue',
+      'cancel': 'Cancel',
     };
 
     return {...defaults, ...source};
   }
 
   void _addItem() {
-    if (_itemDescController.text.isEmpty || _itemPriceController.text.isEmpty)
+    if (_itemDescController.text.isEmpty || _itemPriceController.text.isEmpty) {
       return;
+    }
     final price =
         double.tryParse(
           _itemPriceController.text.trim().replaceAll(',', '.'),
@@ -1262,15 +1273,173 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     });
   }
 
-  Future<void> _syncInvoiceNumberFromCounter() async {
-    final counter = int.tryParse(_invoiceCounterController.text) ?? 1;
-    final safeCounter = counter < 1 ? 1 : counter;
-    final year = intl.DateFormat('yyyy').format(DateTime.now());
-    setState(() {
-      _invoiceCounterController.text = safeCounter.toString();
-      _invoiceNumber = '$year-${safeCounter.toString().padLeft(4, '0')}';
-    });
-    await _persistInvoiceCounter(safeCounter);
+  Future<void> _loadCurrentDocumentNumber({
+    bool promptIfMissing = false,
+  }) async {
+    final ref = _counterRefForDocType(_selectedDocType);
+    if (ref == null) return;
+
+    if (mounted) {
+      setState(() {
+        _isLoadingCounterAssignment = true;
+      });
+    }
+
+    try {
+      final snapshot = await ref.get();
+      final storedCounter = (snapshot.data()?['value'] as num?)?.toInt();
+      if (!mounted) return;
+
+      if (storedCounter != null && storedCounter > 0) {
+        setState(() {
+          _currentDocumentCounter = storedCounter;
+          _invoiceNumber = _formatDocumentNumber(storedCounter);
+          _isLoadingCounterAssignment = false;
+        });
+        return;
+      }
+
+      setState(() {
+        _currentDocumentCounter = null;
+        _invoiceNumber = '';
+        _isLoadingCounterAssignment = false;
+      });
+
+      if (promptIfMissing) {
+        final assigned = await _promptForStartingDocumentNumber();
+        if (!assigned && mounted) {
+          Navigator.of(context).maybePop();
+        }
+      }
+    } catch (e) {
+      dev.log('Error loading document counter: $e');
+      if (mounted) {
+        setState(() {
+          _isLoadingCounterAssignment = false;
+        });
+      }
+    }
+  }
+
+  Future<bool> _ensureDocumentNumberAssigned() async {
+    if (_currentDocumentCounter != null && _invoiceNumber.isNotEmpty) {
+      return true;
+    }
+    return _promptForStartingDocumentNumber();
+  }
+
+  Future<bool> _promptForStartingDocumentNumber() async {
+    final ref = _counterRefForDocType(_selectedDocType);
+    if (ref == null || !mounted) return false;
+
+    final strings = _withRequiredDefaults(
+      _getLocalizedStrings(context, listen: false),
+    );
+    final controller = TextEditingController();
+    String? errorText;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return PopScope(
+          canPop: false,
+          child: StatefulBuilder(
+            builder: (context, setDialogState) => AlertDialog(
+              title: Text(strings['doc_start_title']!),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    strings['doc_start_message']!.replaceFirst(
+                      '{docType}',
+                      _documentTypeDisplayName(strings, _selectedDocType),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    strings['doc_start_warning']!,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFFB45309),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: controller,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    decoration: InputDecoration(
+                      labelText: strings['doc_start_field']!,
+                      errorText: errorText,
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                ElevatedButton(
+                  onPressed: () {
+                    final parsed = int.tryParse(controller.text.trim());
+                    if (parsed == null || parsed < 1) {
+                      setDialogState(() {
+                        errorText = strings['doc_start_invalid']!;
+                      });
+                      return;
+                    }
+                    Navigator.pop(dialogContext, true);
+                  },
+                  child: Text(strings['continue']!),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (confirmed != true) return false;
+
+    final startNumber = int.parse(controller.text.trim());
+    try {
+      await ref.set({
+        'value': startNumber,
+        'docType': _selectedDocType,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      if (!mounted) return false;
+      setState(() {
+        _currentDocumentCounter = startNumber;
+        _invoiceNumber = _formatDocumentNumber(startNumber);
+        _isLoadingCounterAssignment = false;
+      });
+      return true;
+    } catch (e) {
+      dev.log('Error saving starting document counter: $e');
+      return false;
+    } finally {
+      controller.dispose();
+    }
+  }
+
+  bool get _isWaitingForStartingNumber =>
+      !_isLoadingCounterAssignment &&
+      (_currentDocumentCounter == null || _invoiceNumber.isEmpty);
+
+  String _documentTypeDisplayName(Map<String, String> strings, String docType) {
+    switch (docType) {
+      case 'invoice':
+        return strings['invoice']!;
+      case 'invoice_receipt':
+        return strings['invoice_receipt']!;
+      case 'credit_note':
+        return strings['credit_note']!;
+      case 'receipt':
+      default:
+        return strings['receipt']!;
+    }
   }
 
   Future<Uint8List?> _getGeneratedPdfBytes() async {
@@ -1605,6 +1774,11 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       return;
     }
 
+    final assigned = await _ensureDocumentNumberAssigned();
+    if (!assigned) {
+      return;
+    }
+
     setState(() => _isPreparing = true);
 
     try {
@@ -1640,6 +1814,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           await _showContactPickerAndSend();
         }
       }
+
+      await _loadCurrentDocumentNumber();
     } catch (e) {
       if (mounted) setState(() => _isPreparing = false);
       dev.log("PDF Layout Error: $e");
@@ -1656,6 +1832,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     String? receiverNameOverride,
     bool showFeedback = true,
   }) async {
+    final assigned = await _ensureDocumentNumberAssigned();
+    if (!assigned) return null;
+
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) return null;
 
@@ -1670,15 +1849,14 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         .collection('users')
         .doc(currentUser.uid)
         .collection('invoices');
+    final invoiceDocId = _invoiceDocIdFor(_selectedDocType, _invoiceNumber);
+    final invoiceRef = userInvoicesRef.doc(invoiceDocId);
+    final counterRef = _counterRefForDocType(_selectedDocType);
 
     try {
-      // Prevent duplicate save/increment for the same issued invoice number.
-      final existingByInvoice = await userInvoicesRef
-          .where('invoiceNumber', isEqualTo: _invoiceNumber)
-          .limit(1)
-          .get();
-      if (existingByInvoice.docs.isNotEmpty) {
-        final existingData = existingByInvoice.docs.first.data();
+      final existingByInvoice = await invoiceRef.get();
+      if (existingByInvoice.exists) {
+        final existingData = existingByInvoice.data() ?? <String, dynamic>{};
         if (showFeedback && mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -1722,7 +1900,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       await ref.putData(pdfBytes);
       final downloadUrl = await ref.getDownloadURL();
 
-      await userInvoicesRef.add({
+      await invoiceRef.set({
         'name': finalName,
         'baseName': baseName,
         'receiverName': receiverName,
@@ -1740,17 +1918,32 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         'priceTaxModeDefault': _selectedPriceTaxMode,
         'hasDiscount': _hasDiscount,
         'discountAmount': _discountAmount,
+        'docType': _selectedDocType,
         'invoiceNumber': _invoiceNumber,
+        'sequenceNumber': _currentDocumentCounter,
+        'invoiceDocId': invoiceDocId,
         'createdAt': FieldValue.serverTimestamp(),
         if (_creditNoteLegalData != null)
           'creditNoteLegal': _creditNoteLegalData,
       });
+
+      if (counterRef != null && _currentDocumentCounter != null) {
+        await counterRef.set({
+          'value': _currentDocumentCounter! + 1,
+          'docType': _selectedDocType,
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+        if (mounted) {
+          setState(() {
+            _currentDocumentCounter = _currentDocumentCounter! + 1;
+            _invoiceNumber = _formatDocumentNumber(_currentDocumentCounter!);
+          });
+        }
+      }
       await _addToTotalEarned(
         userId: currentUser.uid,
         amount: _signedTotalAmount,
       );
-
-      await _incrementInvoiceCounter();
 
       if (showFeedback && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1854,8 +2047,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                       .where('users', arrayContains: user.uid)
                       .snapshots(),
                   builder: (context, snapshot) {
-                    if (!snapshot.hasData)
+                    if (!snapshot.hasData) {
                       return const Center(child: CircularProgressIndicator());
+                    }
 
                     final rooms = snapshot.data!.docs.where((doc) {
                       final data = doc.data() as Map<String, dynamic>;
@@ -1863,8 +2057,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                       return !users.contains('hiro_manager');
                     }).toList();
 
-                    if (rooms.isEmpty)
+                    if (rooms.isEmpty) {
                       return Center(child: Text(strings['no_contacts']!));
+                    }
 
                     return ListView.builder(
                       itemCount: rooms.length,
@@ -1916,6 +2111,11 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       return;
     }
     if (!_validatePaymentMethods()) {
+      return;
+    }
+
+    final assigned = await _ensureDocumentNumberAssigned();
+    if (!assigned) {
       return;
     }
 
@@ -2164,7 +2364,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                     style: pw.TextStyle(fontSize: 11),
                                   ),
                                   pw.Text(
-                                    _dealerType == 'licensed'
+                                    _dealerType == 'company'
+                                        ? strings['company_dealer']!
+                                        : _isLicensedDealerType
                                         ? strings['licensed_dealer']!
                                         : strings['exempt_dealer']!,
                                     style: pw.TextStyle(
@@ -2339,7 +2541,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                           crossAxisAlignment: pw.CrossAxisAlignment.start,
                           children: [
                             if (_selectedDocType != 'receipt' &&
-                                _dealerType == 'licensed') ...[
+                                _isLicensedDealerType) ...[
                               pw.Row(
                                 mainAxisAlignment:
                                     pw.MainAxisAlignment.spaceBetween,
@@ -2579,6 +2781,40 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                       ],
                     ),
                   )
+                : _isLoadingCounterAssignment || _isWaitingForStartingNumber
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const CircularProgressIndicator(
+                            color: Color(0xFF1976D2),
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            strings['doc_start_title']!,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            strings['doc_start_message']!.replaceFirst(
+                              '{docType}',
+                              _documentTypeDisplayName(
+                                strings,
+                                _selectedDocType,
+                              ),
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
                 : SingleChildScrollView(
                     padding: const EdgeInsets.all(20),
                     child: Column(
@@ -2603,18 +2839,18 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                 DropdownMenuItem(
                                   value: 'invoice',
                                   enabled:
-                                      _dealerType == 'licensed' &&
+                                      _isLicensedDealerType &&
                                       _isBusinessVerified,
                                   child: Text(
                                     strings['invoice']! +
-                                        ((_dealerType != 'licensed' ||
+                                        ((!_isLicensedDealerType ||
                                                 !_isBusinessVerified)
                                             ? " (${strings['licensed_only']})"
                                             : ""),
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
                                       color:
-                                          (_dealerType == 'licensed' &&
+                                          (_isLicensedDealerType &&
                                               _isBusinessVerified)
                                           ? Colors.black
                                           : Colors.grey,
@@ -2624,18 +2860,18 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                 DropdownMenuItem(
                                   value: 'invoice_receipt',
                                   enabled:
-                                      _dealerType == 'licensed' &&
+                                      _isLicensedDealerType &&
                                       _isBusinessVerified,
                                   child: Text(
                                     strings['invoice_receipt']! +
-                                        ((_dealerType != 'licensed' ||
+                                        ((!_isLicensedDealerType ||
                                                 !_isBusinessVerified)
                                             ? " (${strings['licensed_only']})"
                                             : ""),
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
                                       color:
-                                          (_dealerType == 'licensed' &&
+                                          (_isLicensedDealerType &&
                                               _isBusinessVerified)
                                           ? Colors.black
                                           : Colors.grey,
@@ -2647,9 +2883,16 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                   child: Text(strings['credit_note']!),
                                 ),
                               ],
-                              onChanged: (val) {
-                                if (val != null)
-                                  setState(() => _selectedDocType = val);
+                              onChanged: (val) async {
+                                if (val == null) return;
+                                setState(() {
+                                  _selectedDocType = val;
+                                  _currentDocumentCounter = null;
+                                  _invoiceNumber = '';
+                                });
+                                await _loadCurrentDocumentNumber(
+                                  promptIfMissing: true,
+                                );
                               },
                             ),
                             if (_isCreditNote) ...[
@@ -2766,44 +3009,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                           ),
                           const SizedBox(height: 20),
                         ],
+
                         // Payment Method Section
-                        _buildSectionCard(
-                          title: isRtl ? 'אמצעי תשלום' : 'Payment Method',
-                          icon: Icons.payment,
-                          children: [
-                            ...List.generate(_paymentMethods.length, (index) {
-                              return Padding(
-                                padding: EdgeInsets.only(
-                                  bottom: index == _paymentMethods.length - 1
-                                      ? 0
-                                      : 12,
-                                ),
-                                child: _buildPaymentMethodCard(
-                                  index,
-                                  _paymentMethods[index],
-                                  isRtl,
-                                ),
-                              );
-                            }),
-                            const SizedBox(height: 12),
-                            OutlinedButton.icon(
-                              onPressed: () {
-                                setState(() {
-                                  for (final methodEntry in _paymentMethods) {
-                                    methodEntry.isExpanded = false;
-                                  }
-                                  _paymentMethods.add(_PaymentMethodEntry());
-                                });
-                              },
-                              icon: const Icon(Icons.add),
-                              label: Text(
-                                isRtl
-                                    ? 'הוסף אמצעי תשלום'
-                                    : 'Add Payment Method',
-                              ),
-                            ),
-                          ],
-                        ),
                         const SizedBox(height: 20),
                         _buildSectionCard(
                           title: strings['client_info']!,
@@ -2934,6 +3141,43 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                           ],
                         ),
 
+                        _buildSectionCard(
+                          title: isRtl ? 'אמצעי תשלום' : 'Payment Method',
+                          icon: Icons.payment,
+                          children: [
+                            ...List.generate(_paymentMethods.length, (index) {
+                              return Padding(
+                                padding: EdgeInsets.only(
+                                  bottom: index == _paymentMethods.length - 1
+                                      ? 0
+                                      : 12,
+                                ),
+                                child: _buildPaymentMethodCard(
+                                  index,
+                                  _paymentMethods[index],
+                                  isRtl,
+                                ),
+                              );
+                            }),
+                            const SizedBox(height: 12),
+                            OutlinedButton.icon(
+                              onPressed: () {
+                                setState(() {
+                                  for (final methodEntry in _paymentMethods) {
+                                    methodEntry.isExpanded = false;
+                                  }
+                                  _paymentMethods.add(_PaymentMethodEntry());
+                                });
+                              },
+                              icon: const Icon(Icons.add),
+                              label: Text(
+                                isRtl
+                                    ? 'הוסף אמצעי תשלום'
+                                    : 'Add Payment Method',
+                              ),
+                            ),
+                          ],
+                        ),
                         if (_items.isNotEmpty) ...[
                           const SizedBox(height: 16),
                           ListView.builder(

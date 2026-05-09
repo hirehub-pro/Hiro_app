@@ -181,6 +181,9 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
     if (currentUser == null) return;
 
     final invoiceNumber = (savedData['invoiceNumber'] ?? '').toString().trim();
+    final invoiceDocId = (savedData['invoiceDocId'] ?? invoiceNumber)
+        .toString()
+        .trim();
     if (invoiceNumber.isEmpty) return;
 
     try {
@@ -188,7 +191,7 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
       final userRef = FirebaseFirestore.instance
           .collection('users')
           .doc(currentUser.uid);
-      final detailRef = userRef.collection('invoices').doc(invoiceNumber);
+      final detailRef = userRef.collection('invoices').doc(invoiceDocId);
 
       final results = await Future.wait([userRef.get(), detailRef.get()]);
       final userSnap = results[0];
@@ -271,6 +274,9 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
     if (currentUser == null) return;
 
     final invoiceNumber = (savedData['invoiceNumber'] ?? '').toString().trim();
+    final invoiceDocId = (savedData['invoiceDocId'] ?? invoiceNumber)
+        .toString()
+        .trim();
     if (invoiceNumber.isEmpty) return;
 
     final invoiceAmount = (savedData['amount'] as num?)?.toDouble() ?? 0.0;
@@ -304,7 +310,7 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
       final userRef = FirebaseFirestore.instance
           .collection('users')
           .doc(currentUser.uid);
-      final detailRef = userRef.collection('invoices').doc(invoiceNumber);
+      final detailRef = userRef.collection('invoices').doc(invoiceDocId);
       final results = await Future.wait([userRef.get(), detailRef.get()]);
       final userSnap = results[0];
       final detailSnap = results[1];
@@ -351,6 +357,7 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
             initialPaymentMethod: paymentDraft.method,
             initialPaymentAmount: paymentDraft.amount,
             sourceInvoiceNumber: invoiceNumber,
+            sourceInvoiceDocId: invoiceDocId,
             sourceInvoiceSavedDocId: savedDocId,
             sourceInvoiceTotalAmount: invoiceAmount,
           ),

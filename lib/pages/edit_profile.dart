@@ -24,10 +24,16 @@ class EditProfilePage extends StatefulWidget {
 
 class _EditProfilePageState extends State<EditProfilePage>
     with TickerProviderStateMixin {
+  static const List<String> _spokenLanguageOptions = [
+    'Hebrew',
+    'Arabic',
+    'English',
+    'Russian',
+    'Amharic',
+  ];
   final _formKey = GlobalKey<FormState>();
   late TextEditingController _nameController;
   late TextEditingController _emailController;
-  late TextEditingController _dobController;
   late TextEditingController _phoneController;
   late TextEditingController _altPhoneController;
   late TextEditingController _descriptionController;
@@ -36,6 +42,7 @@ class _EditProfilePageState extends State<EditProfilePage>
 
   String? _selectedTown;
   List<String> _selectedProfessions = [];
+  List<String> _selectedSpokenLanguages = [];
   List<Map<String, dynamic>> _professionItems = [];
   File? _image;
   bool _isLoading = false;
@@ -43,7 +50,6 @@ class _EditProfilePageState extends State<EditProfilePage>
 
   double _workRadius = 25000.0;
   LatLng? _workCenter;
-  DateTime? _dateOfBirth;
   AnimationController? _introController;
   AnimationController? _backgroundController;
 
@@ -53,10 +59,6 @@ class _EditProfilePageState extends State<EditProfilePage>
     _ensureAnimationControllers();
     _nameController = TextEditingController(text: widget.userData['name']);
     _emailController = TextEditingController(text: widget.userData['email']);
-    _dateOfBirth = _parseDate(widget.userData['dateOfBirth']);
-    _dobController = TextEditingController(
-      text: _dateOfBirth != null ? _formatDate(_dateOfBirth!) : '',
-    );
     _phoneController = TextEditingController(text: widget.userData['phone']);
     _altPhoneController = TextEditingController(
       text: widget.userData['optionalPhone'],
@@ -69,6 +71,9 @@ class _EditProfilePageState extends State<EditProfilePage>
     _selectedProfessions = List<String>.from(
       widget.userData['professions'] ?? [],
     ).map(ProfessionLocalization.toCanonical).toList();
+    _selectedSpokenLanguages = List<String>.from(
+      widget.userData['spokenLanguages'] ?? [],
+    ).where(_spokenLanguageOptions.contains).toList();
     _loadProfessionItems();
 
     _workRadius = (widget.userData['workRadius'] ?? 25000.0).toDouble();
@@ -179,7 +184,6 @@ class _EditProfilePageState extends State<EditProfilePage>
     _backgroundController?.dispose();
     _nameController.dispose();
     _emailController.dispose();
-    _dobController.dispose();
     _phoneController.dispose();
     _altPhoneController.dispose();
     _descriptionController.dispose();
@@ -319,9 +323,6 @@ class _EditProfilePageState extends State<EditProfilePage>
       final updateData = {
         'name': _nameController.text.trim(),
         'email': _emailController.text.trim(),
-        'dateOfBirth': _dateOfBirth != null
-            ? Timestamp.fromDate(_dateOfBirth!)
-            : null,
         'town': _selectedTown,
         'lat': lat,
         'lng': lng,
@@ -331,6 +332,7 @@ class _EditProfilePageState extends State<EditProfilePage>
         'optionalPhone': _altPhoneController.text.trim(),
         'description': _descriptionController.text.trim(),
         'professions': _selectedProfessions,
+        'spokenLanguages': _selectedSpokenLanguages,
       };
 
       if (imageUrl != null) {
@@ -374,12 +376,11 @@ class _EditProfilePageState extends State<EditProfilePage>
           'about_you': 'עליך',
           'name': 'שם מלא',
           'email': 'אימייל',
-          'dob': 'תאריך לידה',
-          'dob_hint': 'בחר תאריך לידה',
-          'dob_required': 'יש לבחור תאריך לידה',
           'phone': 'מספר טלפון',
           'town': 'עיר',
           'professions': 'בחר מקצועות',
+          'spoken_languages': 'שפות מדוברות',
+          'spoken_languages_required': 'יש לבחור לפחות שפה אחת',
           'alt_phone': 'טלפון נוסף (אופציונלי)',
           'desc': 'ספר על עצמך (אופציונלי)',
           'save': 'שמור שינויים',
@@ -404,12 +405,11 @@ class _EditProfilePageState extends State<EditProfilePage>
           'about_you': 'نبذة عنك',
           'name': 'الاسم الكامل',
           'email': 'البريد الإلكتروني',
-          'dob': 'تاريخ الميلاد',
-          'dob_hint': 'اختر تاريخ الميلاد',
-          'dob_required': 'تاريخ الميلاد مطلوب',
           'phone': 'رقم الهاتف',
           'town': 'المدينة',
           'professions': 'اختر المهن',
+          'spoken_languages': 'اللغات المحكية',
+          'spoken_languages_required': 'اختر لغة واحدة على الأقل',
           'alt_phone': 'هاتف إضافي (اختياري)',
           'desc': 'الوصف (اختياري)',
           'save': 'حفظ التغييرات',
@@ -435,12 +435,11 @@ class _EditProfilePageState extends State<EditProfilePage>
           'about_you': 'ስለ እርስዎ',
           'name': 'ሙሉ ስም',
           'email': 'ኢሜይል',
-          'dob': 'የልደት ቀን',
-          'dob_hint': 'የልደት ቀን ይምረጡ',
-          'dob_required': 'የልደት ቀን አስፈላጊ ነው',
           'phone': 'የስልክ ቁጥር',
           'town': 'ከተማ',
           'professions': 'ሙያዎችን ይምረጡ',
+          'spoken_languages': 'የሚነገሩ ቋንቋዎች',
+          'spoken_languages_required': 'ቢያንስ አንድ ቋንቋ ይምረጡ',
           'alt_phone': 'ተጨማሪ ስልክ (አማራጭ)',
           'desc': 'መግለጫ (አማራጭ)',
           'save': 'ለውጦችን አስቀምጥ',
@@ -465,12 +464,11 @@ class _EditProfilePageState extends State<EditProfilePage>
           'about_you': 'О вас',
           'name': 'Полное имя',
           'email': 'Эл. почта',
-          'dob': 'Дата рождения',
-          'dob_hint': 'Выберите дату рождения',
-          'dob_required': 'Дата рождения обязательна',
           'phone': 'Номер телефона',
           'town': 'Город',
           'professions': 'Выберите профессии',
+          'spoken_languages': 'Разговорные языки',
+          'spoken_languages_required': 'Выберите хотя бы один язык',
           'alt_phone': 'Доп. телефон (необязательно)',
           'desc': 'Описание (необязательно)',
           'save': 'Сохранить изменения',
@@ -496,12 +494,11 @@ class _EditProfilePageState extends State<EditProfilePage>
           'about_you': 'About You',
           'name': 'Full Name',
           'email': 'Email',
-          'dob': 'Date of Birth',
-          'dob_hint': 'Select date of birth',
-          'dob_required': 'Date of birth is required',
           'phone': 'Phone Number',
           'town': 'City',
           'professions': 'Select Professions',
+          'spoken_languages': 'Spoken Languages',
+          'spoken_languages_required': 'Select at least one language',
           'alt_phone': 'Alt Phone (Optional)',
           'desc': 'Description (Optional)',
           'save': 'Save Changes',
@@ -520,37 +517,6 @@ class _EditProfilePageState extends State<EditProfilePage>
           'error_saving_profile': 'Error saving profile: {error}',
         };
     }
-  }
-
-  DateTime? _parseDate(dynamic value) {
-    if (value == null) return null;
-    if (value is Timestamp) return value.toDate();
-    if (value is DateTime) return value;
-    if (value is String) return DateTime.tryParse(value);
-    return null;
-  }
-
-  String _formatDate(DateTime date) {
-    final day = date.day.toString().padLeft(2, '0');
-    final month = date.month.toString().padLeft(2, '0');
-    return '$day/$month/${date.year}';
-  }
-
-  Future<void> _pickDateOfBirth() async {
-    final now = DateTime.now();
-    final initial = _dateOfBirth ?? DateTime(now.year - 18, now.month, now.day);
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: initial,
-      firstDate: DateTime(1900),
-      lastDate: now,
-    );
-
-    if (picked == null || !mounted) return;
-    setState(() {
-      _dateOfBirth = DateTime(picked.year, picked.month, picked.day);
-      _dobController.text = _formatDate(_dateOfBirth!);
-    });
   }
 
   @override
@@ -845,18 +811,6 @@ class _EditProfilePageState extends State<EditProfilePage>
                       keyboardType: TextInputType.emailAddress,
                     ),
                     const SizedBox(height: 16),
-                    _buildStyledTextField(
-                      controller: _dobController,
-                      labelText: strings['dob']!,
-                      hintText: strings['dob_hint']!,
-                      icon: Icons.cake_outlined,
-                      readOnly: true,
-                      onTap: _pickDateOfBirth,
-                      validator: (v) => (v == null || v.trim().isEmpty)
-                          ? strings['dob_required']
-                          : null,
-                    ),
-                    const SizedBox(height: 16),
                     _buildLocationSection(strings),
                   ],
                 ),
@@ -893,6 +847,8 @@ class _EditProfilePageState extends State<EditProfilePage>
                       keyboardType: TextInputType.phone,
                       enabled: false,
                     ),
+                    const SizedBox(height: 16),
+                    _buildSpokenLanguagesSelector(strings),
                     const SizedBox(height: 16),
                     _buildStyledTextField(
                       controller: _descriptionController,
@@ -976,6 +932,127 @@ class _EditProfilePageState extends State<EditProfilePage>
         ),
       ],
     );
+  }
+
+  Widget _buildSpokenLanguagesSelector(Map<String, String> strings) {
+    final localeCode = Provider.of<LanguageProvider>(
+      context,
+    ).locale.languageCode;
+
+    return FormField<List<String>>(
+      initialValue: _selectedSpokenLanguages,
+      validator: (_) => _selectedSpokenLanguages.isEmpty
+          ? strings['spoken_languages_required']
+          : null,
+      builder: (field) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.language_rounded,
+                size: 20,
+                color: Color(0xFF64748B),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                strings['spoken_languages']!,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 14,
+                  color: Color(0xFF374151),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: _spokenLanguageOptions.map((language) {
+              final selected = _selectedSpokenLanguages.contains(language);
+              return FilterChip(
+                label: Text(_spokenLanguageLabel(language, localeCode)),
+                selected: selected,
+                onSelected: (value) {
+                  setState(() {
+                    if (value) {
+                      _selectedSpokenLanguages.add(language);
+                    } else {
+                      _selectedSpokenLanguages.remove(language);
+                    }
+                  });
+                  field.didChange(_selectedSpokenLanguages);
+                },
+                selectedColor: const Color(0xFF1976D2).withValues(alpha: 0.14),
+                checkmarkColor: const Color(0xFF1976D2),
+                backgroundColor: const Color(0xFFF8FAFC),
+                side: BorderSide(
+                  color: selected
+                      ? const Color(0xFF1976D2)
+                      : const Color(0xFFE2E8F0),
+                ),
+                labelStyle: TextStyle(
+                  color: selected
+                      ? const Color(0xFF0F4C9A)
+                      : const Color(0xFF475569),
+                  fontWeight: FontWeight.w700,
+                ),
+              );
+            }).toList(),
+          ),
+          if (field.hasError) ...[
+            const SizedBox(height: 8),
+            Text(
+              field.errorText!,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  String _spokenLanguageLabel(String language, String localeCode) {
+    const labels = {
+      'Hebrew': {
+        'en': 'Hebrew',
+        'he': 'עברית',
+        'ar': 'العبرية',
+        'ru': 'Иврит',
+        'am': 'ዕብራይስጥ',
+      },
+      'Arabic': {
+        'en': 'Arabic',
+        'he': 'ערבית',
+        'ar': 'العربية',
+        'ru': 'Арабский',
+        'am': 'አረብኛ',
+      },
+      'English': {
+        'en': 'English',
+        'he': 'אנגלית',
+        'ar': 'الإنجليزية',
+        'ru': 'Английский',
+        'am': 'እንግሊዝኛ',
+      },
+      'Russian': {
+        'en': 'Russian',
+        'he': 'רוסית',
+        'ar': 'الروسية',
+        'ru': 'Русский',
+        'am': 'ሩሲኛ',
+      },
+      'Amharic': {
+        'en': 'Amharic',
+        'he': 'אמהרית',
+        'ar': 'الأمهرية',
+        'ru': 'Амхарский',
+        'am': 'አማርኛ',
+      },
+    };
+
+    return labels[language]?[localeCode] ?? labels[language]?['en'] ?? language;
   }
 
   Future<void> _openMapPicker() async {

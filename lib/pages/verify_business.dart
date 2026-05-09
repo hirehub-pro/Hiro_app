@@ -1,6 +1,7 @@
-import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:untitled1/services/language_provider.dart';
 
@@ -16,12 +17,11 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
   final _idController = TextEditingController();
   final _businessNameController = TextEditingController();
   final _addressController = TextEditingController();
-  final _taxBranchController = TextEditingController();
 
-  String _dealerType = 'exempt'; // 'exempt' (פטור) or 'licensed' (מורשה)
+  String _dealerType = 'exempt';
   bool _isUploading = false;
   bool _isLoadingStatus = true;
-  String? _currentStatus; // 'pending', 'verified', 'rejected', or null
+  String? _currentStatus;
 
   bool _acceptedTerms = false;
   bool _isLegalDeclarationSigned = false;
@@ -31,6 +31,219 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
   void initState() {
     super.initState();
     _checkCurrentStatus();
+  }
+
+  @override
+  void dispose() {
+    _idController.dispose();
+    _businessNameController.dispose();
+    _addressController.dispose();
+    super.dispose();
+  }
+
+  Map<String, String> _getLocalizedStrings(BuildContext context) {
+    final locale = Provider.of<LanguageProvider>(context).locale.languageCode;
+    switch (locale) {
+      case 'he':
+        return {
+          'page_title': 'אימות זהות ועסק',
+          'accept_all_legal': 'עליך לאשר את כל ההצהרות החוקיות',
+          'business_id_connected': 'מספר העסק הזה כבר מחובר לחשבון אחר',
+          'request_submitted': 'הבקשה הוגשה בהצלחה',
+          'submitted_for_review':
+              'המסמכים הועברו לבדיקה. סטטוס החשבון יעודכן תוך 48 שעות.',
+          'got_it': 'הבנתי',
+          'uploading': 'מעלה מסמכים ומאמת...',
+          'step_business': 'פרטי העסק והרישום',
+          'business_name': 'שם העסק הרשום',
+          'business_id': 'מספר עוסק / ח.פ / ת.ז',
+          'business_address': 'כתובת העסק המלאה',
+          'required': 'חובה',
+          'business_id_9_digits': 'מספר העסק חייב להכיל 9 ספרות',
+          'step_classification': 'סיווג עוסק לצרכי מס',
+          'classification_note':
+              'שים לב: הגדרה זו תקבע את סוגי המסמכים (חשבונית/קבלה) שתוכל להפיק.',
+          'dealer_exempt': 'עוסק פטור',
+          'dealer_licensed': 'עוסק מורשה',
+          'dealer_company': 'חברה בע״מ',
+          'step_legal': 'אישורים והצהרות משפטיות',
+          'legal_terms': 'קראתי ואני מסכים לתנאי השימוש וכללי האתיקה של הירו.',
+          'legal_declaration': 'אני מצהיר כי כל המידע שמסרתי נכון, תקף ומקורי.',
+          'legal_responsibility': 'אני אחראי לכל מידע שגוי או מטעה שאמסור לכם.',
+          'submit': 'שלח לאישור משפטי',
+          'verification_pending': 'הבקשה בבדיקה',
+          'business_verified': 'העסק מאומת',
+          'pending_message':
+              'שלחת כבר בקשת אימות. הצוות שלנו בודק את המסמכים שלך. בדרך כלל זה לוקח עד 48 שעות.',
+          'verified_message': 'מזל טוב! העסק שלך מאומת במערכת.',
+          'back_to_profile': 'חזור לפרופיל',
+          'rejected_notice':
+              'בקשת האימות הקודמת שלך נדחתה. אנא בדוק את המסמכים ושלח שוב.',
+          'error_prefix': 'שגיאה: ',
+        };
+      case 'ar':
+        return {
+          'page_title': 'التحقق من الهوية والنشاط التجاري',
+          'accept_all_legal': 'يجب عليك الموافقة على جميع الإقرارات القانونية',
+          'business_id_connected':
+              'رقم النشاط التجاري هذا مرتبط بالفعل بحساب آخر',
+          'request_submitted': 'تم إرسال الطلب بنجاح',
+          'submitted_for_review':
+              'تم إرسال المستندات للمراجعة. سيتم تحديث حالة الحساب خلال 48 ساعة.',
+          'got_it': 'فهمت',
+          'uploading': 'جارٍ رفع المستندات والتحقق...',
+          'step_business': 'تفاصيل النشاط والتسجيل',
+          'business_name': 'الاسم التجاري المسجل',
+          'business_id': 'رقم النشاط / ضريبة القيمة المضافة / الهوية',
+          'business_address': 'عنوان النشاط التجاري',
+          'required': 'مطلوب',
+          'business_id_9_digits': 'يجب أن يتكون رقم النشاط من 9 أرقام بالضبط',
+          'step_classification': 'تصنيف دافع الضريبة',
+          'classification_note':
+              'ملاحظة: هذا الإعداد يحدد أنواع المستندات (فاتورة/إيصال) التي يمكنك إصدارها.',
+          'dealer_exempt': 'تاجر معفى',
+          'dealer_licensed': 'تاجر مرخص',
+          'dealer_company': 'شركة ذات مسؤولية محدودة',
+          'step_legal': 'إقرارات قانونية',
+          'legal_terms':
+              'لقد قرأت ووافقت على شروط الاستخدام ومدونة الأخلاقيات الخاصة بـ hiro.',
+          'legal_declaration':
+              'أقر بأن جميع المعلومات المقدمة صحيحة وسارية وأصلية.',
+          'legal_responsibility':
+              'أتحمل مسؤولية أي معلومات خاطئة أو مضللة أقدمها.',
+          'submit': 'إرسال للمراجعة القانونية',
+          'verification_pending': 'الطلب قيد المراجعة',
+          'business_verified': 'تم التحقق من النشاط التجاري',
+          'pending_message':
+              'لقد أرسلت طلب تحقق بالفعل. فريقنا يراجع مستنداتك الآن. يستغرق هذا عادة حتى 48 ساعة.',
+          'verified_message': 'تهانينا! تم التحقق من نشاطك التجاري في النظام.',
+          'back_to_profile': 'العودة إلى الملف الشخصي',
+          'rejected_notice':
+              'تم رفض طلب التحقق السابق. يرجى مراجعة مستنداتك وإعادة الإرسال.',
+          'error_prefix': 'خطأ: ',
+        };
+      case 'ru':
+        return {
+          'page_title': 'Подтверждение личности и бизнеса',
+          'accept_all_legal': 'Вы должны принять все юридические подтверждения',
+          'business_id_connected':
+              'Этот бизнес-идентификатор уже привязан к другой учетной записи',
+          'request_submitted': 'Запрос успешно отправлен',
+          'submitted_for_review':
+              'Документы отправлены на проверку. Статус аккаунта будет обновлен в течение 48 часов.',
+          'got_it': 'Понятно',
+          'uploading': 'Загрузка документов и проверка...',
+          'step_business': 'Данные бизнеса и регистрации',
+          'business_name': 'Зарегистрированное название бизнеса',
+          'business_id': 'Бизнес ID / VAT ID',
+          'business_address': 'Адрес бизнеса',
+          'required': 'Обязательно',
+          'business_id_9_digits': 'Бизнес ID должен состоять ровно из 9 цифр',
+          'step_classification': 'Налоговая категория бизнеса',
+          'classification_note':
+              'Примечание: эта настройка определяет типы документов (счет/квитанция), которые вы сможете создавать.',
+          'dealer_exempt': 'Освобожденный дилер',
+          'dealer_licensed': 'Лицензированный дилер',
+          'dealer_company': 'ООО',
+          'step_legal': 'Юридические подтверждения',
+          'legal_terms':
+              'Я прочитал и согласен с условиями использования и кодексом этики hiro.',
+          'legal_declaration':
+              'Я подтверждаю, что вся предоставленная информация верна, действительна и подлинна.',
+          'legal_responsibility':
+              'Я несу ответственность за любую неверную или вводящую в заблуждение информацию, которую предоставлю.',
+          'submit': 'Отправить на юридическую проверку',
+          'verification_pending': 'Проверка в ожидании',
+          'business_verified': 'Бизнес подтвержден',
+          'pending_message':
+              'Вы уже отправили запрос на проверку. Наша команда проверяет ваши документы. Обычно это занимает до 48 часов.',
+          'verified_message': 'Поздравляем! Ваш бизнес подтвержден в системе.',
+          'back_to_profile': 'Назад в профиль',
+          'rejected_notice':
+              'Ваш предыдущий запрос на проверку был отклонен. Проверьте документы и отправьте снова.',
+          'error_prefix': 'Ошибка: ',
+        };
+      case 'am':
+        return {
+          'page_title': 'ማንነት እና የንግድ ማረጋገጫ',
+          'accept_all_legal': 'ሁሉንም የህግ ማረጋገጫዎች መቀበል አለብዎት',
+          'business_id_connected': 'ይህ የንግድ መለያ ከሌላ መለያ ጋር አስቀድሞ ተያይዟል',
+          'request_submitted': 'ጥያቄው በተሳካ ሁኔታ ተልኳል',
+          'submitted_for_review':
+              'ሰነዶቹ ለግምገማ ተልከዋል። የመለያው ሁኔታ በ48 ሰዓታት ውስጥ ይዘምናል።',
+          'got_it': 'ገባኝ',
+          'uploading': 'ሰነዶች እየተጫኑ እና እየተረጋገጡ ነው...',
+          'step_business': 'የንግድ እና ምዝገባ ዝርዝሮች',
+          'business_name': 'የተመዘገበ የንግድ ስም',
+          'business_id': 'የንግድ መለያ / VAT ID',
+          'business_address': 'የንግድ አድራሻ',
+          'required': 'ያስፈልጋል',
+          'business_id_9_digits': 'የንግድ መለያው በትክክል 9 አሃዞች መሆን አለበት',
+          'step_classification': 'የግብር ንግድ ምድብ',
+          'classification_note':
+              'ማስታወሻ: ይህ ቅንብር ሊያወጡ የሚችሉትን የሰነድ አይነቶች (ደረሰኝ/ቅብዓት) ይወስናል።',
+          'dealer_exempt': 'ነፃ ነጋዴ',
+          'dealer_licensed': 'ፈቃድ ያለው ነጋዴ',
+          'dealer_company': 'የተገደበ ተጠያቂነት ኩባንያ',
+          'step_legal': 'የህግ ማረጋገጫዎች',
+          'legal_terms': 'የ hiro የአጠቃቀም ደንቦችን እና የስነምግባር መመሪያዎችን አንብቤ ተስማምቻለሁ።',
+          'legal_declaration': 'የሰጠሁት መረጃ ሁሉ ትክክል፣ የሚሰራ እና ኦሪጂናል መሆኑን እገልጻለሁ።',
+          'legal_responsibility':
+              'የማቀርበው ማንኛውም የተሳሳተ ወይም አሳሳች መረጃ ላይ ኃላፊነት እወስዳለሁ።',
+          'submit': 'ለህጋዊ ግምገማ ላክ',
+          'verification_pending': 'ማረጋገጫው በመጠባበቅ ላይ ነው',
+          'business_verified': 'ንግዱ ተረጋግጧል',
+          'pending_message':
+              'አስቀድሞ የማረጋገጫ ጥያቄ ልከዋል። ቡድናችን ሰነዶችዎን እየገመገመ ነው። ይህ በአብዛኛው እስከ 48 ሰዓት ይወስዳል።',
+          'verified_message': 'እንኳን ደስ አለዎት! ንግድዎ በስርዓቱ ውስጥ ተረጋግጧል።',
+          'back_to_profile': 'ወደ መገለጫ ተመለስ',
+          'rejected_notice':
+              'ያለፈው የማረጋገጫ ጥያቄዎ ተቀባይነት አላገኘም። እባክዎ ሰነዶችዎን ያረጋግጡ እና እንደገና ይላኩ።',
+          'error_prefix': 'ስህተት: ',
+        };
+      default:
+        return {
+          'page_title': 'Identity & Business Verification',
+          'accept_all_legal': 'You must accept all legal declarations',
+          'business_id_connected':
+              'This business ID is already connected to an account',
+          'request_submitted': 'Request Submitted!',
+          'submitted_for_review':
+              'Documents submitted for review. Account status will be updated within 48 hours.',
+          'got_it': 'Got it',
+          'uploading': 'Uploading documents and verifying...',
+          'step_business': 'Business & Registration Details',
+          'business_name': 'Registered Business Name',
+          'business_id': 'Business ID / VAT ID',
+          'business_address': 'Business Address',
+          'required': 'Required',
+          'business_id_9_digits': 'Business ID must be exactly 9 digits',
+          'step_classification': 'Tax Dealer Classification',
+          'classification_note':
+              'Note: This setting determines the document types (Invoice/Receipt) you can generate.',
+          'dealer_exempt': 'Exempt Dealer',
+          'dealer_licensed': 'Licensed Dealer',
+          'dealer_company': 'Limited Company',
+          'step_legal': 'Legal Confirmations',
+          'legal_terms':
+              'I have read and agree to the hiro Terms of Use and Code of Ethics.',
+          'legal_declaration':
+              'I declare that all information provided is correct, valid, and original.',
+          'legal_responsibility':
+              'I am responsible for any wrong or misleading information I provide.',
+          'submit': 'Submit for Legal Review',
+          'verification_pending': 'Verification Pending',
+          'business_verified': 'Business Verified',
+          'pending_message':
+              'You have already submitted a verification request. Our team is reviewing your documents. This usually takes up to 48 hours.',
+          'verified_message':
+              'Congratulations! Your business is verified in our system.',
+          'back_to_profile': 'Back to Profile',
+          'rejected_notice':
+              'Your previous verification request was rejected. Please check your documents and resubmit.',
+          'error_prefix': 'Error: ',
+        };
+    }
   }
 
   Future<void> _checkCurrentStatus() async {
@@ -53,22 +266,32 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
     if (mounted) setState(() => _isLoadingStatus = false);
   }
 
-  @override
-  void dispose() {
-    _idController.dispose();
-    _businessNameController.dispose();
-    _addressController.dispose();
-    _taxBranchController.dispose();
-    super.dispose();
+  Future<bool> _isBusinessIdConnectedToAnotherAccount(
+    String businessId,
+    String currentUserId,
+  ) async {
+    final usersMatch = await FirebaseFirestore.instance
+        .collection('users')
+        .where('businessId', isEqualTo: businessId)
+        .limit(5)
+        .get();
+
+    final userAlreadyConnected = usersMatch.docs.any(
+      (doc) => doc.id != currentUserId,
+    );
+    if (userAlreadyConnected) return true;
+
+    final verificationMatch = await FirebaseFirestore.instance
+        .collection('verifications')
+        .where('businessId', isEqualTo: businessId)
+        .limit(5)
+        .get();
+
+    return verificationMatch.docs.any((doc) => doc.id != currentUserId);
   }
 
   Future<void> _submitVerification() async {
-    final isHe =
-        Provider.of<LanguageProvider>(
-          context,
-          listen: false,
-        ).locale.languageCode ==
-        'he';
+    final strings = _getLocalizedStrings(context);
 
     if (!_formKey.currentState!.validate()) return;
 
@@ -77,11 +300,7 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
         !_acceptedResponsibility) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            isHe
-                ? 'עליך לאשר את כל הצהרות החוקיות'
-                : 'You must accept all legal declarations',
-          ),
+          content: Text(strings['accept_all_legal']!),
           backgroundColor: Colors.orange,
         ),
       );
@@ -91,14 +310,29 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
     setState(() => _isUploading = true);
     try {
       final user = FirebaseAuth.instance.currentUser!;
-
       final businessId = _idController.text.trim();
+      final alreadyConnected = await _isBusinessIdConnectedToAnotherAccount(
+        businessId,
+        user.uid,
+      );
+
+      if (alreadyConnected) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(strings['business_id_connected']!),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+
       final verificationData = {
         'userId': user.uid,
         'businessId': businessId,
         'businessName': _businessNameController.text.trim(),
         'address': _addressController.text.trim(),
-        'taxBranch': _taxBranchController.text.trim(),
         'dealerType': _dealerType,
         'status': 'pending',
         'legalAccepted': true,
@@ -106,13 +340,11 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
         'timestamp': FieldValue.serverTimestamp(),
       };
 
-      // Save to verifications collection
       await FirebaseFirestore.instance
           .collection('verifications')
           .doc(user.uid)
           .set(verificationData);
 
-      // Update user document in unified 'users' collection
       await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
@@ -123,20 +355,21 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
           });
 
       if (mounted) {
-        _showSuccessDialog(isHe);
+        _showSuccessDialog(strings);
       }
     } catch (e) {
       debugPrint("Verification submit error: $e");
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('Error: $e')));
+        ).showSnackBar(SnackBar(content: Text('${strings['error_prefix']}$e')));
+      }
     } finally {
       if (mounted) setState(() => _isUploading = false);
     }
   }
 
-  void _showSuccessDialog(bool isHe) {
+  void _showSuccessDialog(Map<String, String> strings) {
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -147,16 +380,11 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              isHe ? 'הבקשה הוגשה בהצלחה' : 'Request Submitted!',
+              strings['request_submitted']!,
               style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
             ),
             const SizedBox(height: 12),
-            Text(
-              isHe
-                  ? 'המסמכים הועברו לבדיקה מול רשויות המס. סטטוס החשבון יעודכן תוך 48 שעות.'
-                  : 'Documents submitted for tax authority review. Account status will be updated within 48 hours.',
-              textAlign: TextAlign.center,
-            ),
+            Text(strings['submitted_for_review']!, textAlign: TextAlign.center),
           ],
         ),
         actions: [
@@ -165,7 +393,7 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
               Navigator.pop(context);
               Navigator.pop(context);
             },
-            child: Text(isHe ? 'הבנתי' : 'Got it'),
+            child: Text(strings['got_it']!),
           ),
         ],
       ),
@@ -175,16 +403,15 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
   @override
   Widget build(BuildContext context) {
     final locale = Provider.of<LanguageProvider>(context).locale.languageCode;
-    final isHe = locale == 'he';
+    final strings = _getLocalizedStrings(context);
+    final isRtl = locale == 'he' || locale == 'ar';
 
     return Directionality(
-      textDirection: isHe ? TextDirection.rtl : TextDirection.ltr,
+      textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
       child: Scaffold(
         backgroundColor: Colors.white,
         appBar: AppBar(
-          title: Text(
-            isHe ? 'אימות זהות ועסק' : 'Identity & Business Verification',
-          ),
+          title: Text(strings['page_title']!),
           backgroundColor: const Color(0xFF1976D2),
           foregroundColor: Colors.white,
           elevation: 0,
@@ -192,21 +419,21 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
         body: _isLoadingStatus
             ? const Center(child: CircularProgressIndicator())
             : _isUploading
-            ? const Center(
+            ? Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    CircularProgressIndicator(),
-                    SizedBox(height: 16),
+                    const CircularProgressIndicator(),
+                    const SizedBox(height: 16),
                     Text(
-                      "מעלה מסמכים ומאמת...",
-                      style: TextStyle(fontWeight: FontWeight.bold),
+                      strings['uploading']!,
+                      style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ],
                 ),
               )
             : _currentStatus == 'pending' || _currentStatus == 'verified'
-            ? _buildStatusScreen(isHe)
+            ? _buildStatusScreen(strings)
             : SingleChildScrollView(
                 padding: const EdgeInsets.all(24),
                 child: Form(
@@ -215,69 +442,54 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       if (_currentStatus == 'rejected')
-                        _buildRejectedNotice(isHe),
-                      _buildStepHeader(
-                        1,
-                        isHe
-                            ? 'פרטי העסק והרישום'
-                            : 'Business & Registration Details',
-                      ),
+                        _buildRejectedNotice(strings),
+                      _buildStepHeader(1, strings['step_business']!),
                       const SizedBox(height: 16),
                       TextFormField(
                         controller: _businessNameController,
                         decoration: _inputStyle(
-                          isHe ? 'שם העסק הרשום' : 'Registered Business Name',
+                          strings['business_name']!,
                           Icons.business,
                         ),
                         validator: (v) =>
-                            v!.isEmpty ? (isHe ? 'חובה' : 'Required') : null,
+                            v!.isEmpty ? strings['required'] : null,
                       ),
                       const SizedBox(height: 12),
                       TextFormField(
                         controller: _idController,
                         decoration: _inputStyle(
-                          isHe
-                              ? 'מספר עוסק / ח.פ / ת.ז'
-                              : 'Business ID / VAT ID',
+                          strings['business_id']!,
                           Icons.badge_outlined,
                         ),
                         keyboardType: TextInputType.number,
-                        validator: (v) =>
-                            v!.isEmpty ? (isHe ? 'חובה' : 'Required') : null,
-                      ),
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: _taxBranchController,
-                        decoration: _inputStyle(
-                          isHe ? 'סניף מע"מ / מס הכנסה' : 'Tax Office Branch',
-                          Icons.account_balance_rounded,
-                        ),
-                        validator: (v) =>
-                            v!.isEmpty ? (isHe ? 'חובה' : 'Required') : null,
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                          LengthLimitingTextInputFormatter(9),
+                        ],
+                        validator: (v) {
+                          final value = v?.trim() ?? '';
+                          if (value.isEmpty) return strings['required'];
+                          if (!RegExp(r'^\d{9}$').hasMatch(value)) {
+                            return strings['business_id_9_digits'];
+                          }
+                          return null;
+                        },
                       ),
                       const SizedBox(height: 12),
                       TextFormField(
                         controller: _addressController,
                         decoration: _inputStyle(
-                          isHe ? 'כתובת העסק המלאה' : 'Business Address',
+                          strings['business_address']!,
                           Icons.location_on_outlined,
                         ),
                         validator: (v) =>
-                            v!.isEmpty ? (isHe ? 'חובה' : 'Required') : null,
+                            v!.isEmpty ? strings['required'] : null,
                       ),
-
                       const SizedBox(height: 24),
-                      _buildStepHeader(
-                        2,
-                        isHe
-                            ? 'סיווג עוסק לצרכי מס'
-                            : 'Tax Dealer Classification',
-                      ),
+                      _buildStepHeader(2, strings['step_classification']!),
                       const SizedBox(height: 8),
                       Text(
-                        isHe
-                            ? 'שים לב: הגדרה זו תקבע את סוגי המסמכים (חשבונית/קבלה) שתוכל להפיק.'
-                            : 'Note: This setting determines the document types (Invoice/Receipt) you can generate.',
+                        strings['classification_note']!,
                         style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                       ),
                       const SizedBox(height: 12),
@@ -286,7 +498,7 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
                           Expanded(
                             child: _dealerTypeCard(
                               'exempt',
-                              isHe ? 'עוסק פטור' : 'Exempt Dealer',
+                              strings['dealer_exempt']!,
                               Icons.money_off,
                             ),
                           ),
@@ -294,45 +506,41 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
                           Expanded(
                             child: _dealerTypeCard(
                               'licensed',
-                              isHe
-                                  ? 'עוסק מורשה / חברה'
-                                  : 'Licensed Dealer / Co.',
+                              strings['dealer_licensed']!,
                               Icons.payments_outlined,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _dealerTypeCard(
+                              'company',
+                              strings['dealer_company']!,
+                              Icons.apartment_outlined,
                             ),
                           ),
                         ],
                       ),
-                      _buildStepHeader(
-                        3,
-                        isHe
-                            ? 'אישורים והצהרות משפטיות'
-                            : 'Legal Confirmations',
-                      ),
+                      _buildStepHeader(3, strings['step_legal']!),
                       const SizedBox(height: 12),
                       _buildLegalCheckbox(
                         value: _acceptedTerms,
                         onChanged: (v) => setState(() => _acceptedTerms = v!),
-                        label: isHe
-                            ? 'קראתי ואני מסכים לתנאי השימוש וכללי האתיקה של הירו.'
-                            : 'I have read and agree to the hiro Terms of Use and Code of Ethics.',
+                        label: strings['legal_terms']!,
                       ),
                       _buildLegalCheckbox(
                         value: _isLegalDeclarationSigned,
-                        onChanged: (v) =>
-                            setState(() => _isLegalDeclarationSigned = v!),
-                        label: isHe
-                            ? 'אני מצהיר כי כל המידע שמסרתי נכון, תקף ומקורי.'
-                            : 'I declare that all information provided is correct, valid, and original.',
+                        onChanged: (v) => setState(() {
+                          _isLegalDeclarationSigned = v!;
+                        }),
+                        label: strings['legal_declaration']!,
                       ),
                       _buildLegalCheckbox(
                         value: _acceptedResponsibility,
-                        onChanged: (v) =>
-                            setState(() => _acceptedResponsibility = v!),
-                        label: isHe
-                            ? 'אני אחראי לכל מידע שגוי או מטעה שאמסור לכם.'
-                            : 'I am responsible for any wrong or misleading information I provide.',
+                        onChanged: (v) => setState(() {
+                          _acceptedResponsibility = v!;
+                        }),
+                        label: strings['legal_responsibility']!,
                       ),
-
                       const SizedBox(height: 40),
                       ElevatedButton(
                         style: ElevatedButton.styleFrom(
@@ -346,7 +554,7 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
                         ),
                         onPressed: _submitVerification,
                         child: Text(
-                          isHe ? 'שלח לאישור משפטי' : 'Submit for Legal Review',
+                          strings['submit']!,
                           style: const TextStyle(
                             fontSize: 17,
                             fontWeight: FontWeight.bold,
@@ -362,11 +570,11 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
     );
   }
 
-  Widget _buildStatusScreen(bool isHe) {
-    bool isPending = _currentStatus == 'pending';
+  Widget _buildStatusScreen(Map<String, String> strings) {
+    final isPending = _currentStatus == 'pending';
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(32.0),
+        padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
@@ -380,19 +588,15 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
             const SizedBox(height: 24),
             Text(
               isPending
-                  ? (isHe ? 'הבקשה בבדיקה' : 'Verification Pending')
-                  : (isHe ? 'העסק מאומת' : 'Business Verified'),
+                  ? strings['verification_pending']!
+                  : strings['business_verified']!,
               style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
             Text(
               isPending
-                  ? (isHe
-                        ? 'שלחת כבר בקשת אימות. הצוות שלנו בודק את המסמכים שלך. בדרך כלל זה לוקח עד 48 שעות.'
-                        : 'You have already submitted a verification request. Our team is reviewing your documents. This usually takes up to 48 hours.')
-                  : (isHe
-                        ? 'מזל טוב! העסק שלך מאומת במערכת.'
-                        : 'Congratulations! Your business is verified in our system.'),
+                  ? strings['pending_message']!
+                  : strings['verified_message']!,
               textAlign: TextAlign.center,
               style: TextStyle(color: Colors.grey[600], height: 1.5),
             ),
@@ -407,7 +611,7 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
                     borderRadius: BorderRadius.circular(16),
                   ),
                 ),
-                child: Text(isHe ? 'חזור לפרופיל' : 'Back to Profile'),
+                child: Text(strings['back_to_profile']!),
               ),
             ),
           ],
@@ -416,7 +620,7 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
     );
   }
 
-  Widget _buildRejectedNotice(bool isHe) {
+  Widget _buildRejectedNotice(Map<String, String> strings) {
     return Container(
       margin: const EdgeInsets.only(bottom: 24),
       padding: const EdgeInsets.all(16),
@@ -431,9 +635,7 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
           const SizedBox(width: 12),
           Expanded(
             child: Text(
-              isHe
-                  ? 'בקשת האימות הקודמת שלך נדחתה. אנא בדוק את המסמכים ושלח שוב.'
-                  : 'Your previous verification request was rejected. Please check your documents and resubmit.',
+              strings['rejected_notice']!,
               style: TextStyle(
                 color: Colors.red[900],
                 fontSize: 13,
@@ -499,7 +701,7 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
   }
 
   Widget _dealerTypeCard(String type, String label, IconData icon) {
-    bool isSelected = _dealerType == type;
+    final isSelected = _dealerType == type;
     return InkWell(
       onTap: () => setState(() => _dealerType = type),
       child: Container(

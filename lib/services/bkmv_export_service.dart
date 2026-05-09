@@ -384,9 +384,8 @@ class BkmvExportService {
     }
 
     summaries.sort(
-      (a, b) => a.businessName.toLowerCase().compareTo(
-        b.businessName.toLowerCase(),
-      ),
+      (a, b) =>
+          a.businessName.toLowerCase().compareTo(b.businessName.toLowerCase()),
     );
     return summaries;
   }
@@ -501,10 +500,9 @@ class BkmvExportService {
       final documentTime = _timestampToTime(
         invoiceData['createdAt'] ?? logData['timestamp'],
       );
-      final clientDetails =
-          (logData['clientDetails'] is Map)
-              ? Map<String, dynamic>.from(logData['clientDetails'] as Map)
-              : const <String, dynamic>{};
+      final clientDetails = (logData['clientDetails'] is Map)
+          ? Map<String, dynamic>.from(logData['clientDetails'] as Map)
+          : const <String, dynamic>{};
       final clientName =
           (clientDetails['name'] ??
                   invoiceData['clientName'] ??
@@ -524,7 +522,7 @@ class BkmvExportService {
                 '')
             .toString(),
       );
-      
+
       final customerKey =
           (clientDetails['id'] ??
                   logData['customerId'] ??
@@ -555,7 +553,7 @@ class BkmvExportService {
             clientVatNumber: (invoiceData['customerVatNumber'] ?? '')
                 .toString(),
             valueDate: documentDate,
-            subtotal: subtotal, 
+            subtotal: subtotal,
             discount: discount,
             vatAmount: vatAmount,
             beforeTaxAmount: beforeTaxAmount,
@@ -596,7 +594,11 @@ class BkmvExportService {
       }
 
       if (bucket == 'receipts') {
-        final paymentDetailsList = _paymentDetails(logData, invoiceData, amount);
+        final paymentDetailsList = _paymentDetails(
+          logData,
+          invoiceData,
+          amount,
+        );
         var paymentLine = 1;
         for (final paymentDetails in paymentDetailsList) {
           addRecord(
@@ -731,7 +733,9 @@ class BkmvExportService {
 
     for (final logDoc in sortedLogs) {
       final logData = logDoc.data();
-      final documentNumber = (logData['documentNumber'] ?? '').toString().trim();
+      final documentNumber = (logData['documentNumber'] ?? '')
+          .toString()
+          .trim();
       if (documentNumber.isEmpty) {
         continue;
       }
@@ -892,22 +896,24 @@ class BkmvExportService {
     required String userId,
     required List<QueryDocumentSnapshot<Map<String, dynamic>>> logDocs,
   }) async {
-    final numbers = <String>{
+    final docIds = <String>{
       for (final doc in logDocs)
-        (doc.data()['documentNumber'] ?? '').toString().trim(),
+        ((doc.data()['invoiceDocId'] ?? doc.data()['documentNumber']) ?? '')
+            .toString()
+            .trim(),
     }..remove('');
 
-    if (numbers.isEmpty) {
+    if (docIds.isEmpty) {
       return const {};
     }
 
     final snapshots = await Future.wait(
-      numbers.map(
-        (number) => firestore
+      docIds.map(
+        (docId) => firestore
             .collection('users')
             .doc(userId)
             .collection('invoices')
-            .doc(number)
+            .doc(docId)
             .get(),
       ),
     );
@@ -1028,7 +1034,7 @@ class BkmvExportService {
       _fitNumeric(businessNumber, 9),
       _fitAlpha('aaaaaaaaaaaa', 15),
       _fitAlpha('aaaaaaaaaaaa', 50),
-      _fitAlpha('aaaaaaaaaaaa', 15), 
+      _fitAlpha('aaaaaaaaaaaa', 15),
       _fitAlpha('aaaaaaaaaaaa', 30),
       _fitAlpha('aaaaaaaaaaaa', 50),
       _fitAlpha('aaaaaaaa', 10),
@@ -1205,22 +1211,18 @@ class BkmvExportService {
     if (rawItems is List) {
       final items = rawItems
           .whereType<Map>()
-          .map(
-            (item) {
-              final quantity = _num(item['quantity'], fallback: 1);
-              final unitPrice = _num(
-                item['unitPriceWithoutTax'] 
-              );
-              final discountAmount = _num(item['discount']);
-              return _InvoiceItemRecord(
-                description: (item['description'] ?? 'Item').toString(),
-                quantity: quantity,
-                unitPrice: unitPrice,
-                discountAmount: discountAmount,
-                lineTotal: (quantity * unitPrice)+discountAmount,
-              );
-            },
-          )
+          .map((item) {
+            final quantity = _num(item['quantity'], fallback: 1);
+            final unitPrice = _num(item['unitPriceWithoutTax']);
+            final discountAmount = _num(item['discount']);
+            return _InvoiceItemRecord(
+              description: (item['description'] ?? 'Item').toString(),
+              quantity: quantity,
+              unitPrice: unitPrice,
+              discountAmount: discountAmount,
+              lineTotal: (quantity * unitPrice) + discountAmount,
+            );
+          })
           .where((item) => item.quantity > 0)
           .toList();
       if (items.isNotEmpty) {
@@ -1268,7 +1270,8 @@ class BkmvExportService {
     Map<String, dynamic> invoiceData,
     double defaultAmount,
   ) {
-    final rawMethods = logData['paymentMethods'] ?? invoiceData['paymentMethods'];
+    final rawMethods =
+        logData['paymentMethods'] ?? invoiceData['paymentMethods'];
     if (rawMethods is List) {
       final methods = rawMethods
           .whereType<Map>()
