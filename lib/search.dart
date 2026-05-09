@@ -12,6 +12,7 @@ import 'package:untitled1/services/subscription_access_service.dart';
 import 'package:untitled1/ptofile.dart';
 import 'package:untitled1/pages/location_manager_page.dart';
 import 'package:untitled1/utils/booking_mode.dart';
+import 'package:untitled1/utils/profession_localization.dart';
 import 'package:untitled1/widgets/skeleton.dart';
 
 class SearchPage extends StatefulWidget {
@@ -317,6 +318,27 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
     }
 
     return terms.toList();
+  }
+
+  List<String> _localizedWorkerProfessions(
+    Map<String, dynamic> worker,
+    String locale,
+  ) {
+    final rawProfessions =
+        (worker['professions'] as List?)
+            ?.map((entry) => entry.toString().trim())
+            .where((entry) => entry.isNotEmpty)
+            .toList() ??
+        <String>[];
+
+    return rawProfessions.map((value) {
+      final metadata = _professionByEnLower[_normalizeSearchText(value)];
+      final localized = metadata?[locale]?.toString().trim();
+      if (localized != null && localized.isNotEmpty) {
+        return localized;
+      }
+      return ProfessionLocalization.toLocalized(value, locale);
+    }).toList();
   }
 
   bool _defaultFilterByRadiusForProfession(Map<String, dynamic>? profession) {
@@ -2266,7 +2288,7 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
                           (w['professions'] as List).isNotEmpty) ...[
                         const SizedBox(height: 4),
                         Text(
-                          (w['professions'] as List).join(', '),
+                          _localizedWorkerProfessions(w, locale).join(', '),
                           style: const TextStyle(
                             color: Color(0xFF6B7280),
                             fontSize: 12,
