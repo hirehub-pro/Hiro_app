@@ -111,6 +111,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
   bool _isIdVerified = false;
   bool _isBusinessVerified = false;
   bool _isInsured = false;
+  bool _areProfessionsExpanded = false;
 
   String _distanceStr = "";
   double? _proLat;
@@ -432,6 +433,10 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
     return years < 0 ? null : years;
   }
 
+  bool _shouldCollapseProfessions(String text) {
+    return text.length > 80;
+  }
+
   Future<void> _fetchUserData() async {
     final currentUser = FirebaseAuth.instance.currentUser;
     final targetUid = widget.userId ?? currentUser?.uid;
@@ -488,6 +493,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
           } else {
             _userProfessions = [];
           }
+          _areProfessionsExpanded = false;
 
           _isIdVerified = data['isIdVerified'] ?? false;
           _isBusinessVerified = data['isVerified'] ?? false;
@@ -1798,19 +1804,74 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
                                         ],
                                       ),
                                       const SizedBox(height: 6),
-                                      if (_userProfessions.isNotEmpty)
-                                        Text(
-                                          _localizedProfessionList(
-                                            localeCode,
-                                          ).join(' • '),
-                                          style: TextStyle(
-                                            color: Colors.white.withValues(
-                                              alpha: 0.9,
-                                            ),
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.w400,
-                                          ),
+                                      if (_userProfessions.isNotEmpty) ...[
+                                        Builder(
+                                          builder: (context) {
+                                            final professionsText =
+                                                _localizedProfessionList(
+                                                  localeCode,
+                                                ).join(' • ');
+                                            final shouldCollapse =
+                                                _shouldCollapseProfessions(
+                                                  professionsText,
+                                                );
+
+                                            return Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  professionsText,
+                                                  maxLines:
+                                                      shouldCollapse &&
+                                                          !_areProfessionsExpanded
+                                                      ? 2
+                                                      : null,
+                                                  overflow:
+                                                      shouldCollapse &&
+                                                          !_areProfessionsExpanded
+                                                      ? TextOverflow.ellipsis
+                                                      : TextOverflow.visible,
+                                                  style: TextStyle(
+                                                    color: Colors.white
+                                                        .withValues(alpha: 0.9),
+                                                    fontSize: 16,
+                                                    fontWeight: FontWeight.w400,
+                                                  ),
+                                                ),
+                                                if (shouldCollapse)
+                                                  GestureDetector(
+                                                    onTap: () {
+                                                      setState(() {
+                                                        _areProfessionsExpanded =
+                                                            !_areProfessionsExpanded;
+                                                      });
+                                                    },
+                                                    child: Padding(
+                                                      padding:
+                                                          const EdgeInsets.only(
+                                                            top: 6,
+                                                          ),
+                                                      child: Text(
+                                                        _areProfessionsExpanded
+                                                            ? 'Show less'
+                                                            : 'Show more',
+                                                        style: const TextStyle(
+                                                          color: Color(
+                                                            0xFF93C5FD,
+                                                          ),
+                                                          fontSize: 14,
+                                                          fontWeight:
+                                                              FontWeight.w600,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ),
+                                              ],
+                                            );
+                                          },
                                         ),
+                                      ],
                                       const SizedBox(height: 16),
                                       Row(
                                         mainAxisAlignment:
