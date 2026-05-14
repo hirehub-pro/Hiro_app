@@ -70,6 +70,7 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
 
   bool _loading = false;
   bool _autoCompletingFromPaidWorker = false;
+  bool _professionSelectorOpen = false;
   bool _agreedToPolicy = false;
   bool _codeSent = false;
   String _verificationId = "";
@@ -573,7 +574,9 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
   }
 
   LatLng? _workCenter;
-  double _workRadius = 5000.0;
+  double _workRadius = 15000.0;
+  double _savedWorkRadius = 15000.0;
+  bool _disableWorkRadius = false;
   bool _hideSchedule = false;
   List<int> _disabledDays = [];
   TimeOfDay _workingHoursFrom = const TimeOfDay(hour: 8, minute: 0);
@@ -619,6 +622,19 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
       _phoneController.text =
           widget.pendingWorkerData!['phone'] ??
           (FirebaseAuth.instance.currentUser?.phoneNumber ?? '');
+      final pendingRadius = (widget.pendingWorkerData!['workRadius'] as num?)
+          ?.toDouble();
+      if (pendingRadius != null) {
+        if (pendingRadius <= 0) {
+          _disableWorkRadius = true;
+          _workRadius = 0;
+          _savedWorkRadius = 15000.0;
+        } else {
+          _disableWorkRadius = false;
+          _workRadius = pendingRadius;
+          _savedWorkRadius = pendingRadius;
+        }
+      }
       _agreedToPolicy = true;
     } else {
       _userType = UserType.normal;
@@ -782,12 +798,16 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
   }
 
   Future<void> _openProfessionSelector(Map<String, String> strings) async {
+    if (_professionSelectorOpen) return;
+    _professionSelectorOpen = true;
     final localeCode = Provider.of<LanguageProvider>(
       context,
       listen: false,
     ).locale.languageCode;
     final searchController = TextEditingController();
+    final searchFocusNode = FocusNode();
     final draftSelectedProfessions = List<String>.from(_selectedProfessions);
+    var isClosing = false;
 
     List<Map<String, dynamic>> filteredOptions(String query) {
       final normalizedQuery = query.trim().toLowerCase();
@@ -825,282 +845,316 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
       }
     }
 
-    final result = await showModalBottomSheet<List<String>>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setSheetState) {
-            final query = searchController.text;
-            final options = filteredOptions(query);
+    try {
+      final result = await showModalBottomSheet<List<String>>(
+        context: context,
+        isScrollControlled: true,
+        isDismissible: false,
+        enableDrag: false,
+        backgroundColor: Colors.transparent,
+        builder: (sheetContext) {
+          return StatefulBuilder(
+            builder: (sheetContext, setSheetState) {
+              final query = searchController.text;
+              final options = filteredOptions(query);
+              Future<void> closeSheet() async {
+                if (isClosing) return;
+                isClosing = true;
+                searchFocusNode.unfocus();
+                FocusScope.of(sheetContext).unfocus();
+                await WidgetsBinding.instance.endOfFrame;
+                if (!sheetContext.mounted) return;
+                Navigator.of(sheetContext).pop(draftSelectedProfessions);
+              }
 
-            return SafeArea(
-              top: false,
-              child: Padding(
-                padding: EdgeInsets.only(
-                  left: 12,
-                  right: 12,
-                  bottom: MediaQuery.of(context).viewInsets.bottom + 12,
-                ),
-                child: Container(
-                  height: MediaQuery.of(context).size.height * 0.78,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF8FBFF),
-                    borderRadius: BorderRadius.circular(28),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.16),
-                        blurRadius: 36,
-                        offset: const Offset(0, 20),
+              return PopScope<List<String>>(
+                canPop: false,
+                onPopInvokedWithResult: (didPop, result) {
+                  if (didPop) return;
+                  closeSheet();
+                },
+                child: SafeArea(
+                  top: false,
+                  child: Padding(
+                    padding: EdgeInsets.only(
+                      left: 12,
+                      right: 12,
+                      bottom:
+                          MediaQuery.of(sheetContext).viewInsets.bottom + 12,
+                    ),
+                    child: Container(
+                      height: MediaQuery.of(sheetContext).size.height * 0.78,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FBFF),
+                        borderRadius: BorderRadius.circular(28),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.16),
+                            blurRadius: 36,
+                            offset: const Offset(0, 20),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                  child: Column(
-                    children: [
-                      Container(
-                        width: 42,
-                        height: 4,
-                        margin: const EdgeInsets.only(top: 12, bottom: 18),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFCBD5E1),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 44,
-                              height: 44,
-                              decoration: BoxDecoration(
-                                color: const Color(
-                                  0xFF1976D2,
-                                ).withValues(alpha: 0.12),
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                              child: const Icon(
-                                Icons.work_outline_rounded,
-                                color: Color(0xFF1976D2),
-                              ),
-                            ),
-                            const SizedBox(width: 14),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    strings['professions']!,
-                                    style: const TextStyle(
-                                      color: Color(0xFF0F172A),
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    _selectedCountLabel(
-                                      localeCode,
-                                      draftSelectedProfessions.length,
-                                    ),
-                                    style: const TextStyle(
-                                      color: Color(0xFF64748B),
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            TextButton(
-                              onPressed: () => Navigator.of(
-                                context,
-                              ).pop(draftSelectedProfessions),
-                              child: Text(strings['close']!),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-                        child: _buildStyledTextField(
-                          controller: searchController,
-                          labelText: strings['professions']!,
-                          icon: Icons.search_rounded,
-                          hintText: strings['search_hint'],
-                          onChanged: (_) => setSheetState(() {}),
-                        ),
-                      ),
-                      if (draftSelectedProfessions.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
-                          child: Align(
-                            alignment: AlignmentDirectional.centerStart,
-                            child: Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
-                              children: draftSelectedProfessions.map((profession) {
-                                return InputChip(
-                                  label: Text(
-                                    _labelForStoredProfession(
-                                      profession,
-                                      localeCode,
-                                    ),
-                                  ),
-                                  selected: true,
-                                  onDeleted: () {
-                                    toggleDraftProfession(profession);
-                                    setSheetState(() {});
-                                  },
-                                  selectedColor: const Color(
-                                    0xFF1976D2,
-                                  ).withValues(alpha: 0.14),
-                                  deleteIconColor: const Color(0xFF1976D2),
-                                  side: BorderSide.none,
-                                  labelStyle: const TextStyle(
-                                    color: Color(0xFF0F4C9A),
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                );
-                              }).toList(),
+                      child: Column(
+                        children: [
+                          Container(
+                            width: 42,
+                            height: 4,
+                            margin: const EdgeInsets.only(top: 12, bottom: 18),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFCBD5E1),
+                              borderRadius: BorderRadius.circular(999),
                             ),
                           ),
-                        ),
-                      Expanded(
-                        child: options.isEmpty
-                            ? Center(
-                                child: Text(
-                                  _noProfessionMatchesLabel(localeCode),
-                                  style: const TextStyle(
-                                    color: Color(0xFF64748B),
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w600,
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 44,
+                                  height: 44,
+                                  decoration: BoxDecoration(
+                                    color: const Color(
+                                      0xFF1976D2,
+                                    ).withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                  child: const Icon(
+                                    Icons.work_outline_rounded,
+                                    color: Color(0xFF1976D2),
                                   ),
                                 ),
-                              )
-                            : ListView.separated(
-                                padding: const EdgeInsets.fromLTRB(
-                                  14,
-                                  0,
-                                  14,
-                                  14,
+                                const SizedBox(width: 14),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        strings['professions']!,
+                                        style: const TextStyle(
+                                          color: Color(0xFF0F172A),
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        _selectedCountLabel(
+                                          localeCode,
+                                          draftSelectedProfessions.length,
+                                        ),
+                                        style: const TextStyle(
+                                          color: Color(0xFF64748B),
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
-                                itemCount: options.length,
-                                separatorBuilder: (context, index) =>
-                                    const SizedBox(height: 8),
-                                itemBuilder: (context, index) {
-                                  final item = options[index];
-                                  final canonical =
-                                      _professionCanonicalValue(item);
-                                  final label = _professionLabel(
-                                    item,
-                                    localeCode,
-                                  );
-                                  final isSelected = draftSelectedProfessions
-                                      .contains(canonical);
-
-                                  return Material(
-                                    color: Colors.white,
-                                    borderRadius: BorderRadius.circular(18),
-                                    child: InkWell(
-                                      borderRadius: BorderRadius.circular(18),
-                                      onTap: () {
-                                        toggleDraftProfession(canonical);
+                                TextButton(
+                                  onPressed: closeSheet,
+                                  child: Text(strings['close']!),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                            child: _buildStyledTextField(
+                              controller: searchController,
+                              labelText: strings['professions']!,
+                              icon: Icons.search_rounded,
+                              hintText: strings['search_hint'],
+                              focusNode: searchFocusNode,
+                              onChanged: (_) => setSheetState(() {}),
+                            ),
+                          ),
+                          if (draftSelectedProfessions.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
+                              child: Align(
+                                alignment: AlignmentDirectional.centerStart,
+                                child: Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children: draftSelectedProfessions.map((
+                                    profession,
+                                  ) {
+                                    return InputChip(
+                                      label: Text(
+                                        _labelForStoredProfession(
+                                          profession,
+                                          localeCode,
+                                        ),
+                                      ),
+                                      selected: true,
+                                      onDeleted: () {
+                                        toggleDraftProfession(profession);
                                         setSheetState(() {});
                                       },
-                                      child: AnimatedContainer(
-                                        duration: const Duration(
-                                          milliseconds: 180,
-                                        ),
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 16,
-                                          vertical: 14,
-                                        ),
-                                        decoration: BoxDecoration(
+                                      selectedColor: const Color(
+                                        0xFF1976D2,
+                                      ).withValues(alpha: 0.14),
+                                      deleteIconColor: const Color(0xFF1976D2),
+                                      side: BorderSide.none,
+                                      labelStyle: const TextStyle(
+                                        color: Color(0xFF0F4C9A),
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    );
+                                  }).toList(),
+                                ),
+                              ),
+                            ),
+                          Expanded(
+                            child: options.isEmpty
+                                ? Center(
+                                    child: Text(
+                                      _noProfessionMatchesLabel(localeCode),
+                                      style: const TextStyle(
+                                        color: Color(0xFF64748B),
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  )
+                                : ListView.separated(
+                                    padding: const EdgeInsets.fromLTRB(
+                                      14,
+                                      0,
+                                      14,
+                                      14,
+                                    ),
+                                    itemCount: options.length,
+                                    separatorBuilder: (context, index) =>
+                                        const SizedBox(height: 8),
+                                    itemBuilder: (context, index) {
+                                      final item = options[index];
+                                      final canonical =
+                                          _professionCanonicalValue(item);
+                                      final label = _professionLabel(
+                                        item,
+                                        localeCode,
+                                      );
+                                      final isSelected =
+                                          draftSelectedProfessions.contains(
+                                            canonical,
+                                          );
+
+                                      return Material(
+                                        color: Colors.white,
+                                        borderRadius: BorderRadius.circular(18),
+                                        child: InkWell(
                                           borderRadius: BorderRadius.circular(
                                             18,
                                           ),
-                                          border: Border.all(
-                                            color: isSelected
-                                                ? const Color(0xFF1976D2)
-                                                : const Color(0xFFE2E8F0),
-                                            width: isSelected ? 1.4 : 1,
-                                          ),
-                                          color: isSelected
-                                              ? const Color(
-                                                  0xFF1976D2,
-                                                ).withValues(alpha: 0.08)
-                                              : Colors.white,
-                                        ),
-                                        child: Row(
-                                          children: [
-                                            Container(
-                                              width: 22,
-                                              height: 22,
-                                              decoration: BoxDecoration(
-                                                shape: BoxShape.circle,
+                                          onTap: () {
+                                            toggleDraftProfession(canonical);
+                                            setSheetState(() {});
+                                          },
+                                          child: AnimatedContainer(
+                                            duration: const Duration(
+                                              milliseconds: 180,
+                                            ),
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 16,
+                                              vertical: 14,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              borderRadius:
+                                                  BorderRadius.circular(18),
+                                              border: Border.all(
                                                 color: isSelected
                                                     ? const Color(0xFF1976D2)
-                                                    : Colors.transparent,
-                                                border: Border.all(
-                                                  color: isSelected
-                                                      ? const Color(
-                                                          0xFF1976D2,
-                                                        )
-                                                      : const Color(
-                                                          0xFFCBD5E1,
-                                                        ),
-                                                  width: 1.4,
-                                                ),
+                                                    : const Color(0xFFE2E8F0),
+                                                width: isSelected ? 1.4 : 1,
                                               ),
-                                              child: isSelected
-                                                  ? const Icon(
-                                                      Icons.check,
-                                                      size: 14,
-                                                      color: Colors.white,
-                                                    )
-                                                  : null,
+                                              color: isSelected
+                                                  ? const Color(
+                                                      0xFF1976D2,
+                                                    ).withValues(alpha: 0.08)
+                                                  : Colors.white,
                                             ),
-                                            const SizedBox(width: 14),
-                                            Expanded(
-                                              child: Text(
-                                                label,
-                                                style: TextStyle(
-                                                  color: const Color(
-                                                    0xFF0F172A,
+                                            child: Row(
+                                              children: [
+                                                Container(
+                                                  width: 22,
+                                                  height: 22,
+                                                  decoration: BoxDecoration(
+                                                    shape: BoxShape.circle,
+                                                    color: isSelected
+                                                        ? const Color(
+                                                            0xFF1976D2,
+                                                          )
+                                                        : Colors.transparent,
+                                                    border: Border.all(
+                                                      color: isSelected
+                                                          ? const Color(
+                                                              0xFF1976D2,
+                                                            )
+                                                          : const Color(
+                                                              0xFFCBD5E1,
+                                                            ),
+                                                      width: 1.4,
+                                                    ),
                                                   ),
-                                                  fontSize: 15,
-                                                  fontWeight: isSelected
-                                                      ? FontWeight.w800
-                                                      : FontWeight.w600,
+                                                  child: isSelected
+                                                      ? const Icon(
+                                                          Icons.check,
+                                                          size: 14,
+                                                          color: Colors.white,
+                                                        )
+                                                      : null,
                                                 ),
-                                              ),
+                                                const SizedBox(width: 14),
+                                                Expanded(
+                                                  child: Text(
+                                                    label,
+                                                    style: TextStyle(
+                                                      color: const Color(
+                                                        0xFF0F172A,
+                                                      ),
+                                                      fontSize: 15,
+                                                      fontWeight: isSelected
+                                                          ? FontWeight.w800
+                                                          : FontWeight.w600,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
                                             ),
-                                          ],
+                                          ),
                                         ),
-                                      ),
-                                    ),
-                                  );
-                                },
-                              ),
+                                      );
+                                    },
+                                  ),
+                          ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
                 ),
-              ),
-            );
-          },
-        );
-      },
-    );
+              );
+            },
+          );
+        },
+      );
 
-    searchController.dispose();
-    if (!mounted || result == null) return;
-
-    setState(() {
-      _selectedProfessions = result.toSet().toList();
-    });
+      if (!mounted || result == null) return;
+      setState(() {
+        _selectedProfessions = result.toSet().toList();
+      });
+    } finally {
+      FocusManager.instance.primaryFocus?.unfocus();
+      // The modal route can still build during its reverse animation after
+      // showModalBottomSheet completes, so keep field resources alive briefly.
+      await Future<void>.delayed(const Duration(milliseconds: 350));
+      searchController.dispose();
+      searchFocusNode.dispose();
+      _professionSelectorOpen = false;
+    }
   }
 
   String _labelForStoredProfession(String profession, String localeCode) {
@@ -1314,6 +1368,8 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
           'current_loc': 'מיקום נוכחי',
           'pick_map': 'בחר מהמפה',
           'work_radius': 'רדיוס עבודה',
+          'work_radius_help': 'מגדיר עד לאיזה מרחק השירות שלך מגיע.',
+          'disable_radius': 'לא מגיע ללקוח (הלקוח מגיע אליי)',
           'hide_schedule': 'הסתר לוח זמנים מאחרים',
           'working_hours': 'שעות עבודה',
           'available_from': 'זמין מ-',
@@ -1412,6 +1468,8 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
           'current_loc': 'الموقع الحالي',
           'pick_map': 'اختر من الخريطة',
           'work_radius': 'نطاق العمل',
+          'work_radius_help': 'يحدد إلى أي مسافة تصل خدمتك.',
+          'disable_radius': 'لا أصل للعميل (العميل يأتي إليّ)',
           'hide_schedule': 'إخفاء الجدول عن الآخرين',
           'working_hours': 'ساعات العمل',
           'available_from': 'متاح من',
@@ -1516,6 +1574,9 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
           'current_loc': 'Текущее местоположение',
           'pick_map': 'Выбрать на карте',
           'work_radius': 'Радиус работы',
+          'work_radius_help':
+              'Определяет, на какое расстояние распространяется ваша услуга.',
+          'disable_radius': 'Я не выезжаю к клиенту (клиент приходит ко мне)',
           'hide_schedule': 'Скрыть расписание от других',
           'working_hours': 'Рабочие часы',
           'available_from': 'Доступен с',
@@ -1611,6 +1672,8 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
           'current_loc': 'የአሁኑ ቦታ',
           'pick_map': 'በካርታ ላይ ምረጥ',
           'work_radius': 'የስራ ክልል',
+          'work_radius_help': 'አገልግሎትዎ እስከ ምን ርቀት እንደሚደርስ ይወስናል።',
+          'disable_radius': 'ወደ ደንበኛ አልመጣም (ደንበኛው ወደ እኔ ይመጣል)',
           'hide_schedule': 'መርሃ ግብርን ከሌሎች ሰዎች ደብቅ',
           'working_hours': 'የስራ ሰዓታት',
           'available_from': 'የሚገኝ ከ',
@@ -1716,6 +1779,10 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
           'current_loc': 'Current Location',
           'pick_map': 'Select on Map',
           'work_radius': 'Work Radius',
+          'work_radius_help':
+              'Defines how far your service reaches from your location.',
+          'disable_radius':
+              'I do not travel to customers (customers come to me)',
           'hide_schedule': 'Hide schedule from others',
           'working_hours': 'Working Hours',
           'available_from': 'Available from',
@@ -1798,9 +1865,9 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
       if (isRegistered) {
         if (mounted) {
           setState(() => _loading = false);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(_phoneAlreadyExistsMessage())),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(_phoneAlreadyExistsMessage())));
         }
         return;
       }
@@ -3181,6 +3248,45 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
             ],
           ),
           const SizedBox(height: 12),
+          Text(
+            strings['work_radius_help']!,
+            style: const TextStyle(
+              fontSize: 12.5,
+              color: Color(0xFF6B7280),
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 12),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            value: _disableWorkRadius,
+            activeThumbColor: const Color(0xFF1976D2),
+            activeTrackColor: const Color(0xFFB9D9F6),
+            title: Text(
+              strings['disable_radius']!,
+              style: const TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF374151),
+              ),
+            ),
+            onChanged: (value) {
+              setState(() {
+                _disableWorkRadius = value;
+                if (_disableWorkRadius) {
+                  if (_workRadius > 0) {
+                    _savedWorkRadius = _workRadius;
+                  }
+                  _workRadius = 0;
+                } else {
+                  _workRadius = _savedWorkRadius > 0
+                      ? _savedWorkRadius
+                      : 15000.0;
+                }
+              });
+            },
+          ),
+          const SizedBox(height: 6),
           Wrap(
             alignment: WrapAlignment.spaceBetween,
             crossAxisAlignment: WrapCrossAlignment.center,
@@ -3199,26 +3305,31 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
                 ),
               ),
               TextButton.icon(
-                onPressed: () async {
-                  final result = await Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => MapRadiusPicker(
-                        initialCenter: _workCenter,
-                        initialRadius: _workRadius,
-                      ),
-                    ),
-                  );
-                  if (result != null) {
-                    setState(() {
-                      _workCenter = result['center'];
-                      _workRadius = result['radius'];
-                    });
-                    if (_workCenter != null) {
-                      _updateTownFromLocation(_workCenter!);
-                    }
-                  }
-                },
+                onPressed: _disableWorkRadius
+                    ? null
+                    : () async {
+                        final result = await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => MapRadiusPicker(
+                              initialCenter: _workCenter,
+                              initialRadius: _workRadius,
+                            ),
+                          ),
+                        );
+                        if (result != null) {
+                          setState(() {
+                            _workCenter = result['center'];
+                            _workRadius = result['radius'];
+                            if (_workRadius > 0) {
+                              _savedWorkRadius = _workRadius;
+                            }
+                          });
+                          if (_workCenter != null) {
+                            _updateTownFromLocation(_workCenter!);
+                          }
+                        }
+                      },
                 icon: const Icon(Icons.edit_location_alt_rounded, size: 18),
                 label: Text(strings['select_radius']!),
                 style: TextButton.styleFrom(

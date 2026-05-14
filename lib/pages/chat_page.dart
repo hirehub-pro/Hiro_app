@@ -1432,6 +1432,28 @@ class _ChatPageState extends State<ChatPage> {
                   height: 190,
                   width: 220,
                   fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) {
+                    _invalidateBrokenLocalAttachment(
+                      url: url,
+                      localPath: localPath,
+                    );
+                    return CachedNetworkImage(
+                      imageUrl: url,
+                      width: 220,
+                      height: 190,
+                      fit: BoxFit.cover,
+                      placeholder: (context, _) => const SizedBox(
+                        height: 190,
+                        width: 220,
+                        child: Center(child: CircularProgressIndicator()),
+                      ),
+                      errorWidget: (context, _, __) => const SizedBox(
+                        height: 190,
+                        width: 220,
+                        child: Icon(Icons.error),
+                      ),
+                    );
+                  },
                 )
               else
                 CachedNetworkImage(
@@ -2274,6 +2296,14 @@ class _ChatPageState extends State<ChatPage> {
       if (mounted) setState(() {});
       return localPath;
     } catch (e) {
+      try {
+        final partial = File(localPath);
+        if (await partial.exists()) {
+          await partial.delete();
+        }
+      } catch (_) {}
+
+      _localMediaPaths.remove(url);
       _downloadProgress.remove(url);
       _downloadingUrls.remove(url);
       _failedDownloads.add(url);
@@ -2281,6 +2311,26 @@ class _ChatPageState extends State<ChatPage> {
       debugPrint('Attachment download error: $e');
       return null;
     }
+  }
+
+  void _invalidateBrokenLocalAttachment({
+    required String url,
+    required String localPath,
+  }) {
+    _localMediaPaths.remove(url);
+    _localResolveFutures.remove(url);
+    _failedDownloads.remove(url);
+
+    unawaited(() async {
+      try {
+        final file = File(localPath);
+        if (await file.exists()) {
+          await file.delete();
+        }
+      } catch (e) {
+        debugPrint('Failed to delete broken local attachment: $e');
+      }
+    }());
   }
 
   Future<void> _retryAttachmentDownload({

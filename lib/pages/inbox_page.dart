@@ -26,6 +26,18 @@ class _InboxPageState extends State<InboxPage> {
   final Set<String> _phoneFetchInProgressIds = {};
   Set<String>? _currentUserPhoneTokens;
 
+  Map<String, dynamic> _chatUserNames(Map<String, dynamic> data) {
+    final camel = data['userNames'];
+    if (camel is Map<String, dynamic>) return camel;
+    if (camel is Map) return Map<String, dynamic>.from(camel);
+
+    final snake = data['user_names'];
+    if (snake is Map<String, dynamic>) return snake;
+    if (snake is Map) return Map<String, dynamic>.from(snake);
+
+    return const <String, dynamic>{};
+  }
+
   String _t(
     String localeCode, {
     required String en,
@@ -226,8 +238,7 @@ class _InboxPageState extends State<InboxPage> {
 
                     docs = docs.where((doc) {
                       final data = doc.data() as Map<String, dynamic>;
-                      final userNames =
-                          data['userNames'] as Map<String, dynamic>? ?? {};
+                      final userNames = _chatUserNames(data);
                       final users = data['users'] as List<dynamic>? ?? [];
                       final String otherUserId = users.firstWhere(
                         (id) => id != user.uid,
@@ -287,7 +298,7 @@ class _InboxPageState extends State<InboxPage> {
                       if (otherUserId.isEmpty) return const SizedBox.shrink();
 
                       final Map<String, dynamic> userNames =
-                          data['userNames'] ?? {};
+                          _chatUserNames(data);
                       final String otherUserName =
                           userNames[otherUserId] ??
                           _t(

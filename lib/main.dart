@@ -24,8 +24,6 @@ import 'package:untitled1/services/subscription_access_service.dart';
 import 'package:untitled1/sign_in.dart';
 import 'services/firebase_options.dart';
 
-final GlobalKey<NavigatorState> _rootNavigatorKey = GlobalKey<NavigatorState>();
-
 void main() async {
   WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
 
@@ -55,6 +53,8 @@ class _MyAppState extends State<MyApp> {
   static const Color _brandBlue = Color(0xFF1976D2);
   static const Color _brandNavy = Color(0xFF0F172A);
   static const Color _pageBackground = Color(0xFFF6F8FB);
+  final GlobalKey<NavigatorState> _rootNavigatorKey =
+      GlobalKey<NavigatorState>();
   bool _isInitializing = true;
   bool _isFirebaseInitialized = false;
   Object? _initializationError;
