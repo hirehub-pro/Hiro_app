@@ -2722,6 +2722,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
                                     workerName: _userName,
                                     workerPhone: _phoneNumber,
                                     workerEmail: _email,
+                                    initialDocType: 'quote',
                                   )
                                 : const VerifyBusinessPage(),
                           ),

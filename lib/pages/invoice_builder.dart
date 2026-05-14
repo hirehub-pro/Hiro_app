@@ -195,6 +195,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
 
   List<Map<String, String>> _logTargetsForDocType(String docType) {
     switch (docType) {
+      case 'quote':
+        return const [];
       case 'receipt':
         return [
           {'bucket': 'receipts'},
@@ -275,7 +277,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     final now = DateTime.now();
     final dateStr = intl.DateFormat('yyyyMMdd').format(now);
     final timestamp = FieldValue.serverTimestamp();
-    final customerId = _clientNameController.text.isNotEmpty
+    final customerId = _clientIdController.text.trim().isNotEmpty
+        ? _clientIdController.text.trim()
+        : _clientNameController.text.isNotEmpty
         ? _clientNameController.text
         : null;
     final docType = _selectedDocType;
@@ -362,6 +366,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'name': _clientNameController.text,
       'address': _clientAddressController.text,
       'phone': _clientPhoneController.text,
+      'taxId': _clientIdController.text.trim(),
     };
     final businessDetails = {
       'businessId': _businessId,
@@ -369,6 +374,66 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'dealerType': _dealerType,
       'isBusinessVerified': _isBusinessVerified,
     };
+
+    if (docType == 'quote') {
+      final fileName =
+          'quote_${userId}_${DateTime.now().millisecondsSinceEpoch}.pdf';
+      final storagePath = 'invoices/$userId/$fileName';
+      final ref = firebase_storage.FirebaseStorage.instance.ref().child(
+        storagePath,
+      );
+      await ref.putData(pdfBytes);
+      final downloadUrl = await ref.getDownloadURL();
+      final quoteDocRef = invoicesRef.doc();
+      final clientName = _clientNameController.text.trim();
+      final savedQuoteName = clientName.isNotEmpty
+          ? '${_labelForDocType(docType)} - $clientName'
+          : _labelForDocType(docType);
+      final quoteData = {
+        'type': docType,
+        'docType': docType,
+        'name': savedQuoteName,
+        'fileName': fileName,
+        'url': downloadUrl,
+        'storagePath': storagePath,
+        'amount': signedTotalAmount,
+        'vatAmount': vatAmount,
+        'clientName': _clientNameController.text,
+        'clientAddress': _clientAddressController.text,
+        'clientPhone': _clientPhoneController.text,
+        'clientTaxId': _clientIdController.text.trim(),
+        'items': _items
+            .map(
+              (item) => {
+                'description': item.description,
+                'quantity': item.quantity,
+                'price': item.price,
+                'priceTaxMode': item.isPriceBeforeTax
+                    ? 'before_tax'
+                    : 'after_tax',
+              },
+            )
+            .toList(),
+        'priceTaxModeDefault': _selectedPriceTaxMode,
+        'hasDiscount': _hasDiscount,
+        'discountAmount': _discountAmount,
+        'notes': _notesController.text,
+        'paymentMethod': _paymentMethods.isNotEmpty
+            ? _paymentMethods.first.method
+            : 'cash',
+        'paymentMethods': paymentMethodsData,
+        'paymentAmountTotal': paymentAmountTotal,
+        'date': dateStr,
+        'invoiceDocId': quoteDocRef.id,
+        'createdAt': timestamp,
+      };
+      await quoteDocRef.set(quoteData);
+      await savedInvoicesRef.add({
+        ...quoteData,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+      return;
+    }
 
     late int nextNumber;
     late String nextDocumentNumber;
@@ -405,6 +470,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         'clientName': _clientNameController.text,
         'clientAddress': _clientAddressController.text,
         'clientPhone': _clientPhoneController.text,
+        'clientTaxId': _clientIdController.text.trim(),
         'items': _items
             .map(
               (item) => {
@@ -492,6 +558,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'clientName': _clientNameController.text,
           'clientAddress': _clientAddressController.text,
           'clientPhone': _clientPhoneController.text,
+          'clientTaxId': _clientIdController.text.trim(),
           'paymentMethod': _paymentMethods.isNotEmpty
               ? _paymentMethods.first.method
               : 'cash',
@@ -548,6 +615,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'invoiceDocId': invoiceDocId,
       'docType': docType,
       'clientName': clientName,
+      'clientTaxId': _clientIdController.text.trim(),
       'paymentMethod': _paymentMethods.isNotEmpty
           ? _paymentMethods.first.method
           : 'cash',
@@ -568,7 +636,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           : {'creditNoteLegal': creditNoteLegalData},
     };
     await savedInvoicesRef.add(savedInvoiceData);
-    await _addToTotalEarned(userId: userId, amount: signedTotalAmount);
+    if (docType != 'quote') {
+      await _addToTotalEarned(userId: userId, amount: signedTotalAmount);
+    }
     await Future.wait(
       logEntries.map((entry) async {
         final logFileRef =
@@ -657,6 +727,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
 
   String _labelForDocType(String docType) {
     switch (docType) {
+      case 'quote':
+        return 'Quote';
       case 'invoice':
         return 'Invoice';
       case 'invoice_receipt':
@@ -672,6 +744,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   final _clientNameController = TextEditingController();
   final _clientAddressController = TextEditingController();
   final _clientPhoneController = TextEditingController();
+  final _clientIdController = TextEditingController();
   final _itemDescController = TextEditingController();
   final _itemQtyController = TextEditingController(text: "1");
   final _itemPriceController = TextEditingController();
@@ -691,11 +764,15 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   String _invoiceNumber = "";
   int? _currentDocumentCounter;
   bool _isLoadingCounterAssignment = false;
-  static const double _vatRate = 0.17;
+  double _vatRate = 0.17;
   String _selectedPriceTaxMode = 'after_tax';
   bool _hasDiscount = false;
 
   bool get _isCreditNote => _selectedDocType == 'credit_note';
+  bool get _isQuote => _selectedDocType == 'quote';
+  bool get _requiresSequentialDocumentNumber => !_isQuote;
+  bool get _showsPaymentMethodSection =>
+      _selectedDocType != 'quote' && _selectedDocType != 'invoice';
   bool get _usesVat => _isLicensedDealerType && _selectedDocType != 'receipt';
 
   double _unitPriceAfterTax(InvoiceItem item) {
@@ -756,6 +833,39 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   double _signedItemTotal(InvoiceItem item) =>
       _isCreditNote ? -_itemTotalAfterTax(item) : _itemTotalAfterTax(item);
 
+  double _parseVatPercent(dynamic value) {
+    final parsed = switch (value) {
+      num() => value.toDouble(),
+      String() => double.tryParse(value.trim().replaceAll(',', '.')),
+      _ => null,
+    };
+    if (parsed == null || parsed <= 0 || parsed > 100) {
+      return 17.0;
+    }
+    return parsed;
+  }
+
+  String _formattedVatPercent() {
+    final percent = _vatRate * 100;
+    final rounded = percent.toStringAsFixed(2);
+    return rounded.contains('.')
+        ? rounded.replaceFirst(RegExp(r'\.?0+$'), '')
+        : rounded;
+  }
+
+  String _vatLabel(bool isRtl) {
+    final percent = _formattedVatPercent();
+    return isRtl ? 'מע"מ ($percent%):' : 'VAT ($percent%):';
+  }
+
+  String _previewFileName() {
+    if (_invoiceNumber.isNotEmpty) {
+      return '$_invoiceNumber.pdf';
+    }
+    final datePart = intl.DateFormat('yyyy-MM-dd').format(DateTime.now());
+    return '${_labelForDocType(_selectedDocType).toLowerCase().replaceAll(' ', '_')}_$datePart.pdf';
+  }
+
   String _creditDeliveryMethodLabel(
     Map<String, String> strings,
     String method,
@@ -790,7 +900,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   String? _businessId;
   String? _businessAddress;
   bool _isBusinessVerified = false;
-  String _selectedDocType = 'receipt';
+  String _selectedDocType = 'quote';
 
   pw.Font? _cachedFont;
   pw.Font? _cachedFontBold;
@@ -817,7 +927,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     }
 
     _applyInitialTemplate();
+    _prefillClientBusinessIdFromReceiver();
     _fetchWorkerInfo();
+    _loadVatRate();
     _loadAssets();
   }
 
@@ -889,6 +1001,32 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       );
   }
 
+  Future<void> _prefillClientBusinessIdFromReceiver() async {
+    final receiverId = widget.receiverId?.trim();
+    if (receiverId == null || receiverId.isEmpty) return;
+    if (_clientIdController.text.trim().isNotEmpty) return;
+
+    try {
+      final verificationDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(receiverId)
+          .collection('verification_info')
+          .doc('latest')
+          .get();
+      final businessId = verificationDoc.data()?['businessId']
+          ?.toString()
+          .trim();
+      if (!mounted) return;
+      if (businessId != null && businessId.isNotEmpty) {
+        setState(() {
+          _clientIdController.text = businessId;
+        });
+      }
+    } catch (e) {
+      dev.log('Error prefilling client business ID: $e');
+    }
+  }
+
   Future<void> _fetchWorkerInfo() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
@@ -923,7 +1061,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                 if (_isBusinessVerified && _isLicensedDealerType) {
                   _selectedDocType = 'invoice_receipt';
                 } else {
-                  _selectedDocType = 'receipt';
+                  _selectedDocType = 'quote';
                 }
               }
             });
@@ -936,11 +1074,28 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     }
   }
 
+  Future<void> _loadVatRate() async {
+    try {
+      final systemDoc = await FirebaseFirestore.instance
+          .collection('metadata')
+          .doc('system')
+          .get();
+      final vatPercent = _parseVatPercent(systemDoc.data()?['vatPercent']);
+      if (!mounted) return;
+      setState(() {
+        _vatRate = vatPercent / 100;
+      });
+    } catch (e) {
+      dev.log('Error loading VAT rate: $e');
+    }
+  }
+
   @override
   void dispose() {
     _clientNameController.dispose();
     _clientAddressController.dispose();
     _clientPhoneController.dispose();
+    _clientIdController.dispose();
     _itemDescController.dispose();
     _itemQtyController.dispose();
     _itemPriceController.dispose();
@@ -995,10 +1150,11 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'title': 'מפיק מסמכים עסקיים',
           'client_info': 'פרטי הלקוח:',
           'client_name': 'שם הלקוח',
+          'client_id': 'מס\' עוסק / ת.ז. / ח.פ.',
           'client_address': 'כתובת הלקוח',
           'client_phone': 'טלפון הלקוח',
           'client_details_required':
-              'יש למלא את כל פרטי הלקוח: שם, טלפון וכתובת.',
+              'יש למלא לפחות את שם הלקוח.',
           'items': 'פירוט פריטים ושירותים',
           'desc': 'תיאור השירות/מוצר',
           'qty': 'כמות',
@@ -1031,13 +1187,14 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'notes': 'הערות נוספות ותנאי תשלום',
           'subtotal': 'סה"כ לפני מע"מ',
           'doc_type': 'סוג המסמך',
+          'quote': 'הצעת מחיר',
           'receipt': 'קבלה',
           'invoice': 'חשבונית מס',
           'invoice_receipt': 'חשבונית מס / קבלה',
           'credit_note': 'הודעת זיכוי',
           'licensed_only': 'זמין לעוסק מורשה מאומת בלבד',
           'vat_id': 'ח.פ / ע.מ:',
-          'vat': 'מע"מ (17%):',
+          'vat': 'מע"מ:',
           'original': 'מקור',
           'business_name': 'שם העסק:',
           'tax_invoice_num': 'חשבונית מס מס\':',
@@ -1079,10 +1236,11 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'title': 'Business Document Builder',
           'client_info': 'Client Details:',
           'client_name': 'Client Name',
+          'client_id': 'Business No. / ID / Tax ID',
           'client_address': 'Client Address',
           'client_phone': 'Client Phone',
           'client_details_required':
-              'Please fill all client details: name, phone, and address.',
+              'Please fill at least the client name.',
           'items': 'Service Items & Details',
           'desc': 'Description',
           'qty': 'Qty',
@@ -1115,13 +1273,14 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'notes': 'Notes / Payment Terms',
           'subtotal': 'Subtotal (Excl. VAT)',
           'doc_type': 'Document Type',
+          'quote': 'Quote',
           'receipt': 'Receipt',
           'invoice': 'Tax Invoice',
           'invoice_receipt': 'Tax Invoice / Receipt',
           'credit_note': 'Credit Note',
           'licensed_only': 'Verified Licensed Dealers only',
           'vat_id': 'VAT ID / Tax ID:',
-          'vat': 'VAT (17%):',
+          'vat': 'VAT:',
           'original': 'Original',
           'business_name': 'Business Name:',
           'tax_invoice_num': 'Tax Invoice No:',
@@ -1166,6 +1325,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'title': 'Business Document Builder',
       'preparing': 'Preparing document...',
       'doc_type': 'Document Type',
+      'quote': 'Quote',
       'receipt': 'Receipt',
       'invoice': 'Tax Invoice',
       'invoice_receipt': 'Tax Invoice / Receipt',
@@ -1173,10 +1333,11 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'invoice_counter': 'Invoice Counter',
       'client_info': 'Client Details:',
       'client_name': 'Client Name',
+      'client_id': 'Business No. / ID / Tax ID',
       'client_phone': 'Client Phone',
       'client_address': 'Client Address',
       'client_details_required':
-          'Please fill all client details: name, phone, and address.',
+          'Please fill at least the client name.',
       'items': 'Service Items & Details',
       'desc': 'Description',
       'qty': 'Qty',
@@ -1206,7 +1367,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'original': 'Original',
       'business_address': 'Business Address:',
       'subtotal': 'Subtotal (Excl. VAT)',
-      'vat': 'VAT (17%):',
+      'vat': 'VAT:',
       'legal_disclaimer':
           'Generated via hiro. This is a computerized document authorized by the Israel Tax Authority. Original.',
       'licensed_dealer': 'Licensed Dealer',
@@ -1276,6 +1437,17 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   Future<void> _loadCurrentDocumentNumber({
     bool promptIfMissing = false,
   }) async {
+    if (!_requiresSequentialDocumentNumber) {
+      if (mounted) {
+        setState(() {
+          _currentDocumentCounter = null;
+          _invoiceNumber = '';
+          _isLoadingCounterAssignment = false;
+        });
+      }
+      return;
+    }
+
     final ref = _counterRefForDocType(_selectedDocType);
     if (ref == null) return;
 
@@ -1322,6 +1494,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   }
 
   Future<bool> _ensureDocumentNumberAssigned() async {
+    if (!_requiresSequentialDocumentNumber) {
+      return true;
+    }
     if (_currentDocumentCounter != null && _invoiceNumber.isNotEmpty) {
       return true;
     }
@@ -1425,11 +1600,14 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   }
 
   bool get _isWaitingForStartingNumber =>
+      _requiresSequentialDocumentNumber &&
       !_isLoadingCounterAssignment &&
       (_currentDocumentCounter == null || _invoiceNumber.isEmpty);
 
   String _documentTypeDisplayName(Map<String, String> strings, String docType) {
     switch (docType) {
+      case 'quote':
+        return strings['quote']!;
       case 'invoice':
         return strings['invoice']!;
       case 'invoice_receipt':
@@ -1479,10 +1657,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
 
   bool _validateClientDetails() {
     final strings = _getLocalizedStrings(context, listen: false);
-    final missingClientDetails =
-        _clientNameController.text.trim().isEmpty ||
-        _clientPhoneController.text.trim().isEmpty ||
-        _clientAddressController.text.trim().isEmpty;
+    final missingClientDetails = _clientNameController.text.trim().isEmpty;
 
     if (!missingClientDetails) return true;
 
@@ -1491,8 +1666,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       listen: false,
     ).locale.languageCode;
     final fallback = (locale == 'he' || locale == 'ar')
-        ? 'יש למלא את כל פרטי הלקוח: שם, טלפון וכתובת.'
-        : 'Please fill all client details: name, phone, and address.';
+        ? 'יש למלא לפחות את שם הלקוח.'
+        : 'Please fill at least the client name.';
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(strings['client_details_required'] ?? fallback)),
@@ -1558,6 +1733,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   }
 
   bool _validatePaymentMethods() {
+    if (!_showsPaymentMethodSection) return true;
+
     final strings = _getLocalizedStrings(context, listen: false);
     final locale = Provider.of<LanguageProvider>(
       context,
@@ -1796,7 +1973,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         MaterialPageRoute(
           builder: (_) => InvoicePreviewPage(
             pdfBytes: pdfBytes,
-            fileName: '$_invoiceNumber.pdf',
+            fileName: _previewFileName(),
             onSave: () async {
               await _createInvoiceAndLog(pdfBytes: pdfBytes);
             },
@@ -1849,14 +2026,21 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         .collection('users')
         .doc(currentUser.uid)
         .collection('invoices');
-    final invoiceDocId = _invoiceDocIdFor(_selectedDocType, _invoiceNumber);
+    final invoiceDocId = _requiresSequentialDocumentNumber
+        ? _invoiceDocIdFor(_selectedDocType, _invoiceNumber)
+        : userInvoicesRef.doc().id;
     final invoiceRef = userInvoicesRef.doc(invoiceDocId);
-    final counterRef = _counterRefForDocType(_selectedDocType);
+    final counterRef = _requiresSequentialDocumentNumber
+        ? _counterRefForDocType(_selectedDocType)
+        : null;
 
     try {
-      final existingByInvoice = await invoiceRef.get();
-      if (existingByInvoice.exists) {
-        final existingData = existingByInvoice.data() ?? <String, dynamic>{};
+      final existingByInvoice = _requiresSequentialDocumentNumber
+          ? await invoiceRef.get()
+          : null;
+      if (existingByInvoice?.exists == true) {
+        final existingData =
+            existingByInvoice?.data() ?? <String, dynamic>{};
         if (showFeedback && mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -1874,7 +2058,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         }
         return _SavedInvoiceResult(
           url: (existingData['url'] ?? '').toString(),
-          fileName: (existingData['fileName'] ?? '$_invoiceNumber.pdf')
+          fileName: (existingData['fileName'] ?? _previewFileName())
               .toString(),
           wasCreated: false,
         );
@@ -1908,6 +2092,10 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         'storagePath': storagePath,
         'url': downloadUrl,
         'amount': _signedTotalAmount,
+        'clientName': _clientNameController.text,
+        'clientAddress': _clientAddressController.text,
+        'clientPhone': _clientPhoneController.text,
+        'clientTaxId': _clientIdController.text.trim(),
         'paymentMethod': _paymentMethods.isNotEmpty
             ? _paymentMethods.first.method
             : 'cash',
@@ -1919,10 +2107,11 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         'hasDiscount': _hasDiscount,
         'discountAmount': _discountAmount,
         'docType': _selectedDocType,
-        'invoiceNumber': _invoiceNumber,
-        'sequenceNumber': _currentDocumentCounter,
         'invoiceDocId': invoiceDocId,
         'createdAt': FieldValue.serverTimestamp(),
+        if (_invoiceNumber.isNotEmpty) 'invoiceNumber': _invoiceNumber,
+        if (_currentDocumentCounter != null)
+          'sequenceNumber': _currentDocumentCounter,
         if (_creditNoteLegalData != null)
           'creditNoteLegal': _creditNoteLegalData,
       });
@@ -1940,10 +2129,12 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           });
         }
       }
-      await _addToTotalEarned(
-        userId: currentUser.uid,
-        amount: _signedTotalAmount,
-      );
+      if (!_isQuote) {
+        await _addToTotalEarned(
+          userId: currentUser.uid,
+          amount: _signedTotalAmount,
+        );
+      }
 
       if (showFeedback && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -2151,8 +2342,12 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           .add({
             'senderId': currentUser.uid,
             'receiverId': receiverId,
-            'message': 'Sent a document: $_invoiceNumber',
-            'text': 'Sent a document: $_invoiceNumber',
+            'message': _invoiceNumber.isNotEmpty
+                ? 'Sent a document: $_invoiceNumber'
+                : 'Sent a document: ${_labelForDocType(_selectedDocType)}',
+            'text': _invoiceNumber.isNotEmpty
+                ? 'Sent a document: $_invoiceNumber'
+                : 'Sent a document: ${_labelForDocType(_selectedDocType)}',
             'type': 'file',
             'url': saved.url,
             'fileUrl': saved.url,
@@ -2163,7 +2358,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
 
       await FirebaseFirestore.instance.collection('chat_rooms').doc(roomId).set(
         {
-          'lastMessage': 'Sent a document: $_invoiceNumber',
+          'lastMessage': _invoiceNumber.isNotEmpty
+              ? 'Sent a document: $_invoiceNumber'
+              : 'Sent a document: ${_labelForDocType(_selectedDocType)}',
           'lastMessageTime': FieldValue.serverTimestamp(),
           'users': [currentUser.uid, receiverId],
           'user_names': {
@@ -2218,7 +2415,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           final isInvoice =
               _selectedDocType == 'invoice' ||
               _selectedDocType == 'invoice_receipt';
-          final docTitle = _selectedDocType == 'receipt'
+          final docTitle = _selectedDocType == 'quote'
+              ? strings['quote']!
+              : _selectedDocType == 'receipt'
               ? strings['receipt']!
               : _selectedDocType == 'invoice'
               ? strings['invoice']!
@@ -2295,16 +2494,17 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                   ),
                                 ),
                                 pw.SizedBox(height: 8),
-                                pw.Text(
-                                  isInvoice
-                                      ? "${strings['tax_invoice_num']} $_invoiceNumber"
-                                      : "${strings['inv_no']} $_invoiceNumber",
-                                  style: pw.TextStyle(
-                                    fontWeight: pw.FontWeight.bold,
-                                    fontSize: 14,
-                                    color: pdf.PdfColors.blueGrey800,
+                                if (_invoiceNumber.isNotEmpty)
+                                  pw.Text(
+                                    isInvoice
+                                        ? "${strings['tax_invoice_num']} $_invoiceNumber"
+                                        : "${strings['inv_no']} $_invoiceNumber",
+                                    style: pw.TextStyle(
+                                      fontWeight: pw.FontWeight.bold,
+                                      fontSize: 14,
+                                      color: pdf.PdfColors.blueGrey800,
+                                    ),
                                   ),
-                                ),
                                 pw.Text(
                                   "${strings['date']} ${intl.DateFormat('dd/MM/yyyy').format(DateTime.now())}",
                                   style: pw.TextStyle(
@@ -2423,6 +2623,11 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                     fontWeight: pw.FontWeight.bold,
                                   ),
                                 ),
+                                if (_clientIdController.text.trim().isNotEmpty)
+                                  pw.Text(
+                                    "${strings['client_id']!}: ${_clientIdController.text.trim()}",
+                                    style: pw.TextStyle(fontSize: 11),
+                                  ),
                                 if (_clientPhoneController.text.isNotEmpty)
                                   pw.Text(
                                     _clientPhoneController.text,
@@ -2562,7 +2767,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                     pw.MainAxisAlignment.spaceBetween,
                                 children: [
                                   pw.Text(
-                                    strings['vat']!,
+                                    _vatLabel(isRtl),
                                     style: pw.TextStyle(fontSize: 11),
                                   ),
                                   pw.Text(
@@ -2622,32 +2827,33 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                         ),
                       ),
                     ),
-                    pw.SizedBox(height: 24),
-                    // Payment Method (אמצעי תשלום)
-                    pw.Text(
-                      strings['payment_method'] ??
-                          (isRtl ? 'אמצעי תשלום' : 'Payment Method'),
-                      style: pw.TextStyle(
-                        fontWeight: pw.FontWeight.bold,
-                        fontSize: 11,
-                        color: pdf.PdfColors.blue900,
-                      ),
-                    ),
-                    pw.Container(
-                      width: double.infinity,
-                      padding: const pw.EdgeInsets.all(10),
-                      decoration: pw.BoxDecoration(
-                        border: pw.Border.all(color: pdf.PdfColors.grey300),
-                        borderRadius: const pw.BorderRadius.all(
-                          pw.Radius.circular(5),
+                    if (_showsPaymentMethodSection) ...[
+                      pw.SizedBox(height: 24),
+                      pw.Text(
+                        strings['payment_method'] ??
+                            (isRtl ? 'אמצעי תשלום' : 'Payment Method'),
+                        style: pw.TextStyle(
+                          fontWeight: pw.FontWeight.bold,
+                          fontSize: 11,
+                          color: pdf.PdfColors.blue900,
                         ),
                       ),
-                      child: pw.Text(
-                        _paymentMethodsSummaryText(isRtl),
-                        style: const pw.TextStyle(fontSize: 11),
+                      pw.Container(
+                        width: double.infinity,
+                        padding: const pw.EdgeInsets.all(10),
+                        decoration: pw.BoxDecoration(
+                          border: pw.Border.all(color: pdf.PdfColors.grey300),
+                          borderRadius: const pw.BorderRadius.all(
+                            pw.Radius.circular(5),
+                          ),
+                        ),
+                        child: pw.Text(
+                          _paymentMethodsSummaryText(isRtl),
+                          style: const pw.TextStyle(fontSize: 11),
+                        ),
                       ),
-                    ),
-                    pw.SizedBox(height: 16),
+                      pw.SizedBox(height: 16),
+                    ],
                     if (_notesController.text.isNotEmpty) ...[
                       pw.Text(
                         strings['notes']!,
@@ -2832,6 +3038,10 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                 Icons.description_outlined,
                               ),
                               items: [
+                                DropdownMenuItem(
+                                  value: 'quote',
+                                  child: Text(strings['quote']!),
+                                ),
                                 DropdownMenuItem(
                                   value: 'receipt',
                                   child: Text(strings['receipt']!),
@@ -3023,6 +3233,12 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                             ),
                             const SizedBox(height: 12),
                             _buildTextField(
+                              _clientIdController,
+                              strings['client_id']!,
+                              Icons.badge_outlined,
+                            ),
+                            const SizedBox(height: 12),
+                            _buildTextField(
                               _clientPhoneController,
                               strings['client_phone']!,
                               Icons.phone_outlined,
@@ -3141,43 +3357,44 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                           ],
                         ),
 
-                        _buildSectionCard(
-                          title: isRtl ? 'אמצעי תשלום' : 'Payment Method',
-                          icon: Icons.payment,
-                          children: [
-                            ...List.generate(_paymentMethods.length, (index) {
-                              return Padding(
-                                padding: EdgeInsets.only(
-                                  bottom: index == _paymentMethods.length - 1
-                                      ? 0
-                                      : 12,
+                        if (_showsPaymentMethodSection)
+                          _buildSectionCard(
+                            title: isRtl ? 'אמצעי תשלום' : 'Payment Method',
+                            icon: Icons.payment,
+                            children: [
+                              ...List.generate(_paymentMethods.length, (index) {
+                                return Padding(
+                                  padding: EdgeInsets.only(
+                                    bottom: index == _paymentMethods.length - 1
+                                        ? 0
+                                        : 12,
+                                  ),
+                                  child: _buildPaymentMethodCard(
+                                    index,
+                                    _paymentMethods[index],
+                                    isRtl,
+                                  ),
+                                );
+                              }),
+                              const SizedBox(height: 12),
+                              OutlinedButton.icon(
+                                onPressed: () {
+                                  setState(() {
+                                    for (final methodEntry in _paymentMethods) {
+                                      methodEntry.isExpanded = false;
+                                    }
+                                    _paymentMethods.add(_PaymentMethodEntry());
+                                  });
+                                },
+                                icon: const Icon(Icons.add),
+                                label: Text(
+                                  isRtl
+                                      ? 'הוסף אמצעי תשלום'
+                                      : 'Add Payment Method',
                                 ),
-                                child: _buildPaymentMethodCard(
-                                  index,
-                                  _paymentMethods[index],
-                                  isRtl,
-                                ),
-                              );
-                            }),
-                            const SizedBox(height: 12),
-                            OutlinedButton.icon(
-                              onPressed: () {
-                                setState(() {
-                                  for (final methodEntry in _paymentMethods) {
-                                    methodEntry.isExpanded = false;
-                                  }
-                                  _paymentMethods.add(_PaymentMethodEntry());
-                                });
-                              },
-                              icon: const Icon(Icons.add),
-                              label: Text(
-                                isRtl
-                                    ? 'הוסף אמצעי תשלום'
-                                    : 'Add Payment Method',
                               ),
-                            ),
-                          ],
-                        ),
+                            ],
+                          ),
                         if (_items.isNotEmpty) ...[
                           const SizedBox(height: 16),
                           ListView.builder(

@@ -591,6 +591,7 @@ class _ChatPageState extends State<ChatPage> {
                       workerName: _currentUserName ?? "Worker",
                       workerPhone: _currentUserPhone,
                       workerEmail: _currentUserEmail,
+                      initialDocType: 'quote',
                       receiverId: widget.receiverId,
                       receiverName: widget.receiverName,
                       receiverPhone: phone,

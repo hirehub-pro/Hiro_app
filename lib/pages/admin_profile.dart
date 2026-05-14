@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
@@ -30,6 +31,7 @@ class _AdminProfileState extends State<AdminProfile>
   String _businessNumber = "";
   String _softwareRegistrationNumber = "";
   String _softwareMakerVatNumber = "";
+  double _vatPercent = 17.0;
 
   @override
   void initState() {
@@ -52,6 +54,7 @@ class _AdminProfileState extends State<AdminProfile>
               (doc.data()?['softwareRegistrationNumber'] ?? '').toString();
           _softwareMakerVatNumber =
               (doc.data()?['softwareMakerVatNumber'] ?? '').toString();
+          _vatPercent = _parseVatPercent(doc.data()?['vatPercent']);
         });
       } else if (mounted) {
         setState(() {
@@ -59,11 +62,31 @@ class _AdminProfileState extends State<AdminProfile>
           _businessNumber = '';
           _softwareRegistrationNumber = '';
           _softwareMakerVatNumber = '';
+          _vatPercent = 17.0;
         });
       }
     } catch (e) {
       debugPrint("Settings check error: $e");
     }
+  }
+
+  double _parseVatPercent(dynamic value) {
+    final parsed = switch (value) {
+      num() => value.toDouble(),
+      String() => double.tryParse(value.trim().replaceAll(',', '.')),
+      _ => null,
+    };
+    if (parsed == null || parsed <= 0 || parsed > 100) {
+      return 17.0;
+    }
+    return parsed;
+  }
+
+  String _formatVatPercent(double value) {
+    final rounded = value.toStringAsFixed(2);
+    return rounded.contains('.')
+        ? rounded.replaceFirst(RegExp(r'\.?0+$'), '')
+        : rounded;
   }
 
   Future<void> _fetchAdminData() async {
@@ -392,6 +415,12 @@ class _AdminProfileState extends State<AdminProfile>
                 "A000 Info",
                 Colors.indigo,
                 _showA000InfoDialog,
+              ),
+              _buildQuickActionCard(
+                Icons.percent_rounded,
+                "VAT ${_formatVatPercent(_vatPercent)}%",
+                Colors.deepOrange,
+                _showVatConfigDialog,
               ),
             ],
           ),
@@ -952,6 +981,103 @@ class _AdminProfileState extends State<AdminProfile>
                     if (context.mounted) Navigator.pop(context);
                   },
                   child: const Text("Save A000 Info"),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showVatConfigDialog() {
+    final vatController = TextEditingController(
+      text: _formatVatPercent(_vatPercent),
+    );
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                "VAT Configuration",
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 20),
+              TextField(
+                controller: vatController,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
+                ],
+                decoration: const InputDecoration(
+                  labelText: 'VAT Percent',
+                  hintText: 'e.g., 17',
+                  suffixText: '%',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                "This value will be used for invoice and tax document VAT calculations.",
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red[900],
+                    foregroundColor: Colors.white,
+                  ),
+                  onPressed: () async {
+                    final raw = vatController.text.trim().replaceAll(',', '.');
+                    final parsed = double.tryParse(raw);
+                    if (parsed == null || parsed <= 0 || parsed > 100) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              "Enter a valid VAT percent between 0 and 100",
+                            ),
+                          ),
+                        );
+                      }
+                      return;
+                    }
+
+                    await _firestore.collection('metadata').doc('system').set({
+                      'vatPercent': parsed,
+                    }, SetOptions(merge: true));
+                    await _logActivity(
+                      "Updated VAT Percent to ${_formatVatPercent(parsed)}%",
+                    );
+                    setState(() => _vatPercent = parsed);
+                    if (context.mounted) {
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            "VAT updated to ${_formatVatPercent(parsed)}%",
+                          ),
+                        ),
+                      );
+                    }
+                  },
+                  child: const Text("Save VAT"),
                 ),
               ),
             ],
