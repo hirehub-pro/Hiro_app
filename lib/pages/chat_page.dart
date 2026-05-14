@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -44,6 +45,15 @@ class ChatPage extends StatefulWidget {
 }
 
 class _ChatPageState extends State<ChatPage> {
+  static const int _mediaPreviewWidth = 220;
+  static const int _mediaPreviewHeight = 190;
+  static const int _mediaPreviewCacheWidth = 660;
+  static const int _mediaPreviewCacheHeight = 570;
+  static const int _mediaGroupTileCacheSize = 360;
+  static const MethodChannel _androidVideoPickerChannel = MethodChannel(
+    'com.hirehub.app/video_picker',
+  );
+
   final TextEditingController _messageController = TextEditingController();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -392,6 +402,7 @@ class _ChatPageState extends State<ChatPage> {
     String? url,
     String? fileName,
     int? durationSeconds,
+    List<Map<String, dynamic>>? mediaItems,
   }) async {
     if (type == 'text' && (text == null || text.trim().isEmpty)) return;
 
@@ -406,6 +417,7 @@ class _ChatPageState extends State<ChatPage> {
       'url': url,
       'fileName': fileName,
       if (durationSeconds != null) 'durationSeconds': durationSeconds,
+      if (mediaItems != null) 'mediaItems': mediaItems,
       'timestamp': FieldValue.serverTimestamp(),
     };
 
@@ -429,6 +441,9 @@ class _ChatPageState extends State<ChatPage> {
           break;
         case 'audio':
           lastMsgDisplay = "🎤 Voice message";
+          break;
+        case 'media_group':
+          lastMsgDisplay = "🖼️ ${mediaItems?.length ?? 0} media items";
           break;
         default:
           lastMsgDisplay = text ?? "";
@@ -672,6 +687,7 @@ class _ChatPageState extends State<ChatPage> {
     final String type = _resolveMessageType(message);
     final String url = _resolveMessageUrl(message);
     final String? fileName = message['fileName']?.toString();
+    final mediaGroupItems = _resolveMediaGroupItems(message);
     final timestamp = message['timestamp'] as Timestamp?;
     final timeStr = timestamp != null
         ? intl.DateFormat('HH:mm').format(timestamp.toDate())
@@ -700,6 +716,8 @@ class _ChatPageState extends State<ChatPage> {
           _openImageFullscreen(url, fileName: fileName);
         } else if (type == 'video') {
           _openVideoFullscreen(url, fileName: fileName);
+        } else if (type == 'media_group') {
+          _openMediaGroup(mediaGroupItems);
         } else if (type == 'report_reference') {
           _openReportFromMessage(message);
         } else if (type == 'report_resolved') {
@@ -758,6 +776,8 @@ class _ChatPageState extends State<ChatPage> {
                     play: false, // Don't autoplay in chat list
                   ),
                 )
+              else if (type == 'media_group')
+                _buildMediaGroupAttachment(mediaGroupItems, isMe)
               else if (type == 'file')
                 _buildFileAttachment(url, fileName, isMe)
               else if (type == 'audio')
@@ -825,6 +845,8 @@ class _ChatPageState extends State<ChatPage> {
                       height: 190,
                       width: 220,
                       fit: BoxFit.cover,
+                      cacheWidth: _mediaPreviewCacheWidth,
+                      cacheHeight: _mediaPreviewCacheHeight,
                     ),
                     _buildUploadOverlay(
                       progress: progress,
@@ -998,6 +1020,24 @@ class _ChatPageState extends State<ChatPage> {
     final primary = (message['message'] ?? '').toString();
     if (primary.isNotEmpty) return primary;
     return (message['text'] ?? '').toString();
+  }
+
+  List<_MediaGroupItem> _resolveMediaGroupItems(Map<String, dynamic> message) {
+    final rawItems = message['mediaItems'];
+    if (rawItems is! List) return const [];
+
+    return rawItems
+        .whereType<Map>()
+        .map((raw) => Map<String, dynamic>.from(raw))
+        .map(
+          (item) => _MediaGroupItem(
+            type: (item['type'] ?? '').toString(),
+            url: (item['url'] ?? '').toString(),
+            fileName: item['fileName']?.toString(),
+          ),
+        )
+        .where((item) => item.url.isNotEmpty && item.isSupported)
+        .toList();
   }
 
   Future<void> _openReportFromMessage(Map<String, dynamic> message) async {
@@ -1413,7 +1453,6 @@ class _ChatPageState extends State<ChatPage> {
         url: url,
         type: 'image',
         fileName: fileName,
-        autoDownload: true,
       ),
       builder: (context, snapshot) {
         final localPath = snapshot.data;
@@ -1429,9 +1468,11 @@ class _ChatPageState extends State<ChatPage> {
               if (localPath != null)
                 Image.file(
                   File(localPath),
-                  height: 190,
-                  width: 220,
+                  height: _mediaPreviewHeight.toDouble(),
+                  width: _mediaPreviewWidth.toDouble(),
                   fit: BoxFit.cover,
+                  cacheWidth: _mediaPreviewCacheWidth,
+                  cacheHeight: _mediaPreviewCacheHeight,
                   errorBuilder: (context, error, stackTrace) {
                     _invalidateBrokenLocalAttachment(
                       url: url,
@@ -1439,18 +1480,22 @@ class _ChatPageState extends State<ChatPage> {
                     );
                     return CachedNetworkImage(
                       imageUrl: url,
-                      width: 220,
-                      height: 190,
+                      width: _mediaPreviewWidth.toDouble(),
+                      height: _mediaPreviewHeight.toDouble(),
                       fit: BoxFit.cover,
-                      placeholder: (context, _) => const SizedBox(
-                        height: 190,
-                        width: 220,
-                        child: Center(child: CircularProgressIndicator()),
+                      memCacheWidth: _mediaPreviewCacheWidth,
+                      memCacheHeight: _mediaPreviewCacheHeight,
+                      maxWidthDiskCache: _mediaPreviewCacheWidth,
+                      maxHeightDiskCache: _mediaPreviewCacheHeight,
+                      placeholder: (context, _) => SizedBox(
+                        height: _mediaPreviewHeight.toDouble(),
+                        width: _mediaPreviewWidth.toDouble(),
+                        child: const Center(child: CircularProgressIndicator()),
                       ),
-                      errorWidget: (context, _, __) => const SizedBox(
-                        height: 190,
-                        width: 220,
-                        child: Icon(Icons.error),
+                      errorWidget: (context, _, __) => SizedBox(
+                        height: _mediaPreviewHeight.toDouble(),
+                        width: _mediaPreviewWidth.toDouble(),
+                        child: const Icon(Icons.error),
                       ),
                     );
                   },
@@ -1458,25 +1503,29 @@ class _ChatPageState extends State<ChatPage> {
               else
                 CachedNetworkImage(
                   imageUrl: url,
-                  width: 220,
-                  height: 190,
+                  width: _mediaPreviewWidth.toDouble(),
+                  height: _mediaPreviewHeight.toDouble(),
                   fit: BoxFit.cover,
-                  placeholder: (context, _) => const SizedBox(
-                    height: 190,
-                    width: 220,
-                    child: Center(child: CircularProgressIndicator()),
+                  memCacheWidth: _mediaPreviewCacheWidth,
+                  memCacheHeight: _mediaPreviewCacheHeight,
+                  maxWidthDiskCache: _mediaPreviewCacheWidth,
+                  maxHeightDiskCache: _mediaPreviewCacheHeight,
+                  placeholder: (context, _) => SizedBox(
+                    height: _mediaPreviewHeight.toDouble(),
+                    width: _mediaPreviewWidth.toDouble(),
+                    child: const Center(child: CircularProgressIndicator()),
                   ),
-                  errorWidget: (context, _, __) => const SizedBox(
-                    height: 190,
-                    width: 220,
-                    child: Icon(Icons.error),
+                  errorWidget: (context, _, __) => SizedBox(
+                    height: _mediaPreviewHeight.toDouble(),
+                    width: _mediaPreviewWidth.toDouble(),
+                    child: const Icon(Icons.error),
                   ),
                 ),
               if (isDownloading)
                 Container(
                   color: Colors.black38,
-                  height: 190,
-                  width: 220,
+                  height: _mediaPreviewHeight.toDouble(),
+                  width: _mediaPreviewWidth.toDouble(),
                   child: Center(
                     child: CircularProgressIndicator(
                       value: progress > 0 ? progress : null,
@@ -1510,6 +1559,159 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
+  Widget _buildMediaGroupAttachment(List<_MediaGroupItem> items, bool isMe) {
+    if (items.isEmpty) {
+      return Text(
+        _t(
+          en: 'Media is unavailable',
+          he: 'המדיה אינה זמינה',
+          ar: 'الوسائط غير متاحة',
+          am: 'ሚዲያው አይገኝም',
+          ru: 'Медиа недоступно',
+        ),
+        style: TextStyle(color: isMe ? Colors.white : Colors.black87),
+      );
+    }
+
+    final visibleItems = items.take(4).toList();
+    final hiddenCount = items.length - visibleItems.length;
+
+    return SizedBox(
+      width: 230,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              crossAxisSpacing: 4,
+              mainAxisSpacing: 4,
+            ),
+            itemCount: visibleItems.length,
+            itemBuilder: (context, index) {
+              return _buildMediaGroupTile(
+                visibleItems[index],
+                showMoreCount:
+                    index == visibleItems.length - 1 && hiddenCount > 0
+                    ? hiddenCount
+                    : 0,
+              );
+            },
+          ),
+          const SizedBox(height: 6),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.collections_rounded,
+                size: 14,
+                color: isMe ? Colors.white70 : Colors.grey[600],
+              ),
+              const SizedBox(width: 6),
+              Text(
+                '${items.length} ${items.length == 1 ? 'item' : 'items'}',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: isMe ? Colors.white70 : Colors.grey[700],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMediaGroupTile(
+    _MediaGroupItem item, {
+    required int showMoreCount,
+  }) {
+    final overlay = showMoreCount > 0
+        ? Container(
+            color: Colors.black54,
+            child: Center(
+              child: Text(
+                '+$showMoreCount',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          )
+        : null;
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          if (item.type == 'image')
+            CachedNetworkImage(
+              imageUrl: item.url,
+              fit: BoxFit.cover,
+              memCacheWidth: _mediaGroupTileCacheSize,
+              memCacheHeight: _mediaGroupTileCacheSize,
+              maxWidthDiskCache: _mediaGroupTileCacheSize,
+              maxHeightDiskCache: _mediaGroupTileCacheSize,
+              placeholder: (context, _) => const ColoredBox(
+                color: Color(0xFFE2E8F0),
+                child: Center(child: CircularProgressIndicator()),
+              ),
+              errorWidget: (context, _, __) => const ColoredBox(
+                color: Color(0xFFE2E8F0),
+                child: Icon(Icons.error_outline_rounded),
+              ),
+            )
+          else
+            ColoredBox(
+              color: Colors.black,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(
+                    Icons.play_circle_fill_rounded,
+                    color: Colors.white,
+                    size: 34,
+                  ),
+                  const SizedBox(height: 6),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: Text(
+                      item.fileName ?? 'Video',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          if (item.type == 'video' && showMoreCount == 0)
+            const Positioned(
+              right: 6,
+              top: 6,
+              child: Icon(
+                Icons.videocam_rounded,
+                color: Colors.white,
+                size: 18,
+              ),
+            ),
+          if (overlay != null) overlay,
+        ],
+      ),
+    );
+  }
+
   Future<void> _openImageFullscreen(String url, {String? fileName}) async {
     if (url.isEmpty) return;
 
@@ -1527,6 +1729,15 @@ class _ChatPageState extends State<ChatPage> {
         builder: (_) =>
             _ImageFullscreenViewer(imageUrl: url, localPath: localPath),
       ),
+    );
+  }
+
+  void _openMediaGroup(List<_MediaGroupItem> items) {
+    if (items.isEmpty) return;
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => _MediaGroupViewer(items: items)),
     );
   }
 
@@ -2050,16 +2261,88 @@ class _ChatPageState extends State<ChatPage> {
         kind: AppPermissionKind.camera,
       );
       if (!hasCameraPermission) return;
+
+      final picker = ImagePicker();
+      final pickedFile = type == 'image'
+          ? await picker.pickImage(source: source)
+          : await picker.pickVideo(source: source);
+
+      if (pickedFile != null) {
+        await _uploadAndSend(File(pickedFile.path), type, pickedFile.name);
+      }
+      return;
     }
 
-    final picker = ImagePicker();
-    final pickedFile = type == 'image'
-        ? await picker.pickImage(source: source)
-        : await picker.pickVideo(source: source);
+    if (type == 'image') {
+      final pickedFiles = await ImagePicker().pickMultiImage();
+      if (pickedFiles.isEmpty) return;
 
-    if (pickedFile != null) {
-      _uploadAndSend(File(pickedFile.path), type, pickedFile.name);
+      final media = pickedFiles
+          .map(
+            (pickedFile) => _PickedChatMedia(
+              file: File(pickedFile.path),
+              type: type,
+              fileName: pickedFile.name,
+            ),
+          )
+          .toList();
+      await _sendPickedMedia(media);
+      return;
     }
+
+    final pickedVideo = await _pickGalleryVideo();
+    if (pickedVideo == null) return;
+
+    await _uploadAndSend(
+      pickedVideo.file,
+      pickedVideo.type,
+      pickedVideo.fileName,
+    );
+  }
+
+  Future<_PickedChatMedia?> _pickGalleryVideo() async {
+    if (Platform.isAndroid) {
+      try {
+        final result = await _androidVideoPickerChannel
+            .invokeMapMethod<String, String>('pickVideo');
+        final path = result?['path'];
+        if (path == null || path.isEmpty) return null;
+
+        return _PickedChatMedia(
+          file: File(path),
+          type: 'video',
+          fileName: result?['name'] ?? 'video.mp4',
+        );
+      } on PlatformException catch (e) {
+        if (e.code == 'cancelled') return null;
+        debugPrint('Android video picker error: $e');
+      } on MissingPluginException catch (e) {
+        debugPrint('Android video picker plugin is not registered yet: $e');
+      }
+    }
+
+    final pickedFile = await ImagePicker().pickVideo(
+      source: ImageSource.gallery,
+    );
+    if (pickedFile == null) return null;
+
+    return _PickedChatMedia(
+      file: File(pickedFile.path),
+      type: 'video',
+      fileName: pickedFile.name,
+    );
+  }
+
+  Future<void> _sendPickedMedia(List<_PickedChatMedia> media) async {
+    if (media.isEmpty) return;
+
+    if (media.length == 1) {
+      final item = media.first;
+      await _uploadAndSend(item.file, item.type, item.fileName);
+      return;
+    }
+
+    await _uploadMediaGroupAndSend(media);
   }
 
   Future<void> _pickFile() async {
@@ -2159,6 +2442,113 @@ class _ChatPageState extends State<ChatPage> {
         });
       }
       debugPrint("Upload error: $e");
+    }
+  }
+
+  Future<void> _uploadMediaGroupAndSend(List<_PickedChatMedia> media) async {
+    final uploadedItems = <Map<String, dynamic>>[];
+
+    try {
+      final results = await Future.wait(
+        media.map(
+          (item) => _uploadGroupedMediaItem(
+            file: item.file,
+            type: item.type,
+            fileName: item.fileName,
+          ),
+        ),
+      );
+      uploadedItems.addAll(results);
+    } catch (e) {
+      debugPrint("Grouped media upload error: $e");
+      return;
+    }
+
+    if (uploadedItems.isEmpty) return;
+
+    _sendMessage(
+      type: 'media_group',
+      mediaItems: uploadedItems,
+      text: '${uploadedItems.length} media items',
+    );
+  }
+
+  Future<Map<String, dynamic>> _uploadGroupedMediaItem({
+    required File file,
+    required String type,
+    required String fileName,
+  }) async {
+    final uploadId =
+        '${DateTime.now().microsecondsSinceEpoch}_${file.path.hashCode}';
+    final pendingId = uploadId;
+
+    if (mounted) {
+      setState(() {
+        _pendingMediaUploads.insert(
+          0,
+          _PendingMediaUpload(
+            id: pendingId,
+            receiverId: widget.receiverId,
+            type: type,
+            fileName: fileName,
+            localPath: file.path,
+            progress: 0,
+          ),
+        );
+      });
+    }
+
+    try {
+      final ref = _storage.ref().child('chats').child(uploadId);
+      final uploadTask = ref.putFile(file);
+
+      uploadTask.snapshotEvents.listen((snapshot) {
+        final total = snapshot.totalBytes;
+        final progress = total > 0 ? snapshot.bytesTransferred / total : 0.0;
+        if (!mounted) return;
+        setState(() {
+          final index = _pendingMediaUploads.indexWhere(
+            (upload) => upload.id == pendingId,
+          );
+          if (index == -1) return;
+          _pendingMediaUploads[index] = _pendingMediaUploads[index].copyWith(
+            progress: progress,
+            isFailed: false,
+          );
+        });
+      });
+
+      final snapshot = await uploadTask;
+      final url = await snapshot.ref.getDownloadURL();
+
+      await _cacheSentFileLocally(
+        remoteUrl: url,
+        sourceFile: file,
+        type: type,
+        fileName: fileName,
+      );
+
+      if (mounted) {
+        setState(() {
+          _pendingMediaUploads.removeWhere((upload) => upload.id == pendingId);
+        });
+      }
+
+      return {'type': type, 'url': url, 'fileName': fileName};
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          final index = _pendingMediaUploads.indexWhere(
+            (upload) => upload.id == pendingId,
+          );
+          if (index != -1) {
+            _pendingMediaUploads[index] = _pendingMediaUploads[index].copyWith(
+              isFailed: true,
+            );
+          }
+        });
+      }
+      rethrow;
     }
   }
 
@@ -2379,6 +2769,15 @@ class _ChatPageState extends State<ChatPage> {
     required String url,
     String? fileName,
   }) {
+    switch (type) {
+      case 'image':
+        return '.jpg';
+      case 'video':
+        return '.mp4';
+      case 'audio':
+        return '.m4a';
+    }
+
     String candidate = fileName ?? '';
     if (candidate.contains('.')) {
       final dot = candidate.lastIndexOf('.');
@@ -2388,24 +2787,15 @@ class _ChatPageState extends State<ChatPage> {
     }
 
     final uri = Uri.tryParse(url);
-    final path = uri?.path ?? '';
-    if (path.contains('.')) {
-      final dot = path.lastIndexOf('.');
-      if (dot != -1 && dot < path.length - 1) {
-        return path.substring(dot);
+    final lastSegment = uri?.pathSegments.lastOrNull ?? '';
+    if (lastSegment.contains('.')) {
+      final dot = lastSegment.lastIndexOf('.');
+      if (dot != -1 && dot < lastSegment.length - 1) {
+        return lastSegment.substring(dot);
       }
     }
 
-    switch (type) {
-      case 'image':
-        return '.jpg';
-      case 'video':
-        return '.mp4';
-      case 'audio':
-        return '.m4a';
-      default:
-        return '.bin';
-    }
+    return '.bin';
   }
 
   Future<void> _toggleAudioPlayback({
@@ -2445,7 +2835,14 @@ class _ChatPageState extends State<ChatPage> {
       }
 
       if (localPath != null) {
-        await _audioPlayer.play(ap.DeviceFileSource(localPath));
+        try {
+          await _audioPlayer.play(ap.DeviceFileSource(localPath));
+        } catch (_) {
+          _invalidateBrokenLocalAttachment(url: url, localPath: localPath);
+          if (url.isEmpty) rethrow;
+          await _audioPlayer.stop();
+          await _audioPlayer.play(ap.UrlSource(url));
+        }
         return;
       }
 
@@ -2454,6 +2851,12 @@ class _ChatPageState extends State<ChatPage> {
       }
     } catch (e) {
       debugPrint("Audio playback error: $e");
+      if (mounted) {
+        setState(() {
+          _audioPlayerState = ap.PlayerState.stopped;
+          _activeAudioPosition = Duration.zero;
+        });
+      }
     }
   }
 
@@ -3314,6 +3717,97 @@ class _VideoFullscreenViewer extends StatelessWidget {
       ),
     );
   }
+}
+
+class _MediaGroupViewer extends StatefulWidget {
+  final List<_MediaGroupItem> items;
+
+  const _MediaGroupViewer({required this.items});
+
+  @override
+  State<_MediaGroupViewer> createState() => _MediaGroupViewerState();
+}
+
+class _MediaGroupViewerState extends State<_MediaGroupViewer> {
+  late final PageController _pageController;
+  int _currentIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _pageController = PageController();
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        elevation: 0,
+        title: Text('${_currentIndex + 1} / ${widget.items.length}'),
+      ),
+      body: PageView.builder(
+        controller: _pageController,
+        itemCount: widget.items.length,
+        onPageChanged: (index) => setState(() => _currentIndex = index),
+        itemBuilder: (context, index) {
+          final item = widget.items[index];
+          return Center(
+            child: item.type == 'image'
+                ? CachedNetworkImage(
+                    imageUrl: item.url,
+                    width: double.infinity,
+                    height: double.infinity,
+                    fit: BoxFit.contain,
+                    memCacheWidth: 1440,
+                    maxWidthDiskCache: 1440,
+                    placeholder: (context, _) =>
+                        const Center(child: CircularProgressIndicator()),
+                    errorWidget: (context, _, __) => const Icon(
+                      Icons.error_outline_rounded,
+                      color: Colors.white,
+                      size: 42,
+                    ),
+                  )
+                : CachedVideoPlayer(
+                    url: item.url,
+                    play: index == _currentIndex,
+                    fit: BoxFit.contain,
+                  ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _MediaGroupItem {
+  final String type;
+  final String url;
+  final String? fileName;
+
+  const _MediaGroupItem({required this.type, required this.url, this.fileName});
+
+  bool get isSupported => type == 'image' || type == 'video';
+}
+
+class _PickedChatMedia {
+  final File file;
+  final String type;
+  final String fileName;
+
+  const _PickedChatMedia({
+    required this.file,
+    required this.type,
+    required this.fileName,
+  });
 }
 
 class _PendingMediaUpload {

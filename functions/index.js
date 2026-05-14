@@ -384,7 +384,9 @@ exports.verifySubscriptionPurchase = onCall(
             purchaseProof.applicationAccountToken,
         });
 
-        updates = createPlaySubscriptionUpdates(playState, userData);
+        updates = createPlaySubscriptionUpdates(playState, userData, {
+          purchaseToken: purchaseProof.verificationToken,
+        });
       } else if (purchaseProof.productId === APPLE_SUBSCRIPTION_PRODUCT_ID) {
         let appStoreState = null;
         try {
@@ -673,9 +675,13 @@ async function syncGooglePlayPurchaseToken({
     ""
   ).trim();
 
-  const userDoc = accountToken ?
+  let userDoc = accountToken ?
     await findUserBySubscriptionAccountToken(accountToken) :
     await findUserByPurchaseToken(purchaseToken);
+
+  if (!userDoc && playState?.linkedPurchaseToken) {
+    userDoc = await findUserByPurchaseToken(playState.linkedPurchaseToken);
+  }
 
   if (!userDoc) {
     throw new Error(
@@ -683,7 +689,9 @@ async function syncGooglePlayPurchaseToken({
     );
   }
 
-  const updates = createPlaySubscriptionUpdates(playState, userDoc.data());
+  const updates = createPlaySubscriptionUpdates(playState, userDoc.data(), {
+    purchaseToken,
+  });
   await applyUserSubscriptionUpdates(userDoc.ref, userDoc.data(), updates);
 
   await storeNotificationAudit("google_play", eventId || purchaseToken, {
@@ -772,7 +780,9 @@ async function buildSubscriptionUpdate({
     if (playState) {
       return {
         source: "google_play",
-        updates: createPlaySubscriptionUpdates(playState, userData),
+        updates: createPlaySubscriptionUpdates(playState, userData, {
+          purchaseToken,
+        }),
       };
     }
   }
@@ -881,7 +891,8 @@ async function fetchGooglePlaySubscription({androidPublisher, purchaseToken}) {
   }
 }
 
-function createPlaySubscriptionUpdates(playState, userData) {
+function createPlaySubscriptionUpdates(playState, userData, options = {}) {
+  const purchaseToken = normalizeString(options.purchaseToken).trim();
   const now = new Date();
   const expiry = getLatestExpiry(playState.lineItems);
   const entitledStates = new Set([
@@ -911,6 +922,8 @@ function createPlaySubscriptionUpdates(playState, userData) {
       latestLineItem?.productId || userData.subscriptionProductId || null,
     subscriptionPurchaseOrderId:
       playState.latestOrderId || userData.subscriptionPurchaseOrderId || null,
+    subscriptionPurchaseToken:
+      purchaseToken || userData.subscriptionPurchaseToken || null,
     subscriptionPlatform: "android_play",
     subscriptionSource: "google_play",
     subscriptionProviderState: playState.subscriptionState || null,

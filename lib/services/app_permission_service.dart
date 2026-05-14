@@ -21,17 +21,31 @@ class AppPermissionService {
 
     final strings = _stringsFor(context);
     final permissionName = strings[_permissionNameKey(kind)]!;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
+    final shouldOpenSettings = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(strings['permission_required_title']!),
         content: Text(
           strings['permission_allow_message']!.replaceFirst(
             '{permission}',
             permissionName,
           ),
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(strings['permission_cancel_button']!),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(strings['permission_settings_button']!),
+          ),
+        ],
       ),
     );
-    await openAppSettings();
+    if (shouldOpenSettings == true) {
+      await openAppSettings();
+    }
     return false;
   }
 
@@ -62,40 +76,55 @@ class AppPermissionService {
           'camera_permission_name': 'הרשאת המצלמה',
           'microphone_permission_name': 'הרשאת המיקרופון',
           'location_permission_name': 'הרשאת המיקום',
+          'permission_required_title': 'נדרשת הרשאה',
           'permission_allow_message':
               'אנא אפשר את {permission} בהגדרות כדי להמשיך.',
+          'permission_cancel_button': 'ביטול',
+          'permission_settings_button': 'פתח הגדרות',
         };
       case 'ar':
         return {
           'camera_permission_name': 'إذن الكاميرا',
           'microphone_permission_name': 'إذن الميكروفون',
           'location_permission_name': 'إذن الموقع',
+          'permission_required_title': 'الإذن مطلوب',
           'permission_allow_message':
               'يرجى السماح بـ {permission} من الإعدادات للمتابعة.',
+          'permission_cancel_button': 'إلغاء',
+          'permission_settings_button': 'فتح الإعدادات',
         };
       case 'ru':
         return {
           'camera_permission_name': 'разрешение на камеру',
           'microphone_permission_name': 'разрешение на микрофон',
           'location_permission_name': 'разрешение на геолокацию',
+          'permission_required_title': 'Требуется разрешение',
           'permission_allow_message':
               'Пожалуйста, разрешите {permission} в настройках, чтобы продолжить.',
+          'permission_cancel_button': 'Отмена',
+          'permission_settings_button': 'Открыть настройки',
         };
       case 'am':
         return {
           'camera_permission_name': 'የካሜራ ፍቃድ',
           'microphone_permission_name': 'የማይክሮፎን ፍቃድ',
           'location_permission_name': 'የአካባቢ ፍቃድ',
+          'permission_required_title': 'ፍቃድ ያስፈልጋል',
           'permission_allow_message':
               'ለመቀጠል እባክዎ {permission} በቅንብሮች ውስጥ ይፍቀዱ።',
+          'permission_cancel_button': 'ሰርዝ',
+          'permission_settings_button': 'ቅንብሮችን ክፈት',
         };
       default:
         return {
           'camera_permission_name': 'camera permission',
           'microphone_permission_name': 'microphone permission',
           'location_permission_name': 'location permission',
+          'permission_required_title': 'Permission required',
           'permission_allow_message':
               'Please allow {permission} in Settings to continue.',
+          'permission_cancel_button': 'Cancel',
+          'permission_settings_button': 'Open Settings',
         };
     }
   }
