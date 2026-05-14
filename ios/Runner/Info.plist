@@ -39,6 +39,11 @@
 	<string>AIzaSyDh5ZzwkafsDkup9k2sKMkykr5Ukra9xQA</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>comgooglemaps</string>
+		<string>waze</string>
+	</array>
 	<key>NSCameraUsageDescription</key>
 	<string>We need access to your camera so you can send photos and videos in chat.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>

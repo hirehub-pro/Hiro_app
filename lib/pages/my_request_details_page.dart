@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:untitled1/pages/chat_page.dart';
 import 'package:untitled1/services/language_provider.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:untitled1/services/map_app_launcher.dart';
 
 class MyRequestDetailsPage extends StatefulWidget {
   final DocumentReference<Map<String, dynamic>> requestRef;
@@ -416,12 +416,16 @@ class _MyRequestDetailsPageState extends State<MyRequestDetailsPage> {
   }
 
   Future<void> _openMap(double lat, double lng) async {
-    final url = Uri.parse(
-      'https://www.google.com/maps/search/?api=1&query=$lat,$lng',
+    final languageCode = Provider.of<LanguageProvider>(
+      context,
+      listen: false,
+    ).locale.languageCode;
+    await MapAppLauncher.openLocation(
+      context: context,
+      latitude: lat,
+      longitude: lng,
+      languageCode: languageCode,
     );
-    if (await canLaunchUrl(url)) {
-      await launchUrl(url, mode: LaunchMode.externalApplication);
-    }
   }
 
   @override

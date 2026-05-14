@@ -98,5 +98,13 @@
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="https" android:host="www.google.com" android:pathPrefix="/maps" />
         </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="google.navigation" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="waze" />
+        </intent>
     </queries>
 </manifest>

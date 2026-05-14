@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:untitled1/services/language_provider.dart';
+import 'package:untitled1/services/map_app_launcher.dart';
 import 'package:untitled1/services/notification_service.dart';
 import 'package:untitled1/pages/chat_page.dart';
 
@@ -564,12 +564,16 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
     final lat = widget.data['latitude'];
     final lng = widget.data['longitude'];
     if (lat != null && lng != null) {
-      final Uri url = Uri.parse(
-        'https://www.google.com/maps/search/?api=1&query=$lat,$lng',
+      final languageCode = Provider.of<LanguageProvider>(
+        context,
+        listen: false,
+      ).locale.languageCode;
+      await MapAppLauncher.openLocation(
+        context: context,
+        latitude: (lat as num).toDouble(),
+        longitude: (lng as num).toDouble(),
+        languageCode: languageCode,
       );
-      if (await canLaunchUrl(url)) {
-        await launchUrl(url);
-      }
     }
   }
 
