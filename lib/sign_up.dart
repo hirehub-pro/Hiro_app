@@ -530,6 +530,7 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
     required String hintText,
     required IconData icon,
     required ValueChanged<String> onChanged,
+    bool required = true,
     TextInputType? keyboardType,
     int maxLines = 1,
   }) {
@@ -543,7 +544,7 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
         fontWeight: FontWeight.w600,
       ),
       decoration: InputDecoration(
-        labelText: label,
+        label: _buildRequiredLabel(label, required: required),
         hintText: hintText,
         alignLabelWithHint: maxLines > 1,
         filled: true,
@@ -2689,6 +2690,7 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
             controller: _phoneController,
             labelText: strings['phone_label']!,
             icon: Icons.phone_iphone_rounded,
+            required: true,
             keyboardType: TextInputType.phone,
             hintText: strings['phone_hint'],
             enabled: !_codeSent,
@@ -2705,6 +2707,7 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
                       controller: _codeController,
                       labelText: strings['enter_code']!,
                       icon: Icons.lock_outline_rounded,
+                      required: true,
                       keyboardType: TextInputType.number,
                       textAlign: TextAlign.center,
                     ),
@@ -2772,6 +2775,7 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
               controller: _nameController,
               labelText: strings['name_label']!,
               icon: Icons.person_outline,
+              required: true,
               validator: (v) => v!.isEmpty ? strings['req'] : null,
             ),
             const SizedBox(height: 16),
@@ -2814,6 +2818,7 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
                           labelText: strings['desc_label']!,
                           helperText: strings['desc_helper']!,
                           icon: Icons.description_outlined,
+                          required: true,
                           maxLines: 3,
                           validator: (v) => (v == null || v.trim().isEmpty)
                               ? strings['req']
@@ -3143,6 +3148,7 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
           controller: townController,
           labelText: strings['town_label']!,
           icon: Icons.location_on_outlined,
+          required: true,
           readOnly: true,
           onTap: _openMapPicker,
           validator: (v) => (v == null || v.isEmpty) ? strings['req'] : null,
@@ -3790,6 +3796,7 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
     required TextEditingController controller,
     required String labelText,
     required IconData icon,
+    bool required = false,
     TextInputType? keyboardType,
     int maxLines = 1,
     String? Function(String?)? validator,
@@ -3805,14 +3812,7 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          labelText,
-          style: const TextStyle(
-            fontWeight: FontWeight.w800,
-            fontSize: 15,
-            color: Color(0xFF374151),
-          ),
-        ),
+        _buildRequiredLabel(labelText, required: required),
         const SizedBox(height: 9),
         TextFormField(
           controller: controller,
@@ -3876,6 +3876,39 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
           validator: validator,
         ),
       ],
+    );
+  }
+
+  Widget _buildRequiredLabel(String label, {bool required = false}) {
+    if (!required) {
+      return Text(
+        label,
+        style: const TextStyle(
+          fontWeight: FontWeight.w800,
+          fontSize: 15,
+          color: Color(0xFF374151),
+        ),
+      );
+    }
+    return RichText(
+      text: TextSpan(
+        style: const TextStyle(
+          fontWeight: FontWeight.w800,
+          fontSize: 15,
+          color: Color(0xFF374151),
+        ),
+        children: [
+          TextSpan(text: label),
+          const TextSpan(
+            text: ' *',
+            style: TextStyle(
+              color: Color(0xFFE11D48),
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

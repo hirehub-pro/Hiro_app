@@ -274,8 +274,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
     final userId = user.uid;
-    final now = DateTime.now();
-    final dateStr = intl.DateFormat('yyyyMMdd').format(now);
+    final dateStr = _invoiceDateStorageValue();
     final timestamp = FieldValue.serverTimestamp();
     final customerId = _clientIdController.text.trim().isNotEmpty
         ? _clientIdController.text.trim()
@@ -424,6 +423,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         'paymentMethods': paymentMethodsData,
         'paymentAmountTotal': paymentAmountTotal,
         'date': dateStr,
+        if (_selectedPaymentDueDate != null)
+          'paymentDueDate': _paymentDueDateStorageValue(),
         'invoiceDocId': quoteDocRef.id,
         'createdAt': timestamp,
       };
@@ -500,6 +501,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         'sequenceNumber': nextNumber,
         'invoiceDocId': invoiceDocId,
         'date': dateStr,
+        if (_selectedPaymentDueDate != null)
+          'paymentDueDate': _paymentDueDateStorageValue(),
         'createdAt': timestamp,
         if (docType == 'invoice') 'paymentStatus': 'unpaid',
         if (docType == 'invoice') 'paidAmount': 0.0,
@@ -546,6 +549,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'invoiceDocId': invoiceDocId,
           'date': dateStr,
           'issueDate': dateStr,
+          if (_selectedPaymentDueDate != null)
+            'paymentDueDate': _paymentDueDateStorageValue(),
           'clientDetails': clientDetails,
           'businessDetails': businessDetails,
           'amount': signedTotalAmount,
@@ -626,6 +631,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'sourceInvoiceSavedDocId': widget.sourceInvoiceSavedDocId,
       'sourceInvoiceTotalAmount': widget.sourceInvoiceTotalAmount,
       'date': dateStr,
+      if (_selectedPaymentDueDate != null)
+        'paymentDueDate': _paymentDueDateStorageValue(),
       'createdAt': FieldValue.serverTimestamp(),
       if (docType == 'invoice') 'paymentStatus': 'unpaid',
       if (docType == 'invoice') 'paidAmount': 0.0,
@@ -745,6 +752,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   final _clientAddressController = TextEditingController();
   final _clientPhoneController = TextEditingController();
   final _clientIdController = TextEditingController();
+  final _invoiceDateController = TextEditingController();
+  final _paymentDueDateController = TextEditingController();
   final _itemDescController = TextEditingController();
   final _itemQtyController = TextEditingController(text: "1");
   final _itemPriceController = TextEditingController();
@@ -765,11 +774,16 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   int? _currentDocumentCounter;
   bool _isLoadingCounterAssignment = false;
   double _vatRate = 0.17;
+  DateTime _selectedInvoiceDate = DateTime.now();
+  DateTime? _selectedPaymentDueDate;
+  bool _hasCustomPaymentDueDate = false;
   String _selectedPriceTaxMode = 'after_tax';
   bool _hasDiscount = false;
 
   bool get _isCreditNote => _selectedDocType == 'credit_note';
   bool get _isQuote => _selectedDocType == 'quote';
+  bool get _showsDueDateSection =>
+      _selectedDocType == 'quote' || _selectedDocType == 'invoice';
   bool get _requiresSequentialDocumentNumber => !_isQuote;
   bool get _showsPaymentMethodSection =>
       _selectedDocType != 'quote' && _selectedDocType != 'invoice';
@@ -862,8 +876,32 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     if (_invoiceNumber.isNotEmpty) {
       return '$_invoiceNumber.pdf';
     }
-    final datePart = intl.DateFormat('yyyy-MM-dd').format(DateTime.now());
+    final datePart = intl.DateFormat('yyyy-MM-dd').format(_selectedInvoiceDate);
     return '${_labelForDocType(_selectedDocType).toLowerCase().replaceAll(' ', '_')}_$datePart.pdf';
+  }
+
+  String _formattedInvoiceDate() {
+    return intl.DateFormat('dd/MM/yyyy').format(_selectedInvoiceDate);
+  }
+
+  String _invoiceDateStorageValue() {
+    return intl.DateFormat('yyyyMMdd').format(_selectedInvoiceDate);
+  }
+
+  String _paymentDueDateStorageValue() {
+    final dueDate = _selectedPaymentDueDate;
+    if (dueDate == null) return '';
+    return intl.DateFormat('yyyyMMdd').format(dueDate);
+  }
+
+  String _formattedPaymentDueDate() {
+    final dueDate = _selectedPaymentDueDate;
+    if (dueDate == null) return '';
+    return intl.DateFormat('dd/MM/yyyy').format(dueDate);
+  }
+
+  DateTime _defaultPaymentDueDate() {
+    return _selectedInvoiceDate.add(const Duration(days: 30));
   }
 
   String _creditDeliveryMethodLabel(
@@ -925,6 +963,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     if (widget.receiverAddress != null) {
       _clientAddressController.text = widget.receiverAddress!;
     }
+    _invoiceDateController.text = _formattedInvoiceDate();
+    _selectedPaymentDueDate = _defaultPaymentDueDate();
+    _paymentDueDateController.text = _formattedPaymentDueDate();
 
     _applyInitialTemplate();
     _prefillClientBusinessIdFromReceiver();
@@ -999,6 +1040,42 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           );
         }),
       );
+  }
+
+  Future<void> _pickInvoiceDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedInvoiceDate,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      _selectedInvoiceDate = picked;
+      _invoiceDateController.text = _formattedInvoiceDate();
+      if (!_hasCustomPaymentDueDate) {
+        _selectedPaymentDueDate = _defaultPaymentDueDate();
+        _paymentDueDateController.text = _formattedPaymentDueDate();
+      }
+    });
+  }
+
+  Future<void> _pickPaymentDueDate() async {
+    final initialDate =
+        _selectedPaymentDueDate ??
+        _selectedInvoiceDate.add(const Duration(days: 30));
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initialDate,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      _selectedPaymentDueDate = picked;
+      _hasCustomPaymentDueDate = true;
+      _paymentDueDateController.text = _formattedPaymentDueDate();
+    });
   }
 
   Future<void> _prefillClientBusinessIdFromReceiver() async {
@@ -1096,6 +1173,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     _clientAddressController.dispose();
     _clientPhoneController.dispose();
     _clientIdController.dispose();
+    _invoiceDateController.dispose();
+    _paymentDueDateController.dispose();
     _itemDescController.dispose();
     _itemQtyController.dispose();
     _itemPriceController.dispose();
@@ -1175,6 +1254,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'empty_items': 'נא להוסיף לפחות פריט אחד',
           'worker': 'פרטי העסק:',
           'date': 'תאריך:',
+          'payment_due_date': 'לתשלום עד:',
           'inv_no': 'מספר מסמך:',
           'invoice_counter': 'מונה חשבוניות',
           'preparing': 'מכין את המסמך...',
@@ -1231,6 +1311,30 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'cancel': 'ביטול',
         };
         break;
+      case 'ar':
+        _cachedStrings = {
+          ..._withRequiredDefaults(const {}),
+          'date': 'التاريخ:',
+          'payment_due_date': 'الدفع حتى:',
+          'pick_date': 'اختر التاريخ',
+        };
+        break;
+      case 'ru':
+        _cachedStrings = {
+          ..._withRequiredDefaults(const {}),
+          'date': 'Дата:',
+          'payment_due_date': 'Оплатить до:',
+          'pick_date': 'Выбрать дату',
+        };
+        break;
+      case 'am':
+        _cachedStrings = {
+          ..._withRequiredDefaults(const {}),
+          'date': 'ቀን:',
+          'payment_due_date': 'እስከዚህ ቀን ይከፈል:',
+          'pick_date': 'ቀን ይምረጡ',
+        };
+        break;
       default:
         _cachedStrings = {
           'title': 'Business Document Builder',
@@ -1261,6 +1365,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'empty_items': 'Please add at least one item',
           'worker': 'Business Details:',
           'date': 'Date:',
+          'payment_due_date': 'Pay Until:',
           'inv_no': 'Document No:',
           'invoice_counter': 'Invoice Counter',
           'preparing': 'Preparing document...',
@@ -1362,6 +1467,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'sent_success': 'Invoice sent successfully!',
       'worker': 'Business Details:',
       'date': 'Date:',
+      'payment_due_date': 'Pay Until:',
       'inv_no': 'Document No:',
       'tax_invoice_num': 'Tax Invoice No:',
       'original': 'Original',
@@ -2064,7 +2170,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         );
       }
 
-      final datePart = intl.DateFormat('yyyy-MM-dd').format(DateTime.now());
+      final datePart = intl.DateFormat('yyyy-MM-dd').format(
+        _selectedInvoiceDate,
+      );
       final baseName = '$receiverName $datePart';
 
       final existing = await userInvoicesRef
@@ -2107,6 +2215,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         'hasDiscount': _hasDiscount,
         'discountAmount': _discountAmount,
         'docType': _selectedDocType,
+        if (_selectedPaymentDueDate != null)
+          'paymentDueDate': _paymentDueDateStorageValue(),
         'invoiceDocId': invoiceDocId,
         'createdAt': FieldValue.serverTimestamp(),
         if (_invoiceNumber.isNotEmpty) 'invoiceNumber': _invoiceNumber,
@@ -2506,12 +2616,21 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                     ),
                                   ),
                                 pw.Text(
-                                  "${strings['date']} ${intl.DateFormat('dd/MM/yyyy').format(DateTime.now())}",
+                                  "${strings['date']} ${_formattedInvoiceDate()}",
                                   style: pw.TextStyle(
                                     fontSize: 12,
                                     color: pdf.PdfColors.blueGrey800,
                                   ),
                                 ),
+                                if (_showsDueDateSection &&
+                                    _selectedPaymentDueDate != null)
+                                  pw.Text(
+                                    "${strings['payment_due_date']} ${_formattedPaymentDueDate()}",
+                                    style: pw.TextStyle(
+                                      fontSize: 12,
+                                      color: pdf.PdfColors.blueGrey800,
+                                    ),
+                                  ),
                               ],
                             ),
                           ),
@@ -3139,6 +3258,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                 _creditOriginalInvoiceNumberController,
                                 strings['original_invoice_number']!,
                                 Icons.receipt_long_outlined,
+                                required: true,
                               ),
                               const SizedBox(height: 12),
                               TextField(
@@ -3150,6 +3270,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                     _inputStyle(
                                       strings['original_invoice_date']!,
                                       Icons.event_outlined,
+                                      required: true,
                                     ).copyWith(
                                       suffixIcon: TextButton(
                                         onPressed:
@@ -3165,6 +3286,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                 decoration: _inputStyle(
                                   strings['credit_reason']!,
                                   Icons.rule_folder_outlined,
+                                  required: true,
                                 ),
                               ),
                               const SizedBox(height: 12),
@@ -3213,6 +3335,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                 decoration: _inputStyle(
                                   strings['receipt_confirmation']!,
                                   Icons.verified_outlined,
+                                  required: true,
                                 ),
                               ),
                             ],
@@ -3230,6 +3353,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                               _clientNameController,
                               strings['client_name']!,
                               Icons.person_outline,
+                              required: true,
                             ),
                             const SizedBox(height: 12),
                             _buildTextField(
@@ -3255,6 +3379,46 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
 
                         const SizedBox(height: 20),
                         _buildSectionCard(
+                          title: strings['date']!,
+                          icon: Icons.event_outlined,
+                          children: [
+                            TextField(
+                              controller: _invoiceDateController,
+                              readOnly: true,
+                              onTap: _pickInvoiceDate,
+                              decoration: _inputStyle(
+                                strings['date']!,
+                                Icons.event_outlined,
+                                required: true,
+                              ).copyWith(
+                                suffixIcon: TextButton(
+                                  onPressed: _pickInvoiceDate,
+                                  child: Text(strings['pick_date']!),
+                                ),
+                              ),
+                            ),
+                            if (_showsDueDateSection) ...[
+                              const SizedBox(height: 12),
+                              TextField(
+                                controller: _paymentDueDateController,
+                                readOnly: true,
+                                onTap: _pickPaymentDueDate,
+                                decoration: _inputStyle(
+                                  strings['payment_due_date']!,
+                                  Icons.schedule_outlined,
+                                ).copyWith(
+                                  suffixIcon: TextButton(
+                                    onPressed: _pickPaymentDueDate,
+                                    child: Text(strings['pick_date']!),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+
+                        const SizedBox(height: 20),
+                        _buildSectionCard(
                           title: strings['items']!,
                           icon: Icons.list_alt_rounded,
                           children: [
@@ -3262,6 +3426,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                               _itemDescController,
                               strings['desc']!,
                               Icons.description_outlined,
+                              required: true,
                             ),
                             const SizedBox(height: 12),
                             Row(
@@ -3280,6 +3445,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                     _itemPriceController,
                                     strings['price']!,
                                     Icons.sell_outlined,
+                                    required: true,
                                     keyboardType: TextInputType.number,
                                   ),
                                 ),
@@ -3328,6 +3494,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                 _discountController,
                                 strings['discount_amount']!,
                                 Icons.discount_outlined,
+                                required: true,
                                 keyboardType:
                                     const TextInputType.numberWithOptions(
                                       decimal: true,
@@ -3800,6 +3967,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                 entry.installmentsController,
                 isRtl ? 'מספר תשלומים (חובה)' : 'Installments Count (Required)',
                 Icons.format_list_numbered,
+                required: true,
                 keyboardType: TextInputType.number,
               ),
             ],
@@ -3810,6 +3978,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
               entry.checkNumberController,
               isRtl ? 'מספר צ׳ק (חובה)' : 'Check Number (Required)',
               Icons.confirmation_number,
+              required: true,
               keyboardType: TextInputType.number,
             ),
             const SizedBox(height: 12),
@@ -3837,18 +4006,21 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
               entry.transferBankController,
               isRtl ? 'בנק (חובה)' : 'Bank Name (Required)',
               Icons.account_balance,
+              required: true,
             ),
             const SizedBox(height: 12),
             _buildTextField(
               entry.transferBranchController,
               isRtl ? 'סניף (חובה)' : 'Branch (Required)',
               Icons.store_mall_directory_outlined,
+              required: true,
             ),
             const SizedBox(height: 12),
             _buildTextField(
               entry.transferAccountController,
               isRtl ? 'מספר חשבון (חובה)' : 'Account Number (Required)',
               Icons.account_balance,
+              required: true,
             ),
           ],
           const SizedBox(height: 12),
@@ -3856,6 +4028,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
             entry.amountController,
             isRtl ? 'סכום ששולם (חובה)' : 'Amount Paid (Required)',
             Icons.payments_outlined,
+            required: true,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             textInputAction: TextInputAction.done,
             onSubmitted: (_) {
@@ -3872,6 +4045,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     TextEditingController controller,
     String label,
     IconData icon, {
+    bool required = false,
     TextInputType keyboardType = TextInputType.text,
     TextInputAction? textInputAction,
     ValueChanged<String>? onChanged,
@@ -3883,13 +4057,37 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       textInputAction: textInputAction,
       onChanged: onChanged,
       onSubmitted: onSubmitted,
-      decoration: _inputStyle(label, icon),
+      decoration: _inputStyle(label, icon, required: required),
     );
   }
 
-  InputDecoration _inputStyle(String label, IconData icon) {
+  Widget _buildFieldLabel(String label, {bool required = false}) {
+    if (!required) return Text(label);
+    return RichText(
+      text: TextSpan(
+        style: const TextStyle(fontSize: 16, color: Color(0xFF0F172A)),
+        children: [
+          TextSpan(text: label),
+          const TextSpan(
+            text: ' *',
+            style: TextStyle(
+              color: Color(0xFFDC2626),
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  InputDecoration _inputStyle(
+    String label,
+    IconData icon, {
+    bool required = false,
+  }) {
     return InputDecoration(
-      labelText: label,
+      label: _buildFieldLabel(label, required: required),
       prefixIcon: Icon(icon, size: 20, color: const Color(0xFF64748B)),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
