@@ -2622,15 +2622,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                     color: pdf.PdfColors.blueGrey800,
                                   ),
                                 ),
-                                if (_showsDueDateSection &&
-                                    _selectedPaymentDueDate != null)
-                                  pw.Text(
-                                    "${strings['payment_due_date']} ${_formattedPaymentDueDate()}",
-                                    style: pw.TextStyle(
-                                      fontSize: 12,
-                                      color: pdf.PdfColors.blueGrey800,
-                                    ),
-                                  ),
                               ],
                             ),
                           ),
@@ -2942,6 +2933,31 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                 ),
                               ],
                             ),
+                            if (_showsDueDateSection &&
+                                _selectedPaymentDueDate != null) ...[
+                              pw.SizedBox(height: 8),
+                              pw.Row(
+                                mainAxisAlignment:
+                                    pw.MainAxisAlignment.spaceBetween,
+                                children: [
+                                  pw.Text(
+                                    strings['payment_due_date']!,
+                                    style: pw.TextStyle(
+                                      fontSize: 11,
+                                      color: pdf.PdfColors.blueGrey800,
+                                    ),
+                                  ),
+                                  pw.Text(
+                                    _formattedPaymentDueDate(),
+                                    style: pw.TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: pw.FontWeight.bold,
+                                      color: pdf.PdfColors.blueGrey800,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
                           ],
                         ),
                       ),
