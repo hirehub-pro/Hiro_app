@@ -424,7 +424,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         'paymentMethods': paymentMethodsData,
         'paymentAmountTotal': paymentAmountTotal,
         'date': dateStr,
-        if (_selectedPaymentDueDate != null)
+        if (_showsDueDateSection && _selectedPaymentDueDate != null)
           'paymentDueDate': _paymentDueDateStorageValue(),
         'invoiceDocId': quoteDocRef.id,
         'createdAt': timestamp,
@@ -502,7 +502,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         'sequenceNumber': nextNumber,
         'invoiceDocId': invoiceDocId,
         'date': dateStr,
-        if (_selectedPaymentDueDate != null)
+        if (_showsDueDateSection && _selectedPaymentDueDate != null)
           'paymentDueDate': _paymentDueDateStorageValue(),
         'createdAt': timestamp,
         if (docType == 'invoice') 'paymentStatus': 'unpaid',
@@ -550,7 +550,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'invoiceDocId': invoiceDocId,
           'date': dateStr,
           'issueDate': dateStr,
-          if (_selectedPaymentDueDate != null)
+          if (_showsDueDateSection && _selectedPaymentDueDate != null)
             'paymentDueDate': _paymentDueDateStorageValue(),
           'clientDetails': clientDetails,
           'businessDetails': businessDetails,
@@ -632,7 +632,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'sourceInvoiceSavedDocId': widget.sourceInvoiceSavedDocId,
       'sourceInvoiceTotalAmount': widget.sourceInvoiceTotalAmount,
       'date': dateStr,
-      if (_selectedPaymentDueDate != null)
+      if (_showsDueDateSection && _selectedPaymentDueDate != null)
         'paymentDueDate': _paymentDueDateStorageValue(),
       'createdAt': FieldValue.serverTimestamp(),
       if (docType == 'invoice') 'paymentStatus': 'unpaid',
@@ -787,7 +787,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   bool get _isQuoteLike =>
       _selectedDocType == 'quote' || _selectedDocType == 'work_order';
   bool get _showsDueDateSection =>
-      _isQuoteLike || _selectedDocType == 'invoice';
+      _selectedDocType == 'quote' || _selectedDocType == 'invoice';
   bool get _requiresSequentialDocumentNumber => !_isQuoteLike;
   bool get _showsPaymentMethodSection =>
       !_isQuoteLike && _selectedDocType != 'invoice';
@@ -1094,7 +1094,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           .collection('verification_info')
           .doc('latest')
           .get();
-      final businessId = verificationDoc.data()?['businessId']
+      final businessId = verificationDoc
+          .data()?['businessId']
           ?.toString()
           .trim();
       if (!mounted) return;
@@ -1236,8 +1237,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'client_id': 'מס\' עוסק / ת.ז. / ח.פ.',
           'client_address': 'כתובת הלקוח',
           'client_phone': 'טלפון הלקוח',
-          'client_details_required':
-              'יש למלא לפחות את שם הלקוח.',
+          'client_details_required': 'יש למלא לפחות את שם הלקוח.',
           'items': 'פירוט פריטים ושירותים',
           'desc': 'תיאור השירות/מוצר',
           'qty': 'כמות',
@@ -1348,8 +1348,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'client_id': 'Business No. / ID / Tax ID',
           'client_address': 'Client Address',
           'client_phone': 'Client Phone',
-          'client_details_required':
-              'Please fill at least the client name.',
+          'client_details_required': 'Please fill at least the client name.',
           'items': 'Service Items & Details',
           'desc': 'Description',
           'qty': 'Qty',
@@ -1448,8 +1447,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'client_id': 'Business No. / ID / Tax ID',
       'client_phone': 'Client Phone',
       'client_address': 'Client Address',
-      'client_details_required':
-          'Please fill at least the client name.',
+      'client_details_required': 'Please fill at least the client name.',
       'items': 'Service Items & Details',
       'desc': 'Description',
       'qty': 'Qty',
@@ -2154,8 +2152,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           ? await invoiceRef.get()
           : null;
       if (existingByInvoice?.exists == true) {
-        final existingData =
-            existingByInvoice?.data() ?? <String, dynamic>{};
+        final existingData = existingByInvoice?.data() ?? <String, dynamic>{};
         if (showFeedback && mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -2173,15 +2170,14 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         }
         return _SavedInvoiceResult(
           url: (existingData['url'] ?? '').toString(),
-          fileName: (existingData['fileName'] ?? _previewFileName())
-              .toString(),
+          fileName: (existingData['fileName'] ?? _previewFileName()).toString(),
           wasCreated: false,
         );
       }
 
-      final datePart = intl.DateFormat('yyyy-MM-dd').format(
-        _selectedInvoiceDate,
-      );
+      final datePart = intl.DateFormat(
+        'yyyy-MM-dd',
+      ).format(_selectedInvoiceDate);
       final baseName = '$receiverName $datePart';
 
       final existing = await userInvoicesRef
@@ -2224,7 +2220,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         'hasDiscount': _hasDiscount,
         'discountAmount': _discountAmount,
         'docType': _selectedDocType,
-        if (_selectedPaymentDueDate != null)
+        if (_showsDueDateSection && _selectedPaymentDueDate != null)
           'paymentDueDate': _paymentDueDateStorageValue(),
         'invoiceDocId': invoiceDocId,
         'createdAt': FieldValue.serverTimestamp(),
@@ -3417,16 +3413,17 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                               controller: _invoiceDateController,
                               readOnly: true,
                               onTap: _pickInvoiceDate,
-                              decoration: _inputStyle(
-                                strings['date']!,
-                                Icons.event_outlined,
-                                required: true,
-                              ).copyWith(
-                                suffixIcon: TextButton(
-                                  onPressed: _pickInvoiceDate,
-                                  child: Text(strings['pick_date']!),
-                                ),
-                              ),
+                              decoration:
+                                  _inputStyle(
+                                    strings['date']!,
+                                    Icons.event_outlined,
+                                    required: true,
+                                  ).copyWith(
+                                    suffixIcon: TextButton(
+                                      onPressed: _pickInvoiceDate,
+                                      child: Text(strings['pick_date']!),
+                                    ),
+                                  ),
                             ),
                             if (_showsDueDateSection) ...[
                               const SizedBox(height: 12),
@@ -3434,15 +3431,16 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                 controller: _paymentDueDateController,
                                 readOnly: true,
                                 onTap: _pickPaymentDueDate,
-                                decoration: _inputStyle(
-                                  strings['payment_due_date']!,
-                                  Icons.schedule_outlined,
-                                ).copyWith(
-                                  suffixIcon: TextButton(
-                                    onPressed: _pickPaymentDueDate,
-                                    child: Text(strings['pick_date']!),
-                                  ),
-                                ),
+                                decoration:
+                                    _inputStyle(
+                                      strings['payment_due_date']!,
+                                      Icons.schedule_outlined,
+                                    ).copyWith(
+                                      suffixIcon: TextButton(
+                                        onPressed: _pickPaymentDueDate,
+                                        child: Text(strings['pick_date']!),
+                                      ),
+                                    ),
                               ),
                             ],
                           ],
