@@ -96,6 +96,10 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
 
   String _docTypeLabel(String? docType, bool isRtl) {
     switch (docType) {
+      case 'quote':
+        return isRtl ? 'הצעת מחיר' : 'Quote';
+      case 'work_order':
+        return isRtl ? 'הזמנת עבודה' : 'Work Order';
       case 'invoice':
         return isRtl ? 'חשבונית' : 'Invoice';
       case 'invoice_receipt':
@@ -111,6 +115,10 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
 
   Color _docTypeColor(String? docType) {
     switch (docType) {
+      case 'quote':
+        return const Color(0xFF00897B);
+      case 'work_order':
+        return const Color(0xFF6D4C41);
       case 'invoice':
         return const Color(0xFF1565C0);
       case 'invoice_receipt':
@@ -727,6 +735,14 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                           scrollDirection: Axis.horizontal,
                           children: [
                             _buildFilterChip('all', isRtl ? 'הכל' : 'All'),
+                            _buildFilterChip(
+                              'quote',
+                              _docTypeLabel('quote', isRtl),
+                            ),
+                            _buildFilterChip(
+                              'work_order',
+                              _docTypeLabel('work_order', isRtl),
+                            ),
                             _buildFilterChip(
                               'invoice',
                               _docTypeLabel('invoice', isRtl),

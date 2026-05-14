@@ -196,6 +196,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   List<Map<String, String>> _logTargetsForDocType(String docType) {
     switch (docType) {
       case 'quote':
+      case 'work_order':
         return const [];
       case 'receipt':
         return [
@@ -374,9 +375,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'isBusinessVerified': _isBusinessVerified,
     };
 
-    if (docType == 'quote') {
+    if (docType == 'quote' || docType == 'work_order') {
       final fileName =
-          'quote_${userId}_${DateTime.now().millisecondsSinceEpoch}.pdf';
+          '${docType}_${userId}_${DateTime.now().millisecondsSinceEpoch}.pdf';
       final storagePath = 'invoices/$userId/$fileName';
       final ref = firebase_storage.FirebaseStorage.instance.ref().child(
         storagePath,
@@ -643,7 +644,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           : {'creditNoteLegal': creditNoteLegalData},
     };
     await savedInvoicesRef.add(savedInvoiceData);
-    if (docType != 'quote') {
+    if (docType != 'quote' && docType != 'work_order') {
       await _addToTotalEarned(userId: userId, amount: signedTotalAmount);
     }
     await Future.wait(
@@ -736,6 +737,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     switch (docType) {
       case 'quote':
         return 'Quote';
+      case 'work_order':
+        return 'Work Order';
       case 'invoice':
         return 'Invoice';
       case 'invoice_receipt':
@@ -781,12 +784,13 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   bool _hasDiscount = false;
 
   bool get _isCreditNote => _selectedDocType == 'credit_note';
-  bool get _isQuote => _selectedDocType == 'quote';
+  bool get _isQuoteLike =>
+      _selectedDocType == 'quote' || _selectedDocType == 'work_order';
   bool get _showsDueDateSection =>
-      _selectedDocType == 'quote' || _selectedDocType == 'invoice';
-  bool get _requiresSequentialDocumentNumber => !_isQuote;
+      _isQuoteLike || _selectedDocType == 'invoice';
+  bool get _requiresSequentialDocumentNumber => !_isQuoteLike;
   bool get _showsPaymentMethodSection =>
-      _selectedDocType != 'quote' && _selectedDocType != 'invoice';
+      !_isQuoteLike && _selectedDocType != 'invoice';
   bool get _usesVat => _isLicensedDealerType && _selectedDocType != 'receipt';
 
   double _unitPriceAfterTax(InvoiceItem item) {
@@ -1268,6 +1272,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'subtotal': 'סה"כ לפני מע"מ',
           'doc_type': 'סוג המסמך',
           'quote': 'הצעת מחיר',
+          'work_order': 'הזמנת עבודה',
           'receipt': 'קבלה',
           'invoice': 'חשבונית מס',
           'invoice_receipt': 'חשבונית מס / קבלה',
@@ -1379,6 +1384,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'subtotal': 'Subtotal (Excl. VAT)',
           'doc_type': 'Document Type',
           'quote': 'Quote',
+          'work_order': 'Work Order',
           'receipt': 'Receipt',
           'invoice': 'Tax Invoice',
           'invoice_receipt': 'Tax Invoice / Receipt',
@@ -1431,6 +1437,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'preparing': 'Preparing document...',
       'doc_type': 'Document Type',
       'quote': 'Quote',
+      'work_order': 'Work Order',
       'receipt': 'Receipt',
       'invoice': 'Tax Invoice',
       'invoice_receipt': 'Tax Invoice / Receipt',
@@ -1714,6 +1721,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     switch (docType) {
       case 'quote':
         return strings['quote']!;
+      case 'work_order':
+        return strings['work_order']!;
       case 'invoice':
         return strings['invoice']!;
       case 'invoice_receipt':
@@ -2239,7 +2248,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           });
         }
       }
-      if (!_isQuote) {
+      if (!_isQuoteLike) {
         await _addToTotalEarned(
           userId: currentUser.uid,
           amount: _signedTotalAmount,
@@ -2527,6 +2536,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
               _selectedDocType == 'invoice_receipt';
           final docTitle = _selectedDocType == 'quote'
               ? strings['quote']!
+              : _selectedDocType == 'work_order'
+              ? strings['work_order']!
               : _selectedDocType == 'receipt'
               ? strings['receipt']!
               : _selectedDocType == 'invoice'
@@ -3176,6 +3187,10 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                 DropdownMenuItem(
                                   value: 'quote',
                                   child: Text(strings['quote']!),
+                                ),
+                                DropdownMenuItem(
+                                  value: 'work_order',
+                                  child: Text(strings['work_order']!),
                                 ),
                                 DropdownMenuItem(
                                   value: 'receipt',
