@@ -1223,6 +1223,10 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       listen: listen,
     ).locale.languageCode;
 
+    return _localizedStringsForLocale(locale);
+  }
+
+  Map<String, String> _localizedStringsForLocale(String locale) {
     if (_cachedStrings != null && _lastLocale == locale) {
       return _cachedStrings!;
     }
@@ -1318,26 +1322,264 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         break;
       case 'ar':
         _cachedStrings = {
-          ..._withRequiredDefaults(const {}),
+          'title': 'منشئ المستندات التجارية',
+          'client_info': 'تفاصيل العميل:',
+          'client_name': 'اسم العميل',
+          'client_id': 'رقم النشاط / الهوية / الرقم الضريبي',
+          'client_address': 'عنوان العميل',
+          'client_phone': 'هاتف العميل',
+          'client_details_required': 'يرجى إدخال اسم العميل على الأقل.',
+          'items': 'تفاصيل الخدمات والمنتجات',
+          'desc': 'الوصف',
+          'qty': 'الكمية',
+          'price': 'سعر الوحدة',
+          'price_tax_mode': 'حالة السعر الضريبية',
+          'price_before_tax': 'قبل الضريبة',
+          'price_after_tax': 'شامل الضريبة',
+          'has_discount': 'هل يوجد خصم؟',
+          'discount_amount': 'مبلغ الخصم',
+          'discount_invalid':
+              'عند تفعيل الخصم، أدخل مبلغًا صحيحًا يساوي أو يقل عن إجمالي العناصر.',
+          'discount': 'الخصم',
+          'entered_price_before_tax': 'قبل الضريبة',
+          'entered_price_after_tax': 'شامل الضريبة',
+          'add_item': 'إضافة عنصر',
+          'total': 'الإجمالي المستحق',
+          'generate': 'معاينة / طباعة',
+          'empty_items': 'يرجى إضافة عنصر واحد على الأقل',
+          'worker': 'تفاصيل النشاط التجاري:',
           'date': 'التاريخ:',
           'payment_due_date': 'الدفع حتى:',
+          'inv_no': 'رقم المستند:',
+          'invoice_counter': 'عداد الفواتير',
+          'preparing': 'جارٍ تجهيز المستند...',
+          'legal_disclaimer':
+              'تم إنشاؤه عبر hiro. هذا مستند محوسب معتمد من سلطة الضرائب الإسرائيلية. أصل.',
+          'send_to_contact': 'إرسال إلى جهة الاتصال',
+          'send_to': 'إرسال إلى ',
+          'no_contacts': 'لم يتم العثور على جهات اتصال',
+          'sent_success': 'تم إرسال المستند بنجاح!',
+          'notes': 'ملاحظات / شروط الدفع',
+          'subtotal': 'الإجمالي الفرعي قبل الضريبة',
+          'doc_type': 'نوع المستند',
+          'quote': 'عرض سعر',
+          'work_order': 'أمر عمل',
+          'receipt': 'إيصال',
+          'invoice': 'فاتورة ضريبية',
+          'invoice_receipt': 'فاتورة ضريبية / إيصال',
+          'credit_note': 'إشعار دائن',
+          'licensed_only': 'متاح فقط للتاجر المرخص الموثق',
+          'vat_id': 'رقم الضريبة / الرقم الضريبي:',
+          'vat': 'ضريبة القيمة المضافة:',
+          'original': 'أصل',
+          'business_name': 'اسم النشاط التجاري:',
+          'tax_invoice_num': 'رقم الفاتورة الضريبية:',
+          'licensed_dealer': 'تاجر مرخص',
+          'exempt_dealer': 'تاجر معفى',
+          'company_dealer': 'شركة محدودة',
+          'business_address': 'عنوان النشاط التجاري:',
+          'worker_id': 'معرّف العامل:',
+          'authorized_dealer_label': 'تاجر معتمد:',
+          'payment_method': 'طريقة الدفع',
+          'credit_note_legal': 'تفاصيل الإشعار الدائن',
+          'credit_reason': 'سبب الإشعار الدائن',
+          'original_invoice_number': 'رقم الفاتورة الأصلية',
+          'original_invoice_date': 'تاريخ الفاتورة الأصلية',
+          'delivery_method': 'طريقة التسليم',
+          'receipt_confirmation': 'إثبات التسليم / تأكيد الاستلام',
           'pick_date': 'اختر التاريخ',
+          'delivery_registered_mail': 'بريد مسجل',
+          'delivery_email_confirmation': 'تأكيد عبر البريد الإلكتروني',
+          'delivery_customer_signature': 'توقيع العميل',
+          'delivery_manual': 'تسليم يدوي',
+          'credit_note_missing_fields':
+              'يتطلب الإشعار الدائن رقم الفاتورة الأصلية وتاريخها وسبب الإشعار وإثبات التسليم.',
+          'credit_note_legal_hint':
+              'للامتثال في إسرائيل، احتفظ بمرجع الفاتورة الأصلية وإثبات تسليم الإشعار الدائن إلى العميل.',
+          'doc_start_title': 'رقم بداية المستند',
+          'doc_start_message':
+              'هذه هي المرة الأولى التي تستخدم فيها {docType}. أدخل الرقم الذي يجب أن يبدأ منه هذا النوع من المستندات.',
+          'doc_start_warning':
+              'من المهم إدخال الرقم الصحيح. إذا أدخلت رقمًا خاطئًا، فستتحمل المسؤولية ولن تتمكن من تغييره لاحقًا.',
+          'doc_start_field': 'رقم البداية',
+          'doc_start_invalid': 'أدخل رقمًا صحيحًا أكبر من 0',
+          'continue': 'متابعة',
+          'cancel': 'إلغاء',
         };
         break;
       case 'ru':
         _cachedStrings = {
-          ..._withRequiredDefaults(const {}),
+          'title': 'Конструктор бизнес-документов',
+          'client_info': 'Данные клиента:',
+          'client_name': 'Имя клиента',
+          'client_id': 'Номер бизнеса / ID / налоговый номер',
+          'client_address': 'Адрес клиента',
+          'client_phone': 'Телефон клиента',
+          'client_details_required':
+              'Пожалуйста, укажите как минимум имя клиента.',
+          'items': 'Товары и услуги',
+          'desc': 'Описание',
+          'qty': 'Кол-во',
+          'price': 'Цена за единицу',
+          'price_tax_mode': 'Режим цены по налогу',
+          'price_before_tax': 'До налога',
+          'price_after_tax': 'С налогом',
+          'has_discount': 'Применить скидку?',
+          'discount_amount': 'Сумма скидки',
+          'discount_invalid':
+              'Если скидка включена, введите корректную сумму, не превышающую общую сумму позиций.',
+          'discount': 'Скидка',
+          'entered_price_before_tax': 'До налога',
+          'entered_price_after_tax': 'С налогом',
+          'add_item': 'Добавить позицию',
+          'total': 'Итого к оплате',
+          'generate': 'Предпросмотр / Печать',
+          'empty_items': 'Добавьте хотя бы одну позицию',
+          'worker': 'Данные бизнеса:',
           'date': 'Дата:',
           'payment_due_date': 'Оплатить до:',
+          'inv_no': 'Номер документа:',
+          'invoice_counter': 'Счетчик счетов',
+          'preparing': 'Подготовка документа...',
+          'legal_disclaimer':
+              'Создано через hiro. Это компьютеризированный документ, одобренный Налоговым управлением Израиля. Оригинал.',
+          'send_to_contact': 'Отправить контакту',
+          'send_to': 'Отправить ',
+          'no_contacts': 'Контакты не найдены',
+          'sent_success': 'Документ успешно отправлен!',
+          'notes': 'Примечания / условия оплаты',
+          'subtotal': 'Подытог без НДС',
+          'doc_type': 'Тип документа',
+          'quote': 'Коммерческое предложение',
+          'work_order': 'Заказ-наряд',
+          'receipt': 'Квитанция',
+          'invoice': 'Налоговый счет',
+          'invoice_receipt': 'Налоговый счет / квитанция',
+          'credit_note': 'Кредит-нота',
+          'licensed_only':
+              'Доступно только для подтвержденного лицензированного дилера',
+          'vat_id': 'НДС / налоговый номер:',
+          'vat': 'НДС:',
+          'original': 'Оригинал',
+          'business_name': 'Название бизнеса:',
+          'tax_invoice_num': 'Номер налогового счета:',
+          'licensed_dealer': 'Лицензированный дилер',
+          'exempt_dealer': 'Освобожденный дилер',
+          'company_dealer': 'Общество с ограниченной ответственностью',
+          'business_address': 'Адрес бизнеса:',
+          'worker_id': 'ID работника:',
+          'authorized_dealer_label': 'Уполномоченный дилер:',
+          'payment_method': 'Способ оплаты',
+          'credit_note_legal': 'Данные кредит-ноты',
+          'credit_reason': 'Причина возврата',
+          'original_invoice_number': 'Номер исходного счета',
+          'original_invoice_date': 'Дата исходного счета',
+          'delivery_method': 'Способ доставки',
+          'receipt_confirmation': 'Подтверждение доставки / получения',
           'pick_date': 'Выбрать дату',
+          'delivery_registered_mail': 'Заказное письмо',
+          'delivery_email_confirmation': 'Подтверждение по email',
+          'delivery_customer_signature': 'Подпись клиента',
+          'delivery_manual': 'Ручная доставка',
+          'credit_note_missing_fields':
+              'Для кредит-ноты необходимы номер исходного счета, дата исходного счета, причина возврата и подтверждение доставки.',
+          'credit_note_legal_hint':
+              'Для соответствия требованиям в Израиле храните ссылку на исходный счет и подтверждение вручения кредит-ноты клиенту.',
+          'doc_start_title': 'Начальный номер документа',
+          'doc_start_message':
+              'Вы впервые используете {docType}. Введите номер, с которого должен начинаться этот тип документа.',
+          'doc_start_warning':
+              'Важно ввести правильный номер. Если вы введете неправильный номер, ответственность будет на вас, и позже его нельзя будет изменить.',
+          'doc_start_field': 'Начальный номер',
+          'doc_start_invalid': 'Введите корректный номер больше 0',
+          'continue': 'Продолжить',
+          'cancel': 'Отмена',
         };
         break;
       case 'am':
         _cachedStrings = {
-          ..._withRequiredDefaults(const {}),
+          'title': 'የንግድ ሰነድ አዘጋጅ',
+          'client_info': 'የደንበኛ ዝርዝሮች:',
+          'client_name': 'የደንበኛ ስም',
+          'client_id': 'የንግድ ቁጥር / መታወቂያ / የግብር ቁጥር',
+          'client_address': 'የደንበኛ አድራሻ',
+          'client_phone': 'የደንበኛ ስልክ',
+          'client_details_required': 'ቢያንስ የደንበኛውን ስም ያስገቡ።',
+          'items': 'የአገልግሎት እና የእቃ ዝርዝሮች',
+          'desc': 'መግለጫ',
+          'qty': 'ብዛት',
+          'price': 'የአንዱ ዋጋ',
+          'price_tax_mode': 'የዋጋ ግብር ሁኔታ',
+          'price_before_tax': 'ከግብር በፊት',
+          'price_after_tax': 'ግብር ጨምሮ',
+          'has_discount': 'ቅናሽ አለ?',
+          'discount_amount': 'የቅናሽ መጠን',
+          'discount_invalid': 'ቅናሽ ከተመረጠ ከጠቅላላ ዕቃዎች መጠን ያልበለጠ ትክክለኛ መጠን ያስገቡ።',
+          'discount': 'ቅናሽ',
+          'entered_price_before_tax': 'ከግብር በፊት',
+          'entered_price_after_tax': 'ግብር ጨምሮ',
+          'add_item': 'እቃ ጨምር',
+          'total': 'ጠቅላላ ክፍያ',
+          'generate': 'ቅድመ እይታ / አትም',
+          'empty_items': 'ቢያንስ አንድ እቃ ያክሉ',
+          'worker': 'የንግድ ዝርዝሮች:',
           'date': 'ቀን:',
           'payment_due_date': 'እስከዚህ ቀን ይከፈል:',
+          'inv_no': 'የሰነድ ቁጥር:',
+          'invoice_counter': 'የደረሰኝ ቆጣሪ',
+          'preparing': 'ሰነዱን በማዘጋጀት ላይ...',
+          'legal_disclaimer':
+              'በ hiro ተፈጥሯል። ይህ በእስራኤል የግብር ባለስልጣን የተፈቀደ ኮምፒውተራዊ ሰነድ ነው። ዋና ቅጂ።',
+          'send_to_contact': 'ወደ ዕውቂያ ላክ',
+          'send_to': 'ወደ ',
+          'no_contacts': 'ምንም ዕውቂያዎች አልተገኙም',
+          'sent_success': 'ሰነዱ በተሳካ ሁኔታ ተልኳል!',
+          'notes': 'ማስታወሻዎች / የክፍያ ውሎች',
+          'subtotal': 'ንዑስ ድምር (ከቫት በፊት)',
+          'doc_type': 'የሰነድ አይነት',
+          'quote': 'የዋጋ ቅናሽ ጥያቄ',
+          'work_order': 'የስራ ትዕዛዝ',
+          'receipt': 'ደረሰኝ',
+          'invoice': 'የግብር ደረሰኝ',
+          'invoice_receipt': 'የግብር ደረሰኝ / ደረሰኝ',
+          'credit_note': 'የክሬዲት ማስታወሻ',
+          'licensed_only': 'ለተረጋገጠ ፈቃድ ያለው ነጋዴ ብቻ ይገኛል',
+          'vat_id': 'ቫት / የግብር ቁጥር:',
+          'vat': 'ቫት:',
+          'original': 'ዋና',
+          'business_name': 'የንግድ ስም:',
+          'tax_invoice_num': 'የግብር ደረሰኝ ቁጥር:',
+          'licensed_dealer': 'ፈቃድ ያለው ነጋዴ',
+          'exempt_dealer': 'ነፃ ነጋዴ',
+          'company_dealer': 'ውስን ኩባንያ',
+          'business_address': 'የንግድ አድራሻ:',
+          'worker_id': 'የሰራተኛ መታወቂያ:',
+          'authorized_dealer_label': 'የተፈቀደ ነጋዴ:',
+          'payment_method': 'የክፍያ ዘዴ',
+          'credit_note_legal': 'የክሬዲት ማስታወሻ ዝርዝሮች',
+          'credit_reason': 'የክሬዲት ምክንያት',
+          'original_invoice_number': 'የመጀመሪያው ደረሰኝ ቁጥር',
+          'original_invoice_date': 'የመጀመሪያው ደረሰኝ ቀን',
+          'delivery_method': 'የማድረስ ዘዴ',
+          'receipt_confirmation': 'የማድረስ / የመቀበል ማረጋገጫ',
           'pick_date': 'ቀን ይምረጡ',
+          'delivery_registered_mail': 'የተመዘገበ ፖስታ',
+          'delivery_email_confirmation': 'የኢሜይል ማረጋገጫ',
+          'delivery_customer_signature': 'የደንበኛ ፊርማ',
+          'delivery_manual': 'በእጅ ማድረስ',
+          'credit_note_missing_fields':
+              'ለክሬዲት ማስታወሻ የመጀመሪያው ደረሰኝ ቁጥር፣ ቀን፣ ምክንያት እና የማድረስ ማረጋገጫ ያስፈልጋሉ።',
+          'credit_note_legal_hint':
+              'በእስራኤል ደንብ መሰረት የመጀመሪያውን ደረሰኝ ማጣቀሻ እና የክሬዲት ማስታወሻው ለደንበኛው እንደደረሰ ማረጋገጫ ያስቀምጡ።',
+          'doc_start_title': 'የመነሻ ሰነድ ቁጥር',
+          'doc_start_message':
+              'ይህን {docType} ለመጀመሪያ ጊዜ እየተጠቀሙ ነው። ይህ የሰነድ አይነት የሚጀምርበትን ቁጥር ያስገቡ።',
+          'doc_start_warning':
+              'ትክክለኛውን ቁጥር ማስገባት አስፈላጊ ነው። የተሳሳተ ቁጥር ካስገቡ ኃላፊነቱ የእርስዎ ነው እና በኋላ መቀየር አይቻልም።',
+          'doc_start_field': 'የመነሻ ቁጥር',
+          'doc_start_invalid': 'ከ0 በላይ የሆነ ትክክለኛ ቁጥር ያስገቡ',
+          'continue': 'ቀጥል',
+          'cancel': 'ሰርዝ',
         };
         break;
       default:
@@ -1440,6 +1682,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'receipt': 'Receipt',
       'invoice': 'Tax Invoice',
       'invoice_receipt': 'Tax Invoice / Receipt',
+      'credit_note': 'Credit Note',
       'licensed_only': 'Verified Licensed Dealers only',
       'invoice_counter': 'Invoice Counter',
       'client_info': 'Client Details:',
@@ -1476,7 +1719,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'inv_no': 'Document No:',
       'tax_invoice_num': 'Tax Invoice No:',
       'original': 'Original',
+      'business_name': 'Business Name:',
       'business_address': 'Business Address:',
+      'worker_id': 'Worker ID:',
       'subtotal': 'Subtotal (Excl. VAT)',
       'vat': 'VAT:',
       'legal_disclaimer':
@@ -2509,7 +2754,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     pw.MemoryImage? logo,
   ) async {
     final doc = pw.Document();
-    final strings = _getLocalizedStrings(context, listen: false);
+    final strings = _localizedStringsForLocale('he');
 
     doc.addPage(
       pw.Page(
@@ -2521,12 +2766,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         ),
         theme: pw.ThemeData.withFont(base: font, bold: fontBold),
         build: (pw.Context context) {
-          // Fix: determine isRtl for PDF context
-          final locale = Provider.of<LanguageProvider>(
-            this.context,
-            listen: false,
-          ).locale.languageCode;
-          final isRtl = locale == 'he' || locale == 'ar';
           final isInvoice =
               _selectedDocType == 'invoice' ||
               _selectedDocType == 'invoice_receipt';
@@ -2884,7 +3123,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                     pw.MainAxisAlignment.spaceBetween,
                                 children: [
                                   pw.Text(
-                                    _vatLabel(isRtl),
+                                    _vatLabel(true),
                                     style: pw.TextStyle(fontSize: 11),
                                   ),
                                   pw.Text(
@@ -2972,8 +3211,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                     if (_showsPaymentMethodSection) ...[
                       pw.SizedBox(height: 24),
                       pw.Text(
-                        strings['payment_method'] ??
-                            (isRtl ? 'אמצעי תשלום' : 'Payment Method'),
+                        strings['payment_method']!,
                         style: pw.TextStyle(
                           fontWeight: pw.FontWeight.bold,
                           fontSize: 11,
@@ -2990,7 +3228,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                           ),
                         ),
                         child: pw.Text(
-                          _paymentMethodsSummaryText(isRtl),
+                          _paymentMethodsSummaryText(true),
                           style: const pw.TextStyle(fontSize: 11),
                         ),
                       ),

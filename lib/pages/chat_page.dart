@@ -563,43 +563,70 @@ class _ChatPageState extends State<ChatPage> {
         ),
         actions: [
           if (_canCreateInvoices)
-            IconButton(
-              tooltip: _t(
-                en: "Create Invoice",
-                he: "הפק חשבונית",
-                ar: "إنشاء فاتورة",
-                am: "ደረሰኝ ፍጠር",
-                ru: "Создать счет",
-              ),
-              icon: const Icon(Icons.receipt_long_rounded, size: 22),
-              onPressed: () async {
-                final receiverDoc = await _getUserDoc(widget.receiverId);
-                String? phone;
-                String? address;
-                if (receiverDoc != null && receiverDoc.exists) {
-                  final data = receiverDoc.data() as Map<String, dynamic>;
-                  phone = data['phone'];
-                  address = data['address'] ?? data['town'];
-                }
+            Padding(
+              padding: const EdgeInsetsDirectional.only(end: 8),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () async {
+                  final receiverDoc = await _getUserDoc(widget.receiverId);
+                  String? phone;
+                  String? address;
+                  if (receiverDoc != null && receiverDoc.exists) {
+                    final data = receiverDoc.data() as Map<String, dynamic>;
+                    phone = data['phone'];
+                    address = data['address'] ?? data['town'];
+                  }
 
-                if (!mounted) return;
+                  if (!mounted) return;
 
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => InvoiceBuilderPage(
-                      workerName: _currentUserName ?? "Worker",
-                      workerPhone: _currentUserPhone,
-                      workerEmail: _currentUserEmail,
-                      initialDocType: 'quote',
-                      receiverId: widget.receiverId,
-                      receiverName: widget.receiverName,
-                      receiverPhone: phone,
-                      receiverAddress: address,
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => InvoiceBuilderPage(
+                        workerName: _currentUserName ?? "Worker",
+                        workerPhone: _currentUserPhone,
+                        workerEmail: _currentUserEmail,
+                        initialDocType: 'quote',
+                        receiverId: widget.receiverId,
+                        receiverName: widget.receiverName,
+                        receiverPhone: phone,
+                        receiverAddress: address,
+                      ),
+                    ),
+                  );
+                },
+                child: Tooltip(
+                  message: _t(
+                    en: "Create Invoice",
+                    he: "הפק חשבונית",
+                    ar: "إنشاء فاتورة",
+                    am: "ደረሰኝ ፍጠር",
+                    ru: "Создать счет",
+                  ),
+                  child: SizedBox(
+                    width: 72,
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.receipt_long_rounded, size: 22),
+                        const SizedBox(height: 2),
+                        Text(
+                          _t(
+                            en: "Create Invoice",
+                            he: "צור חשבונית",
+                            ar: "إنشاء فاتورة",
+                            am: "ደረሰኝ ፍጠር",
+                            ru: "Создать счет",
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 10, height: 1.1),
+                        ),
+                      ],
                     ),
                   ),
-                );
-              },
+                ),
+              ),
             ),
           IconButton(
             icon: const Icon(Icons.call_rounded, size: 22),
