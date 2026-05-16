@@ -389,9 +389,7 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
     required bool isRtl,
     required double remainingAmount,
   }) async {
-    final amountController = TextEditingController(
-      text: remainingAmount.toStringAsFixed(2),
-    );
+    String amountText = remainingAmount.toStringAsFixed(2);
     String selectedMethod = 'cash';
     String? validationMessage;
 
@@ -405,11 +403,13 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  TextField(
-                    controller: amountController,
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
-                    ),
+                  TextFormField(
+                    initialValue: amountText,
+                    onChanged: (value) {
+                      amountText = value;
+                    },
+                    autofocus: true,
+                    textInputAction: TextInputAction.done,
                     decoration: InputDecoration(
                       labelText: isRtl
                           ? 'כמה הלקוח שילם?'
@@ -417,6 +417,9 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                       helperText: isRtl
                           ? 'יתרה לתשלום: ${remainingAmount.toStringAsFixed(2)} ₪'
                           : 'Remaining due: ${remainingAmount.toStringAsFixed(2)} ₪',
+                    ),
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -459,7 +462,7 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                 FilledButton(
                   onPressed: () {
                     final parsedAmount = double.tryParse(
-                      amountController.text.trim().replaceAll(',', '.'),
+                      amountText.trim().replaceAll(',', '.'),
                     );
                     if (parsedAmount == null ||
                         parsedAmount <= 0 ||
@@ -488,7 +491,6 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
       },
     );
 
-    amountController.dispose();
     return result;
   }
 
