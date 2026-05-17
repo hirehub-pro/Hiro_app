@@ -2060,16 +2060,16 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                                   const SizedBox(height: 12),
                                   _buildCustomerProButton(localized),
                                 ],
-                                if (_userRole == 'worker') ...[
-                                  const SizedBox(height: 16),
-                                  _buildBusinessToolsSection(localized),
-                                ],
                                 if (_shouldShowSubscriptionCta) ...[
                                   const SizedBox(height: 16),
                                   _buildSubscribeCta(localized),
                                 ],
                                 const SizedBox(height: 24),
                                 _buildRequestStatusTimeline(localized),
+                                if (_userRole == 'worker') ...[
+                                  const SizedBox(height: 16),
+                                  _buildBusinessToolsSection(localized),
+                                ],
                                 const SizedBox(height: 20),
                                 _buildProjectIdeasSection(localized),
                                 const SizedBox(height: 24),

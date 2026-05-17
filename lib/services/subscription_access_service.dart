@@ -282,6 +282,11 @@ class SubscriptionAccessService {
     await ensureCurrentUserSubscriptionAccountToken(existingData: data);
 
     if (role == 'worker') {
+      final liveStoreState = await _syncWorkerStoreState(existingData: data);
+      if (liveStoreState != null) {
+        return liveStoreState;
+      }
+
       final normalizedState = await _syncExpiredSubscriptionIfNeeded(
         userRef: doc.reference,
         data: data,
@@ -294,6 +299,19 @@ class SubscriptionAccessService {
       role: role,
       subscriptionStatus: _resolveSubscriptionStatusFromData(data),
     );
+  }
+
+  static Future<SubscriptionAccessState?> _syncWorkerStoreState({
+    required Map<String, dynamic>? existingData,
+  }) async {
+    final appStoreState = await syncCurrentUserWithAppStore(
+      existingData: existingData,
+    );
+    if (appStoreState != null) {
+      return appStoreState;
+    }
+
+    return syncCurrentUserWithGooglePlay(existingData: existingData);
   }
 
   static Future<void> refreshCurrentUserStateInBackground() async {
@@ -382,7 +400,8 @@ class SubscriptionAccessService {
     final ownsStoredToken =
         storedToken.isNotEmpty && storedToken == purchaseToken;
     final canClaimUnownedToken =
-        allowClaimUnownedPurchase && ownerQuery.docs.isEmpty;
+        (allowClaimUnownedPurchase || _hasGooglePlayHistory(data)) &&
+        ownerQuery.docs.isEmpty;
 
     if (!ownsStoredToken && !canClaimUnownedToken) {
       debugPrint(
@@ -413,11 +432,12 @@ class SubscriptionAccessService {
       'subscriptionCanceled': playSnapshot.status == 'active_canceled',
       'subscriptionUpdatedAt': FieldValue.serverTimestamp(),
       _subscriptionSourceField: 'google_play',
+      'subscriptionPlatform': 'google_play',
       'subscriptionPurchaseToken': purchaseToken,
       'subscriptionProductId':
           playSnapshot.productId ?? data?['subscriptionProductId'],
       'subscriptionPurchaseOrderId':
-          playSnapshot.orderId ?? data?['subscriptionPurchaseOrderId'],
+          data?['subscriptionPurchaseOrderId'] ?? playSnapshot.orderId,
     }, SetOptions(merge: true));
 
     return mapped;
@@ -570,6 +590,23 @@ class SubscriptionAccessService {
     return false;
   }
 
+  static bool _hasGooglePlayHistory(Map<String, dynamic>? data) {
+    final source = (data?[_subscriptionSourceField] ?? '')
+        .toString()
+        .toLowerCase();
+    if (source == 'google_play') return true;
+
+    final platform = (data?['subscriptionPlatform'] ?? '')
+        .toString()
+        .toLowerCase();
+    if (platform.contains('google_play') || platform.contains('play')) {
+      return true;
+    }
+
+    final productId = (data?['subscriptionProductId'] ?? '').toString();
+    return _workerSubscriptionProductIds.contains(productId);
+  }
+
   static Future<GooglePlaySubscriptionSnapshot?> _queryGooglePlayState() async {
     if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
       return null;
@@ -656,6 +693,10 @@ class SubscriptionAccessService {
     final status = (data?['subscriptionStatus'] ?? '').toString().toLowerCase();
     if (!isEntitledSubscriptionStatus(status)) {
       return 'inactive';
+    }
+
+    if (_hasGooglePlayHistory(data)) {
+      return status;
     }
 
     final expiry = _resolveExpiryDate(data);

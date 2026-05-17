@@ -924,7 +924,7 @@ function createPlaySubscriptionUpdates(playState, userData, options = {}) {
       playState.latestOrderId || userData.subscriptionPurchaseOrderId || null,
     subscriptionPurchaseToken:
       purchaseToken || userData.subscriptionPurchaseToken || null,
-    subscriptionPlatform: "android_play",
+    subscriptionPlatform: "google_play",
     subscriptionSource: "google_play",
     subscriptionProviderState: playState.subscriptionState || null,
     subscriptionAccountToken:
