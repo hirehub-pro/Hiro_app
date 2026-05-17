@@ -336,23 +336,27 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         .map((entry) => entry.toMap())
         .toList();
     final paymentAmountTotal = _paymentMethodsAmountTotal();
-    final hasDiscount = _hasDiscount && _discountAmount > 0;
-    final discountAmount = hasDiscount ? _discountAmount : 0.0;
+    final hasDiscount = _hasDiscount && _manualDiscountAmount > 0;
+    final discountAmount = hasDiscount ? _manualDiscountAmount : 0.0;
     final signedDiscountAmount = discountAmount == 0
         ? 0.0
         : (docType == 'credit_note' ? discountAmount : -discountAmount);
+    final roundingAmount = _roundingAmount;
     final itemsNetTotal = _items.fold<double>(
       0,
       (runningTotal, item) => runningTotal + _itemTotalBeforeTax(item),
     );
     final subtotalBeforeTax = _subtotalAmount;
-    final subtotalAfterTax = _totalAmount;
+    final subtotalAfterTax = _totalBeforeRoundingAmount;
     final signedSubtotalBeforeTax = docType == 'credit_note'
         ? -subtotalBeforeTax
         : subtotalBeforeTax;
     final signedSubtotalAfterTax = docType == 'credit_note'
         ? -subtotalAfterTax
         : subtotalAfterTax;
+    final signedRoundingAmount = roundingAmount == 0
+        ? 0.0
+        : (docType == 'credit_note' ? roundingAmount : -roundingAmount);
     var remainingDiscount = discountAmount;
     final logItems = _items.asMap().entries.map((entry) {
       final index = entry.key;
@@ -438,7 +442,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
             .toList(),
         'priceTaxModeDefault': _selectedPriceTaxMode,
         'hasDiscount': _hasDiscount,
-        'discountAmount': _discountAmount,
+        'discountAmount': _manualDiscountAmount,
+        'roundTotalEnabled': _roundTotalEnabled,
+        'roundingAmount': _roundingAmount,
         'notes': _notesController.text,
         'paymentMethod': _paymentMethods.isNotEmpty
             ? _paymentMethods.first.method
@@ -526,7 +532,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
             .toList(),
         'priceTaxModeDefault': _selectedPriceTaxMode,
         'hasDiscount': _hasDiscount,
-        'discountAmount': _discountAmount,
+        'discountAmount': _manualDiscountAmount,
+        'roundTotalEnabled': _roundTotalEnabled,
+        'roundingAmount': _roundingAmount,
         'notes': _notesController.text,
         'paymentMethod': _paymentMethods.isNotEmpty
             ? _paymentMethods.first.method
@@ -599,6 +607,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'vatAmount': vatAmount,
           'grandTotal': signedTotalAmount,
           'discountAmount': signedDiscountAmount,
+          'roundingAmount': signedRoundingAmount,
           'customerId': customerId,
           'clientName': _clientNameController.text,
           'clientAddress': _clientAddressController.text,
@@ -841,6 +850,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   bool _hasCustomPaymentDueDate = false;
   String _selectedPriceTaxMode = 'after_tax';
   bool _hasDiscount = false;
+  bool _roundTotalEnabled = true;
 
   bool get _isCreditNote => _selectedDocType == 'credit_note';
   bool get _isQuoteLike =>
@@ -878,7 +888,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         return runningTotal + _itemTotalAfterTax(item);
       });
 
-  double get _discountAmount {
+  double get _manualDiscountAmount {
     if (!_hasDiscount) return 0.0;
     final parsed = double.tryParse(
       _discountController.text.trim().replaceAll(',', '.'),
@@ -888,6 +898,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     return parsed > maxDiscount ? maxDiscount : parsed;
   }
 
+  double get _discountAmount => _manualDiscountAmount;
+
   double get _subtotalAmount {
     final subtotal = _itemsSubtotalBeforeTax - _discountAmount;
     return subtotal < 0 ? 0 : subtotal;
@@ -895,9 +907,24 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
 
   double get _vatAmount => _usesVat ? _subtotalAmount * _vatRate : 0.0;
 
-  double get _totalAmount => _subtotalAmount + _vatAmount;
+  double get _totalBeforeRoundingAmount => _subtotalAmount + _vatAmount;
+
+  double get _roundingAmount {
+    if (!_roundTotalEnabled) return 0.0;
+    final roundedTotal = _totalBeforeRoundingAmount.floorToDouble();
+    final reductionNeeded = _totalBeforeRoundingAmount - roundedTotal;
+    return reductionNeeded <= 0 ? 0.0 : reductionNeeded;
+  }
+
+  double get _totalAmount => _totalBeforeRoundingAmount - _roundingAmount;
 
   double get _signedTotalAmount => _isCreditNote ? -_totalAmount : _totalAmount;
+
+  double get _signedRoundingAmount {
+    return _roundingAmount == 0
+        ? 0.0
+        : (_isCreditNote ? _roundingAmount : -_roundingAmount);
+  }
 
   double get _signedSubtotalAmount {
     return _isCreditNote ? -_subtotalAmount : _subtotalAmount;
@@ -1382,6 +1409,10 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'discount_invalid':
               'אם יש הנחה יש למלא סכום הנחה תקין שקטן או שווה לסכום הפריטים.',
           'discount': 'הנחה',
+          'round_total': 'עיגול סכום',
+          'rounding_amount': 'סכום לעיגול',
+          'round_total_done': 'הסכום עוגל ל-{amount} ₪',
+          'round_total_already': 'הסכום כבר מעוגל',
           'entered_price_before_tax': 'לפני מע"מ',
           'entered_price_after_tax': 'כולל מע"מ',
           'add_item': 'הוסף פריט',
@@ -1469,6 +1500,10 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'discount_invalid':
               'عند تفعيل الخصم، أدخل مبلغًا صحيحًا يساوي أو يقل عن إجمالي العناصر.',
           'discount': 'الخصم',
+          'round_total': 'تقريب المبلغ',
+          'rounding_amount': 'مبلغ التقريب',
+          'round_total_done': 'تم تقريب المبلغ إلى {amount} ₪',
+          'round_total_already': 'المبلغ مقرب بالفعل',
           'entered_price_before_tax': 'قبل الضريبة',
           'entered_price_after_tax': 'شامل الضريبة',
           'add_item': 'إضافة عنصر',
@@ -1557,6 +1592,10 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'discount_invalid':
               'Если скидка включена, введите корректную сумму, не превышающую общую сумму позиций.',
           'discount': 'Скидка',
+          'round_total': 'Округлить сумму',
+          'rounding_amount': 'Сумма округления',
+          'round_total_done': 'Сумма округлена до {amount} ₪',
+          'round_total_already': 'Сумма уже округлена',
           'entered_price_before_tax': 'До налога',
           'entered_price_after_tax': 'С налогом',
           'add_item': 'Добавить позицию',
@@ -1644,6 +1683,10 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'discount_amount': 'የቅናሽ መጠን',
           'discount_invalid': 'ቅናሽ ከተመረጠ ከጠቅላላ ዕቃዎች መጠን ያልበለጠ ትክክለኛ መጠን ያስገቡ።',
           'discount': 'ቅናሽ',
+          'round_total': 'ጠቅላላ ድምሩን አዙር',
+          'rounding_amount': 'የማዞሪያ መጠን',
+          'round_total_done': 'መጠኑ ወደ {amount} ₪ ተዞሯል',
+          'round_total_already': 'መጠኑ አስቀድሞ ዙር ነው',
           'entered_price_before_tax': 'ከግብር በፊት',
           'entered_price_after_tax': 'ግብር ጨምሮ',
           'add_item': 'እቃ ጨምር',
@@ -1731,6 +1774,10 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'discount_invalid':
               'When discount is enabled, enter a valid amount less than or equal to items total.',
           'discount': 'Discount',
+          'round_total': 'Round Total',
+          'rounding_amount': 'Rounding Amount',
+          'round_total_done': 'Amount rounded to {amount} ₪',
+          'round_total_already': 'The amount is already rounded',
           'entered_price_before_tax': 'Before Tax',
           'entered_price_after_tax': 'After Tax',
           'add_item': 'Add Item',
@@ -1831,6 +1878,10 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'discount_invalid':
           'When discount is enabled, enter a valid amount less than or equal to items total.',
       'discount': 'Discount',
+      'round_total': 'Round Total',
+      'rounding_amount': 'Rounding Amount',
+      'round_total_done': 'Amount rounded to {amount} ₪',
+      'round_total_already': 'The amount is already rounded',
       'entered_price_before_tax': 'Before Tax',
       'entered_price_after_tax': 'After Tax',
       'add_item': 'Add Item',
@@ -2596,7 +2647,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         'paymentAmountTotal': _paymentMethodsAmountTotal(),
         'priceTaxModeDefault': _selectedPriceTaxMode,
         'hasDiscount': _hasDiscount,
-        'discountAmount': _discountAmount,
+        'discountAmount': _manualDiscountAmount,
+        'roundTotalEnabled': _roundTotalEnabled,
+        'roundingAmount': _roundingAmount,
         'docType': _selectedDocType,
         if (_showsDueDateSection && _selectedPaymentDueDate != null)
           'paymentDueDate': _paymentDueDateStorageValue(),
@@ -3281,6 +3334,26 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                   ),
                                   pw.Text(
                                     "-${_discountAmount.toStringAsFixed(2)} ₪",
+                                    style: pw.TextStyle(fontSize: 11),
+                                  ),
+                                ],
+                              ),
+                              pw.Divider(
+                                thickness: 1,
+                                color: pdf.PdfColors.grey400,
+                              ),
+                            ],
+                            if (_roundingAmount > 0) ...[
+                              pw.Row(
+                                mainAxisAlignment:
+                                    pw.MainAxisAlignment.spaceBetween,
+                                children: [
+                                  pw.Text(
+                                    strings['rounding_amount']!,
+                                    style: pw.TextStyle(fontSize: 11),
+                                  ),
+                                  pw.Text(
+                                    "${_signedRoundingAmount.toStringAsFixed(2)} ₪",
                                     style: pw.TextStyle(fontSize: 11),
                                   ),
                                 ],
@@ -4113,6 +4186,52 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                     ],
                                   ),
                                 ],
+                                if (_roundingAmount > 0) ...[
+                                  const SizedBox(height: 10),
+                                  Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(
+                                        strings['rounding_amount']!,
+                                        style: const TextStyle(
+                                          color: Colors.white70,
+                                          fontSize: 14,
+                                        ),
+                                      ),
+                                      Text(
+                                        "${_signedRoundingAmount.toStringAsFixed(2)} ₪",
+                                        style: const TextStyle(
+                                          color: Colors.white70,
+                                          fontSize: 14,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                                const SizedBox(height: 8),
+                                SwitchListTile.adaptive(
+                                  contentPadding: EdgeInsets.zero,
+                                  value: _roundTotalEnabled,
+                                  onChanged: (value) {
+                                    setState(() {
+                                      _roundTotalEnabled = value;
+                                    });
+                                  },
+                                  secondary: const Icon(
+                                    Icons.currency_exchange_rounded,
+                                    color: Colors.white,
+                                  ),
+                                  activeThumbColor: Colors.white,
+                                  activeTrackColor: Colors.white54,
+                                  title: Text(
+                                    strings['round_total']!,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
                                 const SizedBox(height: 20),
                                 Row(
                                   children: [
