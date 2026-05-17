@@ -218,6 +218,29 @@ class _EditProfilePageState extends State<EditProfilePage>
     _backgroundAnimationController;
   }
 
+  Widget _buildReturnBackArrow() {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.9),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.95)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: IconButton(
+        tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+        onPressed: () => Navigator.of(context).maybePop(),
+        icon: const BackButtonIcon(),
+        color: const Color(0xFF1976D2),
+      ),
+    );
+  }
+
   Future<void> _pickImage() async {
     final picked = await _picker.pickImage(
       source: ImageSource.gallery,
@@ -371,6 +394,20 @@ class _EditProfilePageState extends State<EditProfilePage>
       case 'he':
         return {
           'title': 'עריכת פרופיל',
+          'subtitle':
+              'עדכן את הפרטים המקצועיים שלך כדי שהפרופיל ייראה ברור ומלא.',
+          'access': 'עדכון פרופיל',
+          'profile_card_title': 'עדכון פרטי הפרופיל',
+          'profile_card_subtitle':
+              'ערוך את המידע, השירותים והמיקום שלך במקום אחד.',
+          'feature_profile_title': 'פרטים ברורים',
+          'feature_profile_body': 'שם, אימייל וטלפון מעודכנים לפרופיל אמין.',
+          'feature_location_title': 'מיקום מדויק',
+          'feature_location_body':
+              'עיר, מפה ורדיוס עבודה עוזרים ללקוחות למצוא אותך.',
+          'feature_service_title': 'שירות מסודר',
+          'feature_service_body':
+              'מקצועות, שפות ותיאור שמסבירים בדיוק מה אתה מציע.',
           'basic_info': 'פרטים בסיסיים',
           'service_details': 'פרטי שירות',
           'about_you': 'עליך',
@@ -400,6 +437,20 @@ class _EditProfilePageState extends State<EditProfilePage>
       case 'ar':
         return {
           'title': 'تعديل الملف الشخصي',
+          'subtitle': 'حدّث تفاصيلك المهنية ليبدو ملفك واضحًا ومكتملًا.',
+          'access': 'تحديث الملف الشخصي',
+          'profile_card_title': 'تحديث تفاصيل الملف',
+          'profile_card_subtitle':
+              'عدّل المعلومات والخدمات والموقع في مكان واحد.',
+          'feature_profile_title': 'تفاصيل واضحة',
+          'feature_profile_body':
+              'الاسم والبريد والهاتف المحدثة تجعل الملف أكثر موثوقية.',
+          'feature_location_title': 'موقع دقيق',
+          'feature_location_body':
+              'المدينة والخريطة ونطاق العمل تساعد العملاء على العثور عليك.',
+          'feature_service_title': 'خدمة مرتبة',
+          'feature_service_body':
+              'المهن واللغات والوصف تشرح بدقة ما الذي تقدمه.',
           'basic_info': 'المعلومات الأساسية',
           'service_details': 'تفاصيل الخدمة',
           'about_you': 'نبذة عنك',
@@ -430,6 +481,16 @@ class _EditProfilePageState extends State<EditProfilePage>
       case 'am':
         return {
           'title': 'መገለጫ አርትዕ',
+          'subtitle': 'መገለጫዎ ግልጽ እና የተሟላ እንዲታይ ሙያዊ ዝርዝሮችዎን ያዘምኑ።',
+          'access': 'መገለጫ ማዘመን',
+          'profile_card_title': 'የመገለጫ ዝርዝሮችን ያዘምኑ',
+          'profile_card_subtitle': 'መረጃዎን እና አገልግሎቶችዎን እና አካባቢዎን በአንድ ቦታ ያርትዑ።',
+          'feature_profile_title': 'ግልጽ ዝርዝሮች',
+          'feature_profile_body': 'የተዘመኑ ስም፣ ኢሜይል እና ስልክ መገለጫዎን የታማኝ ያደርጋሉ።',
+          'feature_location_title': 'ትክክለኛ አካባቢ',
+          'feature_location_body': 'ከተማ፣ ካርታ እና የስራ ክልል ደንበኞች እንዲያገኙዎ ያግዛሉ።',
+          'feature_service_title': 'የተደራጀ አገልግሎት',
+          'feature_service_body': 'ሙያዎች፣ ቋንቋዎች እና መግለጫዎ የሚያቀርቡትን በግልጽ ያሳያሉ።',
           'basic_info': 'መሰረታዊ መረጃ',
           'service_details': 'የአገልግሎት ዝርዝሮች',
           'about_you': 'ስለ እርስዎ',
@@ -459,6 +520,21 @@ class _EditProfilePageState extends State<EditProfilePage>
       case 'ru':
         return {
           'title': 'Редактировать профиль',
+          'subtitle':
+              'Обновите профессиональные данные, чтобы профиль выглядел полным и понятным.',
+          'access': 'Обновление профиля',
+          'profile_card_title': 'Обновление данных профиля',
+          'profile_card_subtitle':
+              'Измените информацию, услуги и местоположение в одном месте.',
+          'feature_profile_title': 'Понятные данные',
+          'feature_profile_body':
+              'Актуальные имя, почта и телефон делают профиль надежнее.',
+          'feature_location_title': 'Точное местоположение',
+          'feature_location_body':
+              'Город, карта и радиус работы помогают клиентам быстрее вас найти.',
+          'feature_service_title': 'Структурированные услуги',
+          'feature_service_body':
+              'Профессии, языки и описание ясно показывают, что вы предлагаете.',
           'basic_info': 'Основная информация',
           'service_details': 'Детали услуги',
           'about_you': 'О вас',
@@ -489,6 +565,21 @@ class _EditProfilePageState extends State<EditProfilePage>
       default:
         return {
           'title': 'Edit Profile',
+          'subtitle':
+              'Update your professional details so your profile feels complete and easy to trust.',
+          'access': 'Profile Update',
+          'profile_card_title': 'Update Profile Details',
+          'profile_card_subtitle':
+              'Edit your information, services, and location in one place.',
+          'feature_profile_title': 'Clear details',
+          'feature_profile_body':
+              'Updated name, email, and phone make your profile more trustworthy.',
+          'feature_location_title': 'Precise location',
+          'feature_location_body':
+              'City, map, and work radius help clients find you faster.',
+          'feature_service_title': 'Organized service info',
+          'feature_service_body':
+              'Professions, languages, and description explain exactly what you offer.',
           'basic_info': 'Basic Information',
           'service_details': 'Service Details',
           'about_you': 'About You',
@@ -568,13 +659,25 @@ class _EditProfilePageState extends State<EditProfilePage>
                           horizontal: horizontalPadding,
                           vertical: verticalPadding,
                         ),
-                        child: Center(
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 1440),
-                            child: isWide
-                                ? _buildWideLayout(strings, isRtl)
-                                : _buildNarrowLayout(strings),
-                          ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Align(
+                              alignment: AlignmentDirectional.centerStart,
+                              child: _buildReturnBackArrow(),
+                            ),
+                            const SizedBox(height: 10),
+                            Center(
+                              child: ConstrainedBox(
+                                constraints: const BoxConstraints(
+                                  maxWidth: 1440,
+                                ),
+                                child: isWide
+                                    ? _buildWideLayout(strings, isRtl)
+                                    : _buildNarrowLayout(strings),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -612,8 +715,6 @@ class _EditProfilePageState extends State<EditProfilePage>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _buildAnimatedEntry(delay: 0.0, child: _buildTopBar(strings)),
-        const SizedBox(height: 22),
         _buildAnimatedEntry(
           delay: 0.08,
           child: _buildIntroPanel(strings, compact: true),
@@ -622,32 +723,6 @@ class _EditProfilePageState extends State<EditProfilePage>
         _buildAnimatedEntry(
           delay: 0.14,
           child: _buildProfileFormCard(strings, compact: true),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildTopBar(Map<String, String> strings) {
-    return Row(
-      children: [
-        IconButton(
-          onPressed: () => Navigator.pop(context),
-          icon: const Icon(Icons.arrow_back_rounded),
-          color: const Color(0xFF1F2937),
-          tooltip: MaterialLocalizations.of(context).backButtonTooltip,
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            strings['title'] ?? 'Edit Profile',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: Color(0xFF101827),
-              fontSize: 22,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
         ),
       ],
     );
@@ -689,17 +764,7 @@ class _EditProfilePageState extends State<EditProfilePage>
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: alignment,
       children: [
-        if (!compact)
-          Align(
-            alignment: AlignmentDirectional.centerStart,
-            child: IconButton(
-              onPressed: () => Navigator.pop(context),
-              icon: const Icon(Icons.arrow_back_rounded),
-              color: const Color(0xFF1F2937),
-              tooltip: MaterialLocalizations.of(context).backButtonTooltip,
-            ),
-          ),
-        _buildAccessPill(),
+        _buildAccessPill(strings),
         SizedBox(height: compact ? 20 : 26),
         Text(
           strings['title'] ?? 'Edit Profile',
@@ -715,8 +780,8 @@ class _EditProfilePageState extends State<EditProfilePage>
         ConstrainedBox(
           constraints: BoxConstraints(maxWidth: compact ? 540 : 620),
           child: Text(
-            strings['location_info'] ??
-                'Precise details help others find and trust your profile.',
+            strings['subtitle'] ??
+                'Update your professional details so your profile feels complete and easy to trust.',
             textAlign: textAlign,
             style: const TextStyle(
               color: Color(0xFF6B7280),
@@ -725,11 +790,15 @@ class _EditProfilePageState extends State<EditProfilePage>
             ),
           ),
         ),
+        if (!compact) ...[
+          const SizedBox(height: 44),
+          _buildFeatureHighlights(strings),
+        ],
       ],
     );
   }
 
-  Widget _buildAccessPill() {
+  Widget _buildAccessPill(Map<String, String> strings) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
       decoration: BoxDecoration(
@@ -744,18 +813,103 @@ class _EditProfilePageState extends State<EditProfilePage>
           ),
         ],
       ),
-      child: const Row(
+      child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.auto_awesome_rounded, color: Color(0xFF1976D2), size: 18),
-          SizedBox(width: 10),
+          const Icon(
+            Icons.auto_awesome_rounded,
+            color: Color(0xFF1976D2),
+            size: 18,
+          ),
+          const SizedBox(width: 10),
           Text(
-            'PROFILE EDIT',
-            style: TextStyle(
+            (strings['access'] ?? 'Profile Update').toUpperCase(),
+            style: const TextStyle(
               color: Color(0xFF1976D2),
               fontSize: 13,
               fontWeight: FontWeight.w800,
-              letterSpacing: 3.2,
+              letterSpacing: 2.4,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFeatureHighlights(Map<String, String> strings) {
+    final features = [
+      _EditProfileFeature(
+        icon: Icons.badge_outlined,
+        title: strings['feature_profile_title']!,
+        body: strings['feature_profile_body']!,
+      ),
+      _EditProfileFeature(
+        icon: Icons.place_outlined,
+        title: strings['feature_location_title']!,
+        body: strings['feature_location_body']!,
+      ),
+      _EditProfileFeature(
+        icon: Icons.work_outline_rounded,
+        title: strings['feature_service_title']!,
+        body: strings['feature_service_body']!,
+      ),
+    ];
+
+    return Wrap(
+      spacing: 18,
+      runSpacing: 18,
+      children: [
+        for (var index = 0; index < features.length; index++)
+          _buildAnimatedEntry(
+            delay: 0.24 + index * 0.06,
+            begin: const Offset(0, 0.12),
+            child: SizedBox(
+              width: 190,
+              height: 156,
+              child: _buildFeatureCard(features[index]),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildFeatureCard(_EditProfileFeature feature) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(22),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.82),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.9)),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF1B2A41).withValues(alpha: 0.08),
+            blurRadius: 28,
+            offset: const Offset(0, 18),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(feature.icon, color: const Color(0xFF1976D2), size: 34),
+          const Spacer(),
+          Text(
+            feature.title,
+            style: const TextStyle(
+              color: Color(0xFF101827),
+              fontSize: 17,
+              fontWeight: FontWeight.w800,
+              height: 1.15,
+            ),
+          ),
+          const SizedBox(height: 7),
+          Text(
+            feature.body,
+            style: const TextStyle(
+              color: Color(0xFF6B7280),
+              fontSize: 14,
+              height: 1.25,
             ),
           ),
         ],
@@ -791,6 +945,30 @@ class _EditProfilePageState extends State<EditProfilePage>
           key: _formKey,
           child: Column(
             children: [
+              _buildLogoMark(Icons.edit_note_rounded),
+              const SizedBox(height: 24),
+              Text(
+                strings['profile_card_title'] ?? 'Update Profile Details',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: const Color(0xFF070B18),
+                  fontSize: compact ? 31 : 36,
+                  fontWeight: FontWeight.w800,
+                  height: 1.05,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                strings['profile_card_subtitle'] ??
+                    'Edit your information, services, and location in one place.',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Color(0xFF6B7280),
+                  fontSize: 16,
+                  height: 1.35,
+                ),
+              ),
+              const SizedBox(height: 28),
               _buildImagePicker(),
               const SizedBox(height: 24),
               _buildSectionCard(
@@ -931,6 +1109,29 @@ class _EditProfilePageState extends State<EditProfilePage>
           ],
         ),
       ],
+    );
+  }
+
+  Widget _buildLogoMark(IconData icon) {
+    return Container(
+      width: 78,
+      height: 78,
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF1E88E5), Color(0xFF0D47A1)],
+        ),
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF1976D2).withValues(alpha: 0.28),
+            blurRadius: 30,
+            offset: const Offset(0, 16),
+          ),
+        ],
+      ),
+      child: Icon(icon, color: Colors.white, size: 34),
     );
   }
 
@@ -1450,6 +1651,18 @@ class _EditProfilePageState extends State<EditProfilePage>
       ),
     );
   }
+}
+
+class _EditProfileFeature {
+  const _EditProfileFeature({
+    required this.icon,
+    required this.title,
+    required this.body,
+  });
+
+  final IconData icon;
+  final String title;
+  final String body;
 }
 
 class _EditProfileBackgroundPainter extends CustomPainter {
