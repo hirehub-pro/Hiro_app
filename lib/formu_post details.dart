@@ -38,6 +38,11 @@ class _PostDetailPageState extends State<PostDetailPage> {
   String? _currentUserRole;
   bool _currentUserHasActiveWorkerSubscription = false;
   String? _loadedBidDraftId;
+  String? _pendingBidQuoteUrl;
+  String? _pendingBidQuoteFileName;
+  String? _pendingBidQuoteDocType;
+  String? _pendingBidQuoteDocumentNumber;
+  List<Map<String, dynamic>> _pendingBidQuoteItems = [];
   bool _isSubmittingComment = false;
   int _mediaPageIndex = 0;
 
@@ -171,6 +176,85 @@ class _PostDetailPageState extends State<PostDetailPage> {
     _loadedBidDraftId = bidId;
     _bidPriceController.text = existingBid['bidPrice']?.toString() ?? '';
     _commentController.text = existingBid['text']?.toString() ?? '';
+    _pendingBidQuoteUrl = existingBid['quoteUrl']?.toString();
+    _pendingBidQuoteFileName = existingBid['quoteFileName']?.toString();
+    _pendingBidQuoteDocType = existingBid['quoteDocType']?.toString();
+    _pendingBidQuoteDocumentNumber = existingBid['quoteDocumentNumber']
+        ?.toString();
+    final rawQuoteItems = existingBid['quoteItems'];
+    if (rawQuoteItems is Iterable) {
+      _pendingBidQuoteItems = rawQuoteItems
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList();
+    } else {
+      _pendingBidQuoteItems = [];
+    }
+  }
+
+  String _formatBidAmount(double amount) {
+    if (amount == amount.roundToDouble()) {
+      return amount.round().toString();
+    }
+    return amount.toStringAsFixed(2);
+  }
+
+  Future<void> _openBidQuoteBuilder() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || user.isAnonymous || _isSubmittingComment) return;
+
+    final authorUid = widget.post['authorUid']?.toString().trim() ?? '';
+    if (authorUid.isEmpty) return;
+
+    final initialPrice = _bidAmountFromValue(_bidPriceController.text);
+    final initialDescription =
+        (widget.post['title'] ?? widget.post['description'] ?? '')
+            .toString()
+            .trim();
+    final initialItems = _pendingBidQuoteItems.isNotEmpty
+        ? _pendingBidQuoteItems
+        : [
+            {
+              'description': initialDescription.isNotEmpty
+                  ? initialDescription
+                  : (widget.localizedStrings['bid_price'] ?? 'Quote'),
+              'quantity': 1,
+              if (initialPrice != null) 'price': initialPrice,
+            },
+          ];
+
+    final result = await Navigator.push<InvoiceBuilderDraftResult>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => InvoiceBuilderPage(
+          workerName: user.displayName?.trim().isNotEmpty == true
+              ? user.displayName!.trim()
+              : widget.localizedStrings['anonymous'],
+          receiverId: authorUid,
+          receiverName:
+              (_authorPreview?['name'] ?? widget.post['authorName'] ?? '')
+                  .toString(),
+          receiverAddress: (widget.post['location'] ?? '').toString().trim(),
+          initialDocType: 'quote',
+          returnDraftOnSend: true,
+          initialItems: initialItems,
+          initialNotes: _commentController.text.trim().isEmpty
+              ? null
+              : _commentController.text.trim(),
+        ),
+      ),
+    );
+
+    if (!mounted || result == null) return;
+
+    setState(() {
+      _bidPriceController.text = _formatBidAmount(result.amount);
+      _pendingBidQuoteUrl = result.url;
+      _pendingBidQuoteFileName = result.fileName;
+      _pendingBidQuoteDocType = result.docType;
+      _pendingBidQuoteDocumentNumber = result.documentNumber;
+      _pendingBidQuoteItems = result.items;
+    });
   }
 
   void _listenToComments() {
@@ -245,6 +329,13 @@ class _PostDetailPageState extends State<PostDetailPage> {
       'authorRole': _currentUserRole,
       'bidPrice': isWorkerBid ? bidPrice : null,
       'isBid': isWorkerBid && bidPrice.isNotEmpty,
+      'quoteUrl': isWorkerBid ? _pendingBidQuoteUrl : null,
+      'quoteFileName': isWorkerBid ? _pendingBidQuoteFileName : null,
+      'quoteDocType': isWorkerBid ? _pendingBidQuoteDocType : null,
+      'quoteDocumentNumber': isWorkerBid
+          ? _pendingBidQuoteDocumentNumber
+          : null,
+      'quoteItems': isWorkerBid ? _pendingBidQuoteItems : null,
       'timestamp': FieldValue.serverTimestamp(),
     };
     try {
@@ -263,6 +354,12 @@ class _PostDetailPageState extends State<PostDetailPage> {
       }
       _commentController.clear();
       _bidPriceController.clear();
+      _pendingBidQuoteUrl = null;
+      _pendingBidQuoteFileName = null;
+      _pendingBidQuoteDocType = null;
+      _pendingBidQuoteDocumentNumber = null;
+      _pendingBidQuoteItems = [];
+      _loadedBidDraftId = null;
     } catch (_) {
     } finally {
       if (mounted) {
@@ -472,9 +569,25 @@ class _PostDetailPageState extends State<PostDetailPage> {
     final lng = widget.post['locationLng'];
     if (lat == null || lng == null) return;
 
-    final uri = Uri.parse(
-      'https://www.google.com/maps/search/?api=1&query=${(lat as num).toDouble()},${(lng as num).toDouble()}',
+    final languageCode = Provider.of<LanguageProvider>(
+      context,
+      listen: false,
+    ).locale.languageCode;
+
+    await MapAppLauncher.openLocation(
+      context: context,
+      latitude: (lat as num).toDouble(),
+      longitude: (lng as num).toDouble(),
+      languageCode: languageCode,
     );
+  }
+
+  Future<void> _openBidQuoteFile(String rawUrl) async {
+    final url = rawUrl.trim();
+    if (url.isEmpty) return;
+
+    final uri = Uri.tryParse(url);
+    if (uri == null) return;
 
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
@@ -1380,7 +1493,10 @@ class _PostDetailPageState extends State<PostDetailPage> {
                                   _workerPreviewCache[workerUid];
                               final bidPrice =
                                   comment['bidPrice']?.toString().trim() ?? '';
+                              final quoteUrl =
+                                  comment['quoteUrl']?.toString().trim() ?? '';
                               final hasBid = bidPrice.isNotEmpty;
+                              final hasQuoteFile = quoteUrl.isNotEmpty;
 
                               return InkWell(
                                 onTap: workerUid.isEmpty
@@ -1550,6 +1666,33 @@ class _PostDetailPageState extends State<PostDetailPage> {
                                           ),
                                         ),
                                       ],
+                                      if (hasQuoteFile) ...[
+                                        const SizedBox(height: 8),
+                                        Align(
+                                          alignment:
+                                              AlignmentDirectional.centerStart,
+                                          child: TextButton.icon(
+                                            onPressed: () =>
+                                                _openBidQuoteFile(quoteUrl),
+                                            icon: const Icon(
+                                              Icons.visibility_outlined,
+                                              size: 16,
+                                            ),
+                                            label: const Text('View quote'),
+                                            style: TextButton.styleFrom(
+                                              foregroundColor: _uiPrimaryBlue,
+                                              visualDensity:
+                                                  VisualDensity.compact,
+                                              minimumSize: const Size(0, 32),
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 10,
+                                                    vertical: 6,
+                                                  ),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
                                       if (isSelectedBid) ...[
                                         const SizedBox(height: 10),
                                         Text(
@@ -1630,12 +1773,18 @@ class _PostDetailPageState extends State<PostDetailPage> {
                     ],
                     TextField(
                       controller: _bidPriceController,
+                      readOnly: true,
+                      onTap: _openBidQuoteBuilder,
                       keyboardType: const TextInputType.numberWithOptions(
                         decimal: true,
                       ),
                       decoration: InputDecoration(
                         prefixIcon: const Icon(
                           Icons.payments_outlined,
+                          color: _uiPrimaryBlue,
+                        ),
+                        suffixIcon: const Icon(
+                          Icons.description_outlined,
                           color: _uiPrimaryBlue,
                         ),
                         hintText: widget.localizedStrings['bid_price_hint'],
@@ -1659,6 +1808,23 @@ class _PostDetailPageState extends State<PostDetailPage> {
                         fillColor: const Color(0xFFF8FAFC),
                       ),
                     ),
+                    if ((_pendingBidQuoteFileName ?? '').trim().isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: AlignmentDirectional.centerStart,
+                        child: Text(
+                          _pendingBidQuoteDocumentNumber?.trim().isNotEmpty ==
+                                  true
+                              ? _pendingBidQuoteDocumentNumber!
+                              : _pendingBidQuoteFileName!,
+                          style: const TextStyle(
+                            color: _uiPrimaryBlue,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 10),
                   ],
                   Row(

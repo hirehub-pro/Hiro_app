@@ -7,15 +7,19 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:untitled1/ptofile.dart';
 import 'package:untitled1/pages/admin_profile.dart';
+import 'package:untitled1/pages/analytics_page.dart';
+import 'package:untitled1/pages/invoice_builder.dart';
 import 'package:untitled1/services/language_provider.dart';
 import 'package:untitled1/services/subscription_access_service.dart';
 import 'package:untitled1/search.dart';
+import 'package:untitled1/pages/saved_invoices_page.dart';
 import 'package:untitled1/pages/my_requests_page.dart';
 import 'package:untitled1/pages/my_request_details_page.dart';
 import 'package:untitled1/pages/request_details.dart';
 import 'package:untitled1/pages/notifications.dart';
 import 'package:untitled1/pages/location_manager_page.dart';
 import 'package:untitled1/pages/subscription.dart';
+import 'package:untitled1/pages/verify_business.dart';
 import 'package:untitled1/widgets/skeleton.dart';
 import 'package:untitled1/widgets/zoomable_image_viewer.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -58,10 +62,14 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   bool _isPopularLoading = true;
   String? _cachedName;
   String? _profileImageUrl;
+  String _workerDisplayName = '';
+  String _workerPhone = '';
+  String _workerEmail = '';
   String _userRole = "customer";
   String _subscriptionStatus = "inactive";
   DateTime? _subscriptionDate;
   DateTime? _subscriptionExpiresAt;
+  bool _isBusinessVerified = false;
 
   AnimationController get _backgroundAnimationController {
     final controller = _backgroundController;
@@ -883,6 +891,14 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           setState(() {
             _cachedName = doc.data()?['name']?.toString().split(' ').first;
             _profileImageUrl = doc.data()?['profileImageUrl']?.toString();
+            _workerDisplayName =
+                (doc.data()?['name'] ?? user.displayName ?? 'Worker')
+                    .toString();
+            _workerPhone =
+                (doc.data()?['phone'] ?? doc.data()?['phoneNumber'] ?? '')
+                    .toString();
+            _workerEmail = (doc.data()?['email'] ?? user.email ?? '')
+                .toString();
             _userRole = doc.data()?['role'] ?? 'customer';
             _subscriptionStatus =
                 doc.data()?['subscriptionStatus']?.toString().toLowerCase() ??
@@ -891,6 +907,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             _subscriptionExpiresAt = _toDate(
               doc.data()?['subscriptionExpiresAt'],
             );
+            _isBusinessVerified = doc.data()?['isVerified'] == true;
           });
         }
       } catch (e) {
@@ -1164,6 +1181,17 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           'read_more': 'קרא עוד',
           'close': 'סגור',
           'my_requests': 'הבקשות שלי',
+          'business_tools': 'כלי עבודה',
+          'business_tools_subtitle':
+              'עקוב אחרי הביצועים שלך, צור מסמכים ופתח מסמכים שמורים.',
+          'analytics': 'אנליטיקה',
+          'invoice_builder': 'יוצר חשבוניות',
+          'saved_invoices': 'חשבוניות שמורות',
+          'verify_business': 'אמת עסק',
+          'upgrade_worker': 'שדרג לחשבון בעל מקצוע',
+          'upgrade_msg': 'האם ברצונך לשדרג לחשבון בעל מקצוע?',
+          'confirm': 'אשר',
+          'cancel': 'ביטול',
           'subscribe_cta_title': 'הפעלת מנוי Pro',
           'subscribe_cta_subtitle':
               'כדי לפתוח את כל הכלים המקצועיים ולקבל יותר פניות, הפעל מנוי Pro.',
@@ -1417,6 +1445,17 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           'read_more': 'اقرأ المزيد',
           'close': 'إغلاق',
           'my_requests': 'طلباتي',
+          'business_tools': 'أدوات العمل',
+          'business_tools_subtitle':
+              'تابع الأداء، أنشئ المستندات، وافتح المستندات المحفوظة.',
+          'analytics': 'التحليلات',
+          'invoice_builder': 'منشئ الفواتير',
+          'saved_invoices': 'الفواتير المحفوظة',
+          'verify_business': 'توثيق العمل',
+          'upgrade_worker': 'الترقية لحساب عامل',
+          'upgrade_msg': 'هل تريد الترقية إلى حساب عامل؟',
+          'confirm': 'تأكيد',
+          'cancel': 'إلغاء',
           'subscribe_cta_title': 'تفعيل اشتراك Pro',
           'subscribe_cta_subtitle':
               'لفتح جميع الأدوات المهنية والحصول على المزيد من الطلبات، فعّل اشتراك Pro.',
@@ -1685,6 +1724,17 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           'read_more': 'Read more',
           'close': 'Close',
           'my_requests': 'My Requests',
+          'business_tools': 'Business Tools',
+          'business_tools_subtitle':
+              'Track performance, create documents, and reopen saved files.',
+          'analytics': 'Analytics',
+          'invoice_builder': 'Invoice Builder',
+          'saved_invoices': 'Saved Invoices',
+          'verify_business': 'Verify Business',
+          'upgrade_worker': 'Upgrade to Worker',
+          'upgrade_msg': 'Do you want to upgrade to a worker account?',
+          'confirm': 'Confirm',
+          'cancel': 'Cancel',
           'subscribe_cta_title': 'Activate Pro Subscription',
           'subscribe_cta_subtitle':
               'To unlock all professional tools and get more requests, activate Pro.',
@@ -1701,6 +1751,122 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       'subscriptionDate': _subscriptionDate,
       'subscriptionExpiresAt': _subscriptionExpiresAt,
     });
+  }
+
+  Map<String, String> _stringMap(Map<String, dynamic> strings) {
+    return strings.map((key, value) => MapEntry(key, value.toString()));
+  }
+
+  Future<void> _openAnalyticsPage(Map<String, dynamic> strings) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) =>
+            AnalyticsPage(userId: user.uid, strings: _stringMap(strings)),
+      ),
+    );
+  }
+
+  Future<void> _openInvoiceBuilder() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => _isBusinessVerified
+            ? InvoiceBuilderPage(
+                workerName: _workerDisplayName.isNotEmpty
+                    ? _workerDisplayName
+                    : (_cachedName?.trim().isNotEmpty ?? false)
+                    ? _cachedName!
+                    : 'Worker',
+                workerPhone: _workerPhone,
+                workerEmail: _workerEmail,
+                initialDocType: 'quote',
+              )
+            : const VerifyBusinessPage(),
+      ),
+    );
+  }
+
+  Future<void> _openSavedInvoicesPage() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const SavedInvoicesPage()),
+    );
+  }
+
+  Future<void> _upgradeToWorkerFromHome(Map<String, dynamic> strings) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          strings['upgrade_worker'] ?? 'Upgrade to Worker',
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        content: Text(
+          strings['upgrade_msg'] ??
+              'Do you want to upgrade to a worker account?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(strings['cancel'] ?? 'Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF1976D2),
+              foregroundColor: Colors.white,
+            ),
+            child: Text(strings['confirm'] ?? 'Confirm'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      final userRef = _firestore.collection('users').doc(user.uid);
+      final statsRef = _firestore.collection('metadata').doc('stats');
+
+      await _firestore.runTransaction((tx) async {
+        final userSnap = await tx.get(userRef);
+        final currentRole = (userSnap.data()?['role'] ?? 'customer')
+            .toString()
+            .toLowerCase();
+
+        tx.set(userRef, {'role': 'worker'}, SetOptions(merge: true));
+
+        final statsUpdates = <String, dynamic>{};
+        if (currentRole == 'customer') {
+          statsUpdates['totalCustomers'] = FieldValue.increment(-1);
+          statsUpdates['totalWorkers'] = FieldValue.increment(1);
+        } else if (currentRole != 'worker') {
+          statsUpdates['totalWorkers'] = FieldValue.increment(1);
+        }
+
+        if (statsUpdates.isNotEmpty) {
+          statsUpdates['updatedAt'] = FieldValue.serverTimestamp();
+          tx.set(statsRef, statsUpdates, SetOptions(merge: true));
+        }
+      });
+
+      await _fetchCurrentUserName();
+      if (!mounted) return;
+
+      await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const Profile()),
+      );
+    } catch (e) {
+      debugPrint("Upgrade error: $e");
+    }
   }
 
   DateTime? _toDate(dynamic value) {
@@ -1881,6 +2047,14 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 _buildCategories(context, localized, theme),
+                                if (_userRole == 'customer') ...[
+                                  const SizedBox(height: 12),
+                                  _buildCustomerProButton(localized),
+                                ],
+                                if (_userRole == 'worker') ...[
+                                  const SizedBox(height: 16),
+                                  _buildBusinessToolsSection(localized),
+                                ],
                                 if (_shouldShowSubscriptionCta) ...[
                                   const SizedBox(height: 16),
                                   _buildSubscribeCta(localized),
@@ -2189,6 +2363,193 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           ),
         );
       },
+    );
+  }
+
+  Widget _buildBusinessToolsSection(Map<String, dynamic> strings) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.92),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+          boxShadow: [
+            BoxShadow(
+              color: _kPrimaryBlue.withValues(alpha: 0.08),
+              blurRadius: 24,
+              offset: const Offset(0, 12),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              strings['business_tools'] ?? 'Business Tools',
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                color: _kTextMain,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              strings['business_tools_subtitle'] ??
+                  'Track performance, create documents, and reopen saved files.',
+              style: const TextStyle(
+                fontSize: 14,
+                height: 1.4,
+                color: _kTextMuted,
+              ),
+            ),
+            const SizedBox(height: 18),
+            GridView.count(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              crossAxisCount: 3,
+              crossAxisSpacing: 14,
+              mainAxisSpacing: 14,
+              childAspectRatio: MediaQuery.sizeOf(context).width >= 1100
+                  ? 1.95
+                  : 0.88,
+              children: [
+                _buildBusinessToolCard(
+                  icon: Icons.analytics_outlined,
+                  color: const Color(0xFF4F46E5),
+                  title: strings['analytics'] ?? 'Analytics',
+                  onTap: () => _openAnalyticsPage(strings),
+                ),
+                _buildBusinessToolCard(
+                  icon: Icons.description_outlined,
+                  color: const Color(0xFF0F766E),
+                  title: strings['invoice_builder'] ?? 'Invoice Builder',
+                  onTap: _openInvoiceBuilder,
+                  badge: _isBusinessVerified
+                      ? null
+                      : (strings['verify_business'] ?? 'Verify Business'),
+                ),
+                _buildBusinessToolCard(
+                  icon: Icons.folder_copy_outlined,
+                  color: const Color(0xFF0891B2),
+                  title: strings['saved_invoices'] ?? 'Saved Invoices',
+                  onTap: _openSavedInvoicesPage,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCustomerProButton(Map<String, dynamic> strings) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Align(
+        alignment: AlignmentDirectional.centerStart,
+        child: OutlinedButton.icon(
+          onPressed: () {
+            _upgradeToWorkerFromHome(strings);
+          },
+          icon: const Icon(Icons.workspace_premium_rounded, size: 16),
+          label: Text(strings['upgrade_worker'] ?? 'Upgrade to Worker'),
+          style: OutlinedButton.styleFrom(
+            visualDensity: VisualDensity.compact,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            foregroundColor: const Color(0xFF1D4ED8),
+            side: const BorderSide(color: Color(0xFFBFDBFE)),
+            backgroundColor: Colors.white.withValues(alpha: 0.9),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBusinessToolCard({
+    required IconData icon,
+    required Color color,
+    required String title,
+    required VoidCallback onTap,
+    String? badge,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isCompact = constraints.maxWidth < 110;
+          final iconBoxSize = isCompact ? 34.0 : 48.0;
+          final iconSize = isCompact ? 18.0 : 24.0;
+          final padding = isCompact ? 8.0 : 16.0;
+          final titleFontSize = isCompact ? 10.0 : 16.0;
+
+          return Container(
+            padding: EdgeInsets.all(padding),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [color.withValues(alpha: 0.1), Colors.white],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(isCompact ? 16 : 20),
+              border: Border.all(color: color.withValues(alpha: 0.18)),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Container(
+                  width: iconBoxSize,
+                  height: iconBoxSize,
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(isCompact ? 12 : 16),
+                  ),
+                  child: Icon(icon, color: color, size: iconSize),
+                ),
+                SizedBox(height: isCompact ? 6 : 12),
+                Text(
+                  title,
+                  maxLines: isCompact ? 3 : 2,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: titleFontSize,
+                    fontWeight: FontWeight.w800,
+                    height: 1.15,
+                    color: _kTextMain,
+                  ),
+                ),
+                if (badge != null && !isCompact) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      badge,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: color,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          );
+        },
+      ),
     );
   }
 

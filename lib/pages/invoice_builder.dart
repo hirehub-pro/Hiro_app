@@ -28,6 +28,24 @@ class _SavedInvoiceResult {
   });
 }
 
+class InvoiceBuilderDraftResult {
+  final String url;
+  final String fileName;
+  final double amount;
+  final String docType;
+  final String? documentNumber;
+  final List<Map<String, dynamic>> items;
+
+  const InvoiceBuilderDraftResult({
+    required this.url,
+    required this.fileName,
+    required this.amount,
+    required this.docType,
+    this.documentNumber,
+    required this.items,
+  });
+}
+
 class InvoiceItem {
   final String description;
   final int quantity;
@@ -145,6 +163,7 @@ class InvoiceBuilderPage extends StatefulWidget {
   final String? sourceInvoiceDocId;
   final String? sourceInvoiceSavedDocId;
   final double? sourceInvoiceTotalAmount;
+  final bool returnDraftOnSend;
 
   const InvoiceBuilderPage({
     super.key,
@@ -171,6 +190,7 @@ class InvoiceBuilderPage extends StatefulWidget {
     this.sourceInvoiceDocId,
     this.sourceInvoiceSavedDocId,
     this.sourceInvoiceTotalAmount,
+    this.returnDraftOnSend = false,
   });
 
   @override
@@ -271,9 +291,11 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   }
 
   /// Atomic Firestore transaction for invoice creation and logging
-  Future<void> _createInvoiceAndLog({required Uint8List pdfBytes}) async {
+  Future<InvoiceBuilderDraftResult?> _createInvoiceAndLog({
+    required Uint8List pdfBytes,
+  }) async {
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
+    if (user == null) return null;
     final userId = user.uid;
     final dateStr = _invoiceDateStorageValue();
     final timestamp = FieldValue.serverTimestamp();
@@ -434,7 +456,24 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         ...quoteData,
         'createdAt': FieldValue.serverTimestamp(),
       });
-      return;
+      return InvoiceBuilderDraftResult(
+        url: downloadUrl,
+        fileName: fileName,
+        amount: signedTotalAmount,
+        docType: docType,
+        items: _items
+            .map(
+              (item) => {
+                'description': item.description,
+                'quantity': item.quantity,
+                'price': item.price,
+                'priceTaxMode': item.isPriceBeforeTax
+                    ? 'before_tax'
+                    : 'after_tax',
+              },
+            )
+            .toList(),
+      );
     }
 
     late int nextNumber;
@@ -669,6 +708,26 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         paidAmount: paymentAmountTotal,
       );
     }
+
+    return InvoiceBuilderDraftResult(
+      url: downloadUrl,
+      fileName: fileName,
+      amount: signedTotalAmount,
+      docType: docType,
+      documentNumber: nextDocumentNumber,
+      items: _items
+          .map(
+            (item) => {
+              'description': item.description,
+              'quantity': item.quantity,
+              'price': item.price,
+              'priceTaxMode': item.isPriceBeforeTax
+                  ? 'before_tax'
+                  : 'after_tax',
+            },
+          )
+          .toList(),
+    );
   }
 
   Future<void> _updateLinkedInvoicePaymentStatus({
@@ -1028,6 +1087,23 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     final rawItems = widget.initialItems;
     if (rawItems == null || rawItems.isEmpty) return;
 
+    if (rawItems.length == 1) {
+      final firstItem = rawItems.first;
+      final description = (firstItem['description'] ?? '').toString().trim();
+      final rawPrice = firstItem['price'];
+      final price = (rawPrice as num?)?.toDouble();
+      final quantity = (firstItem['quantity'] as num?)?.toInt() ?? 1;
+      final priceTaxMode = (firstItem['priceTaxMode'] ?? 'after_tax')
+          .toString();
+
+      if (description.isNotEmpty && (price == null || price <= 0)) {
+        _itemDescController.text = description;
+        _itemQtyController.text = quantity < 1 ? '1' : quantity.toString();
+        _selectedPriceTaxMode = priceTaxMode;
+        return;
+      }
+    }
+
     _items
       ..clear()
       ..addAll(
@@ -1085,23 +1161,75 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   Future<void> _prefillClientBusinessIdFromReceiver() async {
     final receiverId = widget.receiverId?.trim();
     if (receiverId == null || receiverId.isEmpty) return;
-    if (_clientIdController.text.trim().isNotEmpty) return;
 
     try {
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(receiverId)
+          .get();
       final verificationDoc = await FirebaseFirestore.instance
           .collection('users')
           .doc(receiverId)
           .collection('verification_info')
           .doc('latest')
           .get();
+      final userData = userDoc.data() ?? <String, dynamic>{};
+      final verificationData = verificationDoc.data() ?? <String, dynamic>{};
+      final receiverName = (userData['name'] ?? widget.receiverName ?? '')
+          .toString()
+          .trim();
+      final receiverPhone =
+          (userData['phone'] ??
+                  userData['phoneNumber'] ??
+                  userData['mobileNumber'] ??
+                  widget.receiverPhone ??
+                  '')
+              .toString()
+              .trim();
+      final receiverAddress =
+          (verificationData['address'] ??
+                  userData['address'] ??
+                  userData['location'] ??
+                  widget.receiverAddress ??
+                  '')
+              .toString()
+              .trim();
       final businessId = verificationDoc
           .data()?['businessId']
           ?.toString()
           .trim();
       if (!mounted) return;
-      if (businessId != null && businessId.isNotEmpty) {
+
+      final shouldUpdateName =
+          _clientNameController.text.trim().isEmpty && receiverName.isNotEmpty;
+      final shouldUpdatePhone =
+          _clientPhoneController.text.trim().isEmpty &&
+          receiverPhone.isNotEmpty;
+      final shouldUpdateAddress =
+          _clientAddressController.text.trim().isEmpty &&
+          receiverAddress.isNotEmpty;
+      final shouldUpdateBusinessId =
+          _clientIdController.text.trim().isEmpty &&
+          businessId != null &&
+          businessId.isNotEmpty;
+
+      if (shouldUpdateName ||
+          shouldUpdatePhone ||
+          shouldUpdateAddress ||
+          shouldUpdateBusinessId) {
         setState(() {
-          _clientIdController.text = businessId;
+          if (shouldUpdateName) {
+            _clientNameController.text = receiverName;
+          }
+          if (shouldUpdatePhone) {
+            _clientPhoneController.text = receiverPhone;
+          }
+          if (shouldUpdateAddress) {
+            _clientAddressController.text = receiverAddress;
+          }
+          if (shouldUpdateBusinessId) {
+            _clientIdController.text = businessId;
+          }
         });
       }
     } catch (e) {
@@ -2326,6 +2454,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       if (!mounted) return;
       setState(() => _isPreparing = false);
 
+      InvoiceBuilderDraftResult? savedDraftResult;
       final action = await Navigator.push<String>(
         context,
         MaterialPageRoute(
@@ -2333,13 +2462,17 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
             pdfBytes: pdfBytes,
             fileName: _previewFileName(),
             onSave: () async {
-              await _createInvoiceAndLog(pdfBytes: pdfBytes);
+              savedDraftResult = await _createInvoiceAndLog(pdfBytes: pdfBytes);
             },
           ),
         ),
       );
 
       if (action == 'send' && mounted) {
+        if (widget.returnDraftOnSend) {
+          Navigator.pop(context, savedDraftResult);
+          return;
+        }
         if (widget.receiverId != null) {
           await _sendToContact(
             widget.receiverId!,
