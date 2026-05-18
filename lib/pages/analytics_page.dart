@@ -515,19 +515,26 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
         : '${_t('growth_scope_for')} $_selectedProfession';
 
     final advice = <Map<String, dynamic>>[];
+    final ratingText = _avgRating > 0 ? _avgRating.toStringAsFixed(1) : '-';
+    final snapshotLine =
+        '${_t('views')}: $_viewsCount | ${_t('conversion')}: ${_conversionRate.toStringAsFixed(1)}% | ${_t('rating')}: $ratingText';
+    final topSkillLine =
+        _topServices.isNotEmpty && _topServices != _t('no_data')
+        ? '\n${_t('top_skill')}: $_topServices'
+        : '';
 
     if (_viewsCount == 0 && _totalJobs == 0) {
       advice.add({
         'score': 100,
         'message':
-            '${_t('growth_getting_started')}\n${_t('growth_focus_label')} ${_t('growth_target_reviews')}',
+            '${_t('growth_getting_started')}\n$snapshotLine$topSkillLine\n${_t('growth_focus_label')} ${_t('growth_target_reviews')}',
       });
     } else {
       if (_viewsCount < 20) {
         advice.add({
           'score': 90,
           'message':
-              '${_tp('growth_low_visibility', {'scope': scope})}\n${_t('growth_focus_label')} ${_t('growth_target_visibility')}',
+              '${_tp('growth_low_visibility', {'scope': scope})}\n$snapshotLine\n${_t('growth_focus_label')} ${_t('growth_target_visibility')}',
         });
       }
 
@@ -535,7 +542,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
         advice.add({
           'score': 85,
           'message':
-              '${_tp('growth_low_conversion', {'scope': scope})}\n${_t('growth_focus_label')} ${_t('growth_target_conversion')}',
+              '${_tp('growth_low_conversion', {'scope': scope})}\n$snapshotLine$topSkillLine\n${_t('growth_focus_label')} ${_t('growth_target_conversion')}',
         });
       }
 
@@ -544,7 +551,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
         advice.add({
           'score': 80,
           'message':
-              '${_tp('growth_improve_rating', {'metric': weakestMetric})}\n${_t('growth_focus_label')} ${_t('growth_target_rating')}',
+              '${_tp('growth_improve_rating', {'metric': weakestMetric})}\n$snapshotLine\n${_t('growth_focus_label')} ${_t('growth_target_rating')}',
         });
       }
 
@@ -552,7 +559,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
         advice.add({
           'score': 70,
           'message':
-              '${_t('growth_getting_started')}\n${_t('growth_focus_label')} ${_t('growth_target_reviews')}',
+              '${_t('growth_getting_started')}\n$snapshotLine\n${_t('growth_focus_label')} ${_t('growth_target_reviews')}',
         });
       }
     }
@@ -561,8 +568,8 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
       final strong =
           _conversionRate >= 8 && _avgRating >= 4.3 && _viewsCount >= 20;
       return strong
-          ? _t('growth_positive_keep')
-          : _tp('growth_stable', {'scope': scope});
+          ? '${_t('growth_positive_keep')}\n$snapshotLine$topSkillLine\n${_t('growth_focus_label')} ${_t('growth_target_reviews')}'
+          : '${_tp('growth_stable', {'scope': scope})}\n$snapshotLine$topSkillLine\n${_t('growth_focus_label')} ${_t('growth_target_conversion')}';
     }
 
     advice.sort(

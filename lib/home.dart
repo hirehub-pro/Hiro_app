@@ -1183,8 +1183,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           'close': 'סגור',
           'my_requests': 'הבקשות שלי',
           'business_tools': 'כלי עבודה',
-          'business_tools_subtitle':
-              'עקוב אחרי הביצועים שלך, צור מסמכים ופתח מסמכים שמורים.',
           'analytics': 'אנליטיקה',
           'invoice_builder': 'יוצר חשבוניות',
           'saved_invoices': 'חשבוניות שמורות',
@@ -1447,8 +1445,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           'close': 'إغلاق',
           'my_requests': 'طلباتي',
           'business_tools': 'أدوات العمل',
-          'business_tools_subtitle':
-              'تابع الأداء، أنشئ المستندات، وافتح المستندات المحفوظة.',
           'analytics': 'التحليلات',
           'invoice_builder': 'منشئ الفواتير',
           'saved_invoices': 'الفواتير المحفوظة',
@@ -1726,9 +1722,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           'close': 'Close',
           'my_requests': 'My Requests',
           'business_tools': 'Business Tools',
-          'business_tools_subtitle':
-              'Track performance, create documents, and reopen saved files.',
-          'analytics': 'Analytics',
+           'analytics': 'Analytics',
           'invoice_builder': 'Invoice Builder',
           'saved_invoices': 'Saved Invoices',
           'verify_business': 'Verify Business',
@@ -2380,16 +2374,16 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Container(
         width: double.infinity,
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
           color: Colors.white.withValues(alpha: 0.92),
           borderRadius: BorderRadius.circular(24),
           border: Border.all(color: const Color(0xFFE2E8F0)),
           boxShadow: [
             BoxShadow(
-              color: _kPrimaryBlue.withValues(alpha: 0.08),
+              color: const Color(0xFF000000).withValues(alpha: 0.1),
               blurRadius: 24,
-              offset: const Offset(0, 12),
+              offset: const Offset(0, 10),
             ),
           ],
         ),
@@ -2404,26 +2398,16 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 color: _kTextMain,
               ),
             ),
-            const SizedBox(height: 6),
-            Text(
-              strings['business_tools_subtitle'] ??
-                  'Track performance, create documents, and reopen saved files.',
-              style: const TextStyle(
-                fontSize: 14,
-                height: 1.4,
-                color: _kTextMuted,
-              ),
-            ),
-            const SizedBox(height: 18),
+            
             GridView.count(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               crossAxisCount: 3,
-              crossAxisSpacing: 14,
-              mainAxisSpacing: 14,
+              crossAxisSpacing: 16,
+              mainAxisSpacing: 15,
               childAspectRatio: MediaQuery.sizeOf(context).width >= 1100
                   ? 1.95
-                  : 0.88,
+                  : 1,
               children: [
                 _buildBusinessToolCard(
                   icon: Icons.analytics_outlined,
