@@ -40,6 +40,12 @@ class SubscriptionPage extends StatefulWidget {
 
 class _SubscriptionPageState extends State<SubscriptionPage>
     with TickerProviderStateMixin {
+  static final Uri _googlePlayWorkerAppUri = Uri.parse(
+    'https://play.google.com/store/apps/details?id=com.hirehub.app',
+  );
+  static final Uri _appleStoreWorkerAppUri = Uri.parse(
+    'https://apps.apple.com/us/app/hiro-%D7%94%D7%99%D7%A8%D7%95/id6763238120',
+  );
   final InAppPurchase _inAppPurchase = InAppPurchase.instance;
   late StreamSubscription<List<PurchaseDetails>> _subscription;
   List<ProductDetails> _products = [];
@@ -135,7 +141,13 @@ class _SubscriptionPageState extends State<SubscriptionPage>
       onError: (error) => debugPrint("Purchase Stream Error: $error"),
     );
     unawaited(_configureStoreKitIfNeeded());
-    _initStoreInfo();
+    if (kIsWeb) {
+      _isLoading = false;
+      _storeAvailable = true;
+      _storeNotice = null;
+    } else {
+      _initStoreInfo();
+    }
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
       unawaited(_refreshLinkedAccountNotice());
     }
@@ -434,6 +446,11 @@ class _SubscriptionPageState extends State<SubscriptionPage>
   }
 
   Future<void> _buySubscription() async {
+    if (kIsWeb) {
+      await _openStoreListing();
+      return;
+    }
+
     if (!_storeAvailable || _isPurchasing) return;
     final product = _selectedProduct;
     if (product == null) {
@@ -461,6 +478,23 @@ class _SubscriptionPageState extends State<SubscriptionPage>
           ).showSnackBar(SnackBar(content: Text('שגיאה בהתחלת רכישה: $e')));
         }
       }
+    }
+  }
+
+  Future<void> _openStoreListing() async {
+    final targetUri = switch (defaultTargetPlatform) {
+      TargetPlatform.iOS || TargetPlatform.macOS => _appleStoreWorkerAppUri,
+      _ => _googlePlayWorkerAppUri,
+    };
+
+    final ok = await launchUrl(
+      targetUri,
+      mode: LaunchMode.externalApplication,
+    );
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_strings['open_link_error']!)));
     }
   }
 
@@ -1052,7 +1086,7 @@ class _SubscriptionPageState extends State<SubscriptionPage>
               height: 56,
               child: ElevatedButton(
                 onPressed: (!_storeAvailable || _isPurchasing)
-                    ? null
+                    ? (kIsWeb ? _buySubscription : null)
                     : _buySubscription,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF1976D2),

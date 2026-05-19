@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -21,6 +22,7 @@ import 'package:untitled1/pages/privacy_policy_page.dart';
 import 'package:untitled1/pages/terms_of_service_page.dart';
 import 'package:untitled1/services/subscription_access_service.dart';
 import 'package:untitled1/utils/profession_localization.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'main.dart';
 
 class SignUpPage extends StatefulWidget {
@@ -44,6 +46,12 @@ enum SignUpStep { profile, phone }
 enum UserType { normal, worker }
 
 class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
+  static final Uri _googlePlayWorkerAppUri = Uri.parse(
+    'https://play.google.com/store/apps/details?id=com.hirehub.app',
+  );
+  static final Uri _appleStoreWorkerAppUri = Uri.parse(
+    'https://apps.apple.com/us/app/hiro-%D7%94%D7%99%D7%A8%D7%95/id6763238120',
+  );
   static const List<int> _displayWeekdayOrder = [7, 1, 2, 3, 4, 5, 6];
   static const List<String> _spokenLanguageOptions = [
     'Hebrew',
@@ -3768,7 +3776,7 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
   Widget _buildTypeButton(String label, UserType type) {
     final isSelected = _userType == type;
     return GestureDetector(
-      onTap: () => setState(() => _userType = type),
+      onTap: () => _handleUserTypeSelection(type),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         padding: const EdgeInsets.symmetric(vertical: 12),
@@ -3795,6 +3803,36 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
         ),
       ),
     );
+  }
+
+  Future<void> _handleUserTypeSelection(UserType type) async {
+    if (type == UserType.worker && kIsWeb) {
+      await _openWorkerStoreListing();
+      return;
+    }
+
+    if (!mounted) return;
+    setState(() => _userType = type);
+  }
+
+  Future<void> _openWorkerStoreListing() async {
+    final targetUri = switch (defaultTargetPlatform) {
+      TargetPlatform.iOS || TargetPlatform.macOS => _appleStoreWorkerAppUri,
+      _ => _googlePlayWorkerAppUri,
+    };
+
+    final launched = await launchUrl(
+      targetUri,
+      mode: LaunchMode.externalApplication,
+    );
+
+    if (!launched && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Unable to open the store right now. Please try again.'),
+        ),
+      );
+    }
   }
 
   Widget _buildStyledTextField({
