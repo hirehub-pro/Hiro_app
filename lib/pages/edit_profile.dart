@@ -289,13 +289,18 @@ class _EditProfilePageState extends State<EditProfilePage>
 
   Future<void> _updateTownFromLocation(LatLng loc) async {
     try {
+      await setLocaleIdentifier('he_IL');
       List<Placemark> placemarks = await placemarkFromCoordinates(
         loc.latitude,
         loc.longitude,
       );
       if (placemarks.isNotEmpty) {
+        final placemark = placemarks.first;
         String? town =
-            placemarks.first.locality ?? placemarks.first.subLocality;
+            placemark.locality ??
+            placemark.subLocality ??
+            placemark.subAdministrativeArea ??
+            placemark.administrativeArea;
         if (town != null && town.isNotEmpty) {
           setState(() {
             _selectedTown = town;
