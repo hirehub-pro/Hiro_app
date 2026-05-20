@@ -223,6 +223,12 @@ class _AdminPanelState extends State<AdminPanel> {
     required pw.Font font,
   }) {
     final visibleRows = summary.rows;
+    final displayFromDate = _formatCompactDateForDisplay(summary.fromDate);
+    final displayToDate = _formatCompactDateForDisplay(summary.toDate);
+    final totalMoney = visibleRows.fold<double>(
+      0,
+      (runningTotal, row) => runningTotal + row.totalAmountIncludingVat,
+    );
     return pw.Directionality(
       textDirection: pw.TextDirection.rtl,
       child: pw.Column(
@@ -243,62 +249,8 @@ class _AdminPanelState extends State<AdminPanel> {
           pw.Align(
             alignment: pw.Alignment.centerRight,
             child: pw.Text(
-              '${summary.businessName} | ח.פ. ${summary.businessNumber} | ${summary.fromDate}-${summary.toDate}',
+              '${summary.businessName} | ח.פ. ${summary.businessNumber} | $displayFromDate-$displayToDate',
               style: pw.TextStyle(font: font, fontSize: 10),
-            ),
-          ),
-          pw.SizedBox(height: 20),
-          pw.Align(
-            alignment: pw.Alignment.centerRight,
-            child: pw.Text(
-              'חלק מטופס 5.4',
-              style: pw.TextStyle(
-                font: font,
-                fontSize: 12,
-                fontWeight: pw.FontWeight.bold,
-              ),
-            ),
-          ),
-          pw.SizedBox(height: 8),
-          pw.Align(
-            alignment: pw.Alignment.centerRight,
-            child: pw.SizedBox(
-              width: 230,
-              child: pw.Table(
-                border: pw.TableBorder.all(width: 0.6),
-                columnWidths: const {
-                  0: pw.FixedColumnWidth(72),
-                  1: pw.FixedColumnWidth(92),
-                  2: pw.FixedColumnWidth(66),
-                },
-                children: [
-                  _buildPdfTableRow(
-                    ['סך רשומות', 'תיאור רשומה', 'קוד רשומה'],
-                    font: font,
-                    isHeader: true,
-                  ),
-                  _buildPdfTableRow(
-                    [
-                      summary.c100RecordCount.toString(),
-                      'כותרת מסמך',
-                      'C100',
-                    ],
-                    font: font,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          pw.SizedBox(height: 28),
-          pw.Align(
-            alignment: pw.Alignment.centerRight,
-            child: pw.Text(
-              'טבלה מטופס 2.6',
-              style: pw.TextStyle(
-                font: font,
-                fontSize: 12,
-                fontWeight: pw.FontWeight.bold,
-              ),
             ),
           ),
           pw.SizedBox(height: 8),
@@ -322,22 +274,25 @@ class _AdminPanelState extends State<AdminPanel> {
                 isHeader: true,
               ),
               for (final row in visibleRows)
-                _buildPdfTableRow(
-                  [
-                    _formatAmountForPdf(row.totalAmountIncludingVat),
-                    row.quantity.toString(),
-                    row.documentTypeLabel,
-                    row.documentTypeCode.toString(),
-                  ],
-                  font: font,
-                ),
+                _buildPdfTableRow([
+                  _formatAmountForPdf(row.totalAmountIncludingVat),
+                  row.quantity.toString(),
+                  row.documentTypeLabel,
+                  row.documentTypeCode.toString(),
+                ], font: font),
             ],
           ),
-          pw.SizedBox(height: 20),
+          pw.SizedBox(height: 12),
           pw.Text(
-            'לשים לב שסך"כ רשומות בטופס 2.6 (=${summary.totalDocumentQuantity}) מתאים לכמות רשומות מסוג C100 (=${summary.c100RecordCount}).',
+            'סה"כ כמות: ${summary.totalDocumentQuantity}',
             textDirection: pw.TextDirection.rtl,
-            style: pw.TextStyle(font: font, fontSize: 10.5),
+            style: pw.TextStyle(font: font, fontSize: 11),
+          ),
+          pw.SizedBox(height: 4),
+          pw.Text(
+            'סה"כ כספי: ${_formatAmountForPdf(totalMoney)}',
+            textDirection: pw.TextDirection.rtl,
+            style: pw.TextStyle(font: font, fontSize: 11),
           ),
         ],
       ),
@@ -493,14 +448,11 @@ class _AdminPanelState extends State<AdminPanel> {
                   isHeader: true,
                 ),
                 for (final row in summary.rows)
-                  _buildPdfTableRow(
-                    [
-                      row.recordCode,
-                      row.recordLabel,
-                      row.quantity.toString(),
-                    ],
-                    font: font,
-                  ),
+                  _buildPdfTableRow([
+                    row.recordCode,
+                    row.recordLabel,
+                    row.quantity.toString(),
+                  ], font: font),
                 _buildPdfTableRow(
                   ['סה"כ', '', summary.totalRecords.toString()],
                   font: font,
@@ -524,8 +476,35 @@ class _AdminPanelState extends State<AdminPanel> {
               pw.Expanded(
                 flex: 4,
                 child: pw.Text(
-                  ', מספר תעודת הרישום:',
+                  summary.softwareName,
+                  style: pw.TextStyle(
+                    font: font,
+                    fontSize: 14,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          pw.SizedBox(height: 8),
+          pw.Row(
+            children: [
+              pw.Expanded(
+                flex: 4,
+                child: pw.Text(
+                  'מספר תעודת רישום:',
                   style: pw.TextStyle(font: font, fontSize: 14),
+                ),
+              ),
+              pw.Expanded(
+                flex: 4,
+                child: pw.Text(
+                  summary.softwareRegistrationNumber,
+                  style: pw.TextStyle(
+                    font: font,
+                    fontSize: 14,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
                 ),
               ),
             ],
@@ -2471,9 +2450,7 @@ class _AdminPanelState extends State<AdminPanel> {
           pw.MultiPage(
             pageFormat: pdf.PdfPageFormat.a4,
             margin: const pw.EdgeInsets.fromLTRB(36, 32, 36, 28),
-            build: (_) => [
-              _buildAnnex4Page(package.annex4Summary, font: font),
-            ],
+            build: (_) => [_buildAnnex4Page(package.annex4Summary, font: font)],
           ),
         );
       }
@@ -2485,10 +2462,7 @@ class _AdminPanelState extends State<AdminPanel> {
       await file.writeAsBytes(await document.save(), flush: true);
 
       await SharePlus.instance.share(
-        ShareParams(
-          files: [XFile(file.path)],
-          text: 'BKMV Annex 4 PDF',
-        ),
+        ShareParams(files: [XFile(file.path)], text: 'BKMV Annex 4 PDF'),
       );
 
       if (mounted) {

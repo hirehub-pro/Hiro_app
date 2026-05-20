@@ -1,13 +1,21 @@
 import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:pdf/pdf.dart' as pdf;
+import 'package:pdf/widgets.dart' as pw;
+import 'package:share_plus/share_plus.dart';
 import 'package:untitled1/services/auth_service.dart';
+import 'package:untitled1/services/bkmv_export_service.dart';
 import 'package:untitled1/services/language_provider.dart';
 import 'package:untitled1/sign_in.dart';
 import 'package:untitled1/pages/about.dart';
@@ -16,6 +24,7 @@ import 'package:untitled1/pages/help_page.dart';
 import 'package:untitled1/pages/privacy_policy_page.dart';
 import 'package:untitled1/pages/reports_page.dart';
 import 'package:untitled1/pages/terms_of_service_page.dart';
+import 'package:intl/intl.dart' as intl;
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -35,6 +44,15 @@ class _SettingsPageState extends State<SettingsPage>
   bool _isLoadingSettings = true;
   Map<String, dynamic>? _userData;
   String _userRole = "customer";
+  bool _isGeneratingUniformFiles = false;
+
+  bool get _isApplePlatform =>
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.iOS ||
+          defaultTargetPlatform == TargetPlatform.macOS);
+
+  bool get _isAndroidPlatform =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
   @override
   void initState() {
@@ -235,7 +253,7 @@ class _SettingsPageState extends State<SettingsPage>
   }
 
   Future<bool> _requestNotificationPermission() async {
-    if (Platform.isIOS || Platform.isMacOS) {
+    if (kIsWeb) {
       final settings = await FirebaseMessaging.instance.requestPermission(
         alert: true,
         badge: true,
@@ -245,7 +263,17 @@ class _SettingsPageState extends State<SettingsPage>
           settings.authorizationStatus == AuthorizationStatus.provisional;
     }
 
-    if (Platform.isAndroid) {
+    if (_isApplePlatform) {
+      final settings = await FirebaseMessaging.instance.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+      return settings.authorizationStatus == AuthorizationStatus.authorized ||
+          settings.authorizationStatus == AuthorizationStatus.provisional;
+    }
+
+    if (_isAndroidPlatform) {
       final notificationsPlugin = FlutterLocalNotificationsPlugin();
       final androidPlugin = notificationsPlugin
           .resolvePlatformSpecificImplementation<
@@ -260,7 +288,7 @@ class _SettingsPageState extends State<SettingsPage>
   }
 
   Future<bool> _isNotificationPermissionGranted() async {
-    if (Platform.isIOS || Platform.isMacOS) {
+    if (kIsWeb || _isApplePlatform) {
       final settings = await FirebaseMessaging.instance
           .getNotificationSettings();
       return settings.authorizationStatus == AuthorizationStatus.authorized ||
@@ -272,7 +300,7 @@ class _SettingsPageState extends State<SettingsPage>
   }
 
   Future<bool> _isNotificationPermissionBlocked() async {
-    if (Platform.isIOS || Platform.isMacOS) {
+    if (kIsWeb || _isApplePlatform) {
       final settings = await FirebaseMessaging.instance
           .getNotificationSettings();
       return settings.authorizationStatus == AuthorizationStatus.denied;
@@ -314,6 +342,521 @@ class _SettingsPageState extends State<SettingsPage>
     );
   }
 
+  String _formatCompactDate(DateTime date) {
+    final month = date.month.toString().padLeft(2, '0');
+    final day = date.day.toString().padLeft(2, '0');
+    return '${date.year}$month$day';
+  }
+
+  Future<DateTimeRange?> _pickExportDateRange() async {
+    final now = DateTime.now();
+    return showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(now.year + 5),
+      initialDateRange: DateTimeRange(
+        start: DateTime(now.year, now.month, 1),
+        end: now,
+      ),
+    );
+  }
+
+  Future<Directory> _getBkmvExportDirectory() async {
+    final documentsDir = await getApplicationDocumentsDirectory();
+    final userId = FirebaseAuth.instance.currentUser?.uid ?? 'worker';
+    final directory = Directory(
+      '${documentsDir.path}${Platform.pathSeparator}BKMVDATA${Platform.pathSeparator}$userId',
+    );
+    await directory.create(recursive: true);
+    return directory;
+  }
+
+  String _formatAmountForPdf(double value) {
+    final formatter = intl.NumberFormat('#,##0.##', 'en_US');
+    return formatter.format(value);
+  }
+
+  String _formatCompactDateForDisplay(String yyyymmdd) {
+    if (yyyymmdd.length != 8) return yyyymmdd;
+    return '${yyyymmdd.substring(6, 8)}/${yyyymmdd.substring(4, 6)}/${yyyymmdd.substring(2, 4)}';
+  }
+
+  String _formatCompactTimeForDisplay(String hhmm) {
+    if (hhmm.length != 4) return hhmm;
+    return '${hhmm.substring(0, 2)}:${hhmm.substring(2, 4)}';
+  }
+
+  Future<pw.Font> _loadPdfFont() async {
+    final fontData = await rootBundle.load(
+      'assets/fonts/Rubik-VariableFont_wght.ttf',
+    );
+    return pw.Font.ttf(fontData);
+  }
+
+  pw.Widget _buildPdfCell(
+    String text, {
+    required pw.Font font,
+    bool isHeader = false,
+    pw.Alignment alignment = pw.Alignment.centerRight,
+  }) {
+    return pw.Container(
+      alignment: alignment,
+      padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      child: pw.Text(
+        text,
+        textDirection: pw.TextDirection.rtl,
+        style: pw.TextStyle(
+          font: font,
+          fontSize: isHeader ? 11 : 10.5,
+          fontWeight: isHeader ? pw.FontWeight.bold : pw.FontWeight.normal,
+        ),
+      ),
+    );
+  }
+
+  pw.TableRow _buildPdfTableRow(
+    List<String> values, {
+    required pw.Font font,
+    bool isHeader = false,
+  }) {
+    return pw.TableRow(
+      decoration: pw.BoxDecoration(
+        color: isHeader ? pdf.PdfColors.grey200 : null,
+      ),
+      children: values
+          .map(
+            (value) => _buildPdfCell(
+              value,
+              font: font,
+              isHeader: isHeader,
+              alignment: value == values.first
+                  ? pw.Alignment.centerLeft
+                  : pw.Alignment.centerRight,
+            ),
+          )
+          .toList(growable: false),
+    );
+  }
+
+  pw.Widget _buildPrintedSummaryPage(
+    BkmvPrintedSummary summary, {
+    required pw.Font font,
+  }) {
+    final visibleRows = summary.rows;
+    final displayFromDate = _formatCompactDateForDisplay(summary.fromDate);
+    final displayToDate = _formatCompactDateForDisplay(summary.toDate);
+    final totalMoney = visibleRows.fold<double>(
+      0,
+      (runningTotal, row) => runningTotal + row.totalAmountIncludingVat,
+    );
+    return pw.Directionality(
+      textDirection: pw.TextDirection.rtl,
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+        children: [
+          pw.Align(
+            alignment: pw.Alignment.centerRight,
+            child: pw.Text(
+              'פלט מודפס לפי המבנה הנדרש בסעיף 2.6',
+              style: pw.TextStyle(
+                font: font,
+                fontSize: 14,
+                fontWeight: pw.FontWeight.bold,
+              ),
+            ),
+          ),
+          pw.SizedBox(height: 6),
+          pw.Align(
+            alignment: pw.Alignment.centerRight,
+            child: pw.Text(
+              '${summary.businessName} | ח.פ. ${summary.businessNumber} | $displayFromDate-$displayToDate',
+              style: pw.TextStyle(font: font, fontSize: 10),
+            ),
+          ),
+          pw.SizedBox(height: 8),
+          pw.Table(
+            border: pw.TableBorder.all(width: 0.6),
+            columnWidths: const {
+              0: pw.FlexColumnWidth(1.35),
+              1: pw.FlexColumnWidth(0.8),
+              2: pw.FlexColumnWidth(1.45),
+              3: pw.FlexColumnWidth(0.7),
+            },
+            children: [
+              _buildPdfTableRow(
+                [
+                  'סה"כ כספי כולל מע"מ\n(שדה 1223)',
+                  'סה"כ כמותי',
+                  'סוג המסמך',
+                  'מספר המסמך',
+                ],
+                font: font,
+                isHeader: true,
+              ),
+              for (final row in visibleRows)
+                _buildPdfTableRow([
+                  _formatAmountForPdf(row.totalAmountIncludingVat),
+                  row.quantity.toString(),
+                  row.documentTypeLabel,
+                  row.documentTypeCode.toString(),
+                ], font: font),
+            ],
+          ),
+          pw.SizedBox(height: 12),
+          pw.Text(
+            'סה"כ כמות: ${summary.totalDocumentQuantity}',
+            textDirection: pw.TextDirection.rtl,
+            style: pw.TextStyle(font: font, fontSize: 11),
+          ),
+          pw.SizedBox(height: 4),
+          pw.Text(
+            'סה"כ כספי: ${_formatAmountForPdf(totalMoney)}',
+            textDirection: pw.TextDirection.rtl,
+            style: pw.TextStyle(font: font, fontSize: 11),
+          ),
+        ],
+      ),
+    );
+  }
+
+  pw.Widget _buildAnnex4Page(
+    BkmvAnnex4Summary summary, {
+    required pw.Font font,
+  }) {
+    final displayFromDate = _formatCompactDateForDisplay(summary.fromDate);
+    final displayToDate = _formatCompactDateForDisplay(summary.toDate);
+    final displayExportDate = _formatCompactDateForDisplay(summary.exportDate);
+    final displayExportTime = _formatCompactTimeForDisplay(summary.exportTime);
+
+    return pw.Directionality(
+      textDirection: pw.TextDirection.rtl,
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+        children: [
+          pw.SizedBox(height: 24),
+          pw.Center(
+            child: pw.Text(
+              'הפקת קבצים במבנה אחיד',
+              style: pw.TextStyle(
+                font: font,
+                fontSize: 20,
+                fontWeight: pw.FontWeight.bold,
+                decoration: pw.TextDecoration.underline,
+              ),
+            ),
+          ),
+          pw.SizedBox(height: 26),
+          pw.Align(
+            alignment: pw.Alignment.centerRight,
+            child: pw.Text(
+              'עבור:',
+              style: pw.TextStyle(
+                font: font,
+                fontSize: 15,
+                fontWeight: pw.FontWeight.bold,
+              ),
+            ),
+          ),
+          pw.SizedBox(height: 12),
+          pw.Text(
+            'מספר עוסק מורשה: ${summary.businessNumber}',
+            style: pw.TextStyle(font: font, fontSize: 14),
+          ),
+          pw.SizedBox(height: 10),
+          pw.Text(
+            'שם בית העסק: ${summary.businessName}',
+            style: pw.TextStyle(font: font, fontSize: 14),
+          ),
+          pw.SizedBox(height: 28),
+          pw.Center(
+            child: pw.Text(
+              '** ביצוע ממשק פתוח הסתיים בהצלחה **',
+              style: pw.TextStyle(
+                font: font,
+                fontSize: 15,
+                fontWeight: pw.FontWeight.bold,
+              ),
+            ),
+          ),
+          pw.SizedBox(height: 22),
+          pw.Row(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Expanded(
+                flex: 3,
+                child: pw.Text(
+                  'הנתונים נשמרו בנתיב:',
+                  style: pw.TextStyle(
+                    font: font,
+                    fontSize: 14,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+              ),
+              pw.SizedBox(width: 16),
+              pw.Expanded(
+                flex: 5,
+                child: pw.Text(
+                  summary.exportDirectory,
+                  textDirection: pw.TextDirection.ltr,
+                  style: pw.TextStyle(font: font, fontSize: 14),
+                ),
+              ),
+            ],
+          ),
+          pw.SizedBox(height: 18),
+          pw.Row(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Expanded(
+                flex: 3,
+                child: pw.Text(
+                  'טווח תאריכים:',
+                  style: pw.TextStyle(
+                    font: font,
+                    fontSize: 14,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+              ),
+              pw.SizedBox(width: 16),
+              pw.Expanded(
+                flex: 5,
+                child: pw.Row(
+                  children: [
+                    pw.Text(
+                      'מתאריך: $displayFromDate',
+                      style: pw.TextStyle(font: font, fontSize: 14),
+                    ),
+                    pw.SizedBox(width: 28),
+                    pw.Text(
+                      'ועד תאריך: $displayToDate',
+                      style: pw.TextStyle(font: font, fontSize: 14),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          pw.SizedBox(height: 24),
+          pw.Text(
+            'פירוט סך סוגי הרשומות בקובץ BKMVDATA.TXT:',
+            style: pw.TextStyle(
+              font: font,
+              fontSize: 14,
+              fontWeight: pw.FontWeight.bold,
+            ),
+          ),
+          pw.SizedBox(height: 10),
+          pw.Padding(
+            padding: const pw.EdgeInsets.symmetric(horizontal: 42),
+            child: pw.Table(
+              border: const pw.TableBorder(
+                horizontalInside: pw.BorderSide(width: 0.6),
+                top: pw.BorderSide(width: 0.6),
+                bottom: pw.BorderSide(width: 0.6),
+              ),
+              columnWidths: const {
+                0: pw.FixedColumnWidth(90),
+                1: pw.FlexColumnWidth(2.2),
+                2: pw.FixedColumnWidth(80),
+              },
+              children: [
+                _buildPdfTableRow(
+                  ['סוג רשומה', 'תיאור', 'כמות'],
+                  font: font,
+                  isHeader: true,
+                ),
+                for (final row in summary.rows)
+                  _buildPdfTableRow([
+                    row.recordCode,
+                    row.recordLabel,
+                    row.quantity.toString(),
+                  ], font: font),
+                _buildPdfTableRow(
+                  ['סה"כ', '', summary.totalRecords.toString()],
+                  font: font,
+                  isHeader: true,
+                ),
+              ],
+            ),
+          ),
+          pw.SizedBox(height: 28),
+          pw.Divider(thickness: 2),
+          pw.SizedBox(height: 10),
+          pw.Row(
+            children: [
+              pw.Expanded(
+                flex: 4,
+                child: pw.Text(
+                  'הנתונים הופקו באמצעות תוכנת',
+                  style: pw.TextStyle(font: font, fontSize: 13),
+                ),
+              ),
+              pw.Expanded(
+                flex: 6,
+                child: pw.Text(
+                  summary.softwareName,
+                  style: pw.TextStyle(
+                    font: font,
+                    fontSize: 13,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          pw.SizedBox(height: 6),
+          pw.Row(
+            children: [
+              pw.Expanded(
+                flex: 4,
+                child: pw.Text(
+                  'מספר תעודת רישום:',
+                  style: pw.TextStyle(font: font, fontSize: 13),
+                ),
+              ),
+              pw.Expanded(
+                flex: 6,
+                child: pw.Text(
+                  summary.softwareRegistrationNumber,
+                  style: pw.TextStyle(
+                    font: font,
+                    fontSize: 13,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          pw.SizedBox(height: 6),
+          pw.Row(
+            children: [
+              pw.Expanded(
+                flex: 4,
+                child: pw.Text(
+                  'תאריך הפקה:',
+                  style: pw.TextStyle(font: font, fontSize: 13),
+                ),
+              ),
+              pw.Expanded(
+                flex: 6,
+                child: pw.Text(
+                  '$displayExportDate $displayExportTime',
+                  style: pw.TextStyle(font: font, fontSize: 13),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _generateWorkerUniformFiles() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || _isGeneratingUniformFiles) return;
+
+    try {
+      final selectedRange = await _pickExportDateRange();
+      if (selectedRange == null || !mounted) return;
+
+      setState(() => _isGeneratingUniformFiles = true);
+
+      final fromDate = _formatCompactDate(selectedRange.start);
+      final toDate = _formatCompactDate(selectedRange.end);
+      final directory = await _getBkmvExportDirectory();
+      final result = await BkmvExportService.exportForUser(
+        firestore: FirebaseFirestore.instance,
+        userId: user.uid,
+        fromDate: fromDate,
+        toDate: toDate,
+        rootDirectory: directory,
+      );
+
+      if (!result.hasFiles) {
+        throw StateError(
+          result.warnings.isNotEmpty
+              ? result.warnings.join('\n')
+              : 'No BKMV files were generated for this range.',
+        );
+      }
+
+      final font = await _loadPdfFont();
+      final timestamp = DateTime.now();
+      final stamp =
+          '${_formatCompactDate(timestamp)}_${timestamp.hour.toString().padLeft(2, '0')}${timestamp.minute.toString().padLeft(2, '0')}';
+      final printedSummaryFile = File(
+        '${directory.path}${Platform.pathSeparator}BKMV_printed_summary_$stamp.pdf',
+      );
+      final annex4File = File(
+        '${directory.path}${Platform.pathSeparator}BKMV_annex_4_$stamp.pdf',
+      );
+
+      final printedSummaryDoc = pw.Document();
+      final annex4Doc = pw.Document();
+
+      for (final package in result.packages) {
+        printedSummaryDoc.addPage(
+          pw.MultiPage(
+            pageFormat: pdf.PdfPageFormat.a4,
+            margin: const pw.EdgeInsets.all(28),
+            build: (_) => [
+              _buildPrintedSummaryPage(package.summary, font: font),
+            ],
+          ),
+        );
+        annex4Doc.addPage(
+          pw.MultiPage(
+            pageFormat: pdf.PdfPageFormat.a4,
+            margin: const pw.EdgeInsets.fromLTRB(36, 32, 36, 28),
+            build: (_) => [_buildAnnex4Page(package.annex4Summary, font: font)],
+          ),
+        );
+      }
+
+      await printedSummaryFile.writeAsBytes(
+        await printedSummaryDoc.save(),
+        flush: true,
+      );
+      await annex4File.writeAsBytes(await annex4Doc.save(), flush: true);
+
+      final files = <XFile>[
+        for (final package in result.packages) ...[
+          XFile(package.bkmvFile.path),
+          XFile(package.iniFile.path),
+        ],
+        XFile(printedSummaryFile.path),
+        XFile(annex4File.path),
+      ];
+
+      await SharePlus.instance.share(
+        ShareParams(files: files, text: 'BKMV export bundle'),
+      );
+
+      if (!mounted) return;
+      final warningSuffix = result.warnings.isEmpty
+          ? ''
+          : '\n${result.warnings.join(' | ')}';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Prepared ${files.length} files in ${directory.path}$warningSuffix',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isGeneratingUniformFiles = false);
+      }
+    }
+  }
+
   Map<String, String> _getLocalizedStrings(
     BuildContext context, {
     bool listen = true,
@@ -341,6 +884,7 @@ class _SettingsPageState extends State<SettingsPage>
           'hide_schedule': 'הסתר לוח זמנים מאחרים',
           'work_days': 'ימי עבודה',
           'working_hours': 'שעות עבודה',
+          'uniform_export': 'הפקת קבצים במבנה אחיד',
           'available_from': 'זמין מ-',
           'available_to': 'זמין עד',
           'select_off_days': 'בחר ימי חופש קבועים',
@@ -370,6 +914,7 @@ class _SettingsPageState extends State<SettingsPage>
           'hide_schedule': 'إخفاء الجدول عن الآخرين',
           'work_days': 'أيام العمل',
           'working_hours': 'ساعات العمل',
+          'uniform_export': 'إنتاج ملفات بالبنية الموحدة',
           'available_from': 'متاح من',
           'available_to': 'متاح حتى',
           'select_off_days': 'اختر أيام العطلة الثابتة',
@@ -399,6 +944,7 @@ class _SettingsPageState extends State<SettingsPage>
           'hide_schedule': 'Скрыть расписание от других',
           'work_days': 'Рабочие дни',
           'working_hours': 'Рабочие часы',
+          'uniform_export': 'Создать файлы в едином формате',
           'available_from': 'Доступен с',
           'available_to': 'Доступен до',
           'select_off_days': 'Выберите постоянные выходные',
@@ -428,6 +974,7 @@ class _SettingsPageState extends State<SettingsPage>
           'hide_schedule': 'መርሃ ግብሩን ከሌሎች ደብቅ',
           'work_days': 'የስራ ቀናት',
           'working_hours': 'የስራ ሰዓቶች',
+          'uniform_export': 'በአንድ መዋቅር ፋይሎችን አውጣ',
           'available_from': 'ዝግጁ ከ',
           'available_to': 'ዝግጁ እስከ',
           'select_off_days': 'ቋሚ የእረፍት ቀናትን ይምረጡ',
@@ -456,6 +1003,7 @@ class _SettingsPageState extends State<SettingsPage>
           'hide_schedule': 'Hide schedule from others',
           'work_days': 'Working Days',
           'working_hours': 'Working Hours',
+          'uniform_export': 'Generate Uniform Files',
           'available_from': 'Available from',
           'available_to': 'Available to',
           'select_off_days': 'Select fixed days off',
@@ -493,7 +1041,7 @@ class _SettingsPageState extends State<SettingsPage>
   }
 
   void _goToHelpPage() {
-    if (Platform.isIOS) {
+    if (_isApplePlatform) {
       Navigator.push(
         context,
         CupertinoPageRoute(builder: (_) => const HelpPage()),
@@ -515,7 +1063,7 @@ class _SettingsPageState extends State<SettingsPage>
     ).locale.languageCode;
     final isRtl = localeCode == 'he' || localeCode == 'ar';
 
-    if (Platform.isIOS) {
+    if (_isApplePlatform) {
       return _buildIosSettings(context, strings, isRtl);
     } else {
       return _buildAndroidSettings(context, strings, isRtl);
@@ -525,8 +1073,9 @@ class _SettingsPageState extends State<SettingsPage>
   Widget _buildScheduleSection(Map<String, String> strings) {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null || user.isAnonymous) return const SizedBox.shrink();
-    if (_isLoadingSettings)
+    if (_isLoadingSettings) {
       return const Center(child: CupertinoActivityIndicator());
+    }
 
     if (_userRole != 'worker') return const SizedBox.shrink();
 
@@ -559,7 +1108,6 @@ class _SettingsPageState extends State<SettingsPage>
           await _pickWorkingHour(isStart: false);
         },
       ),
-      const Divider(height: 1, indent: 50),
       Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -615,6 +1163,46 @@ class _SettingsPageState extends State<SettingsPage>
             ),
           ],
         ),
+      ),
+    ]);
+  }
+
+  Widget _buildUniformExportSection(Map<String, String> strings, bool isRtl) {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || user.isAnonymous) return const SizedBox.shrink();
+    if (_isLoadingSettings) {
+      return const Center(child: CupertinoActivityIndicator());
+    }
+    if (_userRole != 'worker') return const SizedBox.shrink();
+
+    return _buildGalaxySection(strings['uniform_export']!, [
+      ListTile(
+        leading: Icon(
+          Icons.file_present_rounded,
+          color: _isGeneratingUniformFiles
+              ? const Color(0xFF94A3B8)
+              : const Color(0xFF1976D2),
+        ),
+        title: Text(
+          strings['uniform_export']!,
+          style: TextStyle(
+            fontWeight: FontWeight.w500,
+            color: _isGeneratingUniformFiles ? const Color(0xFF94A3B8) : null,
+          ),
+        ),
+        subtitle: Text(
+          isRtl
+              ? 'הפקת BKMVDATA, סעיף 2.6 וסעיף 5.4 בפעולה אחת'
+              : 'Generate BKMVDATA, section 2.6, and section 5.4 in one action',
+        ),
+        trailing: _isGeneratingUniformFiles
+            ? const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.chevron_right_rounded, size: 20),
+        onTap: _isGeneratingUniformFiles ? null : _generateWorkerUniformFiles,
       ),
     ]);
   }
@@ -697,6 +1285,8 @@ class _SettingsPageState extends State<SettingsPage>
                       ]),
                       const SizedBox(height: 16),
                       _buildScheduleSection(strings),
+                      const SizedBox(height: 16),
+                      _buildUniformExportSection(strings, isRtl),
                       const SizedBox(height: 16),
                       _buildGalaxySection(strings['notifications']!, [
                         _buildGalaxySwitchTile(
@@ -1006,6 +1596,32 @@ class _SettingsPageState extends State<SettingsPage>
                         );
                       }),
                     ),
+                  ),
+                ],
+              ),
+            if (_userRole == 'worker')
+              CupertinoListSection.insetGrouped(
+                header: Text(strings['uniform_export']!),
+                children: [
+                  CupertinoListTile(
+                    leading: Icon(
+                      CupertinoIcons.doc_on_doc,
+                      color: _isGeneratingUniformFiles
+                          ? CupertinoColors.systemGrey
+                          : CupertinoColors.systemBlue,
+                    ),
+                    title: Text(strings['uniform_export']!),
+                    subtitle: Text(
+                      isRtl
+                          ? 'הפקת BKMVDATA, סעיף 2.6 וסעיף 5.4 בפעולה אחת'
+                          : 'Generate BKMVDATA, section 2.6, and section 5.4 in one action',
+                    ),
+                    trailing: _isGeneratingUniformFiles
+                        ? const CupertinoActivityIndicator()
+                        : const CupertinoListTileChevron(),
+                    onTap: _isGeneratingUniformFiles
+                        ? null
+                        : _generateWorkerUniformFiles,
                   ),
                 ],
               ),

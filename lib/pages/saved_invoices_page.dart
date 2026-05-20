@@ -20,7 +20,7 @@ class SavedInvoicesPage extends StatefulWidget {
 class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
-  Stream<QuerySnapshot<Map<String, dynamic>>>? _savedInvoicesStream;
+  Stream<QuerySnapshot<Map<String, dynamic>>>? _invoicesStream;
   String _searchQuery = '';
   String _selectedDocType = 'all';
   DateTimeRange? _selectedDateRange;
@@ -68,10 +68,10 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
     super.initState();
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
-      _savedInvoicesStream = FirebaseFirestore.instance
+      _invoicesStream = FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
-          .collection('saved_invoices')
+          .collection('invoices')
           .orderBy('createdAt', descending: true)
           .snapshots();
     }
@@ -274,7 +274,7 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
   }
 
   Future<void> _openReceiptFromInvoice(
-    String savedDocId,
+    String invoiceDocId,
     Map<String, dynamic> savedData,
     bool isRtl,
   ) async {
@@ -282,7 +282,7 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
     if (currentUser == null) return;
 
     final invoiceNumber = (savedData['invoiceNumber'] ?? '').toString().trim();
-    final invoiceDocId = (savedData['invoiceDocId'] ?? invoiceNumber)
+    final resolvedInvoiceDocId = (savedData['invoiceDocId'] ?? invoiceDocId)
         .toString()
         .trim();
     if (invoiceNumber.isEmpty) return;
@@ -318,7 +318,9 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
       final userRef = FirebaseFirestore.instance
           .collection('users')
           .doc(currentUser.uid);
-      final detailRef = userRef.collection('invoices').doc(invoiceDocId);
+      final detailRef = userRef
+          .collection('invoices')
+          .doc(resolvedInvoiceDocId);
       final results = await Future.wait([userRef.get(), detailRef.get()]);
       final userSnap = results[0];
       final detailSnap = results[1];
@@ -365,8 +367,7 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
             initialPaymentMethod: paymentDraft.method,
             initialPaymentAmount: paymentDraft.amount,
             sourceInvoiceNumber: invoiceNumber,
-            sourceInvoiceDocId: invoiceDocId,
-            sourceInvoiceSavedDocId: savedDocId,
+            sourceInvoiceDocId: resolvedInvoiceDocId,
             sourceInvoiceTotalAmount: invoiceAmount,
           ),
         ),
@@ -586,7 +587,7 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
           elevation: 0,
         ),
         body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-          stream: _savedInvoicesStream,
+          stream: _invoicesStream,
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const Center(child: CircularProgressIndicator());
@@ -792,20 +793,24 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                           separatorBuilder: (_, separatorIndex) =>
                               const SizedBox(height: 10),
                           itemBuilder: (context, index) {
-                            final savedDoc = filteredDocs[index];
-                            final data = savedDoc.data();
-                            final name = (data['name'] ?? 'Invoice').toString();
+                            final invoiceDoc = filteredDocs[index];
+                            final data = invoiceDoc.data();
+                            final invoiceNumber = (data['invoiceNumber'] ?? '')
+                                .toString();
+                            final docType = (data['docType'] ?? '').toString();
+                            final clientName = (data['clientName'] ?? '')
+                                .toString()
+                                .trim();
+                            final fallbackName = clientName.isNotEmpty
+                                ? '${_docTypeLabel(docType, isRtl)}${invoiceNumber.isNotEmpty ? ' #$invoiceNumber' : ''} - $clientName'
+                                : '${_docTypeLabel(docType, isRtl)}${invoiceNumber.isNotEmpty ? ' #$invoiceNumber' : ''}';
+                            final name = (data['name'] ?? fallbackName)
+                                .toString();
                             final fileName = (data['fileName'] ?? '$name.pdf')
                                 .toString();
                             final url = (data['url'] ?? '').toString();
                             final createdAt = data['createdAt'] as Timestamp?;
                             final amount = (data['amount'] as num?)?.toDouble();
-                            final clientName = (data['clientName'] ?? '')
-                                .toString()
-                                .trim();
-                            final invoiceNumber = (data['invoiceNumber'] ?? '')
-                                .toString();
-                            final docType = (data['docType'] ?? '').toString();
                             final canCreateCreditNote =
                                 docType == 'invoice' ||
                                 docType == 'invoice_receipt';
@@ -1074,7 +1079,7 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                             TextButton.icon(
                                               onPressed: () =>
                                                   _openReceiptFromInvoice(
-                                                    savedDoc.id,
+                                                    invoiceDoc.id,
                                                     data,
                                                     isRtl,
                                                   ),

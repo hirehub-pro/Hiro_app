@@ -161,7 +161,6 @@ class InvoiceBuilderPage extends StatefulWidget {
   final double? initialPaymentAmount;
   final String? sourceInvoiceNumber;
   final String? sourceInvoiceDocId;
-  final String? sourceInvoiceSavedDocId;
   final double? sourceInvoiceTotalAmount;
   final bool returnDraftOnSend;
 
@@ -188,7 +187,6 @@ class InvoiceBuilderPage extends StatefulWidget {
     this.initialPaymentAmount,
     this.sourceInvoiceNumber,
     this.sourceInvoiceDocId,
-    this.sourceInvoiceSavedDocId,
     this.sourceInvoiceTotalAmount,
     this.returnDraftOnSend = false,
   });
@@ -318,14 +316,12 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         .collection('counters')
         .doc(_counterDocIdForType(docType));
     final invoicesRef = userDoc.collection('invoices');
-    final savedInvoicesRef = userDoc.collection('saved_invoices');
     final invoiceTotalsRef = FirebaseFirestore.instance
         .collection('metadata')
         .doc('invoice_counts');
+    final userLogsRef = userDoc.collection('logs');
     final logEntries = logTargets.map((target) {
-      final logBucketRef = FirebaseFirestore.instance
-          .collection('logs')
-          .doc(target['bucket']!);
+      final logBucketRef = userLogsRef.doc(target['bucket']!);
       return {
         'bucket': target['bucket']!,
         'bucketRef': logBucketRef,
@@ -458,10 +454,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         'createdAt': timestamp,
       };
       await quoteDocRef.set(quoteData);
-      await savedInvoicesRef.add({
-        ...quoteData,
-        'createdAt': FieldValue.serverTimestamp(),
-      });
       return InvoiceBuilderDraftResult(
         url: downloadUrl,
         fileName: fileName,
@@ -512,6 +504,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
 
       final invoiceData = {
         'type': docType,
+        'docType': docType,
         'amount': signedTotalAmount,
         'vatAmount': vatAmount,
         'clientName': _clientNameController.text,
@@ -543,7 +536,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         'paymentAmountTotal': paymentAmountTotal,
         'sourceInvoiceNumber': widget.sourceInvoiceNumber,
         'sourceInvoiceDocId': widget.sourceInvoiceDocId,
-        'sourceInvoiceSavedDocId': widget.sourceInvoiceSavedDocId,
         'sourceInvoiceTotalAmount': widget.sourceInvoiceTotalAmount,
         'invoiceNumber': nextDocumentNumber,
         'sequenceNumber': nextNumber,
@@ -620,7 +612,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'paymentAmountTotal': paymentAmountTotal,
           'sourceInvoiceNumber': widget.sourceInvoiceNumber,
           'sourceInvoiceDocId': widget.sourceInvoiceDocId,
-          'sourceInvoiceSavedDocId': widget.sourceInvoiceSavedDocId,
           'sourceInvoiceTotalAmount': widget.sourceInvoiceTotalAmount,
           'items': logItems,
           'fileName': '',
@@ -649,49 +640,17 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     );
     await ref.putData(pdfBytes);
     final downloadUrl = await ref.getDownloadURL();
-
-    await invoicesRef.doc(invoiceDocId).update({
-      'fileName': fileName,
-      'url': downloadUrl,
-    });
     final clientName = _clientNameController.text.trim();
     final savedInvoiceName = clientName.isNotEmpty
         ? '${_labelForDocType(docType)} #$nextDocumentNumber - $clientName'
         : '${_labelForDocType(docType)} #$nextDocumentNumber';
-    final savedInvoiceData = {
+
+    await invoicesRef.doc(invoiceDocId).update({
       'name': savedInvoiceName,
       'fileName': fileName,
       'url': downloadUrl,
       'storagePath': storagePath,
-      'amount': signedTotalAmount,
-      'invoiceNumber': nextDocumentNumber,
-      'sequenceNumber': nextNumber,
-      'invoiceDocId': invoiceDocId,
-      'docType': docType,
-      'clientName': clientName,
-      'clientTaxId': _clientIdController.text.trim(),
-      'paymentMethod': _paymentMethods.isNotEmpty
-          ? _paymentMethods.first.method
-          : 'cash',
-      'paymentMethods': paymentMethodsData,
-      'paymentAmountTotal': paymentAmountTotal,
-      'sourceInvoiceNumber': widget.sourceInvoiceNumber,
-      'sourceInvoiceDocId': widget.sourceInvoiceDocId,
-      'sourceInvoiceSavedDocId': widget.sourceInvoiceSavedDocId,
-      'sourceInvoiceTotalAmount': widget.sourceInvoiceTotalAmount,
-      'date': dateStr,
-      if (_showsDueDateSection && _selectedPaymentDueDate != null)
-        'paymentDueDate': _paymentDueDateStorageValue(),
-      'createdAt': FieldValue.serverTimestamp(),
-      if (docType == 'invoice') 'paymentStatus': 'unpaid',
-      if (docType == 'invoice') 'paidAmount': 0.0,
-      if (docType == 'invoice_receipt') 'paymentStatus': 'paid',
-      if (docType == 'invoice_receipt') 'paidAmount': signedTotalAmount.abs(),
-      ...?creditNoteLegalData == null
-          ? null
-          : {'creditNoteLegal': creditNoteLegalData},
-    };
-    await savedInvoicesRef.add(savedInvoiceData);
+    });
     if (docType != 'quote' && docType != 'work_order') {
       await _addToTotalEarned(userId: userId, amount: signedTotalAmount);
     }
@@ -710,7 +669,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     if (docType == 'receipt' &&
         widget.sourceInvoiceNumber != null &&
         widget.sourceInvoiceDocId != null &&
-        widget.sourceInvoiceSavedDocId != null &&
         widget.sourceInvoiceTotalAmount != null) {
       await _updateLinkedInvoicePaymentStatus(
         userId: userId,
@@ -745,14 +703,11 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   }) async {
     final sourceInvoiceNumber = widget.sourceInvoiceNumber?.trim();
     final sourceInvoiceDocId = widget.sourceInvoiceDocId?.trim();
-    final sourceInvoiceSavedDocId = widget.sourceInvoiceSavedDocId?.trim();
     final sourceInvoiceTotalAmount = widget.sourceInvoiceTotalAmount;
     if (sourceInvoiceNumber == null ||
         sourceInvoiceNumber.isEmpty ||
         sourceInvoiceDocId == null ||
         sourceInvoiceDocId.isEmpty ||
-        sourceInvoiceSavedDocId == null ||
-        sourceInvoiceSavedDocId.isEmpty ||
         sourceInvoiceTotalAmount == null ||
         sourceInvoiceTotalAmount <= 0 ||
         paidAmount <= 0) {
@@ -761,17 +716,11 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
 
     final userRef = FirebaseFirestore.instance.collection('users').doc(userId);
     final invoiceRef = userRef.collection('invoices').doc(sourceInvoiceDocId);
-    final savedInvoiceRef = userRef
-        .collection('saved_invoices')
-        .doc(sourceInvoiceSavedDocId);
 
     await FirebaseFirestore.instance.runTransaction((transaction) async {
       final invoiceSnap = await transaction.get(invoiceRef);
-      final savedInvoiceSnap = await transaction.get(savedInvoiceRef);
       final currentPaidAmount =
-          ((savedInvoiceSnap.data()?['paidAmount'] as num?)?.toDouble() ??
-          (invoiceSnap.data()?['paidAmount'] as num?)?.toDouble() ??
-          0.0);
+          (invoiceSnap.data()?['paidAmount'] as num?)?.toDouble() ?? 0.0;
       final nextPaidAmount = (currentPaidAmount + paidAmount).clamp(
         0.0,
         sourceInvoiceTotalAmount,
@@ -790,13 +739,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
 
       if (invoiceSnap.exists) {
         transaction.set(invoiceRef, paymentUpdate, SetOptions(merge: true));
-      }
-      if (savedInvoiceSnap.exists) {
-        transaction.set(
-          savedInvoiceRef,
-          paymentUpdate,
-          SetOptions(merge: true),
-        );
       }
     });
   }
@@ -2720,8 +2662,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     final totalEarnedRef = FirebaseFirestore.instance
         .collection('users')
         .doc(userId)
-        .collection('saved_invoices')
-        .doc('TotalEarned');
+        .collection('metadata')
+        .doc('financial_summary');
 
     await totalEarnedRef.set({
       'totalEarned': FieldValue.increment(amount),

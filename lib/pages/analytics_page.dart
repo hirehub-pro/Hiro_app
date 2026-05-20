@@ -626,8 +626,8 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
       }
 
       final totalEarnedDoc = await workerRef
-          .collection('saved_invoices')
-          .doc('TotalEarned')
+          .collection('metadata')
+          .doc('financial_summary')
           .get();
       final totalEarnedData = totalEarnedDoc.data();
       final totalEarnedValue = totalEarnedData?['totalEarned'];

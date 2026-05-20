@@ -87,6 +87,8 @@ class BkmvAnnex4Summary {
   final String userId;
   final String businessName;
   final String businessNumber;
+  final String softwareName;
+  final String softwareRegistrationNumber;
   final String exportDirectory;
   final String fromDate;
   final String toDate;
@@ -99,6 +101,8 @@ class BkmvAnnex4Summary {
     required this.userId,
     required this.businessName,
     required this.businessNumber,
+    required this.softwareName,
+    required this.softwareRegistrationNumber,
     required this.exportDirectory,
     required this.fromDate,
     required this.toDate,
@@ -197,22 +201,12 @@ class BkmvExportService {
     required String toDate,
     required Directory rootDirectory,
   }) async {
-    final snapshots = await Future.wait(
-      _bucketNames.map(
-        (bucket) => firestore
-            .collection('logs')
-            .doc(bucket)
-            .collection('files')
-            .where('userId', isEqualTo: userId)
-            .where('date', isGreaterThanOrEqualTo: fromDate)
-            .where('date', isLessThanOrEqualTo: toDate)
-            .orderBy('date')
-            .orderBy('timestamp')
-            .get(),
-      ),
+    final logDocs = await _loadLogDocsForUser(
+      firestore: firestore,
+      userId: userId,
+      fromDate: fromDate,
+      toDate: toDate,
     );
-
-    final logDocs = snapshots.expand((snapshot) => snapshot.docs).toList();
     if (logDocs.isEmpty) {
       return BkmvExportResult(
         packages: const [],
@@ -257,21 +251,11 @@ class BkmvExportService {
     required String toDate,
     required Directory rootDirectory,
   }) async {
-    final snapshots = await Future.wait(
-      _bucketNames.map(
-        (bucket) => firestore
-            .collection('logs')
-            .doc(bucket)
-            .collection('files')
-            .where('date', isGreaterThanOrEqualTo: fromDate)
-            .where('date', isLessThanOrEqualTo: toDate)
-            .orderBy('date')
-            .orderBy('timestamp')
-            .get(),
-      ),
+    final allDocs = await _loadAllLogDocs(
+      firestore: firestore,
+      fromDate: fromDate,
+      toDate: toDate,
     );
-
-    final allDocs = snapshots.expand((snapshot) => snapshot.docs).toList();
     if (allDocs.isEmpty) {
       return BkmvExportResult(
         packages: const [],
@@ -329,21 +313,11 @@ class BkmvExportService {
     required String fromDate,
     required String toDate,
   }) async {
-    final snapshots = await Future.wait(
-      _bucketNames.map(
-        (bucket) => firestore
-            .collection('logs')
-            .doc(bucket)
-            .collection('files')
-            .where('date', isGreaterThanOrEqualTo: fromDate)
-            .where('date', isLessThanOrEqualTo: toDate)
-            .orderBy('date')
-            .orderBy('timestamp')
-            .get(),
-      ),
+    final allDocs = await _loadAllLogDocs(
+      firestore: firestore,
+      fromDate: fromDate,
+      toDate: toDate,
     );
-
-    final allDocs = snapshots.expand((snapshot) => snapshot.docs).toList();
     if (allDocs.isEmpty) {
       return const [];
     }
@@ -388,6 +362,64 @@ class BkmvExportService {
           a.businessName.toLowerCase().compareTo(b.businessName.toLowerCase()),
     );
     return summaries;
+  }
+
+  static Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+  _loadLogDocsForUser({
+    required FirebaseFirestore firestore,
+    required String userId,
+    required String fromDate,
+    required String toDate,
+  }) async {
+    final snapshot = await firestore
+        .collectionGroup('files')
+        .where('bucket', whereIn: _bucketNames)
+        .where('userId', isEqualTo: userId)
+        .where('date', isGreaterThanOrEqualTo: fromDate)
+        .where('date', isLessThanOrEqualTo: toDate)
+        .orderBy('date')
+        .orderBy('timestamp')
+        .get();
+    return _mergeLogDocs(snapshot.docs);
+  }
+
+  static Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+  _loadAllLogDocs({
+    required FirebaseFirestore firestore,
+    required String fromDate,
+    required String toDate,
+  }) async {
+    final snapshot = await firestore
+        .collectionGroup('files')
+        .where('bucket', whereIn: _bucketNames)
+        .where('date', isGreaterThanOrEqualTo: fromDate)
+        .where('date', isLessThanOrEqualTo: toDate)
+        .orderBy('date')
+        .orderBy('timestamp')
+        .get();
+    return _mergeLogDocs(snapshot.docs);
+  }
+
+  static List<QueryDocumentSnapshot<Map<String, dynamic>>> _mergeLogDocs(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) {
+    final merged = <String, QueryDocumentSnapshot<Map<String, dynamic>>>{};
+    for (final doc in docs) {
+      final data = doc.data();
+      final bucket = (data['bucket'] ?? '').toString().trim();
+      final userId = (data['userId'] ?? '').toString().trim();
+      final invoiceDocId = (data['invoiceDocId'] ?? '').toString().trim();
+      final counter = (data['counter'] ?? '').toString().trim();
+      final fallback = doc.reference.path;
+      final key = invoiceDocId.isNotEmpty || counter.isNotEmpty
+          ? '$userId|$bucket|$invoiceDocId|$counter'
+          : fallback;
+      final previous = merged[key];
+      if (previous == null || previous.reference.path.startsWith('logs/')) {
+        merged[key] = doc;
+      }
+    }
+    return merged.values.toList();
   }
 
   static Future<BkmvExportPackage?> _buildPackage({
@@ -820,6 +852,8 @@ class BkmvExportService {
       userId: context.userId,
       businessName: context.businessName,
       businessNumber: context.businessNumber,
+      softwareName: context.softwareName,
+      softwareRegistrationNumber: context.softwareRegistrationNumber,
       exportDirectory: exportDirectory,
       fromDate: fromDate,
       toDate: toDate,
@@ -877,7 +911,7 @@ class BkmvExportService {
       businessName: businessName,
       address: (verificationData['address'] ?? userData['address'] ?? '')
           .toString(),
-      softwareName: (metadata['appName'] ?? 'hiro').toString(),
+      softwareName: 'hiro',
       softwareVersion: (metadata['minRequiredVersion'] ?? '1.0.0').toString(),
       softwareRegistrationNumber: _digitsOnly(
         (metadata['softwareRegistrationNumber'] ?? '').toString(),
