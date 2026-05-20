@@ -25,6 +25,7 @@ import 'package:untitled1/pages/privacy_policy_page.dart';
 import 'package:untitled1/pages/reports_page.dart';
 import 'package:untitled1/pages/terms_of_service_page.dart';
 import 'package:intl/intl.dart' as intl;
+import 'package:url_launcher/url_launcher.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -363,12 +364,87 @@ class _SettingsPageState extends State<SettingsPage>
 
   Future<Directory> _getBkmvExportDirectory() async {
     final documentsDir = await getApplicationDocumentsDirectory();
-    final userId = FirebaseAuth.instance.currentUser?.uid ?? 'worker';
-    final directory = Directory(
-      '${documentsDir.path}${Platform.pathSeparator}BKMVDATA${Platform.pathSeparator}$userId',
-    );
+    final directory = Directory(documentsDir.path);
     await directory.create(recursive: true);
     return directory;
+  }
+
+  Future<String?> _promptExportEmail() async {
+    final initialEmail =
+        (FirebaseAuth.instance.currentUser?.email ??
+                _userData?['email']?.toString() ??
+                '')
+            .trim();
+    final controller = TextEditingController(text: initialEmail);
+    String? validationMessage;
+    final localeCode = Provider.of<LanguageProvider>(
+      context,
+      listen: false,
+    ).locale.languageCode;
+    final isRtl = localeCode == 'he' || localeCode == 'ar';
+    final title = isRtl ? 'שליחת קבצים במייל' : 'Email Export Files';
+    final label = isRtl
+        ? 'לאיזה אימייל לשלוח?'
+        : 'Which email should receive the files?';
+    final hint = isRtl ? 'name@example.com' : 'name@example.com';
+    final helper = isRtl
+        ? 'נעתיק את הכתובת, נפתח שיתוף קבצים, ואז נפתח מייל מוכן לכתובת הזו.'
+        : 'We will copy the address, open file sharing, then open an email draft to this address.';
+    final invalid = isRtl
+        ? 'יש להזין כתובת אימייל תקינה.'
+        : 'Enter a valid email address.';
+
+    final result = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: Text(title),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextFormField(
+                    controller: controller,
+                    autofocus: true,
+                    keyboardType: TextInputType.emailAddress,
+                    decoration: InputDecoration(
+                      labelText: label,
+                      hintText: hint,
+                      helperText: helper,
+                      errorText: validationMessage,
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: Text(isRtl ? 'ביטול' : 'Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    final email = controller.text.trim();
+                    final isValid = RegExp(
+                      r'^[^\s@]+@[^\s@]+\.[^\s@]+$',
+                    ).hasMatch(email);
+                    if (!isValid) {
+                      setDialogState(() => validationMessage = invalid);
+                      return;
+                    }
+                    Navigator.pop(dialogContext, email);
+                  },
+                  child: Text(isRtl ? 'המשך' : 'Continue'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    controller.dispose();
+    return result;
   }
 
   String _formatAmountForPdf(double value) {
@@ -825,6 +901,9 @@ class _SettingsPageState extends State<SettingsPage>
     if (user == null || _isGeneratingUniformFiles) return;
 
     try {
+      final recipientEmail = await _promptExportEmail();
+      if (recipientEmail == null || !mounted) return;
+
       final selectedRange = await _pickExportDateRange();
       if (selectedRange == null || !mounted) return;
 
@@ -897,9 +976,26 @@ class _SettingsPageState extends State<SettingsPage>
         XFile(annex4File.path),
       ];
 
+      await Clipboard.setData(ClipboardData(text: recipientEmail));
       await SharePlus.instance.share(
-        ShareParams(files: files, text: 'BKMV export bundle'),
+        ShareParams(
+          files: files,
+          text: 'Send to: $recipientEmail\nBKMV export bundle',
+        ),
       );
+
+      final emailUri = Uri(
+        scheme: 'mailto',
+        path: recipientEmail,
+        queryParameters: {
+          'subject': 'BKMV export files',
+          'body':
+              'BKMV export files are ready.\n\nExport folder:\n${directory.path}\n\nIf the attachments did not transfer automatically from the share step, attach the generated files from this folder.',
+        },
+      );
+      if (await canLaunchUrl(emailUri)) {
+        await launchUrl(emailUri, mode: LaunchMode.externalApplication);
+      }
 
       if (!mounted) return;
       final warningSuffix = result.warnings.isEmpty
@@ -908,7 +1004,7 @@ class _SettingsPageState extends State<SettingsPage>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Prepared ${files.length} files in ${directory.path}$warningSuffix',
+            'Prepared ${files.length} files for $recipientEmail in ${directory.path}$warningSuffix',
           ),
         ),
       );

@@ -144,9 +144,7 @@ class _AdminPanelState extends State<AdminPanel> {
 
   Future<Directory> _getBkmvExportDirectory() async {
     final downloadsDir = await getApplicationDocumentsDirectory();
-    final directory = Directory(
-      '${downloadsDir.path}${Platform.pathSeparator}BKMVDATA',
-    );
+    final directory = Directory(downloadsDir.path);
     await directory.create(recursive: true);
     return directory;
   }
