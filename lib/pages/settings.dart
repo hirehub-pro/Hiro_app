@@ -445,6 +445,8 @@ class _SettingsPageState extends State<SettingsPage>
     final visibleRows = summary.rows;
     final displayFromDate = _formatCompactDateForDisplay(summary.fromDate);
     final displayToDate = _formatCompactDateForDisplay(summary.toDate);
+    final displayExportDate = _formatCompactDateForDisplay(summary.exportDate);
+    final displayExportTime = _formatCompactTimeForDisplay(summary.exportTime);
     final totalMoney = visibleRows.fold<double>(
       0,
       (runningTotal, row) => runningTotal + row.totalAmountIncludingVat,
@@ -513,6 +515,71 @@ class _SettingsPageState extends State<SettingsPage>
             'סה"כ כספי: ${_formatAmountForPdf(totalMoney)}',
             textDirection: pw.TextDirection.rtl,
             style: pw.TextStyle(font: font, fontSize: 11),
+          ),
+          pw.SizedBox(height: 12),
+          pw.Row(
+            children: [
+              pw.Expanded(
+                flex: 4,
+                child: pw.Text(
+                  'הנתונים הופקו באמצעות תוכנת',
+                  style: pw.TextStyle(font: font, fontSize: 11),
+                ),
+              ),
+              pw.Expanded(
+                flex: 6,
+                child: pw.Text(
+                  summary.softwareName,
+                  style: pw.TextStyle(
+                    font: font,
+                    fontSize: 11,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          pw.SizedBox(height: 4),
+          pw.Row(
+            children: [
+              pw.Expanded(
+                flex: 4,
+                child: pw.Text(
+                  'מספר תעודת רישום:',
+                  style: pw.TextStyle(font: font, fontSize: 11),
+                ),
+              ),
+              pw.Expanded(
+                flex: 6,
+                child: pw.Text(
+                  summary.softwareRegistrationNumber,
+                  style: pw.TextStyle(
+                    font: font,
+                    fontSize: 11,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          pw.SizedBox(height: 4),
+          pw.Row(
+            children: [
+              pw.Expanded(
+                flex: 4,
+                child: pw.Text(
+                  'תאריך הפקה:',
+                  style: pw.TextStyle(font: font, fontSize: 11),
+                ),
+              ),
+              pw.Expanded(
+                flex: 6,
+                child: pw.Text(
+                  '$displayExportDate $displayExportTime',
+                  style: pw.TextStyle(font: font, fontSize: 11),
+                ),
+              ),
+            ],
           ),
         ],
       ),

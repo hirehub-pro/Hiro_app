@@ -54,6 +54,10 @@ class BkmvPrintedSummary {
   final String businessNumber;
   final String fromDate;
   final String toDate;
+  final String exportDate;
+  final String exportTime;
+  final String softwareName;
+  final String softwareRegistrationNumber;
   final int c100RecordCount;
   final List<BkmvPrintedSummaryRow> rows;
 
@@ -63,6 +67,10 @@ class BkmvPrintedSummary {
     required this.businessNumber,
     required this.fromDate,
     required this.toDate,
+    required this.exportDate,
+    required this.exportTime,
+    required this.softwareName,
+    required this.softwareRegistrationNumber,
     required this.c100RecordCount,
     required this.rows,
   });
@@ -436,16 +444,17 @@ class BkmvExportService {
       userId: context.userId,
       logDocs: sortedLogs,
     );
+    final exportTimestamp = DateTime.now();
     final summary = _buildPrintedSummaryFromSortedLogs(
       context: context,
       sortedLogs: sortedLogs,
       invoiceMap: invoiceMap,
       fromDate: fromDate,
       toDate: toDate,
+      exportTimestamp: exportTimestamp,
     );
 
     final mainId = _randomDigits(15);
-    final exportTimestamp = DateTime.now();
     final exportDate = _formatCompactDate(exportTimestamp);
     final exportTime = _formatTime(exportTimestamp);
     final exportDirectory = await _createExportDirectory(
@@ -749,6 +758,7 @@ class BkmvExportService {
       invoiceMap: invoiceMap,
       fromDate: fromDate,
       toDate: toDate,
+      exportTimestamp: DateTime.now(),
     );
   }
 
@@ -758,6 +768,7 @@ class BkmvExportService {
     required Map<String, Map<String, dynamic>> invoiceMap,
     required String fromDate,
     required String toDate,
+    required DateTime exportTimestamp,
   }) {
     final typeCounts = <int, int>{};
     final typeAmounts = <int, double>{};
@@ -821,6 +832,10 @@ class BkmvExportService {
       businessNumber: context.businessNumber,
       fromDate: fromDate,
       toDate: toDate,
+      exportDate: _formatCompactDate(exportTimestamp),
+      exportTime: _formatTime(exportTimestamp),
+      softwareName: context.softwareName,
+      softwareRegistrationNumber: context.softwareRegistrationNumber,
       c100RecordCount: c100RecordCount,
       rows: rows,
     );
@@ -966,12 +981,15 @@ class BkmvExportService {
     required String businessNumber,
     required DateTime exportTimestamp,
   }) async {
-    final businessKey = _fitNumeric(businessNumber, 8);
+    final businessDigits = _digitsOnly(businessNumber);
+    final businessKey = businessDigits.length <= 8
+        ? businessDigits
+        : businessDigits.substring(0, 8);
     final yearKey = exportTimestamp.year.toString().substring(2);
     final timestampKey =
         '${exportTimestamp.month.toString().padLeft(2, '0')}${exportTimestamp.day.toString().padLeft(2, '0')}${exportTimestamp.hour.toString().padLeft(2, '0')}${exportTimestamp.minute.toString().padLeft(2, '0')}';
     final path =
-        '${rootDirectory.path}${Platform.pathSeparator}$businessKey.$yearKey${Platform.pathSeparator}$timestampKey';
+        '${rootDirectory.path}${Platform.pathSeparator}OPENFRMT${Platform.pathSeparator}$businessKey.$yearKey${Platform.pathSeparator}$timestampKey';
     final directory = Directory(path);
     await directory.create(recursive: true);
     return directory;
