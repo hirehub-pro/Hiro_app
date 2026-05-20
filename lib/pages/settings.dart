@@ -13,7 +13,6 @@ import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:pdf/pdf.dart' as pdf;
 import 'package:pdf/widgets.dart' as pw;
-import 'package:share_plus/share_plus.dart';
 import 'package:untitled1/services/auth_service.dart';
 import 'package:untitled1/services/bkmv_export_service.dart';
 import 'package:untitled1/services/language_provider.dart';
@@ -375,7 +374,7 @@ class _SettingsPageState extends State<SettingsPage>
                 _userData?['email']?.toString() ??
                 '')
             .trim();
-    final controller = TextEditingController(text: initialEmail);
+    var emailValue = initialEmail;
     String? validationMessage;
     final localeCode = Provider.of<LanguageProvider>(
       context,
@@ -405,9 +404,15 @@ class _SettingsPageState extends State<SettingsPage>
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   TextFormField(
-                    controller: controller,
+                    initialValue: initialEmail,
                     autofocus: true,
                     keyboardType: TextInputType.emailAddress,
+                    onChanged: (value) {
+                      emailValue = value;
+                      if (validationMessage != null) {
+                        setDialogState(() => validationMessage = null);
+                      }
+                    },
                     decoration: InputDecoration(
                       labelText: label,
                       hintText: hint,
@@ -424,7 +429,7 @@ class _SettingsPageState extends State<SettingsPage>
                 ),
                 FilledButton(
                   onPressed: () {
-                    final email = controller.text.trim();
+                    final email = emailValue.trim();
                     final isValid = RegExp(
                       r'^[^\s@]+@[^\s@]+\.[^\s@]+$',
                     ).hasMatch(email);
@@ -442,8 +447,6 @@ class _SettingsPageState extends State<SettingsPage>
         );
       },
     );
-
-    controller.dispose();
     return result;
   }
 
@@ -967,30 +970,13 @@ class _SettingsPageState extends State<SettingsPage>
       );
       await annex4File.writeAsBytes(await annex4Doc.save(), flush: true);
 
-      final files = <XFile>[
-        for (final package in result.packages) ...[
-          XFile(package.bkmvFile.path),
-          XFile(package.iniFile.path),
-        ],
-        XFile(printedSummaryFile.path),
-        XFile(annex4File.path),
-      ];
-
-      await Clipboard.setData(ClipboardData(text: recipientEmail));
-      await SharePlus.instance.share(
-        ShareParams(
-          files: files,
-          text: 'Send to: $recipientEmail\nBKMV export bundle',
-        ),
-      );
-
       final emailUri = Uri(
         scheme: 'mailto',
         path: recipientEmail,
         queryParameters: {
           'subject': 'BKMV export files',
           'body':
-              'BKMV export files are ready.\n\nExport folder:\n${directory.path}\n\nIf the attachments did not transfer automatically from the share step, attach the generated files from this folder.',
+              'BKMV export files are ready.\n\nExport folder:\n${directory.path}\n\nGenerated files:\n- BKMVDATA.txt\n- INI.txt\n- BKMV_printed_summary_$stamp.pdf\n- BKMV_annex_4_$stamp.pdf',
         },
       );
       if (await canLaunchUrl(emailUri)) {
@@ -1004,7 +990,7 @@ class _SettingsPageState extends State<SettingsPage>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Prepared ${files.length} files for $recipientEmail in ${directory.path}$warningSuffix',
+            'Prepared 4 files for $recipientEmail in ${directory.path}$warningSuffix',
           ),
         ),
       );
@@ -1884,6 +1870,46 @@ class _SettingsPageState extends State<SettingsPage>
 class LanguageDropDown extends StatelessWidget {
   const LanguageDropDown({super.key});
 
+  Future<void> _showLanguagePicker(BuildContext context) async {
+    final provider = Provider.of<LanguageProvider>(context, listen: false);
+    final locale = provider.locale;
+    final options = const [
+      ('en', 'English'),
+      ('he', 'עברית'),
+      ('ar', 'عربي'),
+      ('ru', 'Русский'),
+      ('am', 'አማርኛ'),
+    ];
+
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              for (final option in options)
+                ListTile(
+                  title: Text(option.$2),
+                  trailing: locale.languageCode == option.$1
+                      ? const Icon(
+                          Icons.check_rounded,
+                          color: Color(0xFF1976D2),
+                        )
+                      : null,
+                  onTap: () => Navigator.pop(sheetContext, option.$1),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (selected != null) {
+      provider.setLocale(selected);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final locale = Provider.of<LanguageProvider>(context).locale;
@@ -1899,10 +1925,9 @@ class LanguageDropDown extends StatelessWidget {
 
     return Material(
       type: MaterialType.transparency,
-      child: PopupMenuButton<String>(
-        onSelected: (code) {
-          Provider.of<LanguageProvider>(context, listen: false).setLocale(code);
-        },
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: () => _showLanguagePicker(context),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -1910,13 +1935,6 @@ class LanguageDropDown extends StatelessWidget {
             const Icon(Icons.arrow_drop_down, color: Colors.grey),
           ],
         ),
-        itemBuilder: (context) => [
-          const PopupMenuItem(value: 'en', child: Text('English')),
-          const PopupMenuItem(value: 'he', child: Text('עברית')),
-          const PopupMenuItem(value: 'ar', child: Text('عربي')),
-          const PopupMenuItem(value: 'ru', child: Text('Русский')),
-          const PopupMenuItem(value: 'am', child: Text('አማርኛ')),
-        ],
       ),
     );
   }
