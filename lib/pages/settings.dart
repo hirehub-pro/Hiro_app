@@ -1,9 +1,11 @@
 import 'dart:io';
 
+import 'package:archive/archive_io.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_email_sender/flutter_email_sender.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -24,7 +26,6 @@ import 'package:untitled1/pages/privacy_policy_page.dart';
 import 'package:untitled1/pages/reports_page.dart';
 import 'package:untitled1/pages/terms_of_service_page.dart';
 import 'package:intl/intl.dart' as intl;
-import 'package:url_launcher/url_launcher.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -366,6 +367,62 @@ class _SettingsPageState extends State<SettingsPage>
     final directory = Directory(documentsDir.path);
     await directory.create(recursive: true);
     return directory;
+  }
+
+  Future<File> _buildOpenFrmtZip({
+    required List<BkmvExportPackage> packages,
+    required String stamp,
+  }) async {
+    final tempRoot = await getTemporaryDirectory();
+    final stagingRoot = Directory(
+      '${tempRoot.path}${Platform.pathSeparator}openfrmt_export_$stamp',
+    );
+    if (await stagingRoot.exists()) {
+      await stagingRoot.delete(recursive: true);
+    }
+
+    final openFrmtRoot = Directory(
+      '${stagingRoot.path}${Platform.pathSeparator}OPENFRMT',
+    );
+    await openFrmtRoot.create(recursive: true);
+
+    for (final package in packages) {
+      final relativePath = package.directory.path.split('OPENFRMT').last;
+      final normalizedRelative = relativePath.startsWith(Platform.pathSeparator)
+          ? relativePath.substring(1)
+          : relativePath;
+      final targetDirectory = Directory(
+        '${openFrmtRoot.path}${Platform.pathSeparator}$normalizedRelative',
+      );
+      await targetDirectory.create(recursive: true);
+
+      final targetBkmvFile = File(
+        '${targetDirectory.path}${Platform.pathSeparator}${package.bkmvFile.uri.pathSegments.last}',
+      );
+      final targetIniFile = File(
+        '${targetDirectory.path}${Platform.pathSeparator}${package.iniFile.uri.pathSegments.last}',
+      );
+      await package.bkmvFile.copy(targetBkmvFile.path);
+      await package.iniFile.copy(targetIniFile.path);
+    }
+
+    final zipFile = File(
+      '${tempRoot.path}${Platform.pathSeparator}OPENFRMT_$stamp.zip',
+    );
+    if (await zipFile.exists()) {
+      await zipFile.delete();
+    }
+
+    final encoder = ZipFileEncoder();
+    encoder.create(zipFile.path);
+    await encoder.addDirectory(openFrmtRoot);
+    encoder.close();
+
+    if (await stagingRoot.exists()) {
+      await stagingRoot.delete(recursive: true);
+    }
+
+    return zipFile;
   }
 
   Future<String?> _promptExportEmail() async {
@@ -969,29 +1026,30 @@ class _SettingsPageState extends State<SettingsPage>
         flush: true,
       );
       await annex4File.writeAsBytes(await annex4Doc.save(), flush: true);
-
-      final emailUri = Uri(
-        scheme: 'mailto',
-        path: recipientEmail,
-        queryParameters: {
-          'subject': 'BKMV export files',
-          'body':
-              'BKMV export files are ready.\n\nExport folder:\n${directory.path}\n\nGenerated files:\n- BKMVDATA.txt\n- INI.txt\n- BKMV_printed_summary_$stamp.pdf\n- BKMV_annex_4_$stamp.pdf',
-        },
+      final openFrmtZip = await _buildOpenFrmtZip(
+        packages: result.packages,
+        stamp: stamp,
       );
-      if (await canLaunchUrl(emailUri)) {
-        await launchUrl(emailUri, mode: LaunchMode.externalApplication);
-      }
+      final attachmentPaths = <String>[
+        openFrmtZip.path,
+        printedSummaryFile.path,
+        annex4File.path,
+      ];
+
+      final email = Email(
+        recipients: [recipientEmail],
+        subject: 'קובץ במבנה אחיד הופק על ידי הירו',
+        body:
+            'BKMV export files are attached.\n\nAttached ZIP:\n${openFrmtZip.uri.pathSegments.last}\n\nExport folder:\n${directory.path}',
+        attachmentPaths: attachmentPaths,
+        isHTML: false,
+      );
+      await FlutterEmailSender.send(email);
 
       if (!mounted) return;
-      final warningSuffix = result.warnings.isEmpty
-          ? ''
-          : '\n${result.warnings.join(' | ')}';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            'Prepared 4 files for $recipientEmail in ${directory.path}$warningSuffix',
-          ),
+          content: Text('קובץ במבנה אחיד נשלח בהצלחה ל "$recipientEmail"'),
         ),
       );
     } catch (e) {
