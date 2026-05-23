@@ -304,11 +304,12 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         : null;
     final docType = _selectedDocType;
     final creditNoteLegalData = _creditNoteLegalData;
-    final signedTotalAmount = docType == 'credit_note'
+    final signedTotalAmount = _totalAmount;
+    final totalEarnedDelta = docType == 'credit_note'
         ? -_totalAmount
         : _totalAmount;
     final calculatedVat = _vatAmount;
-    final vatAmount = docType == 'credit_note' ? -calculatedVat : calculatedVat;
+    final vatAmount = calculatedVat;
     final logTargets = _logTargetsForDocType(docType);
 
     final userDoc = FirebaseFirestore.instance.collection('users').doc(userId);
@@ -344,12 +345,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     );
     final subtotalBeforeTax = _subtotalAmount;
     final subtotalAfterTax = _totalBeforeRoundingAmount;
-    final signedSubtotalBeforeTax = docType == 'credit_note'
-        ? -subtotalBeforeTax
-        : subtotalBeforeTax;
-    final signedSubtotalAfterTax = docType == 'credit_note'
-        ? -subtotalAfterTax
-        : subtotalAfterTax;
+    final signedSubtotalBeforeTax = subtotalBeforeTax;
+    final signedSubtotalAfterTax = subtotalAfterTax;
     final signedRoundingAmount = roundingAmount == 0
         ? 0.0
         : (docType == 'credit_note' ? roundingAmount : -roundingAmount);
@@ -378,8 +375,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         'unitPrice': _unitPriceAfterTax(item),
         'unitPriceWithoutTax': _unitPriceBeforeTax(item),
         'discount': lineDiscount == 0 ? 0.0 : -lineDiscount,
-        'taxPaid': _isCreditNote ? -lineTaxPaid : lineTaxPaid,
-        'total': _isCreditNote ? -lineTotalAfterTax : lineTotalAfterTax,
+        'taxPaid': lineTaxPaid,
+        'total': lineTotalAfterTax,
         'priceTaxMode': item.isPriceBeforeTax ? 'before_tax' : 'after_tax',
       };
     }).toList();
@@ -652,7 +649,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'storagePath': storagePath,
     });
     if (docType != 'quote' && docType != 'work_order') {
-      await _addToTotalEarned(userId: userId, amount: signedTotalAmount);
+      await _addToTotalEarned(userId: userId, amount: totalEarnedDelta);
     }
     await Future.wait(
       logEntries.map((entry) async {
@@ -860,7 +857,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
 
   double get _totalAmount => _totalBeforeRoundingAmount - _roundingAmount;
 
-  double get _signedTotalAmount => _isCreditNote ? -_totalAmount : _totalAmount;
+  double get _signedTotalAmount => _totalAmount;
 
   double get _signedRoundingAmount {
     return _roundingAmount == 0
@@ -869,15 +866,14 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   }
 
   double get _signedSubtotalAmount {
-    return _isCreditNote ? -_subtotalAmount : _subtotalAmount;
+    return _subtotalAmount;
   }
 
   double get _signedVatAmount {
-    return _isCreditNote ? -_vatAmount : _vatAmount;
+    return _vatAmount;
   }
 
-  double _signedItemTotal(InvoiceItem item) =>
-      _isCreditNote ? -_itemTotalAfterTax(item) : _itemTotalAfterTax(item);
+  double _signedItemTotal(InvoiceItem item) => _itemTotalAfterTax(item);
 
   double _parseVatPercent(dynamic value) {
     final parsed = switch (value) {
@@ -2575,7 +2571,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         'fileName': '$finalName.pdf',
         'storagePath': storagePath,
         'url': downloadUrl,
-        'amount': _signedTotalAmount,
+        'amount': _totalAmount,
         'clientName': _clientNameController.text,
         'clientAddress': _clientAddressController.text,
         'clientPhone': _clientPhoneController.text,
@@ -2620,7 +2616,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       if (!_isQuoteLike) {
         await _addToTotalEarned(
           userId: currentUser.uid,
-          amount: _signedTotalAmount,
+          amount: _isCreditNote ? -_totalAmount : _totalAmount,
         );
       }
 
@@ -2884,8 +2880,26 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     final doc = pw.Document();
     final strings = _localizedStringsForLocale('he');
 
+    final isInvoice =
+        _selectedDocType == 'invoice' ||
+        _selectedDocType == 'invoice_receipt';
+    final docTitle = _selectedDocType == 'quote'
+        ? strings['quote']!
+        : _selectedDocType == 'work_order'
+        ? strings['work_order']!
+        : _selectedDocType == 'receipt'
+        ? strings['receipt']!
+        : _selectedDocType == 'invoice'
+        ? strings['invoice']!
+        : _selectedDocType == 'invoice_receipt'
+        ? strings['invoice_receipt']!
+        : _selectedDocType == 'credit_note'
+        ? strings['credit_note']!
+        : strings['doc_type']!;
+    final creditNoteLegalData = _creditNoteLegalData;
+
     doc.addPage(
-      pw.Page(
+      pw.MultiPage(
         pageFormat: format.copyWith(
           marginTop: 1.5 * pdf.PdfPageFormat.cm,
           marginBottom: 1.5 * pdf.PdfPageFormat.cm,
@@ -2893,118 +2907,96 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           marginRight: 1.5 * pdf.PdfPageFormat.cm,
         ),
         theme: pw.ThemeData.withFont(base: font, bold: fontBold),
-        build: (pw.Context context) {
-          final isInvoice =
-              _selectedDocType == 'invoice' ||
-              _selectedDocType == 'invoice_receipt';
-          final docTitle = _selectedDocType == 'quote'
-              ? strings['quote']!
-              : _selectedDocType == 'work_order'
-              ? strings['work_order']!
-              : _selectedDocType == 'receipt'
-              ? strings['receipt']!
-              : _selectedDocType == 'invoice'
-              ? strings['invoice']!
-              : _selectedDocType == 'invoice_receipt'
-              ? strings['invoice_receipt']!
-              : _selectedDocType == 'credit_note'
-              ? strings['credit_note']!
-              : strings['doc_type']!;
-          final creditNoteLegalData = _creditNoteLegalData;
-
-          return pw.Stack(
+        header: (pw.Context context) => pw.Directionality(
+          textDirection: pw.TextDirection.rtl,
+          child: pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
             children: [
-              // Watermark
-              pw.Positioned(
-                left: 0,
-                right: 0,
-                top: 200,
-                child: pw.Opacity(
-                  opacity: 0.08,
-                  child: pw.Center(
-                    child: pw.Text(
-                      'hiro',
-                      style: pw.TextStyle(
-                        fontSize: 120,
-                        fontWeight: pw.FontWeight.bold,
-                        color: pdf.PdfColors.blue,
-                      ),
-                    ),
-                  ),
+              pw.Container(
+                padding: const pw.EdgeInsets.symmetric(
+                  vertical: 12,
+                  horizontal: 16,
                 ),
-              ),
-              pw.Directionality(
-                textDirection: pw.TextDirection.rtl,
-                child: pw.Column(
+                decoration: pw.BoxDecoration(
+                  color: pdf.PdfColors.blue50,
+                  borderRadius: pw.BorderRadius.circular(12),
+                ),
+                child: pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   crossAxisAlignment: pw.CrossAxisAlignment.start,
                   children: [
-                    // Header
-                    pw.Container(
-                      padding: const pw.EdgeInsets.symmetric(
-                        vertical: 12,
-                        horizontal: 16,
+                    if (logo != null)
+                      pw.Container(
+                        margin: const pw.EdgeInsets.only(left: 12),
+                        child: pw.Image(logo, width: 70, height: 70),
                       ),
-                      decoration: pw.BoxDecoration(
-                        color: pdf.PdfColors.blue50,
-                        borderRadius: pw.BorderRadius.circular(12),
-                      ),
-                      child: pw.Row(
-                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                        crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    pw.Expanded(
+                      child: pw.Column(
+                        crossAxisAlignment: pw.CrossAxisAlignment.end,
                         children: [
-                          if (logo != null)
-                            pw.Container(
-                              margin: const pw.EdgeInsets.only(left: 12),
-                              child: pw.Image(logo, width: 70, height: 70),
+                          pw.Text(
+                            docTitle,
+                            style: pw.TextStyle(
+                              fontSize: 28,
+                              fontWeight: pw.FontWeight.bold,
+                              color: pdf.PdfColors.blue900,
                             ),
-                          pw.Expanded(
-                            child: pw.Column(
-                              crossAxisAlignment: pw.CrossAxisAlignment.end,
-                              children: [
-                                pw.Text(
-                                  docTitle,
-                                  style: pw.TextStyle(
-                                    fontSize: 28,
-                                    fontWeight: pw.FontWeight.bold,
-                                    color: pdf.PdfColors.blue900,
-                                  ),
-                                ),
-                                pw.Text(
-                                  strings['original']!,
-                                  style: pw.TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: pw.FontWeight.bold,
-                                    color: pdf.PdfColors.blueGrey800,
-                                  ),
-                                ),
-                                pw.SizedBox(height: 8),
-                                if (_invoiceNumber.isNotEmpty)
-                                  pw.Text(
-                                    isInvoice
-                                        ? "${strings['tax_invoice_num']} $_invoiceNumber"
-                                        : "${strings['inv_no']} $_invoiceNumber",
-                                    style: pw.TextStyle(
-                                      fontWeight: pw.FontWeight.bold,
-                                      fontSize: 14,
-                                      color: pdf.PdfColors.blueGrey800,
-                                    ),
-                                  ),
-                                pw.Text(
-                                  "${strings['date']} ${_formattedInvoiceDate()}",
-                                  style: pw.TextStyle(
-                                    fontSize: 12,
-                                    color: pdf.PdfColors.blueGrey800,
-                                  ),
-                                ),
-                              ],
+                          ),
+                          pw.Text(
+                            strings['original']!,
+                            style: pw.TextStyle(
+                              fontSize: 16,
+                              fontWeight: pw.FontWeight.bold,
+                              color: pdf.PdfColors.blueGrey800,
+                            ),
+                          ),
+                          pw.SizedBox(height: 8),
+                          if (_invoiceNumber.isNotEmpty)
+                            pw.Text(
+                              isInvoice
+                                  ? "${strings['tax_invoice_num']} $_invoiceNumber"
+                                  : "${strings['inv_no']} $_invoiceNumber",
+                              style: pw.TextStyle(
+                                fontWeight: pw.FontWeight.bold,
+                                fontSize: 14,
+                                color: pdf.PdfColors.blueGrey800,
+                              ),
+                            ),
+                          pw.Text(
+                            "${strings['date']} ${_formattedInvoiceDate()}",
+                            style: pw.TextStyle(
+                              fontSize: 12,
+                              color: pdf.PdfColors.blueGrey800,
                             ),
                           ),
                         ],
                       ),
                     ),
-                    pw.SizedBox(height: 18),
-                    // Business & Client Info
-                    pw.Row(
+                  ],
+                ),
+              ),
+              pw.SizedBox(height: 18),
+            ],
+          ),
+        ),
+        footer: (pw.Context context) => pw.Align(
+          alignment: pw.Alignment.centerLeft,
+          child: pw.Text(
+            '${context.pageNumber} / ${context.pagesCount}',
+            style: pw.TextStyle(
+              fontSize: 10,
+              color: pdf.PdfColors.blueGrey700,
+            ),
+          ),
+        ),
+        build: (pw.Context context) => [
+          pw.Directionality(
+            textDirection: pw.TextDirection.rtl,
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                // Business & Client Info
+                pw.Row(
                       crossAxisAlignment: pw.CrossAxisAlignment.start,
                       children: [
                         // Business Details
@@ -3382,76 +3374,73 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                       ),
                       pw.SizedBox(height: 16),
                     ],
-                    if (_notesController.text.isNotEmpty) ...[
-                      pw.Text(
-                        strings['notes']!,
-                        style: pw.TextStyle(
-                          fontWeight: pw.FontWeight.bold,
-                          fontSize: 11,
-                          color: pdf.PdfColors.blue900,
-                        ),
-                      ),
-                      pw.Container(
-                        width: double.infinity,
-                        padding: const pw.EdgeInsets.all(10),
-                        decoration: pw.BoxDecoration(
-                          border: pw.Border.all(color: pdf.PdfColors.grey300),
-                          borderRadius: const pw.BorderRadius.all(
-                            pw.Radius.circular(5),
-                          ),
-                        ),
-                        child: pw.Text(
-                          _notesController.text,
-                          style: const pw.TextStyle(fontSize: 11),
-                        ),
-                      ),
-                      pw.SizedBox(height: 16),
-                    ],
-                    pw.Spacer(),
-                    // Thank you & signature
-                    pw.Divider(thickness: 1, color: pdf.PdfColors.blueGrey800),
-                    pw.SizedBox(height: 8),
-                    pw.Center(
-                      child: pw.Text(
-                        strings['legal_disclaimer']!,
-                        style: pw.TextStyle(
-                          fontSize: 11,
-                          fontWeight: pw.FontWeight.bold,
-                          color: pdf.PdfColors.blueGrey800,
-                        ),
-                        textAlign: pw.TextAlign.center,
+                if (_notesController.text.isNotEmpty) ...[
+                  pw.Text(
+                    strings['notes']!,
+                    style: pw.TextStyle(
+                      fontWeight: pw.FontWeight.bold,
+                      fontSize: 11,
+                      color: pdf.PdfColors.blue900,
+                    ),
+                  ),
+                  pw.Container(
+                    width: double.infinity,
+                    padding: const pw.EdgeInsets.all(10),
+                    decoration: pw.BoxDecoration(
+                      border: pw.Border.all(color: pdf.PdfColors.grey300),
+                      borderRadius: const pw.BorderRadius.all(
+                        pw.Radius.circular(5),
                       ),
                     ),
-                    pw.SizedBox(height: 8),
-                    pw.Center(
-                      child: pw.Text(
-                        'Thank you for your business!',
-                        style: pw.TextStyle(
-                          fontSize: 13,
-                          fontWeight: pw.FontWeight.bold,
-                          color: pdf.PdfColors.blue,
-                        ),
-                      ),
+                    child: pw.Text(
+                      _notesController.text,
+                      style: const pw.TextStyle(fontSize: 11),
                     ),
-                    pw.SizedBox(height: 18),
-                    pw.Row(
-                      mainAxisAlignment: pw.MainAxisAlignment.end,
-                      children: [
-                        pw.Text(
-                          'Signature: ______________________',
-                          style: pw.TextStyle(
-                            fontSize: 11,
-                            color: pdf.PdfColors.blueGrey800,
-                          ),
-                        ),
-                      ],
+                  ),
+                  pw.SizedBox(height: 16),
+                ],
+                // Thank you & signature
+                pw.Divider(thickness: 1, color: pdf.PdfColors.blueGrey800),
+                pw.SizedBox(height: 8),
+                pw.Center(
+                  child: pw.Text(
+                    strings['legal_disclaimer']!,
+                    style: pw.TextStyle(
+                      fontSize: 11,
+                      fontWeight: pw.FontWeight.bold,
+                      color: pdf.PdfColors.blueGrey800,
+                    ),
+                    textAlign: pw.TextAlign.center,
+                  ),
+                ),
+                pw.SizedBox(height: 8),
+                pw.Center(
+                  child: pw.Text(
+                    'Thank you for your business!',
+                    style: pw.TextStyle(
+                      fontSize: 13,
+                      fontWeight: pw.FontWeight.bold,
+                      color: pdf.PdfColors.blue,
+                    ),
+                  ),
+                ),
+                pw.SizedBox(height: 18),
+                pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.end,
+                  children: [
+                    pw.Text(
+                      'Signature: ______________________',
+                      style: pw.TextStyle(
+                        fontSize: 11,
+                        color: pdf.PdfColors.blueGrey800,
+                      ),
                     ),
                   ],
                 ),
-              ),
-            ],
-          );
-        },
+              ],
+            ),
+          ),
+        ],
       ),
     );
     return doc.save();

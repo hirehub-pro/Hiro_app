@@ -1224,12 +1224,15 @@ class _AdminPanelState extends State<AdminPanel> {
       builder: (context) => _AdminBottomSheet(
         title: 'Business Verifications',
         stream: _firestore
-            .collection('verifications')
+            .collectionGroup('verification_info')
             .where('status', isEqualTo: 'pending')
             .snapshots(),
         itemBuilder: (context, doc) {
           final data = doc.data() as Map<String, dynamic>;
-          final String uid = data['userId'] ?? doc.id;
+          final verificationRef =
+              doc.reference as DocumentReference<Map<String, dynamic>>;
+          final String uid =
+              data['userId'] ?? verificationRef.parent.parent?.id ?? doc.id;
           final String dealerType = data['dealerType'] ?? 'exempt';
           final String businessName = data['businessName'] ?? 'Business';
 
@@ -1271,7 +1274,7 @@ class _AdminPanelState extends State<AdminPanel> {
                                 foregroundColor: Colors.white,
                               ),
                               onPressed: () => _handleVerification(
-                                doc.id,
+                                verificationRef,
                                 uid,
                                 true,
                                 dealerType,
@@ -1288,7 +1291,7 @@ class _AdminPanelState extends State<AdminPanel> {
                                 side: const BorderSide(color: Colors.red),
                               ),
                               onPressed: () => _showRejectDialog(
-                                doc.id,
+                                verificationRef,
                                 uid,
                                 dealerType,
                                 businessName,
@@ -1907,7 +1910,7 @@ class _AdminPanelState extends State<AdminPanel> {
   }
 
   void _showRejectDialog(
-    String docId,
+    DocumentReference<Map<String, dynamic>> verificationRef,
     String uid,
     String dealerType,
     String businessName,
@@ -1933,7 +1936,7 @@ class _AdminPanelState extends State<AdminPanel> {
             onPressed: () {
               if (controller.text.trim().isEmpty) return;
               _handleVerification(
-                docId,
+                verificationRef,
                 uid,
                 false,
                 dealerType,
@@ -1950,7 +1953,7 @@ class _AdminPanelState extends State<AdminPanel> {
   }
 
   Future<void> _handleVerification(
-    String docId,
+    DocumentReference<Map<String, dynamic>> verificationRef,
     String uid,
     bool approve,
     String dealerType,
@@ -1970,10 +1973,7 @@ class _AdminPanelState extends State<AdminPanel> {
     }
 
     try {
-      final vDoc = await _firestore
-          .collection('verifications')
-          .doc(docId)
-          .get();
+      final vDoc = await verificationRef.get();
       final vData = vDoc.data();
       if (vData == null) return;
 
@@ -1998,8 +1998,14 @@ class _AdminPanelState extends State<AdminPanel> {
               ...vData,
               'approvedAt': FieldValue.serverTimestamp(),
               'status': 'approved',
-            });
+            }, SetOptions(merge: true));
       } else {
+        await verificationRef.set({
+          'status': 'rejected',
+          'rejectedAt': FieldValue.serverTimestamp(),
+          if (reason != null && reason.isNotEmpty) 'rejectionReason': reason,
+        }, SetOptions(merge: true));
+
         final String adminUid =
             FirebaseAuth.instance.currentUser?.uid ?? 'admin';
 
@@ -2042,8 +2048,15 @@ class _AdminPanelState extends State<AdminPanel> {
         }
       }
 
-      // In BOTH cases (Approve/Reject), remove the request from the pending queue
-      await _firestore.collection('verifications').doc(docId).delete();
+      if (approve) {
+        await verificationRef.set({
+          'status': 'approved',
+          'approvedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
+
+      // Keep the legacy queue document in sync while the rest of the app still references it.
+      await _firestore.collection('verifications').doc(uid).delete();
 
       if (mounted) {
         ScaffoldMessenger.of(context).hideCurrentSnackBar();

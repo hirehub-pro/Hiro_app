@@ -341,9 +341,11 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
       };
 
       await FirebaseFirestore.instance
-          .collection('verifications')
+          .collection('users')
           .doc(user.uid)
-          .set(verificationData);
+          .collection('verification_info')
+          .doc('latest')
+          .set(verificationData, SetOptions(merge: true));
 
       await FirebaseFirestore.instance
           .collection('users')
