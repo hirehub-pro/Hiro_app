@@ -72,6 +72,8 @@ class _ChatPageState extends State<ChatPage> {
   Duration _activeAudioPosition = Duration.zero;
   Duration _activeAudioDuration = Duration.zero;
   ap.PlayerState _audioPlayerState = ap.PlayerState.stopped;
+  bool _isAudioSeeking = false;
+  Duration? _audioSeekPreviewPosition;
   final Map<String, String> _localMediaPaths = {};
   final Map<String, double> _downloadProgress = {};
   final Set<String> _downloadingUrls = {};
@@ -214,7 +216,12 @@ class _ChatPageState extends State<ChatPage> {
         _resetActiveAudioToStart();
         return;
       }
-      setState(() => _activeAudioPosition = position);
+      setState(() {
+        _activeAudioPosition = position;
+        if (!_isAudioSeeking) {
+          _audioSeekPreviewPosition = null;
+        }
+      });
     });
 
     _audioDurationSubscription = _audioPlayer.onDurationChanged.listen((
@@ -250,6 +257,8 @@ class _ChatPageState extends State<ChatPage> {
     setState(() {
       _activeAudioPosition = Duration.zero;
       _audioPlayerState = ap.PlayerState.stopped;
+      _isAudioSeeking = false;
+      _audioSeekPreviewPosition = null;
     });
   }
 
@@ -1801,12 +1810,16 @@ class _ChatPageState extends State<ChatPage> {
         final isActive = _activeAudioUrl == url;
         final isPlaying =
             isActive && _audioPlayerState == ap.PlayerState.playing;
-        final position = isActive && _audioPlayerState != ap.PlayerState.stopped
-            ? _activeAudioPosition
-            : Duration.zero;
         final duration = isActive && _activeAudioDuration > Duration.zero
             ? _activeAudioDuration
             : Duration(seconds: durationSeconds ?? 0);
+        final livePosition =
+            isActive && _audioPlayerState != ap.PlayerState.stopped
+            ? _activeAudioPosition
+            : Duration.zero;
+        final position = isActive && _audioSeekPreviewPosition != null
+            ? _audioSeekPreviewPosition!
+            : livePosition;
         final durationText = _formatAudioSeconds(duration);
         final positionText = _formatAudioSeconds(position);
         final progress = duration.inMilliseconds > 0
@@ -1932,17 +1945,60 @@ class _ChatPageState extends State<ChatPage> {
                       ],
                     ),
                     const SizedBox(height: 8),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(999),
-                      child: LinearProgressIndicator(
-                        value: isDownloading
-                            ? _downloadProgress[url]
-                            : progress,
-                        minHeight: 4,
-                        color: isMe ? Colors.white : const Color(0xFF1976D2),
-                        backgroundColor: isMe
+                    SliderTheme(
+                      data: SliderTheme.of(context).copyWith(
+                        trackHeight: 4,
+                        thumbShape: const RoundSliderThumbShape(
+                          enabledThumbRadius: 7,
+                        ),
+                        overlayShape: const RoundSliderOverlayShape(
+                          overlayRadius: 14,
+                        ),
+                        activeTrackColor: isMe
+                            ? Colors.white
+                            : const Color(0xFF1976D2),
+                        inactiveTrackColor: isMe
                             ? Colors.white24
                             : const Color(0xFFE2E8F0),
+                        thumbColor: isMe
+                            ? Colors.white
+                            : const Color(0xFF1976D2),
+                        overlayColor: (isMe ? Colors.white : const Color(0xFF1976D2))
+                            .withValues(alpha: 0.18),
+                      ),
+                      child: Slider(
+                        value: isDownloading ? 0 : progress,
+                        min: 0,
+                        max: 1,
+                        onChangeStart:
+                            !isDownloading && duration.inMilliseconds > 0
+                            ? (_) {
+                                setState(() {
+                                  _isAudioSeeking = true;
+                                  _audioSeekPreviewPosition = livePosition;
+                                });
+                              }
+                            : null,
+                        onChanged:
+                            !isDownloading && duration.inMilliseconds > 0
+                            ? (value) {
+                                final target = Duration(
+                                  milliseconds:
+                                      (duration.inMilliseconds * value).round(),
+                                );
+                                setState(() {
+                                  _audioSeekPreviewPosition = target;
+                                });
+                              }
+                            : null,
+                        onChangeEnd:
+                            !isDownloading && duration.inMilliseconds > 0
+                            ? (value) => _seekAudio(
+                                url: url,
+                                duration: duration,
+                                progress: value,
+                              )
+                            : null,
                       ),
                     ),
                     const SizedBox(height: 6),
@@ -2858,6 +2914,8 @@ class _ChatPageState extends State<ChatPage> {
       await _audioPlayer.stop();
       _activeAudioUrl = url;
       _activeAudioPosition = Duration.zero;
+      _audioSeekPreviewPosition = null;
+      _isAudioSeeking = false;
       if (mounted) {
         setState(() => _audioPlayerState = ap.PlayerState.playing);
       }
@@ -2886,6 +2944,32 @@ class _ChatPageState extends State<ChatPage> {
         });
       }
     }
+  }
+
+  Future<void> _seekAudio({
+    required String url,
+    required Duration duration,
+    required double progress,
+  }) async {
+    final safeProgress = progress.clamp(0.0, 1.0);
+    final target = Duration(
+      milliseconds: (duration.inMilliseconds * safeProgress).round(),
+    );
+
+    try {
+      if (_activeAudioUrl == url) {
+        await _audioPlayer.seek(target);
+      }
+    } catch (e) {
+      debugPrint("Audio seek error: $e");
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _activeAudioPosition = target;
+      _audioSeekPreviewPosition = null;
+      _isAudioSeeking = false;
+    });
   }
 
   String _formatAudioSeconds(Duration duration) {

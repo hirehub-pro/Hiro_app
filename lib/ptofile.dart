@@ -94,6 +94,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
   String _userRole = "customer";
   List<String> _userProfessions = [];
   List<String> _spokenLanguages = [];
+  List<Map<String, String>> _socialLinks = [];
   Map<String, Map<String, String>> _professionTranslations = {};
   Map<String, String> _professionBookingModes = {};
   List<Map<String, dynamic>> _userReviews = [];
@@ -477,6 +478,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
                   data['spokenLanguages'],
                 ).where(_spokenLanguageOptions.contains).toList()
               : [];
+          _socialLinks = _parseSocialLinks(data['socialLinks']);
           _viewsCount = 0;
           _userRole = data['role'] ?? 'customer';
           _hideSchedule = data['hideSchedule'] ?? false;
@@ -2598,6 +2600,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
     final spokenLanguagesText = _spokenLanguages
         .map((language) => _spokenLanguageLabel(language, localeCode))
         .join(', ');
+    final hasSocialLinks = _socialLinks.isNotEmpty;
     final infoRows = <Widget>[
       if (_phoneNumber.trim().isNotEmpty)
         _buildInfoRow(Icons.phone_rounded, strings['call']!, _phoneNumber),
@@ -2668,6 +2671,28 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
             _buildSectionTitle(strings['contact_info']!),
             const SizedBox(height: 16),
             _buildInfoCard(infoRows),
+          ],
+          if (hasSocialLinks || _isOwnProfile) ...[
+            const SizedBox(height: 32),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildSectionTitle(strings['social_links']!),
+                ),
+                if (_isOwnProfile)
+                  TextButton.icon(
+                    onPressed: _showSocialLinksEditor,
+                    icon: const Icon(Icons.add_link_rounded, size: 18),
+                    label: Text(
+                      hasSocialLinks
+                          ? strings['edit_links']!
+                          : strings['add_links']!,
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            _buildSocialLinksCard(strings),
           ],
 
           if (_isOwnProfile) ...[
@@ -2988,6 +3013,645 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
         ],
       ),
     );
+  }
+
+  List<Map<String, String>> _parseSocialLinks(dynamic raw) {
+    if (raw is! List) return [];
+    return raw
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .map((item) {
+          final type = item['type']?.toString().trim().toLowerCase() ?? '';
+          final url = item['url']?.toString().trim() ?? '';
+          final name = item['name']?.toString().trim() ?? '';
+          if (type.isEmpty || url.isEmpty) return <String, String>{};
+          return {'type': type, 'url': url, 'name': name};
+        })
+        .where((item) => item.isNotEmpty)
+        .toList();
+  }
+
+  Widget _buildSocialLinksCard(Map<String, String> strings) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.9),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.white),
+        boxShadow: [
+          BoxShadow(
+            color: _kPrimaryBlue.withValues(alpha: 0.07),
+            blurRadius: 16,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: _socialLinks.isEmpty
+          ? Text(
+              strings['no_links_added']!,
+              style: const TextStyle(
+                color: _kTextMuted,
+                fontSize: 14,
+                height: 1.4,
+              ),
+            )
+          : Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: _socialLinks.map((link) {
+                final type = link['type'] ?? 'website';
+                final name = link['name'] ?? '';
+                final label = _socialLinkLabel(type, name);
+                return Tooltip(
+                  message: label,
+                  child: InkWell(
+                    onTap: () => _openSocialLink(link['url'] ?? '', strings),
+                    borderRadius: BorderRadius.circular(18),
+                    child: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEAF5FF),
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(
+                          color: const Color(0xFFBFDBFE),
+                        ),
+                      ),
+                      child: _buildSocialLinkIcon(type),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+    );
+  }
+
+  Widget _buildSocialLinkIcon(String type) {
+    switch (type) {
+      case 'facebook':
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(6),
+          child: Image.asset(
+            'assets/icon/facebook.png',
+            width: 22,
+            height: 22,
+            fit: BoxFit.cover,
+          ),
+        );
+      case 'instagram':
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(6),
+          child: Image.asset(
+            'assets/icon/instagram.png',
+            width: 22,
+            height: 22,
+            fit: BoxFit.cover,
+          ),
+        );
+      case 'tiktok':
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(6),
+          child: Image.asset(
+            'assets/icon/tik-tok.png',
+            width: 22,
+            height: 22,
+            fit: BoxFit.cover,
+          ),
+        );
+      default:
+        return Icon(
+          _socialLinkIcon(type),
+          size: 20,
+          color: _kPrimaryBlue,
+        );
+    }
+  }
+
+  String _socialLinkLabel(String type, String customName) {
+    switch (type) {
+      case 'facebook':
+        return 'Facebook';
+      case 'instagram':
+        return 'Instagram';
+      case 'tiktok':
+        return 'TikTok';
+      case 'website':
+        return 'Website';
+      case 'other':
+        return customName.trim().isEmpty ? 'Other' : customName.trim();
+      default:
+        return 'Link';
+    }
+  }
+
+  IconData _socialLinkIcon(String type) {
+    switch (type) {
+      case 'facebook':
+        return Icons.facebook_rounded;
+      case 'instagram':
+        return Icons.camera_alt_rounded;
+      case 'tiktok':
+        return Icons.music_note_rounded;
+      case 'website':
+        return Icons.language_rounded;
+      case 'other':
+        return Icons.link_rounded;
+      default:
+        return Icons.link_rounded;
+    }
+  }
+
+  String _normalizeExternalUrl(String input) {
+    final trimmed = input.trim();
+    if (trimmed.isEmpty) return '';
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      return trimmed;
+    }
+    return 'https://$trimmed';
+  }
+
+  bool _isValidExternalUrl(String input) {
+    final normalized = _normalizeExternalUrl(input);
+    final uri = Uri.tryParse(normalized);
+    return uri != null &&
+        (uri.scheme == 'http' || uri.scheme == 'https') &&
+        (uri.host.isNotEmpty || normalized.contains('/'));
+  }
+
+  Future<void> _openSocialLink(
+    String rawUrl,
+    Map<String, String> strings,
+  ) async {
+    final normalized = _normalizeExternalUrl(rawUrl);
+    final uri = Uri.tryParse(normalized);
+    if (uri == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(strings['open_link_failed']!)),
+      );
+      return;
+    }
+
+    final launched = await launchUrl(
+      uri,
+      mode: LaunchMode.externalApplication,
+    );
+    if (!launched && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(strings['open_link_failed']!)),
+      );
+    }
+  }
+
+  Future<void> _showSocialLinksEditor() async {
+    final strings = _getLocalizedStrings(context);
+    final draftLinks = _socialLinks
+        .map((link) => Map<String, String>.from(link))
+        .toList();
+
+    final saved = await showDialog<List<Map<String, String>>>(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            void addEmptyLink([String type = 'website']) {
+              setDialogState(() {
+                draftLinks.add({'type': type, 'name': '', 'url': ''});
+              });
+            }
+
+            void saveLinks() {
+              for (final link in draftLinks) {
+                final type = (link['type'] ?? '').trim();
+                final url = (link['url'] ?? '').trim();
+                final name = (link['name'] ?? '').trim();
+                if (type.isEmpty || url.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(strings['link_url_required']!)),
+                  );
+                  return;
+                }
+                if (type == 'other' && name.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(strings['link_name_required']!)),
+                  );
+                  return;
+                }
+                if (!_isValidExternalUrl(url)) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(strings['invalid_link']!)),
+                  );
+                  return;
+                }
+              }
+
+              final cleaned = draftLinks
+                  .map((link) => {
+                        'type': (link['type'] ?? 'website').trim(),
+                        'name': (link['name'] ?? '').trim(),
+                        'url': _normalizeExternalUrl(link['url'] ?? ''),
+                      })
+                  .toList();
+              Navigator.of(context).pop(cleaned);
+            }
+
+            Widget quickAddChip(String type) {
+              return ActionChip(
+                avatar: _buildSocialLinkIcon(type),
+                label: Text(_socialLinkLabel(type, '')),
+                onPressed: () => addEmptyLink(type),
+                backgroundColor: Colors.white,
+                side: const BorderSide(color: Color(0xFFD7E3F4)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                labelStyle: const TextStyle(
+                  color: _kTextMain,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                ),
+              );
+            }
+
+            return Dialog(
+              insetPadding: const EdgeInsets.symmetric(
+                horizontal: 20,
+                vertical: 24,
+              ),
+              backgroundColor: Colors.transparent,
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 640, maxHeight: 760),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(28),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.14),
+                      blurRadius: 34,
+                      offset: const Offset(0, 16),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.fromLTRB(22, 20, 22, 18),
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [Color(0xFFEAF5FF), Color(0xFFF7FBFF)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.vertical(
+                          top: Radius.circular(28),
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                width: 46,
+                                height: 46,
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                                child: const Icon(
+                                  Icons.add_link_rounded,
+                                  color: _kPrimaryBlue,
+                                ),
+                              ),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      strings['social_links']!,
+                                      style: const TextStyle(
+                                        color: _kTextMain,
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    const Text(
+                                      'Add your social and website links so people can reach you faster.',
+                                      style: TextStyle(
+                                        color: _kTextMuted,
+                                        fontSize: 13,
+                                        height: 1.4,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              quickAddChip('facebook'),
+                              quickAddChip('instagram'),
+                              quickAddChip('tiktok'),
+                              quickAddChip('website'),
+                              quickAddChip('other'),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    Flexible(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.fromLTRB(22, 18, 22, 12),
+                        child: draftLinks.isEmpty
+                            ? Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(24),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF8FAFC),
+                                  borderRadius: BorderRadius.circular(22),
+                                  border: Border.all(
+                                    color: const Color(0xFFE2E8F0),
+                                  ),
+                                ),
+                                child: Column(
+                                  children: [
+                                    Container(
+                                      width: 56,
+                                      height: 56,
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFEAF5FF),
+                                        borderRadius: BorderRadius.circular(18),
+                                      ),
+                                      child: const Icon(
+                                        Icons.link_off_rounded,
+                                        color: _kPrimaryBlue,
+                                        size: 28,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 14),
+                                    Text(
+                                      strings['no_links_added']!,
+                                      textAlign: TextAlign.center,
+                                      style: const TextStyle(
+                                        color: _kTextMain,
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    const Text(
+                                      'Use the quick buttons above to add Instagram, TikTok, your website, or any custom link.',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        color: _kTextMuted,
+                                        fontSize: 13,
+                                        height: 1.45,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              )
+                            : Column(
+                                children: draftLinks.asMap().entries.map((entry) {
+                                  final index = entry.key;
+                                  final link = entry.value;
+                                  final isOther =
+                                      (link['type'] ?? '') == 'other';
+                                  final type = link['type'] ?? 'website';
+                                  return Container(
+                                    margin: const EdgeInsets.only(bottom: 14),
+                                    padding: const EdgeInsets.all(14),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFF8FAFC),
+                                      borderRadius: BorderRadius.circular(20),
+                                      border: Border.all(
+                                        color: const Color(0xFFE2E8F0),
+                                      ),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Container(
+                                              width: 38,
+                                              height: 38,
+                                              alignment: Alignment.center,
+                                              decoration: BoxDecoration(
+                                                color: Colors.white,
+                                                borderRadius:
+                                                    BorderRadius.circular(12),
+                                              ),
+                                              child: _buildSocialLinkIcon(type),
+                                            ),
+                                            const SizedBox(width: 10),
+                                            Expanded(
+                                              child: Text(
+                                                _socialLinkLabel(
+                                                  type,
+                                                  link['name'] ?? '',
+                                                ),
+                                                style: const TextStyle(
+                                                  color: _kTextMain,
+                                                  fontSize: 15,
+                                                  fontWeight: FontWeight.w800,
+                                                ),
+                                              ),
+                                            ),
+                                            IconButton(
+                                              onPressed: () {
+                                                setDialogState(() {
+                                                  draftLinks.removeAt(index);
+                                                });
+                                              },
+                                              icon: const Icon(
+                                                Icons.delete_outline_rounded,
+                                              ),
+                                              tooltip: strings['delete'],
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 14),
+                                        DropdownButtonFormField<String>(
+                                          initialValue: type,
+                                          decoration: InputDecoration(
+                                            labelText: strings['link_type']!,
+                                            filled: true,
+                                            fillColor: Colors.white,
+                                            border: OutlineInputBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(14),
+                                            ),
+                                          ),
+                                          items: const [
+                                            DropdownMenuItem(
+                                              value: 'facebook',
+                                              child: Text('Facebook'),
+                                            ),
+                                            DropdownMenuItem(
+                                              value: 'instagram',
+                                              child: Text('Instagram'),
+                                            ),
+                                            DropdownMenuItem(
+                                              value: 'tiktok',
+                                              child: Text('TikTok'),
+                                            ),
+                                            DropdownMenuItem(
+                                              value: 'website',
+                                              child: Text('Website'),
+                                            ),
+                                            DropdownMenuItem(
+                                              value: 'other',
+                                              child: Text('Other'),
+                                            ),
+                                          ],
+                                          onChanged: (value) {
+                                            setDialogState(() {
+                                              link['type'] = value ?? 'website';
+                                              if (link['type'] != 'other') {
+                                                link['name'] = '';
+                                              }
+                                            });
+                                          },
+                                        ),
+                                        if (isOther) ...[
+                                          const SizedBox(height: 12),
+                                          TextFormField(
+                                            initialValue: link['name'] ?? '',
+                                            decoration: InputDecoration(
+                                              labelText: strings['link_name']!,
+                                              filled: true,
+                                              fillColor: Colors.white,
+                                              border: OutlineInputBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(14),
+                                              ),
+                                            ),
+                                            onChanged: (value) =>
+                                                link['name'] = value,
+                                          ),
+                                        ],
+                                        const SizedBox(height: 12),
+                                        TextFormField(
+                                          initialValue: link['url'] ?? '',
+                                          decoration: InputDecoration(
+                                            labelText: strings['link_url']!,
+                                            hintText: 'https://example.com',
+                                            filled: true,
+                                            fillColor: Colors.white,
+                                            border: OutlineInputBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(14),
+                                            ),
+                                            prefixIcon: const Icon(
+                                              Icons.link_rounded,
+                                            ),
+                                          ),
+                                          keyboardType: TextInputType.url,
+                                          onChanged: (value) =>
+                                              link['url'] = value,
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                }).toList(),
+                              ),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.fromLTRB(22, 12, 22, 22),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: const BorderRadius.vertical(
+                          bottom: Radius.circular(28),
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.03),
+                            blurRadius: 10,
+                            offset: const Offset(0, -4),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: () => Navigator.of(context).pop(),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: const Color(0xFF475569),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 14),
+                                side: const BorderSide(
+                                  color: Color(0xFFD7E1EC),
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                              ),
+                              child: Text(strings['cancel']!),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: saveLinks,
+                              icon: const Icon(Icons.check_rounded),
+                              label: Text(strings['save_links']!),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: _kPrimaryBlue,
+                                foregroundColor: Colors.white,
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    if (saved == null) return;
+    await _saveSocialLinks(saved);
+  }
+
+  Future<void> _saveSocialLinks(List<Map<String, String>> links) async {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) return;
+    final strings = _getLocalizedStrings(context);
+
+    try {
+      await _firestore.collection('users').doc(currentUser.uid).set({
+        'socialLinks': links,
+      }, SetOptions(merge: true));
+      if (!mounted) return;
+      setState(() {
+        _socialLinks = links;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(strings['save_links_failed']!)),
+      );
+    }
   }
 
   String _formatJoinedDate(DateTime date) {
@@ -3380,6 +4044,20 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
           'town': 'עיר',
           'spoken_languages': 'שפות מדוברות',
           'distance': 'מרחק',
+          'social_links': 'קישורים',
+          'add_links': 'הוסף קישורים',
+          'edit_links': 'ערוך קישורים',
+          'no_links_added': 'עדיין לא נוספו קישורים.',
+          'link_type': 'סוג קישור',
+          'link_name': 'שם הקישור',
+          'link_url': 'כתובת קישור',
+          'add_another_link': 'הוסף קישור נוסף',
+          'save_links': 'שמור קישורים',
+          'link_name_required': 'יש להזין שם עבור קישור מסוג אחר.',
+          'link_url_required': 'יש להזין כתובת קישור לכל שורה.',
+          'invalid_link': 'כתובת הקישור אינה תקינה.',
+          'open_link_failed': 'לא ניתן לפתוח את הקישור.',
+          'save_links_failed': 'שמירת הקישורים נכשלה.',
           'upgrade_feature_1': 'לוח ניהול מקצועי לעסק שלך',
           'upgrade_feature_2': 'קבלת פניות והזדמנויות מלקוחות',
           'upgrade_feature_3': 'גישה לכלי ניהול מתקדמים',
@@ -3481,6 +4159,20 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
           'town': 'المدينة',
           'spoken_languages': 'اللغات المحكية',
           'distance': 'المسافة',
+          'social_links': 'الروابط',
+          'add_links': 'إضافة روابط',
+          'edit_links': 'تعديل الروابط',
+          'no_links_added': 'لم تتم إضافة روابط بعد.',
+          'link_type': 'نوع الرابط',
+          'link_name': 'اسم الرابط',
+          'link_url': 'الرابط',
+          'add_another_link': 'إضافة رابط آخر',
+          'save_links': 'حفظ الروابط',
+          'link_name_required': 'يرجى إدخال اسم للرابط من نوع أخرى.',
+          'link_url_required': 'يرجى إدخال رابط لكل سطر.',
+          'invalid_link': 'الرابط غير صالح.',
+          'open_link_failed': 'تعذر فتح الرابط.',
+          'save_links_failed': 'فشل حفظ الروابط.',
           'upgrade_feature_1': 'لوحة تحكم احترافية لعملك',
           'upgrade_feature_2': 'استقبال طلبات وفرص من العملاء',
           'upgrade_feature_3': 'الوصول إلى أدوات إدارة متقدمة',
@@ -3578,6 +4270,20 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
           'town': 'ከተማ',
           'spoken_languages': 'የሚነገሩ ቋንቋዎች',
           'distance': 'ርቀት',
+          'social_links': 'ሊንኮች',
+          'add_links': 'ሊንኮች ጨምር',
+          'edit_links': 'ሊንኮች አርትዕ',
+          'no_links_added': 'እስካሁን ሊንኮች አልተጨመሩም።',
+          'link_type': 'የሊንክ አይነት',
+          'link_name': 'የሊንኩ ስም',
+          'link_url': 'የሊንኩ አድራሻ',
+          'add_another_link': 'ሌላ ሊንክ ጨምር',
+          'save_links': 'ሊንኮችን አስቀምጥ',
+          'link_name_required': 'ለሌላ አይነት ሊንክ ስም ያስገቡ።',
+          'link_url_required': 'ለእያንዳንዱ መስመር ሊንክ ያስገቡ።',
+          'invalid_link': 'ሊንኩ ትክክል አይደለም።',
+          'open_link_failed': 'ሊንኩን መክፈት አልተቻለም።',
+          'save_links_failed': 'ሊንኮቹን ማስቀመጥ አልተሳካም።',
           'upgrade_feature_1': 'ለንግድዎ ሙያዊ ዳሽቦርድ',
           'upgrade_feature_2': 'ከደንበኞች ጥያቄዎችን እና እድሎችን ይቀበሉ',
           'upgrade_feature_3': 'የላቁ የአስተዳደር መሳሪያዎች ይድረሱ',
@@ -3676,6 +4382,20 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
           'town': 'Город',
           'spoken_languages': 'Разговорные языки',
           'distance': 'Расстояние',
+          'social_links': 'Ссылки',
+          'add_links': 'Добавить ссылки',
+          'edit_links': 'Изменить ссылки',
+          'no_links_added': 'Ссылки пока не добавлены.',
+          'link_type': 'Тип ссылки',
+          'link_name': 'Название ссылки',
+          'link_url': 'Ссылка',
+          'add_another_link': 'Добавить еще ссылку',
+          'save_links': 'Сохранить ссылки',
+          'link_name_required': 'Укажите название для ссылки типа Другое.',
+          'link_url_required': 'Укажите ссылку для каждой строки.',
+          'invalid_link': 'Ссылка указана неверно.',
+          'open_link_failed': 'Не удалось открыть ссылку.',
+          'save_links_failed': 'Не удалось сохранить ссылки.',
           'upgrade_feature_1': 'Профессиональная панель для вашего бизнеса',
           'upgrade_feature_2': 'Получайте запросы и возможности от клиентов',
           'upgrade_feature_3': 'Доступ к расширенным инструментам управления',
@@ -3779,6 +4499,20 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
           'town': 'Town',
           'spoken_languages': 'Spoken Languages',
           'distance': 'Distance',
+          'social_links': 'Links',
+          'add_links': 'Add Links',
+          'edit_links': 'Edit Links',
+          'no_links_added': 'No links added yet.',
+          'link_type': 'Link Type',
+          'link_name': 'Link Name',
+          'link_url': 'Link URL',
+          'add_another_link': 'Add Another Link',
+          'save_links': 'Save Links',
+          'link_name_required': 'Please enter a name for an Other link.',
+          'link_url_required': 'Please enter a link for every row.',
+          'invalid_link': 'The link is not valid.',
+          'open_link_failed': 'Could not open the link.',
+          'save_links_failed': 'Failed to save links.',
           'upgrade_feature_1': 'Professional dashboard for your business',
           'upgrade_feature_2': 'Get customer inquiries and opportunities',
           'upgrade_feature_3': 'Access advanced management tools',

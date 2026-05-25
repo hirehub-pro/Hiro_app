@@ -2463,10 +2463,13 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           return;
         }
         if (widget.receiverId != null) {
-          await _sendToContact(
+          final sent = await _sendToContact(
             widget.receiverId!,
             widget.receiverName ?? "User",
           );
+          if (sent && mounted) {
+            Navigator.pop(context);
+          }
         } else {
           await _showContactPickerAndSend();
         }
@@ -2775,23 +2778,23 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     );
   }
 
-  Future<void> _sendToContact(String receiverId, String receiverName) async {
+  Future<bool> _sendToContact(String receiverId, String receiverName) async {
     if (!_validateClientDetails()) {
-      return;
+      return false;
     }
     if (!_validateCreditNoteLegalFields()) {
-      return;
+      return false;
     }
     if (!_validateDiscount()) {
-      return;
+      return false;
     }
     if (!_validatePaymentMethods()) {
-      return;
+      return false;
     }
 
     final assigned = await _ensureDocumentNumberAssigned();
     if (!assigned) {
-      return;
+      return false;
     }
 
     setState(() => _isPreparing = true);
@@ -2799,7 +2802,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
 
     if (pdfBytes == null) {
       if (mounted) setState(() => _isPreparing = false);
-      return;
+      return false;
     }
 
     try {
@@ -2810,11 +2813,11 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       );
       if (saved == null || saved.url.isEmpty) {
         if (mounted) setState(() => _isPreparing = false);
-        return;
+        return false;
       }
 
       final currentUser = FirebaseAuth.instance.currentUser;
-      if (currentUser == null) return;
+      if (currentUser == null) return false;
 
       final ids = [currentUser.uid, receiverId]..sort();
       final roomId = ids.join('_');
@@ -2865,9 +2868,11 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           ),
         );
       }
+      return true;
     } catch (e) {
       if (mounted) setState(() => _isPreparing = false);
       dev.log("Error sending PDF: $e");
+      return false;
     }
   }
 
