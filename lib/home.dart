@@ -21,6 +21,7 @@ import 'package:untitled1/pages/notifications.dart';
 import 'package:untitled1/pages/location_manager_page.dart';
 import 'package:untitled1/pages/subscription.dart';
 import 'package:untitled1/pages/verify_business.dart';
+import 'package:untitled1/utils/profession_icons.dart';
 import 'package:untitled1/widgets/skeleton.dart';
 import 'package:untitled1/widgets/zoomable_image_viewer.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -1722,7 +1723,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           'close': 'Close',
           'my_requests': 'My Requests',
           'business_tools': 'Business Tools',
-           'analytics': 'Analytics',
+          'analytics': 'Analytics',
           'invoice_builder': 'Invoice Builder',
           'saved_invoices': 'Saved Invoices',
           'verify_business': 'Verify Business',
@@ -2398,7 +2399,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 color: _kTextMain,
               ),
             ),
-            
+
             GridView.count(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
@@ -3243,7 +3244,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 return _buildCategoryTile(
                   displayName: displayName,
                   color: color,
-                  icon: _getIcon(cat['logo']),
+                  logoKey: cat['logo']?.toString(),
                   isDesktop: true,
                   onTap: () => Navigator.push(
                     context,
@@ -3278,7 +3279,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                       return _buildCategoryTile(
                         displayName: displayName,
                         color: color,
-                        icon: _getIcon(cat['logo']),
+                        logoKey: cat['logo']?.toString(),
                         onTap: () => Navigator.push(
                           context,
                           MaterialPageRoute(
@@ -3297,7 +3298,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   Widget _buildCategoryTile({
     required String displayName,
     required Color color,
-    required IconData icon,
+    required String? logoKey,
     required VoidCallback onTap,
     bool isDesktop = false,
   }) {
@@ -3331,7 +3332,13 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 color: color.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(isDesktop ? 16 : 20),
               ),
-              child: Icon(icon, color: color, size: isDesktop ? 24 : 28),
+              child: Center(
+                child: _buildProfessionIcon(
+                  logoKey,
+                  color: color,
+                  size: isDesktop ? 24 : 28,
+                ),
+              ),
             ),
             const SizedBox(height: 8),
             Text(
@@ -5475,6 +5482,17 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       hexColor = "FF$hexColor";
     }
     return Color(int.parse(hexColor, radix: 16));
+  }
+
+  Widget _buildProfessionIcon(
+    String? logoKey, {
+    required Color color,
+    required double size,
+  }) {
+    if (ProfessionIconRegistry.isAssetKey(logoKey)) {
+      return ProfessionIconRegistry.buildIcon(logoKey, size: size);
+    }
+    return Icon(_getIcon(logoKey), color: color, size: size);
   }
 
   IconData _getIcon(String? name) {

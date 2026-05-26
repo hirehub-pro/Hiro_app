@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:untitled1/pages/my_request_details_page.dart';
+import 'package:untitled1/pages/request_details.dart';
 import 'package:untitled1/services/language_provider.dart';
 
 class MyRequestsPage extends StatefulWidget {
@@ -50,6 +51,10 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
           'cancel_error': 'נכשל בביטול הבקשה',
           'confirm_title': 'לבטל את הבקשה?',
           'confirm_body': 'פעולה זו תעדכן את סטטוס הבקשה ל-בוטל.',
+          'sent_requests': 'הבקשות שלי',
+          'requests_to_me': 'בקשות שנשלחו אליי',
+          'empty_to_me': 'לא נמצאו בקשות שנשלחו אליך',
+          'from': 'מאת',
           'close': 'סגור',
           'ok': 'אישור',
         };
@@ -85,6 +90,10 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
           'cancel_error': 'فشل إلغاء الطلب',
           'confirm_title': 'إلغاء الطلب؟',
           'confirm_body': 'سيتم تحديث حالة الطلب إلى ملغي.',
+          'sent_requests': 'طلباتي',
+          'requests_to_me': 'طلبات أُرسلت إليّ',
+          'empty_to_me': 'لا توجد طلبات مرسلة إليك',
+          'from': 'من',
           'close': 'إغلاق',
           'ok': 'تأكيد',
         };
@@ -120,6 +129,10 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
           'cancel_error': 'ጥያቄውን ማሰረዝ አልተሳካም',
           'confirm_title': 'ይህን ጥያቄ ልሰርዝ?',
           'confirm_body': 'ይህ የጥያቄውን ሁኔታ ወደ ተሰረዘ ያዘምናል።',
+          'sent_requests': 'ጥያቄዎቼ',
+          'requests_to_me': 'ወደ እኔ የተላኩ ጥያቄዎች',
+          'empty_to_me': 'ወደ እርስዎ የተላኩ ጥያቄዎች አልተገኙም',
+          'from': 'ከ',
           'close': 'ዝጋ',
           'ok': 'እሺ',
         };
@@ -155,6 +168,10 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
           'cancel_error': 'Не удалось отменить запрос',
           'confirm_title': 'Отменить этот запрос?',
           'confirm_body': 'Статус запроса будет изменен на "отменен".',
+          'sent_requests': 'Мои запросы',
+          'requests_to_me': 'Запросы, отправленные мне',
+          'empty_to_me': 'Нет запросов, отправленных вам',
+          'from': 'От',
           'close': 'Закрыть',
           'ok': 'ОК',
         };
@@ -190,6 +207,10 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
           'cancel_error': 'Failed to cancel request',
           'confirm_title': 'Cancel this request?',
           'confirm_body': 'This will update the request status to cancelled.',
+          'sent_requests': 'My Requests',
+          'requests_to_me': 'Requests Sent to Me',
+          'empty_to_me': 'No requests sent to you',
+          'from': 'From',
           'close': 'Close',
           'ok': 'OK',
         };
@@ -289,6 +310,21 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
         .length;
   }
 
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> _sortDocs(
+    QuerySnapshot<Map<String, dynamic>>? snapshot,
+  ) {
+    return List<QueryDocumentSnapshot<Map<String, dynamic>>>.from(
+      snapshot?.docs ?? const <QueryDocumentSnapshot<Map<String, dynamic>>>[],
+    )..sort((a, b) {
+      final at = a.data()['timestamp'] as Timestamp?;
+      final bt = b.data()['timestamp'] as Timestamp?;
+      if (at == null && bt == null) return 0;
+      if (at == null) return 1;
+      if (bt == null) return -1;
+      return bt.compareTo(at);
+    });
+  }
+
   Future<void> _cancelRequest(
     BuildContext context,
     DocumentReference<Map<String, dynamic>> ref,
@@ -354,6 +390,339 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
     }
   }
 
+  Widget _buildRequestTab({
+    required BuildContext context,
+    required Stream<QuerySnapshot<Map<String, dynamic>>> stream,
+    required Map<String, String> strings,
+    required bool isRtl,
+    required bool isIncoming,
+  }) {
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: stream,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        final docs = _sortDocs(snapshot.data);
+        final emptyLabel = isIncoming ? strings['empty_to_me']! : strings['empty']!;
+
+        if (docs.isEmpty) {
+          return Center(child: Text(emptyLabel));
+        }
+
+        final filteredDocs = _applyFilter(docs);
+        final waitingCount = _countByStatus(docs, 'waiting_for_approval');
+        final acceptedCount = _countByStatus(docs, 'accepted');
+        final rejectedCount = _countByStatus(docs, 'rejected');
+        final cancelledCount = _countByStatus(docs, 'cancelled');
+        final allCount = docs.length;
+
+        return RefreshIndicator(
+          onRefresh: () async {
+            setState(() {});
+            await Future<void>.delayed(const Duration(milliseconds: 250));
+          },
+          child: Column(
+            children: [
+              Container(
+                margin: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: Row(
+                  children: [
+                    _countBadge(
+                      label: strings['all']!,
+                      value: allCount,
+                      color: const Color(0xFF0369A1),
+                    ),
+                    const SizedBox(width: 8),
+                    _countBadge(
+                      label: strings['waiting_for_approval']!,
+                      value: waitingCount,
+                      color: const Color(0xFFB7791F),
+                    ),
+                    const SizedBox(width: 8),
+                    _countBadge(
+                      label: strings['accepted']!,
+                      value: acceptedCount,
+                      color: const Color(0xFF2D8F5B),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                alignment: Alignment.centerLeft,
+                margin: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+                child: Text(
+                  '${strings['rejected']!}: $rejectedCount   ${strings['cancelled']!}: $cancelledCount',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Color(0xFF64748B),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              SizedBox(
+                height: 56,
+                child: ListView(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  scrollDirection: Axis.horizontal,
+                  children: [
+                    _buildFilterChip(strings['all']!, 'all'),
+                    _buildFilterChip(
+                      strings['waiting_for_approval']!,
+                      'waiting_for_approval',
+                    ),
+                    _buildFilterChip(strings['accepted']!, 'accepted'),
+                    _buildFilterChip(strings['rejected']!, 'rejected'),
+                    _buildFilterChip(strings['cancelled']!, 'cancelled'),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: filteredDocs.isEmpty
+                    ? ListView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        children: [
+                          const SizedBox(height: 80),
+                          Icon(
+                            Icons.inbox_outlined,
+                            size: 54,
+                            color: Colors.blueGrey.shade200,
+                          ),
+                          const SizedBox(height: 12),
+                          Center(
+                            child: Text(
+                              strings['no_items_for_filter']!,
+                              style: const TextStyle(
+                                color: Color(0xFF475569),
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      )
+                    : ListView.separated(
+                        padding: const EdgeInsets.all(16),
+                        itemCount: filteredDocs.length,
+                        separatorBuilder: (_, index) =>
+                            const SizedBox(height: 12),
+                        itemBuilder: (context, index) {
+                          final doc = filteredDocs[index];
+                          final data = doc.data();
+                          final status = _normalizeStatus(
+                            (data['status'] ?? 'pending').toString(),
+                          );
+                          final type = (data['type'] ?? 'work_request')
+                              .toString();
+                          final date = (data['date'] ?? '-').toString();
+                          final from = data['requestedFrom']?.toString();
+                          final to = data['requestedTo']?.toString();
+                          final body = (data['jobDescription'] ?? '').toString();
+                          final statusColor = _statusColor(status);
+                          final otherPartyName = isIncoming
+                              ? (data['fromName'] ?? '').toString()
+                              : (data['workerName'] ?? '').toString();
+
+                          return Material(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(18),
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(18),
+                              onTap: () {
+                                if (isIncoming) {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => RequestDetailsPage(
+                                        notificationId: doc.id,
+                                        data: data,
+                                      ),
+                                    ),
+                                  );
+                                  return;
+                                }
+
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => MyRequestDetailsPage(
+                                      requestRef: doc.reference,
+                                      initialData: data,
+                                    ),
+                                  ),
+                                );
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.all(14),
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(18),
+                                  border: Border.all(
+                                    color: const Color(0xFFE2E8F0),
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withValues(alpha: 0.02),
+                                      blurRadius: 8,
+                                      offset: const Offset(0, 4),
+                                    ),
+                                  ],
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Container(
+                                          width: 34,
+                                          height: 34,
+                                          decoration: BoxDecoration(
+                                            color: statusColor.withValues(
+                                              alpha: 0.12,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              10,
+                                            ),
+                                          ),
+                                          child: Icon(
+                                            _statusIcon(status),
+                                            color: statusColor,
+                                            size: 18,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Expanded(
+                                          child: Text(
+                                            '${strings['request']!}: ${_requestTypeLabel(type, strings)}',
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w800,
+                                              fontSize: 15,
+                                            ),
+                                          ),
+                                        ),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 10,
+                                            vertical: 5,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: statusColor.withValues(
+                                              alpha: 0.12,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              999,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            _statusLabel(status, strings),
+                                            style: TextStyle(
+                                              color: statusColor,
+                                              fontWeight: FontWeight.w700,
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    if (otherPartyName.isNotEmpty) ...[
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        '${isIncoming ? strings['from']! : strings['worker_name'] ?? strings['request']!}: $otherPartyName',
+                                        style: const TextStyle(
+                                          color: Color(0xFF334155),
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
+                                    const SizedBox(height: 10),
+                                    Text(
+                                      '${strings['date']!}: $date',
+                                      style: const TextStyle(
+                                        color: Color(0xFF334155),
+                                      ),
+                                    ),
+                                    if (from != null && to != null)
+                                      Text(
+                                        '${strings['hours']!}: $from - $to',
+                                        style: const TextStyle(
+                                          color: Color(0xFF334155),
+                                        ),
+                                      ),
+                                    if (body.isNotEmpty) ...[
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        body,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          color: Color(0xFF475569),
+                                          height: 1.35,
+                                        ),
+                                      ),
+                                    ],
+                                    const SizedBox(height: 10),
+                                    Text(
+                                      strings['tap_for_details']!,
+                                      style: const TextStyle(
+                                        color: Color(0xFF64748B),
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    if (!isIncoming &&
+                                        status == 'waiting_for_approval') ...[
+                                      const SizedBox(height: 12),
+                                      Align(
+                                        alignment: isRtl
+                                            ? Alignment.centerLeft
+                                            : Alignment.centerRight,
+                                        child: OutlinedButton.icon(
+                                          onPressed: () => _cancelRequest(
+                                            context,
+                                            doc.reference,
+                                            data,
+                                            strings,
+                                          ),
+                                          icon: const Icon(
+                                            Icons.cancel_outlined,
+                                          ),
+                                          label: Text(strings['cancel']!),
+                                          style: OutlinedButton.styleFrom(
+                                            foregroundColor: const Color(
+                                              0xFFC0392B,
+                                            ),
+                                            side: const BorderSide(
+                                              color: Color(0xFFC0392B),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final strings = _strings(context);
@@ -372,331 +741,55 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
       );
     }
 
-    final stream = FirebaseFirestore.instance
+    final sentRequestsStream = FirebaseFirestore.instance
         .collection('users')
         .doc(user.uid)
         .collection('requests')
         .where('type', whereIn: ['work_request', 'quote_request'])
         .snapshots();
+    final requestsToMeStream = FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .collection('RequestToMe')
+        .where('type', whereIn: ['work_request', 'quote_request'])
+        .snapshots();
 
     return Directionality(
       textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
-      child: Scaffold(
-        backgroundColor: const Color(0xFFF8FAFC),
-        appBar: AppBar(
-          title: Text(strings['title']!),
-          backgroundColor: Colors.white,
-          foregroundColor: const Color(0xFF1976D2),
-          elevation: 0,
-        ),
-        body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-          stream: stream,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
-            }
-
-            final List<QueryDocumentSnapshot<Map<String, dynamic>>> docs =
-                List<QueryDocumentSnapshot<Map<String, dynamic>>>.from(
-                  snapshot.data?.docs ??
-                      const <QueryDocumentSnapshot<Map<String, dynamic>>>[],
-                )..sort((a, b) {
-                  final at = a.data()['timestamp'] as Timestamp?;
-                  final bt = b.data()['timestamp'] as Timestamp?;
-                  if (at == null && bt == null) return 0;
-                  if (at == null) return 1;
-                  if (bt == null) return -1;
-                  return bt.compareTo(at);
-                });
-
-            if (docs.isEmpty) {
-              return Center(child: Text(strings['empty']!));
-            }
-
-            final filteredDocs = _applyFilter(docs);
-            final waitingCount = _countByStatus(docs, 'waiting_for_approval');
-            final acceptedCount = _countByStatus(docs, 'accepted');
-            final rejectedCount = _countByStatus(docs, 'rejected');
-            final cancelledCount = _countByStatus(docs, 'cancelled');
-            final allCount = docs.length;
-
-            return RefreshIndicator(
-              onRefresh: () async {
-                setState(() {});
-                await Future<void>.delayed(const Duration(milliseconds: 250));
-              },
-              child: Column(
-                children: [
-                  Container(
-                    margin: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: const Color(0xFFE2E8F0)),
-                    ),
-                    child: Row(
-                      children: [
-                        _countBadge(
-                          label: strings['all']!,
-                          value: allCount,
-                          color: const Color(0xFF0369A1),
-                        ),
-                        const SizedBox(width: 8),
-                        _countBadge(
-                          label: strings['waiting_for_approval']!,
-                          value: waitingCount,
-                          color: const Color(0xFFB7791F),
-                        ),
-                        const SizedBox(width: 8),
-                        _countBadge(
-                          label: strings['accepted']!,
-                          value: acceptedCount,
-                          color: const Color(0xFF2D8F5B),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Container(
-                    alignment: Alignment.centerLeft,
-                    margin: const EdgeInsets.fromLTRB(16, 6, 16, 0),
-                    child: Text(
-                      '${strings['rejected']!}: $rejectedCount   ${strings['cancelled']!}: $cancelledCount',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Color(0xFF64748B),
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                  SizedBox(
-                    height: 56,
-                    child: ListView(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8,
-                      ),
-                      scrollDirection: Axis.horizontal,
-                      children: [
-                        _buildFilterChip(strings['all']!, 'all'),
-                        _buildFilterChip(
-                          strings['waiting_for_approval']!,
-                          'waiting_for_approval',
-                        ),
-                        _buildFilterChip(strings['accepted']!, 'accepted'),
-                        _buildFilterChip(strings['rejected']!, 'rejected'),
-                        _buildFilterChip(strings['cancelled']!, 'cancelled'),
-                      ],
-                    ),
-                  ),
-                  Expanded(
-                    child: filteredDocs.isEmpty
-                        ? ListView(
-                            physics: const AlwaysScrollableScrollPhysics(),
-                            children: [
-                              const SizedBox(height: 80),
-                              Icon(
-                                Icons.inbox_outlined,
-                                size: 54,
-                                color: Colors.blueGrey.shade200,
-                              ),
-                              const SizedBox(height: 12),
-                              Center(
-                                child: Text(
-                                  strings['no_items_for_filter']!,
-                                  style: const TextStyle(
-                                    color: Color(0xFF475569),
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          )
-                        : ListView.separated(
-                            padding: const EdgeInsets.all(16),
-                            itemCount: filteredDocs.length,
-                            separatorBuilder: (_, __) =>
-                                const SizedBox(height: 12),
-                            itemBuilder: (context, index) {
-                              final doc = filteredDocs[index];
-                              final data = doc.data();
-                              final status = _normalizeStatus(
-                                (data['status'] ?? 'pending').toString(),
-                              );
-                              final type = (data['type'] ?? 'work_request')
-                                  .toString();
-                              final date = (data['date'] ?? '-').toString();
-                              final from = data['requestedFrom']?.toString();
-                              final to = data['requestedTo']?.toString();
-                              final body = (data['jobDescription'] ?? '')
-                                  .toString();
-                              final statusColor = _statusColor(status);
-
-                              return Material(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(18),
-                                child: InkWell(
-                                  borderRadius: BorderRadius.circular(18),
-                                  onTap: () => Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => MyRequestDetailsPage(
-                                        requestRef: doc.reference,
-                                        initialData: data,
-                                      ),
-                                    ),
-                                  ),
-                                  child: Container(
-                                    padding: const EdgeInsets.all(14),
-                                    decoration: BoxDecoration(
-                                      borderRadius: BorderRadius.circular(18),
-                                      border: Border.all(
-                                        color: const Color(0xFFE2E8F0),
-                                      ),
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: Colors.black.withValues(
-                                            alpha: 0.02,
-                                          ),
-                                          blurRadius: 8,
-                                          offset: const Offset(0, 4),
-                                        ),
-                                      ],
-                                    ),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Row(
-                                          children: [
-                                            Container(
-                                              width: 34,
-                                              height: 34,
-                                              decoration: BoxDecoration(
-                                                color: statusColor.withValues(
-                                                  alpha: 0.12,
-                                                ),
-                                                borderRadius:
-                                                    BorderRadius.circular(10),
-                                              ),
-                                              child: Icon(
-                                                _statusIcon(status),
-                                                color: statusColor,
-                                                size: 18,
-                                              ),
-                                            ),
-                                            const SizedBox(width: 10),
-                                            Expanded(
-                                              child: Text(
-                                                '${strings['request']!}: ${_requestTypeLabel(type, strings)}',
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: const TextStyle(
-                                                  fontWeight: FontWeight.w800,
-                                                  fontSize: 15,
-                                                ),
-                                              ),
-                                            ),
-                                            Container(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 10,
-                                                    vertical: 5,
-                                                  ),
-                                              decoration: BoxDecoration(
-                                                color: statusColor.withValues(
-                                                  alpha: 0.12,
-                                                ),
-                                                borderRadius:
-                                                    BorderRadius.circular(999),
-                                              ),
-                                              child: Text(
-                                                _statusLabel(status, strings),
-                                                style: TextStyle(
-                                                  color: statusColor,
-                                                  fontWeight: FontWeight.w700,
-                                                  fontSize: 12,
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 10),
-                                        Text(
-                                          '${strings['date']!}: $date',
-                                          style: const TextStyle(
-                                            color: Color(0xFF334155),
-                                          ),
-                                        ),
-                                        if (from != null && to != null)
-                                          Text(
-                                            '${strings['hours']!}: $from - $to',
-                                            style: const TextStyle(
-                                              color: Color(0xFF334155),
-                                            ),
-                                          ),
-                                        if (body.isNotEmpty) ...[
-                                          const SizedBox(height: 8),
-                                          Text(
-                                            body,
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: const TextStyle(
-                                              color: Color(0xFF475569),
-                                              height: 1.35,
-                                            ),
-                                          ),
-                                        ],
-                                        const SizedBox(height: 10),
-                                        Text(
-                                          strings['tap_for_details']!,
-                                          style: const TextStyle(
-                                            color: Color(0xFF64748B),
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                        if (status ==
-                                            'waiting_for_approval') ...[
-                                          const SizedBox(height: 12),
-                                          Align(
-                                            alignment: isRtl
-                                                ? Alignment.centerLeft
-                                                : Alignment.centerRight,
-                                            child: OutlinedButton.icon(
-                                              onPressed: () => _cancelRequest(
-                                                context,
-                                                doc.reference,
-                                                data,
-                                                strings,
-                                              ),
-                                              icon: const Icon(
-                                                Icons.cancel_outlined,
-                                              ),
-                                              label: Text(strings['cancel']!),
-                                              style: OutlinedButton.styleFrom(
-                                                foregroundColor: const Color(
-                                                  0xFFC0392B,
-                                                ),
-                                                side: const BorderSide(
-                                                  color: Color(0xFFC0392B),
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                  ),
-                ],
+      child: DefaultTabController(
+        length: 2,
+        child: Scaffold(
+          backgroundColor: const Color(0xFFF8FAFC),
+          appBar: AppBar(
+            title: Text(strings['title']!),
+            backgroundColor: Colors.white,
+            foregroundColor: const Color(0xFF1976D2),
+            elevation: 0,
+            bottom: TabBar(
+              tabs: [
+                Tab(text: strings['sent_requests']!),
+                Tab(text: strings['requests_to_me']!),
+              ],
+            ),
+          ),
+          body: TabBarView(
+            children: [
+              _buildRequestTab(
+                context: context,
+                stream: sentRequestsStream,
+                strings: strings,
+                isRtl: isRtl,
+                isIncoming: false,
               ),
-            );
-          },
+              _buildRequestTab(
+                context: context,
+                stream: requestsToMeStream,
+                strings: strings,
+                isRtl: isRtl,
+                isIncoming: true,
+              ),
+            ],
+          ),
         ),
       ),
     );

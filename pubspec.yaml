@@ -83,6 +83,7 @@ flutter:
     - assets/apple_pay_config.json
     - assets/google_pay_config.json
     - assets/icon/
+    - assets/icon/ProIcon/
     - assets/fonts/
 
   fonts:

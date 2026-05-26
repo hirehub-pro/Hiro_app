@@ -12,6 +12,7 @@ import 'package:untitled1/services/subscription_access_service.dart';
 import 'package:untitled1/ptofile.dart';
 import 'package:untitled1/pages/location_manager_page.dart';
 import 'package:untitled1/utils/booking_mode.dart';
+import 'package:untitled1/utils/profession_icons.dart';
 import 'package:untitled1/utils/profession_localization.dart';
 import 'package:untitled1/widgets/skeleton.dart';
 
@@ -1141,6 +1142,17 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
     return Color(int.parse(hexColor, radix: 16));
   }
 
+  Widget _buildProfessionIcon(
+    String? logoKey, {
+    required Color color,
+    required double size,
+  }) {
+    if (ProfessionIconRegistry.isAssetKey(logoKey)) {
+      return ProfessionIconRegistry.buildIcon(logoKey, size: size);
+    }
+    return Icon(_getIcon(logoKey), color: color, size: size);
+  }
+
   IconData _getIcon(String? name) {
     switch (name) {
       case 'engineering':
@@ -2002,10 +2014,10 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
                       color: color.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(isDesktop ? 22 : 999),
                     ),
-                    child: Icon(
-                      _getIcon(p['logo']),
+                    child: _buildProfessionIcon(
+                      p['logo']?.toString(),
                       color: color,
-                      size: isDesktop ? 32 : 32,
+                      size: 32,
                     ),
                   ),
                   SizedBox(height: isDesktop ? 18 : 12),

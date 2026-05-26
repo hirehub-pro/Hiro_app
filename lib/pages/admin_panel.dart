@@ -10,6 +10,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:untitled1/ptofile.dart';
 import 'package:untitled1/pages/admin_reports_page.dart';
 import 'package:untitled1/utils/booking_mode.dart';
+import 'package:untitled1/utils/profession_icons.dart';
 
 class AdminPanel extends StatefulWidget {
   final bool showAppBar;
@@ -22,335 +23,10 @@ class AdminPanel extends StatefulWidget {
 class _AdminPanelState extends State<AdminPanel> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  late final Map<String, IconData> _availableIcons = _buildProfessionIcons();
+  late final Map<String, IconData> _availableIcons =
+      ProfessionIconRegistry.materialIcons;
 
-  List<String> get _pickerIconKeys => _deduplicateIconKeys(_availableIcons);
-
-  static Map<String, IconData> _buildProfessionIcons() {
-    return {
-      'engineering': Icons.engineering,
-      'plumbing': Icons.plumbing,
-      'electrical_services': Icons.electrical_services,
-      'electric_bolt': Icons.electric_bolt,
-      'electric_meter': Icons.electric_meter,
-      'lightbulb': Icons.lightbulb,
-      'carpenter': Icons.carpenter,
-      'handyman': Icons.handyman,
-      'home_repair_service': Icons.home_repair_service,
-      'construction': Icons.construction,
-      'foundation': Icons.foundation,
-      'roofing': Icons.roofing,
-      'hardware': Icons.hardware,
-      'build': Icons.build,
-      'format_paint': Icons.format_paint,
-      'format_color_fill': Icons.format_color_fill,
-      'architecture': Icons.architecture,
-      'design_services': Icons.design_services,
-      'precision_manufacturing': Icons.precision_manufacturing_rounded,
-      'straighten': Icons.straighten,
-      'square_foot': Icons.square_foot,
-      'chair': Icons.chair,
-      'table_restaurant': Icons.table_restaurant,
-      'window': Icons.window,
-      'door_front_door': Icons.door_front_door,
-      'blinds': Icons.blinds,
-      'shower': Icons.shower,
-      'water_drop': Icons.water_drop,
-      'water_damage': Icons.water_damage,
-      'ac_unit': Icons.ac_unit,
-      'air': Icons.air,
-      'cleaning_services': Icons.cleaning_services,
-      'dry_cleaning': Icons.dry_cleaning,
-      'clean_hands': Icons.clean_hands,
-      'pest_control': Icons.pest_control,
-      'bug_report': Icons.bug_report,
-      'solar_power': Icons.solar_power,
-      'computer': Icons.computer,
-      'laptop_mac': Icons.laptop_mac,
-      'desktop_windows': Icons.desktop_windows,
-      'devices': Icons.devices,
-      'memory': Icons.memory,
-      'router': Icons.router,
-      'wifi': Icons.wifi,
-      'phone_android': Icons.phone_android,
-      'keyboard': Icons.keyboard_rounded,
-      'print': Icons.print,
-      'camera_indoor': Icons.camera_indoor,
-      'sensors': Icons.sensors_rounded,
-      'security': Icons.security,
-      'shield': Icons.shield,
-      'support_agent': Icons.support_agent,
-      'medical_services': Icons.medical_services,
-      'local_hospital': Icons.local_hospital,
-      'monitor_heart': Icons.monitor_heart,
-      'healing': Icons.healing,
-      'psychology': Icons.psychology,
-      'fitness_center': Icons.fitness_center,
-      'spa': Icons.spa,
-      'child_care': Icons.child_care,
-      'elderly': Icons.elderly,
-      'school': Icons.school,
-      'translate': Icons.translate,
-      'calculate': Icons.calculate,
-      'account_balance': Icons.account_balance_rounded,
-      'account_balance_wallet': Icons.account_balance_wallet_rounded,
-      'analytics': Icons.analytics_rounded,
-      'assignment': Icons.assignment_rounded,
-      'business_center': Icons.business_center_rounded,
-      'campaign': Icons.campaign_rounded,
-      'code': Icons.code,
-      'gavel': Icons.gavel,
-      'policy': Icons.policy_rounded,
-      'point_of_sale': Icons.point_of_sale_rounded,
-      'real_estate_agent': Icons.real_estate_agent,
-      'storefront': Icons.storefront,
-      'shopping_bag': Icons.shopping_bag,
-      'badge': Icons.badge,
-      'restaurant': Icons.restaurant,
-      'restaurant_menu': Icons.restaurant_menu,
-      'lunch_dining': Icons.lunch_dining,
-      'bakery_dining': Icons.bakery_dining,
-      'cake': Icons.cake,
-      'celebration': Icons.celebration,
-      'event': Icons.event,
-      'emoji_events': Icons.emoji_events_rounded,
-      'photo_camera': Icons.photo_camera,
-      'camera_alt': Icons.camera_alt,
-      'add_a_photo': Icons.add_a_photo,
-      'videocam': Icons.videocam,
-      'movie_creation': Icons.movie_creation,
-      'music_note': Icons.music_note,
-      'graphic_eq': Icons.graphic_eq,
-      'piano': Icons.piano,
-      'palette': Icons.palette,
-      'brush': Icons.brush,
-      'face': Icons.face,
-      'back_hand': Icons.back_hand_rounded,
-      'checkroom': Icons.checkroom,
-      'content_cut': Icons.content_cut,
-      'iron': Icons.iron,
-      'local_shipping': Icons.local_shipping,
-      'local_moving': Icons.moving,
-      'inventory_2': Icons.inventory_2,
-      'delivery_dining': Icons.delivery_dining,
-      'local_car_wash': Icons.local_car_wash,
-      'directions_car': Icons.directions_car,
-      'car_repair': Icons.car_repair,
-      'airport_shuttle': Icons.airport_shuttle,
-      'two_wheeler': Icons.two_wheeler,
-      'moped': Icons.moped,
-      'pedal_bike': Icons.pedal_bike,
-      'fire_truck': Icons.fire_truck,
-      'park': Icons.park,
-      'pets': Icons.pets,
-      'pool': Icons.pool,
-      'self_improvement': Icons.self_improvement_rounded,
-      'waves': Icons.waves,
-      'home': Icons.home,
-      'house': Icons.house,
-      'apartment': Icons.apartment,
-      'cabin': Icons.cabin,
-      'garage': Icons.garage,
-      'public': Icons.public,
-      'language': Icons.language,
-      'science': Icons.science,
-      'biotech': Icons.biotech,
-      'eco': Icons.eco,
-      'history_edu': Icons.history_edu,
-      'bolt': Icons.bolt,
-      'vpn_key': Icons.vpn_key,
-      'locksmith': Icons.lock_open,
-      'vaccines': Icons.vaccines_rounded,
-      'man': Icons.man,
-      'woman': Icons.woman,
-      'weekend': Icons.weekend,
-      'paint_rounded': Icons.format_paint_rounded,
-      'construction_rounded': Icons.construction_rounded,
-      'plumbing_rounded': Icons.plumbing_rounded,
-      'engineering_outlined': Icons.engineering_outlined,
-      'engineering_rounded': Icons.engineering_rounded,
-      'car_crash': Icons.car_crash,
-      'elevator': Icons.elevator_outlined,
-      'smart_toy': Icons.smart_toy_rounded,
-      'web': Icons.web_rounded,
-      'developer_mode': Icons.developer_mode_rounded,
-      'terminal': Icons.terminal_rounded,
-      'dns': Icons.dns_rounded,
-      'cloud': Icons.cloud_rounded,
-      'storage': Icons.storage_rounded,
-      'monitor': Icons.monitor_rounded,
-      'headset_mic': Icons.headset_mic_rounded,
-      'mic': Icons.mic_rounded,
-      'podcasts': Icons.podcasts_rounded,
-      'edit_note': Icons.edit_note_rounded,
-      'menu_book': Icons.menu_book_rounded,
-      'library_books': Icons.library_books_rounded,
-      'book': Icons.book_rounded,
-      'draw': Icons.draw_rounded,
-      'edit': Icons.edit_rounded,
-      'auto_fix_high': Icons.auto_fix_high_rounded,
-      'theater_comedy': Icons.theater_comedy_rounded,
-      'sports_esports': Icons.sports_esports_rounded,
-      'sports_soccer': Icons.sports_soccer_rounded,
-      'sports_tennis': Icons.sports_tennis_rounded,
-      'sports_basketball': Icons.sports_basketball_rounded,
-      'sports_gymnastics': Icons.sports_gymnastics_rounded,
-      'sports_martial_arts': Icons.sports_martial_arts_rounded,
-      'sports_handball': Icons.sports_handball_rounded,
-      'hiking': Icons.hiking_rounded,
-      'surfing': Icons.surfing_rounded,
-      'kayaking': Icons.kayaking_rounded,
-      'phishing': Icons.phishing_rounded,
-      'handshake': Icons.handshake_rounded,
-      'groups': Icons.groups_rounded,
-      'manage_accounts': Icons.manage_accounts_rounded,
-      'supervisor_account': Icons.supervisor_account_rounded,
-      'work': Icons.work_rounded,
-      'workspace_premium': Icons.workspace_premium_rounded,
-      'receipt_long': Icons.receipt_long_rounded,
-      'request_quote': Icons.request_quote_rounded,
-      'paid': Icons.paid_rounded,
-      'currency_exchange': Icons.currency_exchange_rounded,
-      'query_stats': Icons.query_stats_rounded,
-      'insights': Icons.insights_rounded,
-      'timeline': Icons.timeline_rounded,
-      'map': Icons.map_rounded,
-      'explore': Icons.explore_rounded,
-      'place': Icons.place_rounded,
-      'pin_drop': Icons.pin_drop_rounded,
-      'navigation': Icons.navigation_rounded,
-      'travel_explore': Icons.travel_explore_rounded,
-      'hotel': Icons.hotel_rounded,
-      'night_shelter': Icons.night_shelter_rounded,
-      'villa': Icons.villa_rounded,
-      'warehouse': Icons.warehouse_rounded,
-      'fence': Icons.fence_rounded,
-      'grass': Icons.grass_rounded,
-      'yard': Icons.yard_rounded,
-      'nature': Icons.nature_rounded,
-      'forest': Icons.forest_rounded,
-      'agriculture': Icons.agriculture_rounded,
-      'compost': Icons.compost_rounded,
-      'recycling': Icons.recycling_rounded,
-      'sailing': Icons.sailing_rounded,
-      'snowboarding': Icons.snowboarding_rounded,
-      'skateboarding': Icons.skateboarding_rounded,
-      'directions_boat': Icons.directions_boat_rounded,
-      'local_taxi': Icons.local_taxi_rounded,
-      'truck': Icons.local_shipping_rounded,
-      'bus': Icons.directions_bus_rounded,
-      'train': Icons.train_rounded,
-      'subway': Icons.subway_rounded,
-      'flight': Icons.flight_rounded,
-      'commute': Icons.commute_rounded,
-      'electric_car': Icons.electric_car_rounded,
-      'tire_repair': Icons.tire_repair_rounded,
-      'no_crash': Icons.no_crash_rounded,
-      'ev_station': Icons.ev_station_rounded,
-      'charging_station': Icons.charging_station_rounded,
-      'build_circle': Icons.build_circle_rounded,
-      'settings_input_component': Icons.settings_input_component_rounded,
-      'settings_suggest': Icons.settings_suggest_rounded,
-      'plagiarism': Icons.plagiarism_rounded,
-      'fact_check': Icons.fact_check_rounded,
-      'medical_information': Icons.medical_information_rounded,
-      'emergency': Icons.emergency_rounded,
-      'health_and_safety': Icons.health_and_safety_rounded,
-      'dentistry': Icons.medical_services_rounded,
-      'medication': Icons.medication_rounded,
-      'medication_liquid': Icons.medication_liquid_rounded,
-      'bloodtype': Icons.bloodtype_rounded,
-      'sick': Icons.sick_rounded,
-      'pregnant_woman': Icons.pregnant_woman_rounded,
-      'accessibility_new': Icons.accessibility_new_rounded,
-      'hearing': Icons.hearing_rounded,
-      'visibility': Icons.visibility_rounded,
-      'hearing_disabled': Icons.hearing_disabled_rounded,
-      'psychology_alt': Icons.psychology_alt_rounded,
-      'bed': Icons.bed_rounded,
-      'bathtub': Icons.bathtub_rounded,
-      'soap': Icons.soap_rounded,
-      'sanitizer': Icons.sanitizer_rounded,
-      'wash': Icons.wash_rounded,
-      'dry': Icons.dry_rounded,
-      'local_laundry_service': Icons.local_laundry_service_rounded,
-      'cleaning_bucket': Icons.cleaning_services_rounded,
-      'cruelty_free': Icons.cruelty_free_rounded,
-      'pets_outlined': Icons.pets_outlined,
-      'vet': Icons.local_hospital_rounded,
-      'emoji_nature': Icons.emoji_nature_rounded,
-      'temple_buddhist': Icons.temple_buddhist_rounded,
-      'church': Icons.church_rounded,
-      'mosque': Icons.mosque_rounded,
-      'synagogue': Icons.synagogue_rounded,
-      'balance': Icons.balance_rounded,
-      'newspaper': Icons.newspaper_rounded,
-      'new_releases': Icons.new_releases_rounded,
-      'shield_moon': Icons.shield_moon_rounded,
-      'admin_panel_settings': Icons.admin_panel_settings_rounded,
-      'verified_user': Icons.verified_user_rounded,
-      'assured_workload': Icons.assured_workload_rounded,
-      'inventory': Icons.inventory_rounded,
-      'sell': Icons.sell_rounded,
-      'shopping_cart': Icons.shopping_cart_rounded,
-      'store_mall_directory': Icons.store_mall_directory_rounded,
-      'local_offer': Icons.local_offer_rounded,
-      'qr_code_scanner': Icons.qr_code_scanner_rounded,
-      'qr_code_2': Icons.qr_code_2_rounded,
-      'confirmation_number': Icons.confirmation_number_rounded,
-      'stroller': Icons.stroller_rounded,
-      'family_restroom': Icons.family_restroom_rounded,
-      'escalator_warning': Icons.escalator_warning_rounded,
-      'elderly_woman': Icons.elderly_woman_rounded,
-      'self_care': Icons.self_improvement_rounded,
-      'connect_without_contact': Icons.connect_without_contact_rounded,
-      'campaign_outlined': Icons.campaign_outlined,
-      'new_label': Icons.label_rounded,
-      'bookmark': Icons.bookmark_rounded,
-      'article': Icons.article_rounded,
-      'description': Icons.description_rounded,
-      'feed': Icons.feed_rounded,
-      'perm_media': Icons.perm_media_rounded,
-      'image': Icons.image_rounded,
-      'slideshow': Icons.slideshow_rounded,
-      'animation': Icons.animation_rounded,
-      'photo_album': Icons.photo_album_rounded,
-      'scanner': Icons.scanner_rounded,
-      'document_scanner': Icons.document_scanner_rounded,
-      'speaker': Icons.speaker_rounded,
-      'speaker_group': Icons.speaker_group_rounded,
-      'radio': Icons.radio_rounded,
-      'music_video': Icons.music_video_rounded,
-      'queue_music': Icons.queue_music_rounded,
-      'album': Icons.album_rounded,
-      'stadium': Icons.stadium_rounded,
-      'cookie': Icons.cookie_rounded,
-      'icecream': Icons.icecream_rounded,
-      'local_cafe': Icons.local_cafe_rounded,
-      'wine_bar': Icons.wine_bar_rounded,
-      'emoji_food_beverage': Icons.emoji_food_beverage_rounded,
-      'ramen_dining': Icons.ramen_dining_rounded,
-      'egg_alt': Icons.egg_alt_rounded,
-      'set_meal': Icons.set_meal_rounded,
-      'liquor': Icons.liquor_rounded,
-      'fastfood': Icons.fastfood_rounded,
-      'soup_kitchen': Icons.soup_kitchen_rounded,
-    };
-  }
-
-  static List<String> _deduplicateIconKeys(Map<String, IconData> icons) {
-    final uniqueKeys = <String>[];
-    final seenSignatures = <String>{};
-    for (final entry in icons.entries) {
-      final icon = entry.value;
-      final signature =
-          '${icon.fontFamily}|${icon.fontPackage}|${icon.codePoint}|${icon.matchTextDirection}';
-      if (seenSignatures.add(signature)) {
-        uniqueKeys.add(entry.key);
-      }
-    }
-    return uniqueKeys;
-  }
+  List<String> get _pickerIconKeys => ProfessionIconRegistry.pickerKeys;
 
   static const List<String> _availableProfessionColors = [
     '#1976D2',
@@ -1646,13 +1322,32 @@ class _AdminPanelState extends State<AdminPanel> {
                     itemBuilder: (context, index) {
                       final key = _pickerIconKeys[index];
                       bool isSelected = selectedIcon == key;
-                      return IconButton(
-                        icon: Icon(
-                          _availableIcons[key],
-                          color: isSelected ? Colors.red[900] : Colors.grey,
+                      return InkWell(
+                        borderRadius: BorderRadius.circular(12),
+                        onTap: () => setDialogState(() => selectedIcon = key),
+                        child: Container(
+                          margin: const EdgeInsets.all(6),
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? Colors.red.withValues(alpha: 0.08)
+                                : Colors.transparent,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: isSelected
+                                  ? Colors.red.shade900
+                                  : Colors.grey.shade300,
+                            ),
+                          ),
+                          child: Center(
+                            child: ProfessionIconRegistry.buildIcon(
+                              key,
+                              color: isSelected
+                                  ? Colors.red.shade900
+                                  : Colors.grey,
+                              size: 26,
+                            ),
+                          ),
                         ),
-                        onPressed: () =>
-                            setDialogState(() => selectedIcon = key),
                       );
                     },
                   ),
@@ -1784,7 +1479,6 @@ class _AdminPanelState extends State<AdminPanel> {
       ],
     );
   }
-
 }
 
 class _UserManagementSheet extends StatefulWidget {
@@ -2000,22 +1694,7 @@ class _ProfessionCategoriesSheetState
   List<Map<String, dynamic>> _previewItems = const [];
   String? _previewFileName;
 
-  List<String> get _pickerIconKeys =>
-      _deduplicateIconKeys(widget.availableIcons);
-
-  static List<String> _deduplicateIconKeys(Map<String, IconData> icons) {
-    final uniqueKeys = <String>[];
-    final seenSignatures = <String>{};
-    for (final entry in icons.entries) {
-      final icon = entry.value;
-      final signature =
-          '${icon.fontFamily}|${icon.fontPackage}|${icon.codePoint}|${icon.matchTextDirection}';
-      if (seenSignatures.add(signature)) {
-        uniqueKeys.add(entry.key);
-      }
-    }
-    return uniqueKeys;
-  }
+  List<String> get _pickerIconKeys => ProfessionIconRegistry.pickerKeys;
 
   int _nextProfessionId(List<Map<String, dynamic>> items) {
     return items.fold<int>(0, (maxId, item) {
@@ -2050,9 +1729,7 @@ class _ProfessionCategoriesSheetState
     int fallbackId,
   ) {
     final logo = (raw['logo'] ?? raw['icon'] ?? 'engineering').toString();
-    final resolvedLogo = widget.availableIcons.containsKey(logo)
-        ? logo
-        : 'engineering';
+    final resolvedLogo = ProfessionIconRegistry.normalizeKey(logo);
     return {
       'id': int.tryParse(raw['id']?.toString() ?? '') ?? fallbackId,
       'en': (raw['en'] ?? '').toString().trim(),
@@ -2124,6 +1801,29 @@ class _ProfessionCategoriesSheetState
     await _saveProfessionItems(items);
   }
 
+  Future<void> _confirmRemoveCategory(String cat) async {
+    final shouldDelete = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete Profession'),
+        content: Text('Are you sure you want to delete "$cat"?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldDelete != true) return;
+    await _removeCategoryByEn(cat);
+  }
+
   Future<void> _editExistingItem(Map<String, dynamic> item) async {
     final enController = TextEditingController(
       text: item['en']?.toString() ?? '',
@@ -2146,7 +1846,9 @@ class _ProfessionCategoriesSheetState
     final colorController = TextEditingController(
       text: item['color']?.toString() ?? '#1976D2',
     );
-    String selectedIcon = item['logo']?.toString() ?? 'engineering';
+    String selectedIcon = ProfessionIconRegistry.normalizeKey(
+      item['logo']?.toString(),
+    );
     String selectedBookingMode = normalizeBookingMode(
       item['bookingMode']?.toString(),
     );
@@ -2259,10 +1961,12 @@ class _ProfessionCategoriesSheetState
                           color: _colorFromHex(colorController.text),
                           shape: BoxShape.circle,
                         ),
-                        child: Icon(
-                          widget.availableIcons[selectedIcon] ??
-                              Icons.engineering,
-                          color: Colors.white,
+                        child: Center(
+                          child: ProfessionIconRegistry.buildIcon(
+                            selectedIcon,
+                            color: Colors.white,
+                            size: 22,
+                          ),
                         ),
                       ),
                     ],
@@ -2280,12 +1984,31 @@ class _ProfessionCategoriesSheetState
                       itemBuilder: (context, iconIndex) {
                         final key = _pickerIconKeys[iconIndex];
                         final isSelected = selectedIcon == key;
-                        return IconButton(
-                          onPressed: () =>
-                              setDialogState(() => selectedIcon = key),
-                          icon: Icon(
-                            widget.availableIcons[key],
-                            color: isSelected ? Colors.red[900] : Colors.grey,
+                        return InkWell(
+                          borderRadius: BorderRadius.circular(12),
+                          onTap: () => setDialogState(() => selectedIcon = key),
+                          child: Container(
+                            margin: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: isSelected
+                                  ? Colors.red.withValues(alpha: 0.08)
+                                  : Colors.transparent,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: isSelected
+                                    ? Colors.red.shade900
+                                    : Colors.grey.shade300,
+                              ),
+                            ),
+                            child: Center(
+                              child: ProfessionIconRegistry.buildIcon(
+                                key,
+                                color: isSelected
+                                    ? Colors.red.shade900
+                                    : Colors.grey,
+                                size: 26,
+                              ),
+                            ),
                           ),
                         );
                       },
@@ -2409,7 +2132,9 @@ class _ProfessionCategoriesSheetState
     final colorController = TextEditingController(
       text: item['color']?.toString() ?? '#1976D2',
     );
-    String selectedIcon = item['logo']?.toString() ?? 'engineering';
+    String selectedIcon = ProfessionIconRegistry.normalizeKey(
+      item['logo']?.toString(),
+    );
     String selectedBookingMode = normalizeBookingMode(
       item['bookingMode']?.toString(),
     );
@@ -2522,10 +2247,12 @@ class _ProfessionCategoriesSheetState
                           color: _colorFromHex(colorController.text),
                           shape: BoxShape.circle,
                         ),
-                        child: Icon(
-                          widget.availableIcons[selectedIcon] ??
-                              Icons.engineering,
-                          color: Colors.white,
+                        child: Center(
+                          child: ProfessionIconRegistry.buildIcon(
+                            selectedIcon,
+                            color: Colors.white,
+                            size: 22,
+                          ),
                         ),
                       ),
                     ],
@@ -2543,12 +2270,31 @@ class _ProfessionCategoriesSheetState
                       itemBuilder: (context, iconIndex) {
                         final key = _pickerIconKeys[iconIndex];
                         final isSelected = selectedIcon == key;
-                        return IconButton(
-                          onPressed: () =>
-                              setDialogState(() => selectedIcon = key),
-                          icon: Icon(
-                            widget.availableIcons[key],
-                            color: isSelected ? Colors.red[900] : Colors.grey,
+                        return InkWell(
+                          borderRadius: BorderRadius.circular(12),
+                          onTap: () => setDialogState(() => selectedIcon = key),
+                          child: Container(
+                            margin: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: isSelected
+                                  ? Colors.red.withValues(alpha: 0.08)
+                                  : Colors.transparent,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: isSelected
+                                    ? Colors.red.shade900
+                                    : Colors.grey.shade300,
+                              ),
+                            ),
+                            child: Center(
+                              child: ProfessionIconRegistry.buildIcon(
+                                key,
+                                color: isSelected
+                                    ? Colors.red.shade900
+                                    : Colors.grey,
+                                size: 26,
+                              ),
+                            ),
                           ),
                         );
                       },
@@ -2649,8 +2395,9 @@ class _ProfessionCategoriesSheetState
   }
 
   Widget _buildPreviewCard(Map<String, dynamic> item, int index) {
-    final logoKey = item['logo']?.toString() ?? 'engineering';
-    final icon = widget.availableIcons[logoKey] ?? Icons.engineering;
+    final logoKey = ProfessionIconRegistry.normalizeKey(
+      item['logo']?.toString(),
+    );
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Padding(
@@ -2662,7 +2409,13 @@ class _ProfessionCategoriesSheetState
               children: [
                 CircleAvatar(
                   backgroundColor: _colorFromHex(item['color']?.toString()),
-                  child: Icon(icon, color: Colors.white),
+                  child: Center(
+                    child: ProfessionIconRegistry.buildIcon(
+                      logoKey,
+                      color: Colors.white,
+                      size: 22,
+                    ),
+                  ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -2886,7 +2639,7 @@ class _ProfessionCategoriesSheetState
                               Icons.remove_circle_outline,
                               color: Colors.red,
                             ),
-                            onPressed: () => _removeCategoryByEn(cat),
+                            onPressed: () => _confirmRemoveCategory(cat),
                           ),
                         );
                       }),

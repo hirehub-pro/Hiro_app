@@ -1072,12 +1072,18 @@ class _SendRequestPageState extends State<SendRequestPage> {
           .doc(widget.workerId)
           .collection('notifications')
           .doc();
+      final workerRequestToMeRef = firestore
+          .collection('users')
+          .doc(widget.workerId)
+          .collection('RequestToMe')
+          .doc();
 
       final requestData = {
         'requestId': requestId,
         'workerId': widget.workerId,
         'workerName': widget.workerName,
         'workerNotificationId': workerNotificationRef.id,
+        'workerRequestToMeId': workerRequestToMeRef.id,
         'type': widget.isQuoteRequest ? 'quote_request' : 'work_request',
         'fromId': user.uid,
         'fromName': userName,
@@ -1104,6 +1110,7 @@ class _SendRequestPageState extends State<SendRequestPage> {
 
       final batch = firestore.batch();
       batch.set(workerNotificationRef, requestData);
+      batch.set(workerRequestToMeRef, requestData);
       batch.set(
         firestore
             .collection('users')

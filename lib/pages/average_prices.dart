@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 import 'package:untitled1/services/language_provider.dart';
+import 'package:untitled1/utils/profession_icons.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class AveragePricesPage extends StatefulWidget {
@@ -360,8 +361,12 @@ class _AveragePricesPageState extends State<AveragePricesPage> {
                       vertical: 8,
                     ),
                     leading: CircleAvatar(
-                      backgroundColor: profColor.withOpacity(0.1),
-                      child: Icon(_getIcon(p['logo']), color: profColor),
+                      backgroundColor: profColor.withValues(alpha: 0.1),
+                      child: _buildProfessionIcon(
+                        p['logo']?.toString(),
+                        color: profColor,
+                        size: 24,
+                      ),
                     ),
                     title: Text(
                       p[locale] ?? p['en'],
@@ -601,5 +606,16 @@ class _AveragePricesPageState extends State<AveragePricesPage> {
       default:
         return Icons.work_rounded;
     }
+  }
+
+  Widget _buildProfessionIcon(
+    String? logoKey, {
+    required Color color,
+    required double size,
+  }) {
+    if (ProfessionIconRegistry.isAssetKey(logoKey)) {
+      return ProfessionIconRegistry.buildIcon(logoKey, size: size);
+    }
+    return Icon(_getIcon(logoKey), color: color, size: size);
   }
 }
