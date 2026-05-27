@@ -175,14 +175,6 @@ class _AdminPanelState extends State<AdminPanel> {
               subtitle: 'Send ads with images and popups to all users',
               onTap: () => _showMarketingBroadcastDialog(context),
             ),
-            const Divider(),
-            _buildAdminTile(
-              context,
-              icon: Icons.sync_rounded,
-              title: 'Normalize Professions',
-              subtitle: 'Rebuild metadata/professions list from items',
-              onTap: () => _syncProfessionsFromJson(),
-            ),
           ],
         ),
       ),
@@ -236,47 +228,6 @@ class _AdminPanelState extends State<AdminPanel> {
         trailing: const Icon(Icons.chevron_right_rounded),
       ),
     );
-  }
-
-  Future<void> _syncProfessionsFromJson() async {
-    try {
-      final metadataRef = _firestore.collection('metadata').doc('professions');
-      final metadataSnap = await metadataRef.get();
-      final existingItems =
-          ((metadataSnap.data()?['items'] as List?) ?? const [])
-              .whereType<Map>()
-              .map((item) => Map<String, dynamic>.from(item))
-              .toList()
-            ..sort((a, b) {
-              final aId = int.tryParse(a['id']?.toString() ?? '') ?? 1 << 30;
-              final bId = int.tryParse(b['id']?.toString() ?? '') ?? 1 << 30;
-              return aId.compareTo(bId);
-            });
-
-      await metadataRef.set({
-        'list': existingItems
-            .map((item) => item['en']?.toString() ?? '')
-            .where((name) => name.isNotEmpty)
-            .toList(),
-        'items': existingItems,
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('metadata/professions normalized')),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Sync Error: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
   }
 
   void _showUserList(BuildContext context, String role, String title) {

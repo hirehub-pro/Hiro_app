@@ -1143,6 +1143,7 @@ class _BlogPageState extends State<BlogPage> {
       'job_request': 'דרוש בעל מקצוע',
       'profession': 'מקצוע',
       'profession_hint': 'בחר בעל מקצוע נדרש',
+      'profession_none': 'ללא מקצוע',
       'profession_required': 'נא לבחור מקצוע',
       'filter_profession': 'סינון לפי מקצוע',
       'filter_all_professions': 'כל המקצועות',
@@ -1266,6 +1267,7 @@ class _BlogPageState extends State<BlogPage> {
       'location': 'الموقع (المدينة/المنطقة)',
       'profession': 'المهنة',
       'profession_hint': 'اختر المهنة المطلوبة',
+      'profession_none': 'بدون مهنة',
       'profession_required': 'يرجى اختيار مهنة',
       'filter_profession': 'تصفية حسب المهنة',
       'filter_all_professions': 'كل المهن',
@@ -1619,6 +1621,7 @@ class _BlogPageState extends State<BlogPage> {
       'job_request': 'Job Request',
       'profession': 'Profession',
       'profession_hint': 'Choose the profession you need',
+      'profession_none': 'No profession',
       'profession_required': 'Please choose a profession',
       'filter_profession': 'Filter by profession',
       'filter_all_professions': 'All professions',
@@ -2012,7 +2015,7 @@ class _BlogPageState extends State<BlogPage> {
                 ),
                 const SizedBox(height: 16),
                 DropdownButtonFormField<String>(
-                  value: selectedCategory,
+                  initialValue: selectedCategory,
                   decoration: InputDecoration(
                     labelText: strings['post_category'],
                     border: OutlineInputBorder(
@@ -2046,32 +2049,34 @@ class _BlogPageState extends State<BlogPage> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                if (_isJobRequestCategoryValue(selectedCategory) ||
-                    selectedCategory == strings['job_request']) ...[
-                  DropdownButtonFormField<String>(
-                    value: selectedProfession,
-                    decoration: InputDecoration(
-                      labelText: strings['profession'],
-                      hintText: strings['profession_hint'],
-                      prefixIcon: const Icon(Icons.work_outline_rounded),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
+                DropdownButtonFormField<String>(
+                  initialValue: selectedProfession,
+                  decoration: InputDecoration(
+                    labelText: strings['profession'],
+                    hintText: strings['profession_hint'],
+                    prefixIcon: const Icon(Icons.work_outline_rounded),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  items: [
+                    DropdownMenuItem<String>(
+                      value: null,
+                      child: Text(strings['profession_none']),
+                    ),
+                    ...professionOptions.map(
+                      (profession) => DropdownMenuItem<String>(
+                        value: _professionCanonicalValue(profession),
+                        child: Text(_professionLabel(profession, localeCode)),
                       ),
                     ),
-                    items: professionOptions
-                        .map(
-                          (profession) => DropdownMenuItem(
-                            value: _professionCanonicalValue(profession),
-                            child: Text(
-                              _professionLabel(profession, localeCode),
-                            ),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (value) =>
-                        setSheetState(() => selectedProfession = value),
-                  ),
-                  const SizedBox(height: 16),
+                  ],
+                  onChanged: (value) =>
+                      setSheetState(() => selectedProfession = value),
+                ),
+                const SizedBox(height: 16),
+                if (_isJobRequestCategoryValue(selectedCategory) ||
+                    selectedCategory == strings['job_request']) ...[
                   Row(
                     children: [
                       Expanded(
@@ -2531,18 +2536,6 @@ class _BlogPageState extends State<BlogPage> {
                               contentController.text.trim().isEmpty) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(content: Text(strings['empty_fields'])),
-                            );
-                            return;
-                          }
-
-                          if ((_isJobRequestCategoryValue(selectedCategory) ||
-                                  selectedCategory == strings['job_request']) &&
-                              (selectedProfession == null ||
-                                  selectedProfession!.trim().isEmpty)) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(strings['profession_required']),
-                              ),
                             );
                             return;
                           }

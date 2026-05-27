@@ -1,9 +1,23 @@
+import 'dart:math';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:untitled1/pages/chat_page.dart';
 import 'package:untitled1/services/language_provider.dart';
 
-class HelpPage extends StatelessWidget {
+class HelpPage extends StatefulWidget {
   const HelpPage({super.key});
+
+  @override
+  State<HelpPage> createState() => _HelpPageState();
+}
+
+class _HelpPageState extends State<HelpPage> {
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  bool _isOpeningSupportChat = false;
 
   Map<String, String> _strings(BuildContext context) {
     final locale = Provider.of<LanguageProvider>(context).locale.languageCode;
@@ -11,117 +25,189 @@ class HelpPage extends StatelessWidget {
       case 'he':
         return {
           'title': 'עזרה',
-          'hero_title': 'איך אפשר לעזור לך היום?',
+          'hero_title': 'מרכז העזרה של Hiro',
           'hero_subtitle':
-              'מצא תשובות מהר, פתח צ\'אט תמיכה וקבל הכוונה ברורה בנושאי חשבון, בקשות ותשלומים.',
-          'hero_badge': 'מרכז תמיכה',
-          'chat_title': 'צ\'אט תמיכה',
+              'כאן תמצאו הדרכה על בקשות עבודה, צ׳אט עם בעלי מקצוע, פרופיל העסק, מנויים, קהילה וכלים נוספים באפליקציה.',
+          'hero_badge': 'תמיכה והכוונה',
+          'contact_admin': 'צור קשר עם מנהל',
+          'contact_admin_loading': 'פותח צ׳אט...',
+          'contact_admin_hint':
+              'אם יש תקלה, שאלה על חשבון, בעיה בבקשת עבודה או צורך בבדיקה ידנית, נפתח לך צ׳אט עם אחד המנהלים.',
+          'chat_title': 'תמיכה ישירה בצ׳אט',
           'chat_body':
-              'דבר עם עוזר התמיכה של Hiro וקבל תשובות מהירות בנושאי חשבון, בקשות עבודה, מעקב ותשלומים.',
-          'faq_title': 'שאלות נפוצות',
-          'quick_title': 'פעולות מהירות',
+              'לחיצה על הכפתור תפתח שיחה עם אחד המנהלים הזמינים, כדי שתוכל לקבל מענה אישי בתוך האפליקציה.',
+          'quick_title': 'במה אפשר לעזור',
           'quick_requests_title': 'בקשות עבודה',
           'quick_requests_body':
-              'עקוב אחרי בקשות, סטטוסים ותגובות של בעלי מקצוע.',
-          'quick_account_title': 'חשבון ופרופיל',
-          'quick_account_body': 'עדכון פרטים, תמונה, טלפון והגדרות חשבון.',
-          'quick_payments_title': 'תשלומים ומנויים',
-          'quick_payments_body': 'הבנה של רכישות, מנוי וגישה לכלים בתשלום.',
-          'faq_1_q': 'איך מוצאים בעל מקצוע?',
+              'פרסום בקשה, בחירת מקצוע, מעקב אחרי סטטוס ותגובות מבעלי מקצוע.',
+          'quick_chat_title': 'צ׳אט והודעות',
+          'quick_chat_body':
+              'פתיחת שיחה עם בעל מקצוע, מעקב אחרי תשובות, קבצים, תמונות והמשך טיפול.',
+          'quick_profile_title': 'פרופיל ואימות',
+          'quick_profile_body':
+              'עדכון פרטים, מקצועות, שעות פעילות, אימות עסק ותצוגת הפרופיל שלך.',
+          'quick_subscription_title': 'מנוי וכלים בתשלום',
+          'quick_subscription_body':
+              'מידע על מנוי פעיל, גישה לחשבוניות, תגובה לבקשות עבודה וכלי פרימיום.',
+          'quick_blog_title': 'פוסטים וקהילה',
+          'quick_blog_body':
+              'שיתוף פוסט, הוספת מדיה, בחירת מקצוע בפוסט וחיפוש מידע מהקהילה.',
+          'faq_title': 'שאלות נפוצות',
+          'faq_1_q': 'איך מפרסמים בקשת עבודה טובה?',
           'faq_1_a':
-              'חפש לפי תחום, מיקום או קטגוריה, היכנס לפרופיל המתאים ושלח בקשת עבודה או בקשת הצעת מחיר.',
-          'faq_2_q': 'איך עוקבים אחרי בקשה?',
+              'כתבו כותרת ברורה, תיאור קצר, הוסיפו מיקום ותמונות אם צריך, ובחרו את המקצוע המתאים כדי שבעלי מקצוע רלוונטיים יוכלו להגיב.',
+          'faq_2_q': 'איך פותחים שיחה עם בעל מקצוע?',
           'faq_2_a':
-              'אפשר לעקוב דרך ההתראות, עמוד הבקשות והצ\'אט עם בעל המקצוע. כל שינוי סטטוס מופיע שם.',
-          'faq_3_q': 'איך משנים פרטי חשבון?',
+              'אפשר לפתוח צ׳אט מתוך הפרופיל של בעל המקצוע, מתוך בקשת עבודה או מתוך ההודעות. כל התמונות והקבצים יישמרו באותה שיחה.',
+          'faq_3_q': 'מה נותן מנוי פעיל לבעלי מקצוע?',
           'faq_3_a':
-              'דרך הגדרות החשבון אפשר לעדכן פרטים אישיים, טלפון, תמונת פרופיל והעדפות נוספות.',
-          'faq_4_q': 'מה עושים אם יש בעיה?',
+              'מנוי פעיל מאפשר גישה לכלי עבודה מתקדמים כמו תגובה לבקשות, יצירת חשבוניות, נראות מוגברת וגישה לפיצ׳רים מקצועיים נוספים.',
+          'faq_4_q': 'מה עושים אם צ׳אט, פוסט או בקשה לא עובדים כמו שצריך?',
           'faq_4_a':
-              'פתח את צ\'אט התמיכה ותאר בקצרה מה קרה, באיזה עמוד זה קרה ומה ציפית שיקרה.',
+              'פנו דרך כפתור יצירת הקשר כאן בעמוד, ציינו באיזה מסך זה קרה ומה ניסיתם לעשות, ואחד המנהלים יוכל להמשיך מולכם בצ׳אט.',
+          'faq_5_q': 'איך משפרים את הסיכוי לקבל תגובות?',
+          'faq_5_a':
+              'פרטים מדויקים, תמונות טובות, בחירת מקצוע נכונה ותיאור מסודר עוזרים לבעלי מקצוע להבין מהר יותר מה אתם צריכים.',
           'tips_title': 'לפני שפונים לתמיכה',
-          'tips_1': 'כתוב תיאור קצר וברור של הבעיה.',
-          'tips_2': 'אם אפשר, ציין באיזה מסך או שלב זה קרה.',
-          'tips_3':
-              'בבקשות עבודה, תמונות טובות עוזרות לקבל תשובות מדויקות יותר.',
+          'tips_1': 'כתבו מה ניסיתם לעשות ומה קרה בפועל.',
+          'tips_2':
+              'ציינו אם הבעיה קשורה לבקשה, לצ׳אט, למנוי, לפרופיל או לפוסט.',
+          'tips_3': 'אם אפשר, ציינו את שם בעל המקצוע או מספר הבקשה/הדיווח.',
+          'tips_4': 'צילום מסך או תיאור מדויק של השלב חוסכים זמן בטיפול.',
+          'support_areas_title': 'הצוות יכול לעזור גם עם',
+          'support_area_1': 'פתיחת ובדיקת שיחות צ׳אט',
+          'support_area_2': 'בדיקת בקשות עבודה ותגובות',
+          'support_area_3': 'מנויים, חשבוניות וכלי Pro',
+          'support_area_4': 'פרופיל, מקצועות, אימות והגדרות',
+          'guest_required': 'צריך להתחבר כדי לפתוח צ׳אט עם מנהל התמיכה.',
+          'no_admins': 'לא נמצא כרגע מנהל זמין לצ׳אט.',
+          'chat_open_failed': 'לא הצלחנו לפתוח את צ׳אט התמיכה כרגע.',
         };
       case 'ar':
         return {
           'title': 'المساعدة',
-          'hero_title': 'كيف يمكننا مساعدتك اليوم؟',
+          'hero_title': 'مركز مساعدة Hiro',
           'hero_subtitle':
-              'اعثر على الإجابات بسرعة، وافتح دردشة الدعم، واحصل على إرشاد واضح بخصوص الحساب والطلبات والمدفوعات.',
-          'hero_badge': 'مركز الدعم',
-          'chat_title': 'دردشة الدعم',
+              'ستجد هنا إرشادات حول طلبات العمل، الدردشة مع أصحاب المهن، الملف الشخصي، الاشتراك، المجتمع والأدوات الأخرى داخل التطبيق.',
+          'hero_badge': 'الدعم والإرشاد',
+          'contact_admin': 'تواصل مع مشرف',
+          'contact_admin_loading': 'يتم فتح الدردشة...',
+          'contact_admin_hint':
+              'إذا كانت لديك مشكلة أو سؤال عن الحساب أو الطلبات أو تحتاج إلى فحص يدوي، سنفتح لك دردشة مع أحد المشرفين.',
+          'chat_title': 'دعم مباشر عبر الدردشة',
           'chat_body':
-              'تحدث مع مساعد Hiro للحصول على مساعدة سريعة حول الحساب وطلبات العمل والمتابعة والمدفوعات.',
-          'faq_title': 'الأسئلة الشائعة',
-          'quick_title': 'إجراءات سريعة',
+              'الضغط على الزر يفتح محادثة مع أحد المشرفين المتاحين لكي تحصل على مساعدة شخصية داخل التطبيق.',
+          'quick_title': 'كيف يمكننا المساعدة',
           'quick_requests_title': 'طلبات العمل',
-          'quick_requests_body': 'تابع الطلبات والحالات وردود أصحاب المهن.',
-          'quick_account_title': 'الحساب والملف الشخصي',
-          'quick_account_body':
-              'تحديث البيانات والصورة والهاتف وإعدادات الحساب.',
-          'quick_payments_title': 'المدفوعات والاشتراك',
-          'quick_payments_body':
-              'فهم المشتريات والاشتراك والوصول إلى الأدوات المدفوعة.',
-          'faq_1_q': 'كيف أجد محترفاً؟',
+          'quick_requests_body':
+              'نشر طلب، اختيار المهنة، متابعة الحالة وردود أصحاب المهن.',
+          'quick_chat_title': 'الدردشة والرسائل',
+          'quick_chat_body':
+              'بدء محادثة مع صاحب مهنة، متابعة الردود والملفات والصور ومواصلة المتابعة.',
+          'quick_profile_title': 'الملف الشخصي والتحقق',
+          'quick_profile_body':
+              'تحديث البيانات والمهن وساعات العمل والتحقق من النشاط وعرض الملف الشخصي.',
+          'quick_subscription_title': 'الاشتراك والأدوات المدفوعة',
+          'quick_subscription_body':
+              'فهم حالة الاشتراك والوصول إلى الفواتير والرد على الطلبات والأدوات الاحترافية.',
+          'quick_blog_title': 'المنشورات والمجتمع',
+          'quick_blog_body':
+              'مشاركة منشور، إضافة وسائط، اختيار مهنة للمنشور والعثور على معلومات من المجتمع.',
+          'faq_title': 'الأسئلة الشائعة',
+          'faq_1_q': 'كيف أنشر طلب عمل جيد؟',
           'faq_1_a':
-              'ابحث حسب المجال أو الموقع أو الفئة، ثم افتح الملف الشخصي المناسب وأرسل طلب عمل أو طلب عرض سعر.',
-          'faq_2_q': 'كيف أتابع الطلب؟',
+              'اكتب عنوانًا واضحًا ووصفًا مختصرًا، وأضف الموقع والصور عند الحاجة، واختر المهنة المناسبة حتى يتمكن أصحاب المهن المناسبون من الرد.',
+          'faq_2_q': 'كيف أفتح محادثة مع صاحب مهنة؟',
           'faq_2_a':
-              'يمكنك المتابعة من خلال الإشعارات وصفحة الطلبات والدردشة مع المهني. أي تغيير في الحالة سيظهر هناك.',
-          'faq_3_q': 'كيف أغير بيانات الحساب؟',
+              'يمكنك فتح الدردشة من الملف الشخصي لصاحب المهنة أو من طلب العمل أو من صفحة الرسائل. سيتم حفظ الصور والملفات في نفس المحادثة.',
+          'faq_3_q': 'ماذا يمنح الاشتراك النشط لأصحاب المهن؟',
           'faq_3_a':
-              'من إعدادات الحساب يمكنك تحديث البيانات الشخصية والهاتف والصورة الشخصية وتفضيلات أخرى.',
-          'faq_4_q': 'ماذا أفعل إذا كانت هناك مشكلة؟',
+              'الاشتراك النشط يفتح أدوات متقدمة مثل الرد على الطلبات وإنشاء الفواتير وظهورًا أفضل والوصول إلى مزايا احترافية إضافية.',
+          'faq_4_q':
+              'ماذا أفعل إذا كانت الدردشة أو المنشور أو الطلب لا يعمل جيدًا؟',
           'faq_4_a':
-              'افتح دردشة الدعم واشرح باختصار ما الذي حدث، وفي أي صفحة حدث، وما الذي كنت تتوقعه.',
+              'استخدم زر التواصل في هذه الصفحة، واذكر الشاشة التي حدثت فيها المشكلة وما الذي حاولت القيام به، وسيتابع معك أحد المشرفين عبر الدردشة.',
+          'faq_5_q': 'كيف أحسّن فرص الحصول على ردود؟',
+          'faq_5_a':
+              'البيانات الدقيقة والصور الجيدة واختيار المهنة الصحيحة والوصف الواضح تساعد أصحاب المهن على فهم طلبك بسرعة أكبر.',
           'tips_title': 'قبل التواصل مع الدعم',
-          'tips_1': 'اكتب وصفاً قصيراً وواضحاً للمشكلة.',
-          'tips_2': 'إذا أمكن، اذكر الشاشة أو الخطوة التي حدثت فيها المشكلة.',
-          'tips_3':
-              'في طلبات العمل، تساعد الصور الجيدة في الحصول على ردود أدق.',
+          'tips_1': 'اكتب ما الذي حاولت القيام به وماذا حدث فعليًا.',
+          'tips_2':
+              'اذكر إن كانت المشكلة تتعلق بالطلب أو الدردشة أو الاشتراك أو الملف الشخصي أو المنشور.',
+          'tips_3': 'إذا أمكن، اذكر اسم صاحب المهنة أو رقم الطلب/البلاغ.',
+          'tips_4': 'لقطة شاشة أو وصف دقيق للخطوة يوفر وقتًا أثناء المعالجة.',
+          'support_areas_title': 'يمكن للفريق المساعدة أيضًا في',
+          'support_area_1': 'فتح وفحص محادثات الدردشة',
+          'support_area_2': 'مراجعة طلبات العمل والردود',
+          'support_area_3': 'الاشتراكات والفواتير وأدوات Pro',
+          'support_area_4': 'الملف الشخصي والمهن والتحقق والإعدادات',
+          'guest_required': 'يجب تسجيل الدخول لفتح دردشة مع مشرف الدعم.',
+          'no_admins': 'لا يوجد مشرف متاح للدردشة الآن.',
+          'chat_open_failed': 'تعذر فتح دردشة الدعم حاليًا.',
         };
       default:
         return {
           'title': 'Help',
-          'hero_title': 'How can we help today?',
+          'hero_title': 'Hiro Help Center',
           'hero_subtitle':
-              'Find answers quickly, open support chat, and get clear guidance for account, requests, and payments.',
-          'hero_badge': 'Support Hub',
-          'chat_title': 'Support Chat',
+              'Get guidance for job requests, chat with professionals, your business profile, subscriptions, community posts, and the rest of the app tools.',
+          'hero_badge': 'Support and Guidance',
+          'contact_admin': 'Contact an admin',
+          'contact_admin_loading': 'Opening chat...',
+          'contact_admin_hint':
+              'If you hit a bug, need account help, have a request issue, or want manual review, we will open a chat with one of the admins.',
+          'chat_title': 'Direct support in chat',
           'chat_body':
-              'Talk to the Hiro support assistant for quick help with your account, work requests, tracking, and payments.',
-          'faq_title': 'Frequently Asked Questions',
-          'quick_title': 'Quick Topics',
+              'Tap the button to open a conversation with one of the available admins so you can get personal help inside the app.',
+          'quick_title': 'What we can help with',
           'quick_requests_title': 'Job requests',
           'quick_requests_body':
-              'Track requests, statuses, and professional responses.',
-          'quick_account_title': 'Account and profile',
-          'quick_account_body':
-              'Update details, profile photo, phone number, and settings.',
-          'quick_payments_title': 'Payments and subscription',
-          'quick_payments_body':
-              'Understand purchases, subscription state, and access to paid tools.',
-          'faq_1_q': 'How do I find a professional?',
+              'Publish a request, choose a profession, track status changes, and follow professional replies.',
+          'quick_chat_title': 'Chat and messages',
+          'quick_chat_body':
+              'Start a conversation with a professional, follow replies, and keep files, photos, and updates in one place.',
+          'quick_profile_title': 'Profile and verification',
+          'quick_profile_body':
+              'Update your details, professions, working hours, business verification, and public profile.',
+          'quick_subscription_title': 'Subscription and paid tools',
+          'quick_subscription_body':
+              'Check your subscription, access invoices, reply to requests, and use Pro features.',
+          'quick_blog_title': 'Posts and community',
+          'quick_blog_body':
+              'Share a post, attach media, choose a profession for the post, and learn from the community feed.',
+          'faq_title': 'Frequently Asked Questions',
+          'faq_1_q': 'How do I post a good job request?',
           'faq_1_a':
-              'Search by service, category, or location, then open the right profile and send a work request or quote request.',
-          'faq_2_q': 'How do I track a request?',
+              'Use a clear title, short description, add location and photos when needed, and choose the right profession so relevant professionals can respond.',
+          'faq_2_q': 'How do I open a chat with a professional?',
           'faq_2_a':
-              'You can follow updates from notifications, the requests page, and your chat with the professional.',
-          'faq_3_q': 'How do I update account details?',
+              'You can start a chat from the professional profile, a request flow, or the messages tab. Photos and files stay in the same conversation.',
+          'faq_3_q':
+              'What does an active subscription unlock for professionals?',
           'faq_3_a':
-              'Open account settings to update personal details, phone number, profile photo, and other preferences.',
-          'faq_4_q': 'What should I do if something goes wrong?',
+              'An active subscription unlocks advanced tools like replying to requests, creating invoices, stronger visibility, and other professional features.',
+          'faq_4_q':
+              'What if chat, a post, or a request is not working correctly?',
           'faq_4_a':
-              'Open support chat and briefly explain what happened, where it happened, and what you expected instead.',
+              'Use the contact button on this page, mention which screen failed and what you were trying to do, and an admin can continue with you in chat.',
+          'faq_5_q': 'How can I improve my chances of getting replies?',
+          'faq_5_a':
+              'Accurate details, good photos, the right profession, and a structured description help professionals understand your need faster.',
           'tips_title': 'Before Contacting Support',
-          'tips_1': 'Write a short and clear description of the issue.',
+          'tips_1': 'Write what you tried to do and what happened instead.',
           'tips_2':
-              'If possible, mention which screen or step caused the problem.',
+              'Mention whether the issue is about a request, chat, subscription, profile, or post.',
           'tips_3':
-              'For job requests, clear photos usually lead to better responses.',
+              'If possible, include the professional name or the request/report number.',
+          'tips_4': 'A screenshot or a precise step description can save time.',
+          'support_areas_title': 'The team can also help with',
+          'support_area_1': 'Opening and checking chat conversations',
+          'support_area_2': 'Reviewing job requests and replies',
+          'support_area_3': 'Subscriptions, invoices, and Pro tools',
+          'support_area_4': 'Profile, professions, verification, and settings',
+          'guest_required': 'Please sign in to open a support chat.',
+          'no_admins': 'No admin is available for chat right now.',
+          'chat_open_failed': 'Could not open support chat right now.',
         };
     }
   }
@@ -164,30 +250,43 @@ class HelpPage extends StatelessWidget {
                 const SizedBox(height: 18),
                 _buildQuickTopics(strings),
                 const SizedBox(height: 18),
+                _buildSupportAreasCard(strings),
+                const SizedBox(height: 18),
                 _buildSectionTitle(strings['faq_title']!),
                 const SizedBox(height: 10),
                 _buildFaqCard(
                   strings['faq_1_q']!,
                   strings['faq_1_a']!,
-                  Icons.search_rounded,
+                  Icons.post_add_rounded,
+                  isRtl,
                 ),
                 const SizedBox(height: 12),
                 _buildFaqCard(
                   strings['faq_2_q']!,
                   strings['faq_2_a']!,
-                  Icons.notifications_active_outlined,
+                  Icons.chat_bubble_outline_rounded,
+                  isRtl,
                 ),
                 const SizedBox(height: 12),
                 _buildFaqCard(
                   strings['faq_3_q']!,
                   strings['faq_3_a']!,
-                  Icons.manage_accounts_outlined,
+                  Icons.workspace_premium_outlined,
+                  isRtl,
                 ),
                 const SizedBox(height: 12),
                 _buildFaqCard(
                   strings['faq_4_q']!,
                   strings['faq_4_a']!,
                   Icons.support_outlined,
+                  isRtl,
+                ),
+                const SizedBox(height: 12),
+                _buildFaqCard(
+                  strings['faq_5_q']!,
+                  strings['faq_5_a']!,
+                  Icons.tips_and_updates_outlined,
+                  isRtl,
                 ),
                 const SizedBox(height: 18),
                 _buildTipsCard(strings),
@@ -282,30 +381,58 @@ class HelpPage extends StatelessWidget {
               borderRadius: BorderRadius.circular(20),
               border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
             ),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        strings['chat_title']!,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 17,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        strings['chat_body']!,
-                        style: const TextStyle(
-                          color: Colors.white70,
-                          height: 1.5,
-                        ),
-                      ),
-                    ],
+                Text(
+                  strings['chat_title']!,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 17,
                   ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  strings['chat_body']!,
+                  style: const TextStyle(color: Colors.white70, height: 1.5),
+                ),
+                const SizedBox(height: 14),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: _isOpeningSupportChat
+                        ? null
+                        : () => _openSupportChat(strings),
+                    icon: _isOpeningSupportChat
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.2,
+                              color: Color(0xFF0F5CC0),
+                            ),
+                          )
+                        : const Icon(Icons.chat_bubble_outline_rounded),
+                    label: Text(
+                      _isOpeningSupportChat
+                          ? strings['contact_admin_loading']!
+                          : strings['contact_admin']!,
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: const Color(0xFF0F5CC0),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  strings['contact_admin_hint']!,
+                  style: const TextStyle(color: Colors.white70, height: 1.45),
                 ),
               ],
             ),
@@ -330,19 +457,35 @@ class HelpPage extends StatelessWidget {
         ),
         const SizedBox(height: 10),
         _buildQuickTopicCard(
-          title: strings['quick_account_title']!,
-          body: strings['quick_account_body']!,
-          icon: Icons.manage_accounts_outlined,
+          title: strings['quick_chat_title']!,
+          body: strings['quick_chat_body']!,
+          icon: Icons.chat_bubble_outline_rounded,
           accent: const Color(0xFF0F766E),
           tint: const Color(0xFFD1FAE5),
         ),
         const SizedBox(height: 10),
         _buildQuickTopicCard(
-          title: strings['quick_payments_title']!,
-          body: strings['quick_payments_body']!,
+          title: strings['quick_profile_title']!,
+          body: strings['quick_profile_body']!,
+          icon: Icons.verified_user_outlined,
+          accent: const Color(0xFF7C3AED),
+          tint: const Color(0xFFEDE9FE),
+        ),
+        const SizedBox(height: 10),
+        _buildQuickTopicCard(
+          title: strings['quick_subscription_title']!,
+          body: strings['quick_subscription_body']!,
           icon: Icons.credit_card_rounded,
           accent: const Color(0xFFBE185D),
           tint: const Color(0xFFFCE7F3),
+        ),
+        const SizedBox(height: 10),
+        _buildQuickTopicCard(
+          title: strings['quick_blog_title']!,
+          body: strings['quick_blog_body']!,
+          icon: Icons.forum_outlined,
+          accent: const Color(0xFFB45309),
+          tint: const Color(0xFFFEF3C7),
         ),
       ],
     );
@@ -416,7 +559,90 @@ class HelpPage extends StatelessWidget {
     );
   }
 
-  Widget _buildFaqCard(String question, String answer, IconData icon) {
+  Widget _buildSupportAreasCard(Map<String, String> strings) {
+    final items = [
+      strings['support_area_1']!,
+      strings['support_area_2']!,
+      strings['support_area_3']!,
+      strings['support_area_4']!,
+    ];
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEFF6FF),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(
+                  Icons.fact_check_outlined,
+                  color: Color(0xFF1976D2),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  strings['support_areas_title']!,
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF0F172A),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          ...items.map(
+            (item) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.only(top: 3),
+                    child: Icon(
+                      Icons.check_circle_rounded,
+                      size: 18,
+                      color: Color(0xFF0F766E),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      item,
+                      style: const TextStyle(
+                        color: Color(0xFF475569),
+                        height: 1.55,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFaqCard(
+    String question,
+    String answer,
+    IconData icon,
+    bool isRtl,
+  ) {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -445,7 +671,7 @@ class HelpPage extends StatelessWidget {
         ),
         children: [
           Align(
-            alignment: Alignment.centerLeft,
+            alignment: isRtl ? Alignment.centerRight : Alignment.centerLeft,
             child: Text(
               answer,
               style: const TextStyle(color: Color(0xFF475569), height: 1.65),
@@ -457,7 +683,12 @@ class HelpPage extends StatelessWidget {
   }
 
   Widget _buildTipsCard(Map<String, String> strings) {
-    final tips = [strings['tips_1']!, strings['tips_2']!, strings['tips_3']!];
+    final tips = [
+      strings['tips_1']!,
+      strings['tips_2']!,
+      strings['tips_3']!,
+      strings['tips_4']!,
+    ];
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -526,5 +757,80 @@ class HelpPage extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _openSupportChat(Map<String, String> strings) async {
+    final currentUser = _auth.currentUser;
+    if (currentUser == null || currentUser.isAnonymous) {
+      _showSnackBar(strings['guest_required']!);
+      return;
+    }
+
+    setState(() => _isOpeningSupportChat = true);
+
+    try {
+      final admin = await _pickRandomAdmin(currentUser.uid);
+      if (!mounted) return;
+
+      if (admin == null) {
+        _showSnackBar(strings['no_admins']!);
+        return;
+      }
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ChatPage(
+            receiverId: admin.id,
+            receiverName: _adminDisplayName(admin.data()),
+          ),
+        ),
+      );
+    } catch (e) {
+      debugPrint('Failed to open support chat: $e');
+      if (mounted) {
+        _showSnackBar(strings['chat_open_failed']!);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isOpeningSupportChat = false);
+      }
+    }
+  }
+
+  Future<QueryDocumentSnapshot<Map<String, dynamic>>?> _pickRandomAdmin(
+    String currentUserId,
+  ) async {
+    final snapshot = await _firestore
+        .collection('users')
+        .where('role', isEqualTo: 'admin')
+        .get();
+
+    final docs = snapshot.docs;
+    if (docs.isEmpty) return null;
+
+    final otherAdmins = docs.where((doc) => doc.id != currentUserId).toList();
+    final candidates = otherAdmins.isNotEmpty ? otherAdmins : docs;
+    if (candidates.isEmpty) return null;
+
+    return candidates[Random().nextInt(candidates.length)];
+  }
+
+  String _adminDisplayName(Map<String, dynamic>? data) {
+    if (data == null) return 'Admin';
+    final name = (data['name'] ?? data['displayName'] ?? '').toString().trim();
+    if (name.isNotEmpty) return name;
+    final phone = (data['phone'] ?? '').toString().trim();
+    if (phone.isNotEmpty) return phone;
+    final email = (data['email'] ?? '').toString().trim();
+    if (email.isNotEmpty) return email;
+    return 'Admin';
+  }
+
+  void _showSnackBar(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 }

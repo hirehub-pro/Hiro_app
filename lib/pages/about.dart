@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:untitled1/services/language_provider.dart';
+import 'package:untitled1/utils/constants.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class AboutPage extends StatefulWidget {
   const AboutPage({super.key});
@@ -33,111 +35,189 @@ class _AboutPageState extends State<AboutPage>
     switch (locale) {
       case 'he':
         return {
-          'title': 'אודות ומשפטי',
-          'app_name': 'hiro',
+          'title': 'אודות',
+          'app_name': 'Hiro',
           'version': 'גרסה 1.0.0',
-          'tagline': 'מחברים בין לקוחות לבעלי מקצוע אמינים במהירות.',
+          'tagline':
+              'מחברים בין לקוחות לבעלי מקצוע, צ׳אטים, בקשות עבודה וכלי ניהול במקום אחד.',
           'intro_title': 'מה זה Hiro?',
           'intro_body':
-              'Hiro היא פלטפורמה חכמה למציאת בעלי מקצוע, שליחת בקשות עבודה, קבלת הצעות מחיר וניהול תקשורת במקום אחד פשוט.',
+              'Hiro היא פלטפורמה למציאת בעלי מקצוע, שליחת בקשות עבודה, ניהול שיחות, מעקב אחרי תגובות, עבודה עם מנויים וכלים כמו חשבוניות, פוסטים ופרופיל עסקי.',
+          'highlights_title': 'מה יש באפליקציה',
+          'highlight_match_title': 'איתור בעלי מקצוע',
+          'highlight_match_body':
+              'חיפוש לפי מקצוע, אזור, פרופיל עסקי וזמינות כדי למצוא את ההתאמה הנכונה מהר.',
+          'highlight_request_title': 'בקשות עבודה וצ׳אט',
+          'highlight_request_body':
+              'שליחת בקשות, המשך טיפול דרך צ׳אט, תמונות, קבצים ועדכוני סטטוס במקום אחד.',
+          'highlight_community_title': 'קהילה, פוסטים ועדכונים',
+          'highlight_community_body':
+              'פרסום פוסטים, שיתוף מידע, קבלת תגובות וחיבור לקהילה שסביב השירותים שלך.',
+          'highlight_pro_title': 'כלים לבעלי מקצוע',
+          'highlight_pro_body':
+              'מנוי פעיל פותח גישה לכלי Pro כמו חשבוניות, תגובה לבקשות ונראות מקצועית טובה יותר.',
+          'trust_title': 'למה אנשים משתמשים ב-Hiro',
+          'trust_1': 'כדי לנהל בקשות, תגובות ושיחות במקום מסודר.',
+          'trust_2': 'כדי למצוא בעלי מקצוע רלוונטיים עם פחות חיפוש ידני.',
+          'trust_3': 'כדי לעקוב אחרי פרופילים, סטטוסים והודעות בצורה ברורה.',
+          'trust_4':
+              'כדי לקבל חוויית עבודה שמתאימה גם ללקוחות וגם לבעלי מקצוע.',
+          'legal_title': 'קישורים משפטיים',
+          'legal_body':
+              'תנאי השימוש ומדיניות הפרטיות זמינים בקישורים הרשמיים ומתעדכנים מחוץ לאפליקציה.',
           'terms_title': 'תנאי שימוש',
+          'terms_body': 'פתח את תנאי השימוש המעודכנים.',
           'privacy_title': 'מדיניות פרטיות',
-          'terms_content':
-              'ברוכים הבאים ל-Hiro. בשימוש באפליקציה, הנך מסכים לתנאים הבאים:\n1. Hiro היא פלטפורמת תיווך בלבד.\n2. האחריות על איכות העבודה, השירות והתשלום היא בין הלקוח לבעל המקצוע.\n3. חל איסור על פרסום תוכן פוגעני, מטעה או כוזב.\n4. המערכת רשאית להשעות משתמשים המפרים את הכללים או פוגעים בבטיחות הקהילה.',
-          'privacy_content':
-              'הפרטיות שלך חשובה לנו:\n1. אנו אוספים מידע בסיסי כמו שם, טלפון ועיר כדי לאפשר את פעילות השירות.\n2. מיקום משמש למציאת בעלי מקצוע קרובים ולהצגת שירותים רלוונטיים.\n3. המידע שלך אינו נמכר לצד שלישי למטרות פרסום.\n4. ניתן לבקש מחיקת חשבון ומידע דרך ההגדרות או התמיכה.',
-          'highlights_title': 'למה משתמשים ב-Hiro',
-          'highlight_match_title': 'חיפוש מהיר',
-          'highlight_match_body': 'מצא בעלי מקצוע קרובים לפי עיר, תחום ומיקום.',
-          'highlight_request_title': 'בקשות מסודרות',
-          'highlight_request_body': 'שלח בקשות עבודה וקבל תגובות במקום אחד.',
-          'highlight_safe_title': 'מידע ברור',
-          'highlight_safe_body': 'נהל פרטים, סטטוסים והתראות בצורה מסודרת.',
+          'privacy_body': 'פתח את מדיניות הפרטיות המעודכנת.',
+          'open_link': 'פתח קישור',
+          'contact_title': 'צור קשר',
           'developer': 'פותח על ידי צוות Hiro',
-          'contact': 'צור קשר: support@hiro.com',
-          'contact_hint': 'לשאלות, תמיכה או דיווח על בעיה נשמח לעזור.',
+          'contact': 'support@hirehub.com',
+          'contact_hint':
+              'לשאלות, תמיכה, דיווח על בעיה או בירור משפטי, אפשר ליצור קשר ישירות במייל.',
+          'email_action': 'שלח אימייל',
+          'link_failed': 'לא הצלחנו לפתוח את הקישור כרגע.',
+          'email_failed': 'לא הצלחנו לפתוח את אפליקציית האימייל.',
         };
       case 'ar':
         return {
-          'title': 'حول والقانونية',
+          'title': 'حول',
           'app_name': 'Hiro',
           'version': 'الإصدار 1.0.0',
-          'tagline': 'نربط العملاء بأصحاب المهن بسرعة ووضوح.',
+          'tagline':
+              'ربط العملاء بأصحاب المهن والدردشات وطلبات العمل وأدوات الإدارة في مكان واحد.',
           'intro_title': 'ما هو Hiro؟',
           'intro_body':
-              'Hiro هو تطبيق يساعدك على العثور على المهنيين، إرسال طلبات العمل، تلقي عروض الأسعار، وإدارة التواصل في مكان واحد سهل.',
+              'Hiro منصة تساعدك على العثور على أصحاب المهن، إرسال طلبات العمل، إدارة المحادثات، متابعة الردود، واستخدام الاشتراكات وأدوات مثل الفواتير والمنشورات والملف التجاري.',
+          'highlights_title': 'ماذا يوجد في التطبيق',
+          'highlight_match_title': 'العثور على أصحاب المهن',
+          'highlight_match_body':
+              'ابحث حسب المهنة أو المنطقة أو الملف التجاري أو التوفر للوصول إلى الشخص المناسب بسرعة.',
+          'highlight_request_title': 'طلبات العمل والدردشة',
+          'highlight_request_body':
+              'أرسل الطلبات، واصل المتابعة عبر الدردشة، الصور، الملفات وتحديثات الحالة في مكان واحد.',
+          'highlight_community_title': 'المجتمع والمنشورات',
+          'highlight_community_body':
+              'انشر، شارك المعرفة، احصل على ردود، وابقَ متصلاً بالمجتمع حول خدماتك.',
+          'highlight_pro_title': 'أدوات أصحاب المهن',
+          'highlight_pro_body':
+              'الاشتراك النشط يفتح أدوات Pro مثل الفواتير والرد على الطلبات وحضور مهني أقوى.',
+          'trust_title': 'لماذا يستخدم الناس Hiro',
+          'trust_1': 'لإدارة الطلبات والردود والمحادثات بشكل منظم.',
+          'trust_2':
+              'للعثور على أصحاب المهن المناسبين بسرعة أقل من البحث اليدوي.',
+          'trust_3': 'لمتابعة الملفات الشخصية والحالات والرسائل بوضوح.',
+          'trust_4': 'لأن التجربة تناسب العملاء وأصحاب المهن معًا.',
+          'legal_title': 'روابط قانونية',
+          'legal_body':
+              'شروط الخدمة وسياسة الخصوصية متاحتان عبر الروابط الرسمية ويتم تحديثهما خارج التطبيق.',
           'terms_title': 'شروط الخدمة',
+          'terms_body': 'افتح أحدث نسخة من شروط الخدمة.',
           'privacy_title': 'سياسة الخصوصية',
-          'terms_content':
-              'مرحباً بكم في Hiro. باستخدام التطبيق فإنك توافق على الشروط التالية:\n1. Hiro هي منصة وساطة فقط.\n2. المسؤولية عن جودة العمل والخدمة والدفع تقع بين العميل والمهني.\n3. يمنع نشر محتوى مسيء أو مضلل أو كاذب.\n4. يحق للمنصة تعليق الحسابات التي تنتهك القواعد أو تضر بسلامة المجتمع.',
-          'privacy_content':
-              'خصوصيتك مهمة لنا:\n1. نجمع معلومات أساسية مثل الاسم والهاتف والمدينة لتشغيل الخدمة.\n2. يتم استخدام الموقع للعثور على المهنيين القريبين وإظهار خدمات مناسبة.\n3. لا يتم بيع بياناتك لأطراف ثالثة لأغراض إعلانية.\n4. يمكنك طلب حذف الحساب والبيانات من خلال الإعدادات أو الدعم.',
-          'highlights_title': 'لماذا يستخدم الناس Hiro',
-          'highlight_match_title': 'بحث سريع',
-          'highlight_match_body': 'اعثر على المهنيين القريبين حسب المدينة والمجال والموقع.',
-          'highlight_request_title': 'طلبات منظمة',
-          'highlight_request_body': 'أرسل طلبات العمل وتابع الردود من مكان واحد.',
-          'highlight_safe_title': 'معلومات واضحة',
-          'highlight_safe_body': 'تابع التفاصيل والحالات والتنبيهات بشكل مرتب.',
+          'privacy_body': 'افتح أحدث نسخة من سياسة الخصوصية.',
+          'open_link': 'افتح الرابط',
+          'contact_title': 'تواصل معنا',
           'developer': 'تم التطوير بواسطة فريق Hiro',
-          'contact': 'تواصل معنا: support@hiro.com',
-          'contact_hint': 'للاستفسارات أو الدعم أو الإبلاغ عن مشكلة نحن هنا للمساعدة.',
+          'contact': 'support@hirehub.com',
+          'contact_hint':
+              'للاستفسارات أو الدعم أو الإبلاغ عن مشكلة أو مسألة قانونية، يمكنك التواصل مباشرة عبر البريد الإلكتروني.',
+          'email_action': 'إرسال بريد',
+          'link_failed': 'تعذر فتح الرابط حاليًا.',
+          'email_failed': 'تعذر فتح تطبيق البريد الإلكتروني.',
         };
       case 'am':
         return {
-          'title': 'ስለ እኛ እና ህጋዊ',
+          'title': 'ስለ እኛ',
           'app_name': 'Hiro',
           'version': 'ስሪት 1.0.0',
-          'tagline': 'ደንበኞችን ከባለሙያዎች ጋር በፍጥነት የሚያገናኝ መተግበሪያ።',
+          'tagline':
+              'ደንበኞችን ከባለሙያዎች፣ ቻቶች፣ የስራ ጥያቄዎች እና የአስተዳደር መሳሪያዎች ጋር በአንድ ቦታ የሚያገናኝ መተግበሪያ።',
           'intro_title': 'Hiro ምንድን ነው?',
           'intro_body':
-              'Hiro ባለሙያዎችን ለማግኘት፣ የስራ ጥያቄ ለመላክ፣ የዋጋ ጥቅስ ለመቀበል እና ግንኙነትን በአንድ ቦታ ለማስተዳደር የሚረዳ መተግበሪያ ነው።',
-          'terms_title': 'የአጠቃቀም ደንቦች',
+              'Hiro ባለሙያዎችን ለማግኘት፣ የስራ ጥያቄዎችን ለመላክ፣ ውይይቶችን ለማስተዳደር፣ ምላሾችን ለመከታተል እና እንደ ደረሰኞች፣ ፖስቶች እና የንግድ ፕሮፋይል ያሉ መሳሪያዎችን ለመጠቀም የሚረዳ ፕላትፎርም ነው።',
+          'highlights_title': 'በመተግበሪያው ውስጥ ያለው',
+          'highlight_match_title': 'ባለሙያ ማግኘት',
+          'highlight_match_body':
+              'ተስማሚውን ሰው በፍጥነት ለማግኘት በሙያ፣ በአካባቢ፣ በንግድ ፕሮፋይል እና በተገኝነት ፈልግ።',
+          'highlight_request_title': 'የስራ ጥያቄዎች እና ቻት',
+          'highlight_request_body':
+              'ጥያቄዎችን ላክ፣ በቻት፣ በፎቶዎች፣ በፋይሎች እና በሁኔታ ዝማኔዎች ከተግባር ጋር ቀጥል።',
+          'highlight_community_title': 'ማህበረሰብ እና ፖስቶች',
+          'highlight_community_body':
+              'ፖስት አድርግ፣ እውቀት አጋራ፣ ምላሾችን ተቀበል እና ከማህበረሰቡ ጋር ተገናኝ።',
+          'highlight_pro_title': 'ለባለሙያዎች መሳሪያዎች',
+          'highlight_pro_body':
+              'ንቁ ምዝገባ እንደ ደረሰኞች፣ ለጥያቄዎች ምላሽ መስጠት እና የተሻለ ሙያዊ እይታ ያሉ Pro መሳሪያዎችን ይከፍታል።',
+          'trust_title': 'ሰዎች Hiro ለምን ይጠቀማሉ',
+          'trust_1': 'ጥያቄዎችን፣ ምላሾችን እና ውይይቶችን በተደራጀ መልኩ ለማስተዳደር።',
+          'trust_2': 'ተስማሚ ባለሙያዎችን ከእጅ ፍለጋ ይልቅ በፍጥነት ለማግኘት።',
+          'trust_3': 'ፕሮፋይሎችን፣ ሁኔታዎችን እና መልዕክቶችን በግልጽ መልኩ ለመከታተል።',
+          'trust_4': 'ልምዱ ለደንበኞችም ለባለሙያዎችም እንዲሰራ ስለሚያደርግ።',
+          'legal_title': 'ህጋዊ አገናኞች',
+          'legal_body':
+              'የአገልግሎት ውሎች እና የግላዊነት ፖሊሲ በኦፊሴላዊ አገናኞች ይገኛሉ እና ከመተግበሪያው ውጭ ይዘምናሉ።',
+          'terms_title': 'የአገልግሎት ውል',
+          'terms_body': 'የቅርብ ጊዜውን የአገልግሎት ውል ክፈት።',
           'privacy_title': 'የግላዊነት ፖሊሲ',
-          'terms_content':
-              'ወደ Hiro እንኳን ደህና መጡ። መተግበሪያውን ሲጠቀሙ በሚከተሉት ደንቦች ይስማማሉ፡\n1. Hiro የማገናኛ መድረክ ብቻ ነው።\n2. የስራ ጥራት፣ አገልግሎት እና ክፍያ ኃላፊነት በደንበኛው እና በባለሙያው መካከል ነው።\n3. አስጸያፊ፣ የሚያሳስብ ወይም ሐሰተኛ ይዘት ማቅረብ የተከለከለ ነው።\n4. ደንቦችን የሚጥሱ ወይም የማህበረሰቡን ደህንነት የሚጎዱ ተጠቃሚዎችን ማገድ እንችላለን።',
-          'privacy_content':
-              'የእርስዎ ግላዊነት ለእኛ አስፈላጊ ነው፡\n1. አገልግሎቱን ለማስኬድ መሰረታዊ መረጃዎችን እንደ ስም፣ ስልክ እና ከተማ እንሰበስባለን።\n2. ቅርብ ባለሙያዎችን ለማግኘት እና ተገቢ አገልግሎቶችን ለማሳየት አካባቢ መረጃ ይጠቀማል።\n3. መረጃዎ ለማስታወቂያ ዓላማ ለሶስተኛ ወገን አይሸጥም።\n4. አካውንት እና መረጃ ስረዛ በቅንብሮች ወይም በድጋፍ ማስገባት ይቻላል።',
-          'highlights_title': 'ሰዎች Hiro የሚጠቀሙበት ምክንያት',
-          'highlight_match_title': 'ፈጣን ፍለጋ',
-          'highlight_match_body': 'በከተማ፣ በሙያ እና በቦታ ቅርብ ባለሙያዎችን ያግኙ።',
-          'highlight_request_title': 'የተደራጁ ጥያቄዎች',
-          'highlight_request_body': 'የስራ ጥያቄ ላኩ እና ምላሾችን በአንድ ቦታ ይከታተሉ።',
-          'highlight_safe_title': 'ግልጽ መረጃ',
-          'highlight_safe_body': 'ዝርዝሮችን፣ ሁኔታዎችን እና ማሳወቂያዎችን በቀላሉ ያስተዳድሩ።',
+          'privacy_body': 'የቅርብ ጊዜውን የግላዊነት ፖሊሲ ክፈት።',
+          'open_link': 'አገናኝ ክፈት',
+          'contact_title': 'አግኙን',
           'developer': 'በ Hiro ቡድን የተገነባ',
-          'contact': 'ያግኙን: support@hiro.com',
-          'contact_hint': 'ለጥያቄ፣ ለድጋፍ ወይም ችግር ሪፖርት እኛ እንረዳለን።',
+          'contact': 'support@hirehub.com',
+          'contact_hint':
+              'ለጥያቄ፣ ለድጋፍ፣ ለችግር ሪፖርት ወይም ለህጋዊ ጥያቄ በቀጥታ በኢሜይል ማግኘት ይችላሉ።',
+          'email_action': 'ኢሜይል ላክ',
+          'link_failed': 'አገናኙን አሁን መክፈት አልተቻለም።',
+          'email_failed': 'የኢሜይል መተግበሪያውን መክፈት አልተቻለም።',
         };
       default:
         return {
-          'title': 'About & Legal',
+          'title': 'About',
           'app_name': 'Hiro',
           'version': 'Version 1.0.0',
-          'tagline': 'Connecting clients with trusted professionals, fast.',
+          'tagline':
+              'Connecting clients with professionals, chat, job requests, and management tools in one place.',
           'intro_title': 'What is Hiro?',
           'intro_body':
-              'Hiro helps people find professionals, send work requests, receive quotes, and manage communication in one simple place.',
-          'terms_title': 'Terms of Service',
-          'privacy_title': 'Privacy Policy',
-          'terms_content':
-              'Welcome to Hiro. By using this app, you agree to the following:\n1. Hiro is a matching platform only.\n2. Quality of work, service delivery, and payment are strictly between the client and the professional.\n3. Posting offensive, misleading, or false content is prohibited.\n4. We may suspend accounts that violate the rules or harm community safety.',
-          'privacy_content':
-              'Your privacy matters:\n1. We collect basic information like name, phone, and city to operate the service.\n2. Location data is used to find nearby professionals and show relevant services.\n3. Your data is not sold to third parties for advertising.\n4. You can request account and data deletion through settings or support.',
-          'highlights_title': 'Why People Use Hiro',
-          'highlight_match_title': 'Fast discovery',
+              'Hiro is a platform for finding professionals, sending job requests, managing conversations, tracking responses, and using tools like invoices, posts, and business profiles.',
+          'highlights_title': 'What You Can Do',
+          'highlight_match_title': 'Find the right professional',
           'highlight_match_body':
-              'Find nearby professionals by city, category, and location.',
-          'highlight_request_title': 'Organized requests',
+              'Search by profession, area, business profile, and availability to reach the right match faster.',
+          'highlight_request_title': 'Handle requests and chat',
           'highlight_request_body':
-              'Send job requests and manage responses in one place.',
-          'highlight_safe_title': 'Clear information',
-          'highlight_safe_body':
-              'Keep track of details, statuses, and notifications with less friction.',
+              'Send requests, continue in chat, and keep photos, files, and status updates in one flow.',
+          'highlight_community_title': 'Use posts and community',
+          'highlight_community_body':
+              'Share posts, learn from the feed, and stay connected to the community around your services.',
+          'highlight_pro_title': 'Unlock professional tools',
+          'highlight_pro_body':
+              'An active subscription unlocks Pro tools like invoices, request replies, and stronger business visibility.',
+          'trust_title': 'Why People Use Hiro',
+          'trust_1':
+              'To manage requests, replies, and conversations in one organized place.',
+          'trust_2':
+              'To find relevant professionals faster with less manual searching.',
+          'trust_3':
+              'To track profiles, statuses, and messages with more clarity.',
+          'trust_4':
+              'Because the experience supports both customers and professionals.',
+          'legal_title': 'Legal Links',
+          'legal_body':
+              'Terms of Service and Privacy Policy are available through the official links and stay updated outside the app.',
+          'terms_title': 'Terms of Service',
+          'terms_body': 'Open the latest Terms of Service.',
+          'privacy_title': 'Privacy Policy',
+          'privacy_body': 'Open the latest Privacy Policy.',
+          'open_link': 'Open link',
+          'contact_title': 'Contact',
           'developer': 'Developed by the Hiro Team',
-          'contact': 'Contact us: support@hiro.com',
+          'contact': 'support@hirehub.com',
           'contact_hint':
-              'Questions, support requests, or issue reports are always welcome.',
+              'For questions, support, issue reports, or legal requests, you can contact us directly by email.',
+          'email_action': 'Send email',
+          'link_failed': 'Could not open the link right now.',
+          'email_failed': 'Could not open your email app.',
         };
     }
   }
@@ -176,10 +256,7 @@ class _AboutPageState extends State<AboutPage>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _buildAnimatedSection(
-                    delay: 0,
-                    child: _buildHero(strings),
-                  ),
+                  _buildAnimatedSection(delay: 0, child: _buildHero(strings)),
                   const SizedBox(height: 20),
                   _buildAnimatedSection(
                     delay: 120,
@@ -193,22 +270,12 @@ class _AboutPageState extends State<AboutPage>
                   const SizedBox(height: 20),
                   _buildAnimatedSection(
                     delay: 360,
-                    child: _buildLegalSection(
-                      title: strings['terms_title']!,
-                      body: strings['terms_content']!,
-                      icon: Icons.gavel_rounded,
-                      accent: const Color(0xFF0F766E),
-                    ),
+                    child: _buildTrustCard(strings),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 20),
                   _buildAnimatedSection(
                     delay: 480,
-                    child: _buildLegalSection(
-                      title: strings['privacy_title']!,
-                      body: strings['privacy_content']!,
-                      icon: Icons.verified_user_outlined,
-                      accent: const Color(0xFF1D4ED8),
-                    ),
+                    child: _buildLegalLinksCard(strings),
                   ),
                   const SizedBox(height: 20),
                   _buildAnimatedSection(
@@ -224,10 +291,7 @@ class _AboutPageState extends State<AboutPage>
     );
   }
 
-  Widget _buildAnimatedSection({
-    required Widget child,
-    required int delay,
-  }) {
+  Widget _buildAnimatedSection({required Widget child, required int delay}) {
     final begin = delay / 1000;
     final end = (begin + 0.55).clamp(0.0, 1.0);
 
@@ -483,9 +547,16 @@ class _AboutPageState extends State<AboutPage>
         const Color(0xFF15803D),
       ),
       (
-        strings['highlight_safe_title']!,
-        strings['highlight_safe_body']!,
-        Icons.notifications_active_outlined,
+        strings['highlight_community_title']!,
+        strings['highlight_community_body']!,
+        Icons.forum_outlined,
+        const Color(0xFFFEF3C7),
+        const Color(0xFFB45309),
+      ),
+      (
+        strings['highlight_pro_title']!,
+        strings['highlight_pro_body']!,
+        Icons.rocket_launch_outlined,
         const Color(0xFFFCE7F3),
         const Color(0xFFBE185D),
       ),
@@ -577,17 +648,90 @@ class _AboutPageState extends State<AboutPage>
     );
   }
 
-  Widget _buildLegalSection({
-    required String title,
-    required String body,
-    required IconData icon,
-    required Color accent,
-  }) {
+  Widget _buildTrustCard(Map<String, String> strings) {
+    final items = [
+      strings['trust_1']!,
+      strings['trust_2']!,
+      strings['trust_3']!,
+      strings['trust_4']!,
+    ];
+
     return Container(
-      padding: const EdgeInsets.all(22),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0F172A),
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(
+                  Icons.favorite_outline_rounded,
+                  color: Color(0xFF7DD3FC),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  strings['trust_title']!,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 17,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          ...items.map(
+            (item) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.only(top: 5),
+                    child: Icon(
+                      Icons.circle,
+                      size: 8,
+                      color: Color(0xFF7DD3FC),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      item,
+                      style: const TextStyle(
+                        color: Color(0xFFCBD5E1),
+                        height: 1.55,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLegalLinksCard(Map<String, String> strings) {
+    return Container(
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
         boxShadow: const [
           BoxShadow(
             color: Color(0x120F172A),
@@ -604,15 +748,18 @@ class _AboutPageState extends State<AboutPage>
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: accent.withValues(alpha: 0.12),
+                  color: const Color(0xFFEFF6FF),
                   borderRadius: BorderRadius.circular(16),
                 ),
-                child: Icon(icon, color: accent),
+                child: const Icon(
+                  Icons.policy_rounded,
+                  color: Color(0xFF1D4ED8),
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
-                  title,
+                  strings['legal_title']!,
                   style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w800,
@@ -622,16 +769,108 @@ class _AboutPageState extends State<AboutPage>
               ),
             ],
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 12),
           Text(
-            body,
+            strings['legal_body']!,
             style: const TextStyle(
               fontSize: 14,
-              height: 1.75,
+              height: 1.7,
               color: Color(0xFF475569),
             ),
           ),
+          const SizedBox(height: 16),
+          _buildLegalLinkTile(
+            title: strings['terms_title']!,
+            body: strings['terms_body']!,
+            accent: const Color(0xFF0F766E),
+            icon: Icons.gavel_rounded,
+            actionLabel: strings['open_link']!,
+            onTap: () => _openExternalLink(
+              AppConstants.termsOfServiceUrl,
+              strings['link_failed']!,
+            ),
+          ),
+          const SizedBox(height: 12),
+          _buildLegalLinkTile(
+            title: strings['privacy_title']!,
+            body: strings['privacy_body']!,
+            accent: const Color(0xFF1D4ED8),
+            icon: Icons.verified_user_outlined,
+            actionLabel: strings['open_link']!,
+            onTap: () => _openExternalLink(
+              AppConstants.privacyPolicyUrl,
+              strings['link_failed']!,
+            ),
+          ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildLegalLinkTile({
+    required String title,
+    required String body,
+    required Color accent,
+    required IconData icon,
+    required String actionLabel,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: const Color(0xFFF8FAFC),
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(icon, color: accent),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF0F172A),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      body,
+                      style: const TextStyle(
+                        fontSize: 13.5,
+                        height: 1.55,
+                        color: Color(0xFF475569),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      actionLabel,
+                      style: TextStyle(
+                        color: accent,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.open_in_new_rounded, color: accent),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -646,13 +885,13 @@ class _AboutPageState extends State<AboutPage>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
+          Row(
             children: [
-              Icon(Icons.support_agent_rounded, color: Colors.white),
-              SizedBox(width: 10),
+              const Icon(Icons.support_agent_rounded, color: Colors.white),
+              const SizedBox(width: 10),
               Text(
-                'Support',
-                style: TextStyle(
+                strings['contact_title']!,
+                style: const TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.w800,
                   fontSize: 18,
@@ -687,8 +926,48 @@ class _AboutPageState extends State<AboutPage>
               height: 1.6,
             ),
           ),
+          const SizedBox(height: 14),
+          OutlinedButton.icon(
+            onPressed: () => _openEmail(strings['email_failed']!),
+            icon: const Icon(Icons.mail_outline_rounded),
+            label: Text(strings['email_action']!),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.white,
+              side: const BorderSide(color: Color(0xFF334155)),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+            ),
+          ),
         ],
       ),
     );
+  }
+
+  Future<void> _openExternalLink(String url, String failureMessage) async {
+    final ok = await launchUrl(
+      Uri.parse(url),
+      mode: LaunchMode.externalApplication,
+    );
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(failureMessage)));
+    }
+  }
+
+  Future<void> _openEmail(String failureMessage) async {
+    final uri = Uri(
+      scheme: 'mailto',
+      path: AppConstants.contactEmail,
+      queryParameters: {'subject': 'Hiro Support'},
+    );
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(failureMessage)));
+    }
   }
 }
