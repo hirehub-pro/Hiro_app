@@ -1,7 +1,11 @@
+import 'dart:io';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:untitled1/services/language_provider.dart';
 
@@ -17,11 +21,13 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
   final _idController = TextEditingController();
   final _businessNameController = TextEditingController();
   final _addressController = TextEditingController();
+  final ImagePicker _picker = ImagePicker();
 
   String _dealerType = 'exempt';
   bool _isUploading = false;
   bool _isLoadingStatus = true;
   String? _currentStatus;
+  File? _businessLogo;
 
   bool _acceptedTerms = false;
   bool _isLegalDeclarationSigned = false;
@@ -58,6 +64,13 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
           'business_name': 'שם העסק הרשום',
           'business_id': 'מספר עוסק / ח.פ / ת.ז',
           'business_address': 'כתובת העסק המלאה',
+          'business_logo': 'לוגו העסק',
+          'business_logo_optional': 'לוגו העסק (אופציונלי)',
+          'business_logo_hint':
+              'אפשר להוסיף לוגו כדי לעזור לנו לזהות את העסק שלך מהר יותר.',
+          'add_logo': 'הוסף לוגו',
+          'change_logo': 'החלף לוגו',
+          'remove_logo': 'הסר לוגו',
           'required': 'חובה',
           'business_id_9_digits': 'מספר העסק חייב להכיל 9 ספרות',
           'step_classification': 'סיווג עוסק לצרכי מס',
@@ -96,6 +109,13 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
           'business_name': 'الاسم التجاري المسجل',
           'business_id': 'رقم النشاط / ضريبة القيمة المضافة / الهوية',
           'business_address': 'عنوان النشاط التجاري',
+          'business_logo': 'شعار النشاط التجاري',
+          'business_logo_optional': 'شعار النشاط التجاري (اختياري)',
+          'business_logo_hint':
+              'يمكنك إضافة شعار لمساعدتنا في التعرف على نشاطك بشكل أسرع.',
+          'add_logo': 'إضافة شعار',
+          'change_logo': 'تغيير الشعار',
+          'remove_logo': 'إزالة الشعار',
           'required': 'مطلوب',
           'business_id_9_digits': 'يجب أن يتكون رقم النشاط من 9 أرقام بالضبط',
           'step_classification': 'تصنيف دافع الضريبة',
@@ -137,6 +157,13 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
           'business_name': 'Зарегистрированное название бизнеса',
           'business_id': 'Бизнес ID / VAT ID',
           'business_address': 'Адрес бизнеса',
+          'business_logo': 'Логотип бизнеса',
+          'business_logo_optional': 'Логотип бизнеса (необязательно)',
+          'business_logo_hint':
+              'Вы можете добавить логотип, чтобы нам было проще быстрее распознать ваш бизнес.',
+          'add_logo': 'Добавить логотип',
+          'change_logo': 'Изменить логотип',
+          'remove_logo': 'Удалить логотип',
           'required': 'Обязательно',
           'business_id_9_digits': 'Бизнес ID должен состоять ровно из 9 цифр',
           'step_classification': 'Налоговая категория бизнеса',
@@ -177,6 +204,13 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
           'business_name': 'የተመዘገበ የንግድ ስም',
           'business_id': 'የንግድ መለያ / VAT ID',
           'business_address': 'የንግድ አድራሻ',
+          'business_logo': 'የንግድ አርማ',
+          'business_logo_optional': 'የንግድ አርማ (አማራጭ)',
+          'business_logo_hint':
+              'ንግድዎን በፍጥነት እንድንለይ ለማገዝ አርማ ማከል ይችላሉ።',
+          'add_logo': 'አርማ ጨምር',
+          'change_logo': 'አርማ ቀይር',
+          'remove_logo': 'አርማ አስወግድ',
           'required': 'ያስፈልጋል',
           'business_id_9_digits': 'የንግድ መለያው በትክክል 9 አሃዞች መሆን አለበት',
           'step_classification': 'የግብር ንግድ ምድብ',
@@ -216,6 +250,13 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
           'business_name': 'Registered Business Name',
           'business_id': 'Business ID / VAT ID',
           'business_address': 'Business Address',
+          'business_logo': 'Business Logo',
+          'business_logo_optional': 'Business Logo (Optional)',
+          'business_logo_hint':
+              'Add logo to put on your documents.',
+          'add_logo': 'Add Logo',
+          'change_logo': 'Change Logo',
+          'remove_logo': 'Remove Logo',
           'required': 'Required',
           'business_id_9_digits': 'Business ID must be exactly 9 digits',
           'step_classification': 'Tax Dealer Classification',
@@ -311,6 +352,7 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
     try {
       final user = FirebaseAuth.instance.currentUser!;
       final businessId = _idController.text.trim();
+      String? businessLogoUrl;
       final alreadyConnected = await _isBusinessIdConnectedToAnotherAccount(
         businessId,
         user.uid,
@@ -328,6 +370,14 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
         return;
       }
 
+      if (_businessLogo != null) {
+        final ref = FirebaseStorage.instance.ref().child(
+          'business_logos/${user.uid}.jpg',
+        );
+        await ref.putFile(_businessLogo!);
+        businessLogoUrl = await ref.getDownloadURL();
+      }
+
       final verificationData = {
         'userId': user.uid,
         'businessId': businessId,
@@ -338,6 +388,7 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
         'legalAccepted': true,
         'responsibilityAccepted': true,
         'timestamp': FieldValue.serverTimestamp(),
+        'businessLogoUrl': businessLogoUrl,
       };
 
       await FirebaseFirestore.instance
@@ -354,6 +405,7 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
             'dealerType': _dealerType,
             'businessId': businessId,
             'businessVerificationStatus': 'pending',
+            'businessLogoUrl': businessLogoUrl,
           });
 
       if (mounted) {
@@ -369,6 +421,15 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
     } finally {
       if (mounted) setState(() => _isUploading = false);
     }
+  }
+
+  Future<void> _pickBusinessLogo() async {
+    final picked = await _picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 85,
+    );
+    if (picked == null || !mounted) return;
+    setState(() => _businessLogo = File(picked.path));
   }
 
   void _showSuccessDialog(Map<String, String> strings) {
@@ -487,6 +548,8 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
                         validator: (v) =>
                             v!.isEmpty ? strings['required'] : null,
                       ),
+                      const SizedBox(height: 12),
+                      _buildLogoPicker(strings),
                       const SizedBox(height: 24),
                       _buildStepHeader(2, strings['step_classification']!),
                       const SizedBox(height: 8),
@@ -644,6 +707,84 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
                 fontWeight: FontWeight.w500,
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLogoPicker(Map<String, String> strings) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            strings['business_logo_optional']!,
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF1E293B),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            strings['business_logo_hint']!,
+            style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Container(
+                width: 72,
+                height: 72,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: _businessLogo == null
+                    ? const Icon(
+                        Icons.storefront_outlined,
+                        color: Color(0xFF94A3B8),
+                        size: 32,
+                      )
+                    : Image.file(_businessLogo!, fit: BoxFit.cover),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: _pickBusinessLogo,
+                      icon: Icon(
+                        _businessLogo == null
+                            ? Icons.upload_outlined
+                            : Icons.refresh_rounded,
+                      ),
+                      label: Text(
+                        _businessLogo == null
+                            ? strings['add_logo']!
+                            : strings['change_logo']!,
+                      ),
+                    ),
+                    if (_businessLogo != null)
+                      TextButton(
+                        onPressed: () => setState(() => _businessLogo = null),
+                        child: Text(strings['remove_logo']!),
+                      ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ],
       ),
