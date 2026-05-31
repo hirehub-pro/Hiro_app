@@ -32,6 +32,7 @@ class _AdminProfileState extends State<AdminProfile>
   String _softwareRegistrationNumber = "";
   String _softwareMakerVatNumber = "";
   double _vatPercent = 17.0;
+  double _allocationNumberMinAmountBeforeVat = 5000.0;
 
   @override
   void initState() {
@@ -55,6 +56,10 @@ class _AdminProfileState extends State<AdminProfile>
           _softwareMakerVatNumber =
               (doc.data()?['softwareMakerVatNumber'] ?? '').toString();
           _vatPercent = _parseVatPercent(doc.data()?['vatPercent']);
+          _allocationNumberMinAmountBeforeVat = _parsePositiveAmount(
+            doc.data()?['allocationNumberMinAmountBeforeVat'],
+            fallback: 5000.0,
+          );
         });
       } else if (mounted) {
         setState(() {
@@ -63,6 +68,7 @@ class _AdminProfileState extends State<AdminProfile>
           _softwareRegistrationNumber = '';
           _softwareMakerVatNumber = '';
           _vatPercent = 17.0;
+          _allocationNumberMinAmountBeforeVat = 5000.0;
         });
       }
     } catch (e) {
@@ -80,6 +86,41 @@ class _AdminProfileState extends State<AdminProfile>
       return 17.0;
     }
     return parsed;
+  }
+
+  double _parsePositiveAmount(dynamic value, {required double fallback}) {
+    final parsed = switch (value) {
+      num() => value.toDouble(),
+      String() => _parseAmountText(value),
+      _ => null,
+    };
+    if (parsed == null || parsed <= 0) {
+      return fallback;
+    }
+    return parsed;
+  }
+
+  double? _parseAmountText(String value) {
+    var normalized = value.trim().replaceAll('₪', '').replaceAll(' ', '');
+    if (normalized.contains(',') && normalized.contains('.')) {
+      normalized = normalized.replaceAll(',', '');
+    } else if (RegExp(r'^\d{1,3}(,\d{3})+$').hasMatch(normalized)) {
+      normalized = normalized.replaceAll(',', '');
+    } else {
+      normalized = normalized.replaceAll(',', '.');
+    }
+    return double.tryParse(normalized);
+  }
+
+  String _formatAmount(double value) {
+    final rounded = value.toStringAsFixed(2);
+    final trimmed = rounded.contains('.')
+        ? rounded.replaceFirst(RegExp(r'\.?0+$'), '')
+        : rounded;
+    return trimmed.replaceAllMapped(
+      RegExp(r'\B(?=(\d{3})+(?!\d))'),
+      (_) => ',',
+    );
   }
 
   String _formatVatPercent(double value) {
@@ -421,6 +462,12 @@ class _AdminProfileState extends State<AdminProfile>
                 "VAT ${_formatVatPercent(_vatPercent)}%",
                 Colors.deepOrange,
                 _showVatConfigDialog,
+              ),
+              _buildQuickActionCard(
+                Icons.receipt_rounded,
+                "Allocation ₪${_formatAmount(_allocationNumberMinAmountBeforeVat)}",
+                Colors.brown,
+                _showAllocationNumberConfigDialog,
               ),
             ],
           ),
@@ -963,20 +1010,17 @@ class _AdminProfileState extends State<AdminProfile>
                   ),
                   onPressed: () async {
                     await _firestore.collection('metadata').doc('system').set({
-                      'softwareRegistrationNumber': softwareRegistrationController
-                          .text
-                          .trim(),
+                      'softwareRegistrationNumber':
+                          softwareRegistrationController.text.trim(),
                       'softwareMakerVatNumber': softwareMakerVatController.text
                           .trim(),
                     }, SetOptions(merge: true));
-                    await _logActivity(
-                      'Updated A000 export identifiers',
-                    );
+                    await _logActivity('Updated A000 export identifiers');
                     setState(() {
                       _softwareRegistrationNumber =
                           softwareRegistrationController.text.trim();
-                      _softwareMakerVatNumber =
-                          softwareMakerVatController.text.trim();
+                      _softwareMakerVatNumber = softwareMakerVatController.text
+                          .trim();
                     });
                     if (context.mounted) Navigator.pop(context);
                   },
@@ -1078,6 +1122,106 @@ class _AdminProfileState extends State<AdminProfile>
                     }
                   },
                   child: const Text("Save VAT"),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showAllocationNumberConfigDialog() {
+    final thresholdController = TextEditingController(
+      text: _formatAmount(
+        _allocationNumberMinAmountBeforeVat,
+      ).replaceAll(',', ''),
+    );
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                "Allocation Number Threshold",
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 20),
+              TextField(
+                controller: thresholdController,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
+                ],
+                decoration: const InputDecoration(
+                  labelText: 'Minimum amount before VAT',
+                  hintText: 'e.g., 5000',
+                  prefixText: '₪ ',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                "Invoices above this amount before VAT should request מספר הקצאה from the Israel Tax Authority.",
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red[900],
+                    foregroundColor: Colors.white,
+                  ),
+                  onPressed: () async {
+                    final parsed = _parseAmountText(thresholdController.text);
+                    if (parsed == null || parsed <= 0) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              "Enter a valid amount greater than 0",
+                            ),
+                          ),
+                        );
+                      }
+                      return;
+                    }
+
+                    await _firestore.collection('metadata').doc('system').set({
+                      'allocationNumberMinAmountBeforeVat': parsed,
+                    }, SetOptions(merge: true));
+                    await _logActivity(
+                      "Updated Allocation Number threshold to ₪${_formatAmount(parsed)} before VAT",
+                    );
+                    setState(
+                      () => _allocationNumberMinAmountBeforeVat = parsed,
+                    );
+                    if (context.mounted) {
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            "Allocation threshold updated to ₪${_formatAmount(parsed)}",
+                          ),
+                        ),
+                      );
+                    }
+                  },
+                  child: const Text("Save Threshold"),
                 ),
               ),
             ],
