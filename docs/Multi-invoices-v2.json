@@ -1,0 +1,1087 @@
+ {
+  "openapi": "3.0.1",
+  "info": {
+    "title": "Multi-invoices",
+    "version": "v2",
+    "description": "שירות המאפשר לפנות בפניה אחת עם מקבץ של חשבוניות ולקבל מספרי הקצאה לכלל חשבוניות שבפניה.\n>\nהשירות יחזיר רשימה של מספרי הקצאה משויכים למספר מזהה חד ערכי של כל חשבונית במקבץ (INVOICE_ID).\n>\nככל וחשבונית קיבלה קוד/י שגיאה, יש לתקן את הבעיה ולשדר מחדש את החשבונית בנפרד.\n>\n--\n>\nA service that allows submitting a single request with a batch of invoices and receiving allocation numbers for all invoices in the request.\n>\nThe service will return a list of confirmation numbers associated with a unique identifier for each invoice in the batch (INVOICE_ID). \n>\nIf an invoice receives an error code(s), the problem should be corrected and the invoice should be retransmitted separately.  \n",
+    "x-ibm-name": "multi-invoices"
+  },
+  "servers": [
+    {
+      "url": "https://t-ita-api.taxes.gov.il/shaam/tsandbox"
+    },
+    {
+      "url": "https://openapi.taxes.gov.il/shaam/tsandbox"
+    },
+    {
+      "url": "https://ita-api.taxes.gov.il/shaam/tsandbox"
+    }
+  ],
+  "paths": {
+    "/Multi-invoices/v2/MultiApproval": {
+      "post": {
+        "tags": [
+          "MultiInvoicesEndpoint"
+        ],
+        "operationId": "MultiApproval",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MultiInvoicesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MultiApprovalResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MultiApprovalLogicalErrorResponse"
+                }
+              }
+            }
+          },
+          "406": {
+            "description": "Not Acceptable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcceptableErrorResponse"
+                },
+                "example": [
+                  {
+                    "status": 406,
+                    "message": "Not Acceptable",
+                    "error_id": "20240718181618323199093572"
+                  }
+                ]
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GeneralErrorResponse"
+                },
+                "example": [
+                  {
+                    "status": 500,
+                    "message": "Internal error server",
+                    "error_id": "20240718181618323199093572"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/Multi-invoices/v2/health": {
+      "get": {
+        "tags": [
+          "HealthChecks"
+        ],
+        "summary": "Health Check",
+        "description": "Checks the health of the application",
+        "responses": {
+          "200": {
+            "description": "Healthy"
+          },
+          "503": {
+            "description": "Unhealthy"
+          }
+        }
+      }
+    },
+    "/Multi-invoices/v2/alive": {
+      "get": {
+        "tags": [
+          "HealthChecks"
+        ],
+        "summary": "Liveness Check",
+        "description": "Checks if the app is alive",
+        "responses": {
+          "200": {
+            "description": "Alive"
+          },
+          "503": {
+            "description": "Dead"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ErrorDetails": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "description": "קוד שגיאה",
+            "format": "int32",
+            "example": 460
+          },
+          "message": {
+            "type": "string",
+            "description": "הודעת שגיאה",
+            "nullable": true,
+            "example": "Invoice not approved"
+          },
+          "param": {
+            "type": "string",
+            "description": "שדה",
+            "nullable": true,
+            "example": "vat_number"
+          },
+          "location": {
+            "type": "string",
+            "description": "מיקום",
+            "nullable": true,
+            "example": "approval"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ErrorMessage": {
+        "type": "object",
+        "properties": {
+          "errors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ErrorDetails"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "HsbSug": {
+        "enum": [
+          300,
+          305,
+          310,
+          320,
+          330,
+          332,
+          340,
+          345,
+          348
+        ],
+        "type": "integer",
+        "format": "int32"
+      },
+      "HttpStatusCode": {
+        "enum": [
+          200,
+          400,
+          406,
+          500
+        ],
+        "type": "integer",
+        "format": "int32"
+      },
+      "InvoiceItem": {
+        "type": "object",
+        "properties": {
+          "index": {
+            "maximum": 999999,
+            "minimum": 0,
+            "type": "integer",
+            "description": "מספר שורה",
+            "format": "int32",
+            "nullable": true
+          },
+          "catalog_id": {
+            "maxLength": 13,
+            "type": "string",
+            "description": "מספר פריט (מק\"ט) , 1.\tכאשר מדובר בחשבונית ריכוז המתבססת על תעודות משלוח אין את פרטי החשבונית. בשדה \"מספר פריט\" (1259) יירשמו מספרי תעודות המשלוח בדומה לחשבוניות אוטונומיה",
+            "nullable": true
+          },
+          "category": {
+            "maximum": 999999,
+            "minimum": 0,
+            "pattern": "^[1-4]",
+            "type": "integer",
+            "description": "קטגוריית הפריט תו ראשון ישמש לסימון טובין (1) או שירות (2) זיכוי טובין (3) או זיכוי שירות (4). 5 תווים נוספים לקטגוריית משנה כמצורף בנספח קטגורית משנה",
+            "format": "int32",
+            "nullable": true,
+            "example": 15
+          },
+          "description": {
+            "maxLength": 30,
+            "type": "string",
+            "description": "תיאור הפריט",
+            "nullable": true
+          },
+          "measure_unit_description": {
+            "maxLength": 20,
+            "type": "string",
+            "description": "תיאור יחידת מידה",
+            "nullable": true
+          },
+          "quantity": {
+            "maximum": 999999999999.99,
+            "minimum": -999999999999.99,
+            "type": "number",
+            "description": "כמות",
+            "format": "double",
+            "nullable": true
+          },
+          "price_per_unit": {
+            "maximum": 999999999999.99,
+            "minimum": 0,
+            "type": "number",
+            "description": "מחיר ליחידה",
+            "format": "double",
+            "nullable": true
+          },
+          "discount": {
+            "maximum": 999999999999.99,
+            "minimum": -999999999999.99,
+            "type": "number",
+            "description": "הנחת פריט",
+            "format": "double",
+            "nullable": true
+          },
+          "total_amount": {
+            "maximum": 999999999999.99,
+            "minimum": -999999999999.99,
+            "type": "number",
+            "description": "סך סכום לפריט ללא מע\"מ בניכוי הנחת פריט",
+            "format": "double",
+            "nullable": true
+          },
+          "vat_rate": {
+            "maximum": 99.99,
+            "minimum": 0,
+            "type": "number",
+            "description": "שיעור מע\"מ",
+            "format": "double",
+            "nullable": true
+          },
+          "vat_amount": {
+            "maximum": 999999999999.99,
+            "minimum": -999999999999.99,
+            "type": "number",
+            "description": "סכום מע\"מ",
+            "format": "double",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "InvoiceRequest": {
+        "required": [
+          "accounting_software_number",
+          "amount_before_discount",
+          "customer_vat_number",
+          "discount",
+          "invoice_date",
+          "invoice_id",
+          "invoice_issuance_date",
+          "invoice_reference_number",
+          "invoice_type",
+          "payment_amount",
+          "payment_amount_including_vat",
+          "vat_amount",
+          "vat_number"
+        ],
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "maxLength": 50,
+            "minLength": 1,
+            "type": "string",
+            "pattern": "^(?=.*[^\\s0])[\\s0]*.*$",
+            "description": "מספר קשר פנימי (מספר זמני של הנה\\\"ח",
+            "example": "987654321"
+          },
+          "invoice_type": {
+            "$ref": "#/components/schemas/HsbSug"
+          },
+          "vat_number": {
+            "maximum": 999999999,
+            "minimum": 10,
+            "type": "integer",
+            "description": "מספר תיק מע\"מ (ספק). ניתן להשתמש בעוסקים מדומים אלו לצורכי בדיקות: 777777715, 777777723, 777777731, 777777749 .עוסק 777777723 יחזיר הודעה של חשבונית מעוכבת",
+            "format": "int32"
+          },
+          "union_vat_number": {
+            "maximum": 999999999,
+            "minimum": 0,
+            "type": "integer",
+            "description": "מספר העוסק באיחוד העוסקים",
+            "format": "int32",
+            "nullable": true
+          },
+          "authorized_company": {
+            "maximum": 999999999,
+            "minimum": 0,
+            "type": "integer",
+            "description": "תאגיד נוסף",
+            "format": "int32",
+            "nullable": true
+          },
+          "user_id": {
+            "maximum": 999999999,
+            "minimum": 10,
+            "type": "integer",
+            "description": "זיהוי משתמש",
+            "format": "int32",
+            "nullable": true,
+            "example": 18
+          },
+          "user_name": {
+            "maxLength": 25,
+            "pattern": "^(?=.*[^\\s0])[\\s0]*.*$",
+            "type": "string",
+            "description": "שם משתמש",
+            "nullable": true,
+            "example": "שם משתמש"
+          },
+          "invoice_reference_number": {
+            "maxLength": 20,
+            "minLength": 1,
+            "pattern": "^(?=.*[^\\s0])[\\s0]*.*$",
+            "type": "string",
+            "description": "מספר אסמכתא חשבונית",
+            "example": "975626515"
+          },
+          "customer_vat_number": {
+            "maximum": 999999999,
+            "minimum": 10,
+            "type": "integer",
+            "description": "מספר תיק מע\"מ לקוח",
+            "format": "int32"
+          },
+          "customer_name": {
+            "maxLength": 25,
+            "type": "string",
+            "nullable": true
+          },
+          "customer_country_code": {
+            "maxLength": 3,
+            "type": "string",
+            "description": "מדינת הלקוח",
+            "example": "UKR",
+            "nullable": true
+          },
+          "invoice_date": {
+            "maxLength": 10,
+            "minLength": 1,
+            "pattern": "^(0{0,3}[1-9][0-9]{0,3}|[1-9][0-9]{0,3}|9999)-(0[1-9]|1[0-2])-(0[1-9]|[1-2][0-9]|3[0-1])",
+            "type": "string",
+            "description": "YYYY-MM-DD תאריך החשבונית"
+          },
+          "invoice_issuance_date": {
+            "maxLength": 10,
+            "minLength": 1,
+            "pattern": "^(0{0,3}[1-9][0-9]{0,3}|[1-9][0-9]{0,3}|9999)-(0[1-9]|1[0-2])-(0[1-9]|[1-2][0-9]|3[0-1])",
+            "type": "string",
+            "description": "YYYY-MM-DD תאריך הפקת המסמך"
+          },
+          "branch_id": {
+            "maxLength": 7,
+            "type": "string",
+            "description": "מזהה סניף",
+            "nullable": true
+          },
+          "accounting_software_number": {
+            "maximum": 999999999,
+            "minimum": 1,
+            "type": "integer",
+            "description": "מספר רישום תכנה",
+            "format": "int32"
+          },
+          "client_software_key": {
+            "maxLength": 50,
+            "type": "string",
+            "description": "מפתח הלקוח של מפיק החשבונית אצל בית התוכנה",
+            "nullable": true
+          },
+          "amount_before_discount": {
+            "maximum": 999999999999.99,
+            "minimum": 0,
+            "type": "number",
+            "description": "סכום לפני הנחת מסמך",
+            "format": "double"
+          },
+          "discount": {
+            "maximum": 999999999999.99,
+            "minimum": 0,
+            "type": "number",
+            "description": "הנחת מסמך",
+            "format": "double"
+          },
+          "payment_amount": {
+            "maximum": 999999999999.99,
+            "minimum": 0,
+            "type": "number",
+            "description": "סכום סופי ללא מע\"מ",
+            "format": "double"
+          },
+          "vat_amount": {
+            "maximum": 999999999999.99,
+            "minimum": 0,
+            "type": "number",
+            "description": "סכום המע\"מ",
+            "format": "double"
+          },
+          "payment_amount_including_vat": {
+            "maximum": 999999999999.99,
+            "minimum": 0,
+            "type": "number",
+            "description": "סכום סופי כולל מע\"מ",
+            "format": "double"
+          },
+          "invoice_note": {
+            "maxLength": 100,
+            "type": "string",
+            "description": "הערה לחשבונית",
+            "nullable": true
+          },
+          "action": {
+            "$ref": "#/components/schemas/SwAction"
+          },
+          "vehicle_license_number": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer",
+            "description": "מספר רישוי רכב",
+            "format": "int64",
+            "nullable": true
+          },
+          "phone_of_driver": {
+            "maxLength": 10,
+            "type": "string",
+            "description": "מספר הנייד של הנהג",
+            "nullable": true
+          },
+          "arrival_date": {
+            "maxLength": 10,
+            "pattern": "^(0{0,3}[1-9][0-9]{0,3}|[1-9][0-9]{0,3}|9999)-(0[1-9]|1[0-2])-(0[1-9]|[1-2][0-9]|3[0-1])",
+            "type": "string",
+            "description": "YYYY-MM-DD תאריך הגעה",
+            "nullable": true
+          },
+          "estimated_arrival_time": {
+            "maxLength": 5,
+            "pattern": "^(?:[01]\\d|2[0-3]):(?:[0-5]\\d)$",
+            "type": "string",
+            "description": "HH:MM שעת הגעה משוערת",
+            "nullable": true
+          },
+          "transition_location": {
+            "maximum": 99,
+            "minimum": 0,
+            "type": "integer",
+            "description": "מיקום המעבר על פי טבלת קודים",
+            "format": "int32",
+            "nullable": true
+          },
+          "delivery_address": {
+            "maxLength": 60,
+            "type": "string",
+            "description": "כתובת אספקה",
+            "nullable": true
+          },
+          "additional_information": {
+            "maximum": 9999,
+            "minimum": 0,
+            "type": "integer",
+            "description": "לשימוש עתידי",
+            "format": "int32",
+            "nullable": true,
+            "example": 0
+          },
+          "additional_information_1": {
+            "maxLength": 50,
+            "type": "string",
+            "description": "לשימוש עתידי",
+            "nullable": true,
+            "example": "0"
+          },
+          "additional_information_2": {
+            "maxLength": 50,
+            "type": "string",
+            "description": "לשימוש עתידי",
+            "nullable": true,
+            "example": "0"
+          },
+          "additional_information_3": {
+            "type": "number",
+            "format": "float",
+            "maximum": 3.4028235e+38,
+            "minimum": 0,
+            "multipleOf": 1,
+            "description": "לשימוש עתידי",
+            "example": 0
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InvoiceItem"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "Message": {
+        "type": "object",
+        "properties": {
+          "errors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResIkuv"
+            },
+            "description": "מערך חשבוניות שגויות",
+            "nullable": true,
+            "example": [
+              {
+                "invoice_id": "987654321-1",
+                "message": {
+                  "errors": [
+                    {
+                      "code": 460,
+                      "message": "Invoice not approved",
+                      "param": "vat_number",
+                      "location": "approval"
+                    }
+                  ]
+                },
+                "confirmation_number": "0",
+                "approved": false
+              },
+              {
+                "invoice_id": "987654321-2",
+                "message": {
+                  "errors": [
+                    {
+                      "code": 434,
+                      "message": "Invoice date is too old for approval",
+                      "param": "invoice_date",
+                      "location": "request"
+                    }
+                  ]
+                },
+                "confirmation_number": "0",
+                "approved": false
+              }
+            ]
+          },
+          "success": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResApproval"
+            },
+            "description": "מערך חשבוניות שקבלו מספרי הקצאה",
+            "nullable": true,
+            "example": [
+              {
+                "invoice_id": "987654321-3",
+                "confirmation_number": "20240718181618323199093572",
+                "approved": true
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "MessageLogicalError": {
+        "type": "object",
+        "properties": {
+          "errors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResIkuv"
+            },
+            "description": "מערך חשבוניות שגויות",
+            "nullable": true,
+            "example": [
+              {
+                "invoice_id": "987654321-2",
+                "message": {
+                  "errors": [
+                    {
+                      "code": 434,
+                      "message": "Invoice date is too old for approval",
+                      "param": "invoice_date",
+                      "location": "request"
+                    }
+                  ]
+                },
+                "confirmation_number": "0",
+                "approved": false
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "MultiApprovalResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "description": "סטטוס",
+            "example": 200
+          },
+          "transaction_id": {
+            "type": "string",
+            "description": "מספר פניה מרובה",
+            "nullable": true,
+            "example": "20240718181618332199038133"
+          },
+          "is_error_in_main": {
+            "type": "boolean",
+            "description": "רמת השגיאה",
+            "example": false
+          },
+          "vat_number": {
+            "type": "integer",
+            "description": "מספר תיק מע\\\"מ (ספק)",
+            "format": "int32",
+            "example": 777777715
+          },
+          "union_vat_number": {
+            "type": "integer",
+            "description": "מספר העוסק באיחוד עוסקים",
+            "format": "int32",
+            "example": 999999999
+          },
+          "message": {
+            "$ref": "#/components/schemas/Message"
+          }
+        },
+        "additionalProperties": false
+      },
+      "MultiApprovalLogicalErrorResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "description": "סטטוס",
+            "example": 400
+          },
+          "transaction_id": {
+            "type": "string",
+            "description": "מספר פניה מרובה",
+            "nullable": true,
+            "example": "20240718181618332199038138"
+          },
+          "is_error_in_main": {
+            "type": "boolean",
+            "description": "רמת השגיאה",
+            "example": false
+          },
+          "vat_number": {
+            "type": "integer",
+            "description": "מספר תיק מע\\\"מ (ספק)",
+            "format": "int32",
+            "example": 777777715
+          },
+          "union_vat_number": {
+            "type": "integer",
+            "description": "מספר העוסק באיחוד עוסקים",
+            "format": "int32",
+            "example": 999999999
+          },
+          "message": {
+            "$ref": "#/components/schemas/MessageLogicalError"
+          }
+        },
+        "additionalProperties": false
+      },
+      "MultiInvoicesRequest": {
+        "required": [
+          "invoices_amount",
+          "invoices_payment_amount",
+          "invoices_vat_amount",
+          "vat_number"
+        ],
+        "type": "object",
+        "properties": {
+          "vat_number": {
+            "maximum": 999999999,
+            "minimum": 10,
+            "type": "integer",
+            "description": "מספר תיק מע\"מ (ספק). ניתן להשתמש בעוסקים מדומים אלו לצורכי בדיקות: 777777715, 777777723, 777777731, 777777749 .עוסק 777777723 יחזיר הודעה של חשבונית מעוכבת",
+            "format": "int32",
+            "example": 777777715
+          },
+          "union_vat_number": {
+            "maximum": 999999999,
+            "minimum": 0,
+            "type": "integer",
+            "description": "מספר העוסק באיחוד העוסקים",
+            "format": "int32",
+            "nullable": true,
+            "example": 125847553
+          },
+          "invoices_amount": {
+            "maximum": 999999999,
+            "minimum": 1,
+            "type": "integer",
+            "description": "כמות החשבוניות",
+            "format": "int32",
+            "example": 3
+          },
+          "invoices_payment_amount": {
+            "maximum": 999999999999.99,
+            "minimum": 0,
+            "type": "number",
+            "description": "סכום סופי ללא מע\\\"מ לכל החשבוניות",
+            "format": "double",
+            "example": 500
+          },
+          "invoices_vat_amount": {
+            "maximum": 999999999999.99,
+            "minimum": 0,
+            "type": "number",
+            "description": "סכום המע\\\"מ לכל החשבוניות",
+            "format": "double",
+            "example": 85
+          },
+          "invoices_list": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InvoiceRequest"
+            },
+            "description": "מערך חשבוניות להקצאה",
+            "nullable": true,
+            "example": [
+              {
+                "invoice_id": "987654321-1",
+                "invoice_type": 305,
+                "vat_number": 777777715,
+                "union_vat_number": 125847553,
+                "authorized_company": 18,
+                "user_id": 18,
+                "user_name": "שם משתמש",
+                "invoice_reference_number": "975626515",
+                "customer_vat_number": 18,
+                "customer_name": "שם הלקוח",
+                "customer_country_code": "UKR",
+                "invoice_date": "2024-02-25",
+                "invoice_issuance_date": "2024-02-25",
+                "branch_id": "533",
+                "accounting_software_number": 987654321,
+                "client_software_key": "76857",
+                "amount_before_discount": 552.75,
+                "discount": 52.75,
+                "payment_amount": 500,
+                "vat_amount": 85,
+                "payment_amount_including_vat": 585,
+                "invoice_note": "הערות",
+                "action": 0,
+                "vehicle_license_number": 584752145,
+                "phone_of_driver": "0505674235",
+                "arrival_date": "2024-11-24",
+                "estimated_arrival_time": "13:25",
+                "transition_location": 12,
+                "delivery_address": "כתובת אספקה",
+                "additional_information": 0,
+                "additional_information_1": "0",
+                "additional_information_2": "0",
+                "additional_information_3": 0,
+                "items": [
+                  {
+                    "index": 999999,
+                    "catalog_id": "5569875437",
+                    "category": 15,
+                    "description": "תיאור הפריט",
+                    "measure_unit_description": "קילו",
+                    "quantity": 100.5,
+                    "price_per_unit": 5.5,
+                    "discount": 52.75,
+                    "total_amount": 500,
+                    "vat_rate": 17,
+                    "vat_amount": 85
+                  }
+                ]
+              },
+              {
+                "invoice_id": "987654321-2",
+                "invoice_type": 305,
+                "vat_number": 777777715,
+                "union_vat_number": 125847553,
+                "authorized_company": 18,
+                "user_id": 18,
+                "user_name": "שם משתמש",
+                "invoice_reference_number": "975626515",
+                "customer_vat_number": 18,
+                "customer_name": "שם לקוח",
+                "customer_country_code": "UKR",
+                "invoice_date": "2023-10-24",
+                "invoice_issuance_date": "2024-11-24",
+                "branch_id": "533",
+                "accounting_software_number": 987654321,
+                "client_software_key": "76857",
+                "amount_before_discount": 552.75,
+                "discount": 52.75,
+                "payment_amount": 500,
+                "vat_amount": 85,
+                "payment_amount_including_vat": 585,
+                "invoice_note": "הערות",
+                "action": 0,
+                "vehicle_license_number": 584752145,
+                "phone_of_driver": "0505674235",
+                "arrival_date": "2024-11-24",
+                "estimated_arrival_time": "13:25",
+                "transition_location": 12,
+                "delivery_address": "כתובת אספקה",
+                "additional_information": 0,
+                "additional_information_1": "0",
+                "additional_information_2": "0",
+                "additional_information_3": 0,
+                "items": [
+                  {
+                    "index": 999999,
+                    "catalog_id": "5569875437",
+                    "category": 15,
+                    "description": "תיאור הפריט",
+                    "measure_unit_description": "קילו",
+                    "quantity": 100.5,
+                    "price_per_unit": 5.5,
+                    "discount": 52.75,
+                    "total_amount": 500,
+                    "vat_rate": 17,
+                    "vat_amount": 85
+                  }
+                ]
+              },
+              {
+                "invoice_id": "987654321-3",
+                "invoice_type": 305,
+                "vat_number": 777777715,
+                "union_vat_number": 125847553,
+                "authorized_company": 18,
+                "user_id": 18,
+                "user_name": "שם משתמש",
+                "invoice_reference_number": "975626515",
+                "customer_vat_number": 18,
+                "customer_name": "שם הלקוח",
+                "customer_country_code": "UKR",
+                "invoice_date": "2024-02-25",
+                "invoice_issuance_date": "2024-02-25",
+                "branch_id": "533",
+                "accounting_software_number": 987654321,
+                "client_software_key": "76857",
+                "amount_before_discount": 552.75,
+                "discount": 52.75,
+                "payment_amount": 500,
+                "vat_amount": 85,
+                "payment_amount_including_vat": 585,
+                "invoice_note": "הערות",
+                "action": 0,
+                "vehicle_license_number": 584752145,
+                "phone_of_driver": "0505674235",
+                "arrival_date": "2024-11-24",
+                "estimated_arrival_time": "13:25",
+                "transition_location": 12,
+                "delivery_address": "כתובת אספקה",
+                "additional_information": 0,
+                "additional_information_1": "0",
+                "additional_information_2": "0",
+                "additional_information_3": 0,
+                "items": [
+                  {
+                    "index": 999999,
+                    "catalog_id": "5569875437",
+                    "category": 15,
+                    "description": "תיאור הפריט",
+                    "measure_unit_description": "קילו",
+                    "quantity": 100.5,
+                    "price_per_unit": 5.5,
+                    "discount": 52.75,
+                    "total_amount": 500,
+                    "vat_rate": 17,
+                    "vat_amount": 85
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "ResApproval": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "confirmation_number": {
+            "type": "string",
+            "nullable": true
+          },
+          "approved": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ResIkuv": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "message": {
+            "$ref": "#/components/schemas/ErrorMessage"
+          },
+          "confirmation_number": {
+            "type": "string",
+            "nullable": true
+          },
+          "approved": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "AcceptableErrorResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/HttpStatusCode"
+          },
+          "message": {
+            "type": "string",
+            "nullable": true
+          },
+          "error_id": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "GeneralErrorResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/HttpStatusCode"
+          },
+          "message": {
+            "type": "string",
+            "nullable": true
+          },
+          "error_id": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "SwAction": {
+        "enum": [
+          0,
+          3,
+          4
+        ],
+        "type": "integer",
+        "format": "int32"
+      }
+    },
+    "securitySchemes": {
+      "oauth2": {
+        "type": "oauth2",
+        "x-ibm-oauth-provider": "longtimetoken",
+        "flows": {
+          "authorizationCode": {
+            "authorizationUrl": "https://openapi.taxes.gov.il/shaam/tsandbox/longtimetoken/oauth2/authorize",
+            "tokenUrl": "https://t-ita-api.taxes.gov.il/shaam/tsandbox/longtimetoken/oauth2/token",
+            "scopes": {
+              "scope": "Shaam scope",
+              "annexes_scope": "this scope is use for annexes",
+              "Donations_scope": "this scope is use for Donations_Api",
+              "vat_report_scope": "this scope is use for VATReportAPI",
+              "Donation_V2_Scope": "this scope is use for Donation_V2_Api",
+              "irsp_invoices_scope": "this scope is use for irspinvoicesapi",
+              "checkpermission_Scope": "this scope is for CheckPermissionApi ",
+              "advances_payment_scope": "this scope is use for AdvancesPaymentAPI",
+              "tax_retire_report_scope": "this scope is use for TaxRetireReportApi",
+              "Employee_Donations_scope": "this scope is use for EmployeeDonationsApi",
+              "deductions_payments_scope": "this scope is use for deductionspaymentsapi",
+              "capital_declarations_scope": "this scope is use for capital_declarations",
+              "tax_adjustment_retirement_scope": "this scope is use for taxAdjustmentRetirementAPI",
+              "UniStruct_FileUpload_Links_scope": "this UniStruct_FileUpload_Linksapi",
+              "employee_stock_option_plan_scope": "this scope is use for employeestockoptionplanapi",
+              "FilesStatus_scope": "this scope is use for FilesStatusApi",
+              "invoices_general_scope": "invoices_general_scope is invoices product",
+              "invoices_approval_scope": "invoices_approval_scope is for invoices approval product",
+              "EilatInvoiceApproval_scope": "this scope is use for EilatInvoiceApprovalApi",
+              "invoices_scope": "invoices_general_scope is invoices product"
+            }
+          }
+        }
+      }
+    }
+  },
+  "x-ibm-configuration": {
+    "cors": {
+      "enabled": true
+    },
+    "phase": "realized",
+    "enforced": true,
+    "type": "rest",
+    "testable": true,
+    "oauth-servers": {
+      "oauth2": {
+        "authorizationCode": {
+          "tokenUrls": [
+            "https://t-ita-api.taxes.gov.il/shaam/tsandbox/longtimetoken/oauth2/token",
+            "https://openapi.taxes.gov.il/shaam/tsandbox/longtimetoken/oauth2/token",
+            "https://ita-api.taxes.gov.il/shaam/tsandbox/longtimetoken/oauth2/token"
+          ],
+          "authorizationUrls": [
+            "https://openapi.taxes.gov.il/shaam/tsandbox/longtimetoken/oauth2/authorize"
+          ],
+          "refreshUrls": []
+        }
+      }
+    }
+  },
+  "security": [
+    {
+      "oauth2": [
+        "scope"
+      ]
+    },
+    {
+      "oauth2": [
+        "invoices_scope"
+      ]
+    }
+  ],
+  "x-ibm-endpoints": [
+    {
+      "url": "https://t-ita-api.taxes.gov.il/shaam/tsandbox"
+    },
+    {
+      "url": "https://openapi.taxes.gov.il/shaam/tsandbox"
+    },
+    {
+      "url": "https://ita-api.taxes.gov.il/shaam/tsandbox"
+    }
+  ]
+}

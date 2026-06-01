@@ -1,9 +1,11 @@
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 
 const admin = require("firebase-admin");
 const {onDocumentCreated} = require("firebase-functions/v2/firestore");
 const {onCall, HttpsError, onRequest} = require("firebase-functions/v2/https");
+const {defineSecret} = require("firebase-functions/params");
 const {onMessagePublished} = require("firebase-functions/v2/pubsub");
 const {onSchedule} = require("firebase-functions/v2/scheduler");
 const logger = require("firebase-functions/logger");
@@ -18,6 +20,9 @@ const {
 
 admin.initializeApp();
 
+const TAX_AUTH_CLIENT_ID = defineSecret("TAX_AUTH_CLIENT_ID");
+const TAX_AUTH_CLIENT_SECRET = defineSecret("TAX_AUTH_CLIENT_SECRET");
+
 const GOOGLE_PLAY_PACKAGE_NAME = "com.hirehub.app";
 const APPLE_BUNDLE_ID = "com.hiro.hiroapp";
 const GOOGLE_PLAY_RTDN_TOPIC = "play-subscription-notifications";
@@ -26,11 +31,252 @@ const PLAY_ANDROID_PUBLISHER_SCOPE =
 const SUBSCRIPTION_NOTIFICATION_RETENTION_DAYS = 30;
 const SUBSCRIPTION_VERIFICATION_RETENTION_HOURS = 36;
 const DEVICE_TOKEN_RETENTION_DAYS = 90;
+const TAX_AUTH_OAUTH_CODE_RETENTION_HOURS = 2;
+const TAX_AUTH_SANDBOX_AUTH_URL =
+  "https://openapi.taxes.gov.il/shaam/tsandbox/longtimetoken/oauth2/authorize";
+const TAX_AUTH_SANDBOX_TOKEN_URL =
+  "https://openapi.taxes.gov.il/shaam/tsandbox/longtimetoken/oauth2/token";
+const TAX_AUTH_SANDBOX_TOKEN_FALLBACK_URL =
+  "https://ita-api.taxes.gov.il/shaam/tsandbox/longtimetoken/oauth2/token";
+const TAX_AUTH_SANDBOX_MULTI_APPROVAL_URL =
+  "https://openapi.taxes.gov.il/shaam/tsandbox/Multi-invoices/v2/MultiApproval";
+const TAX_AUTH_REDIRECT_URI =
+  "https://me-west1-hire-hub-fe6c4.cloudfunctions.net/taxesOAuthCallback";
+const TAX_AUTH_APP_RETURN_URI = "hiro://tax-authority-connected";
+const TAX_AUTH_SCOPE = "scope";
 const APPLE_SUBSCRIPTION_PRODUCT_ID = "HIRO_SUBSCRIPTION";
 const GOOGLE_PLAY_SUBSCRIPTION_PRODUCT_IDS = new Set([
   "pro_worker_monthly",
   "com-hiro-app-pro-worker-monthly",
 ]);
+
+exports.taxesOAuthStart = onRequest(
+    {
+      region: "me-west1",
+      secrets: [TAX_AUTH_CLIENT_ID],
+    },
+    async (req, res) => {
+      if (req.method !== "GET") {
+        res.status(405).send("Method Not Allowed");
+        return;
+      }
+
+      const state = crypto.randomUUID();
+      const now = admin.firestore.Timestamp.now();
+      const expiresAt = admin.firestore.Timestamp.fromDate(
+          addHours(now.toDate(), TAX_AUTH_OAUTH_CODE_RETENTION_HOURS),
+      );
+      await admin.firestore()
+          .collection("taxAuthorityOAuthStates")
+          .doc(state)
+          .set({
+            createdAt: now,
+            expiresAt,
+            usedAt: null,
+            userAgent: normalizeString(req.get("user-agent")).slice(0, 500),
+            ip: normalizeString(req.ip).slice(0, 80),
+          });
+
+      const authorizationUrl = new URL(TAX_AUTH_SANDBOX_AUTH_URL);
+      authorizationUrl.searchParams.set("response_type", "code");
+      authorizationUrl.searchParams.set("client_id", TAX_AUTH_CLIENT_ID.value());
+      authorizationUrl.searchParams.set("redirect_uri", TAX_AUTH_REDIRECT_URI);
+      authorizationUrl.searchParams.set("scope", TAX_AUTH_SCOPE);
+      authorizationUrl.searchParams.set("state", state);
+
+      res.redirect(302, authorizationUrl.toString());
+    },
+);
+
+exports.taxesOAuthCallback = onRequest(
+    {
+      region: "me-west1",
+      secrets: [TAX_AUTH_CLIENT_ID, TAX_AUTH_CLIENT_SECRET],
+    },
+    async (req, res) => {
+      if (req.method !== "GET") {
+        res.status(405).send("Method Not Allowed");
+        return;
+      }
+
+      const code = normalizeString(req.query.code).trim();
+      const state = normalizeString(req.query.state).trim();
+      const error = normalizeString(req.query.error).trim();
+      const errorDescription =
+        normalizeString(req.query.error_description).trim();
+
+      if (error) {
+        logger.warn("Tax Authority OAuth callback returned an error", {
+          error,
+          errorDescription,
+          state: maskOAuthState(state),
+        });
+        res.status(400).send(renderOAuthCallbackPage({
+          title: "Authorization was not completed",
+          message: errorDescription || error,
+        }));
+        return;
+      }
+
+      if (!code) {
+        res.status(400).send(renderOAuthCallbackPage({
+          title: "Missing authorization code",
+          message: "The Tax Authority did not return an OAuth code.",
+        }));
+        return;
+      }
+
+      const db = admin.firestore();
+      const now = admin.firestore.Timestamp.now();
+      const expiresAt = admin.firestore.Timestamp.fromDate(
+          addHours(now.toDate(), TAX_AUTH_OAUTH_CODE_RETENTION_HOURS),
+      );
+      if (state) {
+        const stateRef = db.collection("taxAuthorityOAuthStates").doc(state);
+        const stateSnap = await stateRef.get();
+        if (!stateSnap.exists) {
+          res.status(400).send(renderOAuthCallbackPage({
+            title: "Invalid authorization state",
+            message: "Please start the Tax Authority connection again.",
+          }));
+          return;
+        }
+        const stateData = stateSnap.data() || {};
+        if (stateData.usedAt || toDate(stateData.expiresAt) < new Date()) {
+          res.status(400).send(renderOAuthCallbackPage({
+            title: "Expired authorization state",
+            message: "Please start the Tax Authority connection again.",
+          }));
+          return;
+        }
+        await stateRef.update({usedAt: now});
+      }
+
+      const docRef = await db
+          .collection("taxAuthorityOAuthCallbacks")
+          .add({
+            code,
+            state: state || null,
+            createdAt: now,
+            expiresAt,
+            consumedAt: null,
+            userAgent: normalizeString(req.get("user-agent")).slice(0, 500),
+            ip: normalizeString(req.ip).slice(0, 80),
+          });
+
+      let tokenResponse;
+      try {
+        tokenResponse = await exchangeTaxAuthorityCodeForTokens(code);
+      } catch (error) {
+        logger.error("Tax Authority OAuth token exchange crashed", {
+          message: normalizeString(error.message),
+          cause: normalizeString(error.cause?.message),
+          code: normalizeString(error.cause?.code || error.code),
+        });
+        res.status(502).send(renderOAuthCallbackPage({
+          title: "Authorization could not be completed",
+          message: "Hiro received the authorization code, but could not exchange it for a Tax Authority token. Please try connecting again in a few minutes.",
+        }));
+        return;
+      }
+      await db
+          .collection("taxAuthorityOAuthTokens")
+          .doc("sandbox")
+          .set({
+            ...tokenResponse,
+            callbackId: docRef.id,
+            updatedAt: now,
+            environment: "sandbox",
+            expiresAt: tokenResponse.expires_in ?
+              admin.firestore.Timestamp.fromDate(
+                  addSeconds(new Date(), Number(tokenResponse.expires_in)),
+              ) :
+              null,
+          }, {merge: true});
+      await docRef.update({consumedAt: admin.firestore.Timestamp.now()});
+
+      logger.info("Stored Tax Authority OAuth callback code", {
+        callbackId: docRef.id,
+        state: maskOAuthState(state),
+      });
+
+      res.status(200).send(renderOAuthCallbackPage({
+        title: "Authorization received",
+        message: "You can return to Hiro. The authorization code was received.",
+      }));
+    },
+);
+
+exports.requestTaxInvoiceAllocation = onCall(
+    {
+      region: "me-west1",
+      secrets: [TAX_AUTH_CLIENT_ID, TAX_AUTH_CLIENT_SECRET],
+    },
+    async (request) => {
+      const auth = request.auth;
+      if (!auth?.uid) {
+        throw new HttpsError("unauthenticated", "Authentication required.");
+      }
+
+      const payload = normalizeTaxInvoiceAllocationPayload(request.data || {});
+      const tokenData = await getTaxAuthorityTokenData();
+      const response = await callTaxAuthorityMultiApproval({
+        accessToken: tokenData.accessToken,
+        payload,
+      });
+
+      const approval = extractTaxAuthorityApproval(response, payload);
+      const invoiceDocId = normalizeString(request.data?.invoiceDocId).trim();
+      if (invoiceDocId) {
+        await admin.firestore()
+            .collection("users")
+            .doc(auth.uid)
+            .collection("invoices")
+            .doc(invoiceDocId)
+            .set({
+              taxAuthorityAllocation: {
+                ...approval,
+                rawResponse: response,
+                requestedAt: admin.firestore.Timestamp.now(),
+                environment: "sandbox",
+              },
+            }, {merge: true});
+      }
+
+      return {
+        ...approval,
+        response,
+      };
+    },
+);
+
+exports.getTaxAuthorityConnectionStatus = onCall(
+    {
+      region: "me-west1",
+    },
+    async (request) => {
+      if (!request.auth?.uid) {
+        throw new HttpsError("unauthenticated", "Authentication required.");
+      }
+
+      const tokenSnap = await admin.firestore()
+          .collection("taxAuthorityOAuthTokens")
+          .doc("sandbox")
+          .get();
+      const data = tokenSnap.data() || {};
+      const hasAccessToken =
+        normalizeString(data.access_token).trim().length > 0;
+      const hasRefreshToken =
+        normalizeString(data.refresh_token).trim().length > 0;
+      const expiresAt = toIsoString(data.expiresAt);
+
+      return {
+        connected: tokenSnap.exists && (hasAccessToken || hasRefreshToken),
+        environment: "sandbox",
+        expiresAt,
+      };
+    },
+);
 
 exports.sendNotificationPush = onDocumentCreated(
     {
@@ -1433,6 +1679,10 @@ function addHours(date, hours) {
   return new Date(date.getTime() + hours * 60 * 60 * 1000);
 }
 
+function addSeconds(date, seconds) {
+  return new Date(date.getTime() + seconds * 1000);
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -1478,6 +1728,521 @@ function hasEnabledAutoRenew(lineItems) {
 
 function normalizeString(value) {
   return value == null ? "" : String(value);
+}
+
+function maskOAuthState(state) {
+  if (!state) return null;
+  return state.length <= 8 ? "set" : `${state.slice(0, 4)}...${state.slice(-4)}`;
+}
+
+async function exchangeTaxAuthorityCodeForTokens(code) {
+  const params = new URLSearchParams();
+  params.set("grant_type", "authorization_code");
+  params.set("client_id", TAX_AUTH_CLIENT_ID.value());
+  params.set("client_secret", TAX_AUTH_CLIENT_SECRET.value());
+  params.set("code", code);
+  params.set("redirect_uri", TAX_AUTH_REDIRECT_URI);
+  params.set("scope", TAX_AUTH_SCOPE);
+
+  return await postTaxAuthorityTokenForm(params, "token exchange");
+}
+
+async function postTaxAuthorityTokenForm(params, operationName) {
+  const urls = [
+    TAX_AUTH_SANDBOX_TOKEN_URL,
+    TAX_AUTH_SANDBOX_TOKEN_FALLBACK_URL,
+  ];
+  let lastError = null;
+
+  for (const tokenUrl of urls) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 25000);
+    let response;
+    try {
+      response = await fetch(tokenUrl, {
+        method: "POST",
+        headers: {
+          "content-type": "application/x-www-form-urlencoded",
+          "accept": "application/json",
+          "user-agent": "Hiro/1.0 FirebaseFunctions",
+        },
+        body: params.toString(),
+        signal: controller.signal,
+      });
+    } catch (error) {
+      lastError = error;
+      logger.warn(`Tax Authority ${operationName} network failure`, {
+        tokenUrl,
+        message: normalizeString(error.message),
+        cause: normalizeString(error.cause?.message),
+        code: normalizeString(error.cause?.code || error.code),
+      });
+      clearTimeout(timeout);
+      continue;
+    }
+    clearTimeout(timeout);
+    const payload = await parseJsonResponse(response);
+
+    if (!response.ok) {
+      logger.error(`Tax Authority ${operationName} failed`, {
+        tokenUrl,
+        status: response.status,
+        payload: maskTokenPayload(payload),
+      });
+      throw new Error(
+          `Tax Authority ${operationName} failed: ${response.status}`,
+      );
+    }
+
+    return payload;
+  }
+
+  throw lastError || new Error(`Tax Authority ${operationName} failed.`);
+}
+
+async function refreshTaxAuthorityToken(refreshToken) {
+  const params = new URLSearchParams();
+  params.set("grant_type", "refresh_token");
+  params.set("client_id", TAX_AUTH_CLIENT_ID.value());
+  params.set("client_secret", TAX_AUTH_CLIENT_SECRET.value());
+  params.set("refresh_token", refreshToken);
+
+  try {
+    return await postTaxAuthorityTokenForm(params, "token refresh");
+  } catch (error) {
+    throw new HttpsError(
+        "failed-precondition",
+        "Tax Authority token refresh failed.",
+    );
+  }
+}
+
+async function getTaxAuthorityTokenData() {
+  const tokenRef = admin.firestore()
+      .collection("taxAuthorityOAuthTokens")
+      .doc("sandbox");
+  const tokenSnap = await tokenRef.get();
+  if (!tokenSnap.exists) {
+    throw new HttpsError(
+        "failed-precondition",
+        "Tax Authority OAuth authorization has not been completed.",
+    );
+  }
+
+  const tokenData = tokenSnap.data() || {};
+  const accessToken = normalizeString(tokenData.access_token).trim();
+  if (!accessToken) {
+    throw new HttpsError(
+        "failed-precondition",
+        "Tax Authority access token is missing.",
+    );
+  }
+
+  const expiresAt = toDate(tokenData.expiresAt);
+  const refreshToken = normalizeString(tokenData.refresh_token).trim();
+  const refreshWindow = addSeconds(new Date(), 60);
+  if (!expiresAt || expiresAt > refreshWindow || !refreshToken) {
+    return {accessToken, tokenData};
+  }
+
+  const refreshed = await refreshTaxAuthorityToken(refreshToken);
+  await tokenRef.set({
+    ...refreshed,
+    updatedAt: admin.firestore.Timestamp.now(),
+    environment: "sandbox",
+    expiresAt: refreshed.expires_in ?
+      admin.firestore.Timestamp.fromDate(
+          addSeconds(new Date(), Number(refreshed.expires_in)),
+      ) :
+      null,
+  }, {merge: true});
+
+  return {
+    accessToken: normalizeString(refreshed.access_token).trim(),
+    tokenData: refreshed,
+  };
+}
+
+async function callTaxAuthorityMultiApproval({accessToken, payload}) {
+  const response = await fetch(TAX_AUTH_SANDBOX_MULTI_APPROVAL_URL, {
+    method: "POST",
+    headers: {
+      "authorization": `Bearer ${accessToken}`,
+      "content-type": "application/json",
+      "accept": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+  const responsePayload = await parseJsonResponse(response);
+  if (!response.ok) {
+    const authorityMessage =
+      summarizeTaxAuthorityErrorMessages(responsePayload) ||
+      "Tax Authority invoice allocation request failed.";
+    logger.error("Tax Authority MultiApproval failed", {
+      status: response.status,
+      payload: responsePayload,
+    });
+    throw new HttpsError(
+        "failed-precondition",
+        authorityMessage,
+        responsePayload,
+    );
+  }
+
+  return responsePayload;
+}
+
+function normalizeTaxInvoiceAllocationPayload(data) {
+  const invoice = data.invoice || data;
+  const invoiceId = requiredString(invoice.invoice_id || invoice.invoiceId,
+      "invoice_id");
+  const vatNumber = requiredInt(invoice.vat_number || invoice.vatNumber,
+      "vat_number");
+  const invoiceReferenceNumber = requiredString(
+      invoice.invoice_reference_number || invoice.invoiceReferenceNumber,
+      "invoice_reference_number",
+  );
+  const customerVatNumber = requiredInt(
+      invoice.customer_vat_number || invoice.customerVatNumber,
+      "customer_vat_number",
+  );
+  const invoiceDate = requiredString(
+      invoice.invoice_date || invoice.invoiceDate,
+      "invoice_date",
+  );
+  const invoiceIssuanceDate = normalizeString(
+      invoice.invoice_issuance_date || invoice.invoiceIssuanceDate ||
+      invoiceDate,
+  ).trim();
+  const paymentAmount = requiredNumber(
+      invoice.payment_amount || invoice.paymentAmount,
+      "payment_amount",
+  );
+  const vatAmount = requiredNumber(
+      invoice.vat_amount || invoice.vatAmount,
+      "vat_amount",
+  );
+  const amountBeforeDiscount = numberOrDefault(
+      invoice.amount_before_discount || invoice.amountBeforeDiscount,
+      paymentAmount,
+  );
+  const discount = numberOrDefault(invoice.discount, 0);
+  const paymentAmountIncludingVat = numberOrDefault(
+      invoice.payment_amount_including_vat ||
+      invoice.paymentAmountIncludingVat,
+      paymentAmount + vatAmount,
+  );
+  const accountingSoftwareNumber = requiredInt(
+      invoice.accounting_software_number || invoice.accountingSoftwareNumber,
+      "accounting_software_number",
+  );
+  const invoiceType = intOrDefault(
+      invoice.invoice_type || invoice.invoiceType,
+      305,
+  );
+
+  const invoiceRequest = omitNullish({
+    invoice_id: invoiceId,
+    invoice_type: invoiceType,
+    vat_number: vatNumber,
+    union_vat_number: intOrNull(
+        invoice.union_vat_number || invoice.unionVatNumber,
+    ),
+    authorized_company: intOrNull(
+        invoice.authorized_company || invoice.authorizedCompany,
+    ),
+    user_id: intOrNull(invoice.user_id || invoice.userId),
+    user_name: stringOrNull(invoice.user_name || invoice.userName, 25),
+    invoice_reference_number: invoiceReferenceNumber,
+    customer_vat_number: customerVatNumber,
+    customer_name: stringOrNull(
+        invoice.customer_name || invoice.customerName,
+        25,
+    ),
+    customer_country_code: stringOrNull(
+        invoice.customer_country_code || invoice.customerCountryCode,
+        3,
+    ),
+    invoice_date: invoiceDate,
+    invoice_issuance_date: invoiceIssuanceDate,
+    branch_id: stringOrNull(invoice.branch_id || invoice.branchId, 7),
+    accounting_software_number: accountingSoftwareNumber,
+    client_software_key: stringOrNull(
+        invoice.client_software_key || invoice.clientSoftwareKey,
+        50,
+    ),
+    amount_before_discount: roundMoney(amountBeforeDiscount),
+    discount: roundMoney(discount),
+    payment_amount: roundMoney(paymentAmount),
+    vat_amount: roundMoney(vatAmount),
+    payment_amount_including_vat: roundMoney(paymentAmountIncludingVat),
+    invoice_note: stringOrNull(invoice.invoice_note || invoice.invoiceNote, 100),
+    action: intOrDefault(invoice.action, 0),
+    delivery_address: stringOrNull(
+        invoice.delivery_address || invoice.deliveryAddress,
+        60,
+    ),
+    items: normalizeTaxInvoiceItems(invoice.items),
+  });
+
+  return {
+    vat_number: vatNumber,
+    union_vat_number: intOrNull(data.union_vat_number || data.unionVatNumber),
+    invoices_amount: 1,
+    invoices_payment_amount: roundMoney(paymentAmount),
+    invoices_vat_amount: roundMoney(vatAmount),
+    invoices_list: [invoiceRequest],
+  };
+}
+
+function normalizeTaxInvoiceItems(items) {
+  if (!Array.isArray(items)) return null;
+  return items.map((item, index) => {
+    const quantity = numberOrDefault(item.quantity, 1);
+    const pricePerUnit = numberOrDefault(
+        item.price_per_unit || item.pricePerUnit ||
+        item.unitPriceWithoutTax || item.price,
+        0,
+    );
+    const totalAmount = numberOrDefault(
+        item.total_amount || item.totalAmount,
+        quantity * pricePerUnit,
+    );
+    const vatRate = numberOrDefault(item.vat_rate || item.vatRate, 17);
+    const vatAmount = numberOrDefault(
+        item.vat_amount || item.vatAmount || item.taxPaid,
+        totalAmount * (vatRate / 100),
+    );
+
+    return omitNullish({
+      index: intOrDefault(item.index, index + 1),
+      catalog_id: stringOrNull(item.catalog_id || item.catalogId, 13),
+      category: intOrDefault(item.category, 200000),
+      description: stringOrNull(item.description, 30),
+      measure_unit_description: stringOrNull(
+          item.measure_unit_description || item.measureUnitDescription,
+          20,
+      ),
+      quantity: roundMoney(quantity),
+      price_per_unit: roundMoney(pricePerUnit),
+      discount: roundMoney(numberOrDefault(item.discount, 0)),
+      total_amount: roundMoney(totalAmount),
+      vat_rate: roundMoney(vatRate),
+      vat_amount: roundMoney(vatAmount),
+    });
+  });
+}
+
+function extractTaxAuthorityApproval(response, requestPayload) {
+  const message = response?.message || {};
+  const success = Array.isArray(message.success) ? message.success : [];
+  const errors = Array.isArray(message.errors) ? message.errors : [];
+  const invoiceId = requestPayload.invoices_list?.[0]?.invoice_id || null;
+  const successItem = success.find((item) => item.invoice_id === invoiceId) ||
+    success[0] ||
+    null;
+  const errorItem = errors.find((item) => item.invoice_id === invoiceId) ||
+    errors[0] ||
+    null;
+
+  return {
+    approved: successItem?.approved === true,
+    invoiceId,
+    confirmationNumber: successItem?.confirmation_number ||
+      errorItem?.confirmation_number ||
+      null,
+    transactionId: response?.transaction_id || null,
+    errors: errorItem?.message?.errors || [],
+  };
+}
+
+function summarizeTaxAuthorityErrorMessages(payload) {
+  const messages = [];
+  const seen = new Set();
+
+  function collect(value) {
+    if (messages.length >= 3 || value == null) return;
+    if (typeof value === "string") {
+      const message = value.trim();
+      if (message && !seen.has(message)) {
+        seen.add(message);
+        messages.push(message);
+      }
+      return;
+    }
+    if (Array.isArray(value)) {
+      for (const entry of value) collect(entry);
+      return;
+    }
+    if (typeof value === "object") {
+      if (typeof value.message === "string") {
+        collect(value.message);
+      } else if (value.message) {
+        collect(value.message);
+      }
+      if (value.errors) collect(value.errors);
+    }
+  }
+
+  collect(payload?.message?.errors);
+  return messages.join("; ");
+}
+
+async function parseJsonResponse(response) {
+  const responseText = await response.text();
+  try {
+    return responseText ? JSON.parse(responseText) : {};
+  } catch (error) {
+    return {rawResponse: responseText};
+  }
+}
+
+function maskTokenPayload(payload) {
+  if (!payload || typeof payload !== "object") {
+    return payload;
+  }
+
+  return Object.fromEntries(Object.entries(payload).map(([key, value]) => {
+    if (key.toLowerCase().includes("token")) {
+      return [key, typeof value === "string" ? maskToken(value) : "set"];
+    }
+    return [key, value];
+  }));
+}
+
+function requiredString(value, fieldName) {
+  const normalized = normalizeString(value).trim();
+  if (!normalized) {
+    throw new HttpsError("invalid-argument", `Missing ${fieldName}.`);
+  }
+  return normalized;
+}
+
+function requiredInt(value, fieldName) {
+  const parsed = intOrNull(value);
+  if (parsed == null) {
+    throw new HttpsError("invalid-argument", `Missing ${fieldName}.`);
+  }
+  return parsed;
+}
+
+function requiredNumber(value, fieldName) {
+  const parsed = numberOrNull(value);
+  if (parsed == null) {
+    throw new HttpsError("invalid-argument", `Missing ${fieldName}.`);
+  }
+  return parsed;
+}
+
+function intOrDefault(value, fallback) {
+  return intOrNull(value) ?? fallback;
+}
+
+function intOrNull(value) {
+  if (value == null || value === "") return null;
+  const parsed = Number.parseInt(String(value).replace(/\D/g, ""), 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function numberOrDefault(value, fallback) {
+  return numberOrNull(value) ?? fallback;
+}
+
+function numberOrNull(value) {
+  if (value == null || value === "") return null;
+  const parsed = Number(String(value).replace(/,/g, "."));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function stringOrNull(value, maxLength) {
+  const normalized = normalizeString(value).trim();
+  if (!normalized) return null;
+  return maxLength ? normalized.slice(0, maxLength) : normalized;
+}
+
+function roundMoney(value) {
+  return Math.round(Number(value) * 100) / 100;
+}
+
+function omitNullish(value) {
+  return Object.fromEntries(Object.entries(value).filter(([, entryValue]) => {
+    if (entryValue == null) return false;
+    if (Array.isArray(entryValue) && entryValue.length === 0) return false;
+    return true;
+  }));
+}
+
+function renderOAuthCallbackPage({title, message}) {
+  const success = title === "Authorization received";
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${escapeHtml(title)}</title>
+  <style>
+    body {
+      align-items: center;
+      background: #f7f8fb;
+      color: #10345c;
+      display: flex;
+      font-family: Arial, sans-serif;
+      justify-content: center;
+      margin: 0;
+      min-height: 100vh;
+      padding: 24px;
+    }
+    main {
+      background: #fff;
+      border: 1px solid #d8e0ea;
+      border-radius: 8px;
+      box-shadow: 0 12px 32px rgba(16, 52, 92, 0.08);
+      max-width: 480px;
+      padding: 32px;
+      text-align: center;
+    }
+    h1 {
+      font-size: 24px;
+      margin: 0 0 12px;
+    }
+    p {
+      line-height: 1.5;
+      margin: 0;
+    }
+    a {
+      background: #10345c;
+      border-radius: 8px;
+      color: #fff;
+      display: ${success ? "inline-block" : "none"};
+      font-weight: 700;
+      margin-top: 20px;
+      padding: 12px 18px;
+      text-decoration: none;
+    }
+  </style>
+  ${success ? `<script>
+    window.setTimeout(function() {
+      window.location.href = "${TAX_AUTH_APP_RETURN_URI}";
+    }, 500);
+  </script>` : ""}
+</head>
+<body>
+  <main>
+    <h1>${escapeHtml(title)}</h1>
+    <p>${escapeHtml(message)}</p>
+    <a href="${TAX_AUTH_APP_RETURN_URI}">Open Hiro</a>
+  </main>
+</body>
+</html>`;
+}
+
+function escapeHtml(value) {
+  return normalizeString(value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
 }
 
 function chatMessageBody(payload) {

@@ -10,12 +10,14 @@ import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:untitled1/services/language_provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart' as firebase_storage;
 import 'package:untitled1/services/subscription_access_service.dart';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:untitled1/services/bkmv_export_service.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class _SavedInvoiceResult {
   final String url;
@@ -45,6 +47,33 @@ class InvoiceBuilderDraftResult {
     this.documentNumber,
     required this.items,
   });
+}
+
+class _TaxAuthorityAllocationResult {
+  final bool approved;
+  final String? confirmationNumber;
+  final String? invoiceId;
+  final String? transactionId;
+  final Map<String, dynamic> raw;
+
+  const _TaxAuthorityAllocationResult({
+    required this.approved,
+    required this.raw,
+    this.confirmationNumber,
+    this.invoiceId,
+    this.transactionId,
+  });
+
+  Map<String, dynamic> toMap() => {
+    'approved': approved,
+    if (confirmationNumber != null && confirmationNumber!.isNotEmpty)
+      'confirmationNumber': confirmationNumber,
+    if (invoiceId != null && invoiceId!.isNotEmpty) 'invoiceId': invoiceId,
+    if (transactionId != null && transactionId!.isNotEmpty)
+      'transactionId': transactionId,
+    'raw': raw,
+    'requestedAt': FieldValue.serverTimestamp(),
+  };
 }
 
 class InvoiceItem {
@@ -197,6 +226,14 @@ class InvoiceBuilderPage extends StatefulWidget {
 }
 
 class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
+  static const String _taxAuthorityOAuthStartUrl =
+      'https://me-west1-hire-hub-fe6c4.cloudfunctions.net/taxesOAuthStart';
+  static const int _sandboxAccountingSoftwareNumber = 987654321;
+
+  final FirebaseFunctions _functions = FirebaseFunctions.instanceFor(
+    region: 'me-west1',
+  );
+
   bool get _isLicensedDealerType =>
       _dealerType == 'licensed' || _dealerType == 'company';
 
@@ -292,6 +329,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   /// Atomic Firestore transaction for invoice creation and logging
   Future<InvoiceBuilderDraftResult?> _createInvoiceAndLog({
     required Uint8List pdfBytes,
+    Map<String, dynamic>? taxAuthorityAllocation,
   }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return null;
@@ -394,6 +432,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'dealerType': _dealerType,
       'isBusinessVerified': _isBusinessVerified,
     };
+    final allocationNumber = taxAuthorityAllocation?['confirmationNumber']
+        ?.toString()
+        .trim();
 
     if (docType == 'quote' || docType == 'work_order') {
       final fileName =
@@ -451,6 +492,12 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         'invoiceDocId': quoteDocRef.id,
         'createdAt': timestamp,
       };
+      if (taxAuthorityAllocation != null) {
+        quoteData['taxAuthorityAllocation'] = taxAuthorityAllocation;
+      }
+      if (allocationNumber != null && allocationNumber.isNotEmpty) {
+        quoteData['allocationNumber'] = allocationNumber;
+      }
       await quoteDocRef.set(quoteData);
       return InvoiceBuilderDraftResult(
         url: downloadUrl,
@@ -550,6 +597,12 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
             ? null
             : {'creditNoteLegal': creditNoteLegalData},
       };
+      if (taxAuthorityAllocation != null) {
+        invoiceData['taxAuthorityAllocation'] = taxAuthorityAllocation;
+      }
+      if (allocationNumber != null && allocationNumber.isNotEmpty) {
+        invoiceData['allocationNumber'] = allocationNumber;
+      }
 
       final invoiceDoc = invoicesRef.doc(invoiceDocId);
       transaction.set(invoiceDoc, invoiceData);
@@ -625,6 +678,12 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
               ? null
               : {'creditNoteLegal': creditNoteLegalData},
         };
+        if (taxAuthorityAllocation != null) {
+          logData['taxAuthorityAllocation'] = taxAuthorityAllocation;
+        }
+        if (allocationNumber != null && allocationNumber.isNotEmpty) {
+          logData['allocationNumber'] = allocationNumber;
+        }
         transaction.set(logFileRef, logData);
       }
     });
@@ -786,6 +845,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   int? _currentDocumentCounter;
   bool _isLoadingCounterAssignment = false;
   double _vatRate = 0.17;
+  double _allocationNumberMinAmountBeforeVat = double.infinity;
   DateTime _selectedInvoiceDate = DateTime.now();
   DateTime? _selectedPaymentDueDate;
   bool _hasCustomPaymentDueDate = false;
@@ -802,6 +862,12 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   bool get _showsPaymentMethodSection =>
       !_isQuoteLike && _selectedDocType != 'invoice';
   bool get _usesVat => _isLicensedDealerType && _selectedDocType != 'receipt';
+  bool get _isTaxInvoiceDocType =>
+      _selectedDocType == 'invoice' || _selectedDocType == 'invoice_receipt';
+  bool get _requiresTaxAuthorityAllocation =>
+      _isTaxInvoiceDocType &&
+      _usesVat &&
+      _subtotalAmount > _allocationNumberMinAmountBeforeVat;
 
   double _unitPriceAfterTax(InvoiceItem item) {
     if (!_usesVat) return item.price;
@@ -889,6 +955,23 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     return parsed;
   }
 
+  double? _parsePositiveAmount(dynamic value) {
+    final parsed = switch (value) {
+      num() => value.toDouble(),
+      String() => double.tryParse(value.trim().replaceAll(',', '.')),
+      _ => null,
+    };
+    if (parsed == null || parsed <= 0) return null;
+    return parsed;
+  }
+
+  String _digitsOnly(String? value) =>
+      (value ?? '').replaceAll(RegExp(r'\D'), '');
+
+  String _invoiceDateIsoValue() {
+    return intl.DateFormat('yyyy-MM-dd').format(_selectedInvoiceDate);
+  }
+
   String _formattedVatPercent() {
     final percent = _vatRate * 100;
     final rounded = percent.toStringAsFixed(2);
@@ -967,6 +1050,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   String _dealerType = 'exempt';
   String? _businessId;
   String? _businessAddress;
+  String? _workerName;
   String? _verifiedBusinessLogoUrl;
   bool _isBusinessVerified = false;
   String _selectedDocType = 'quote';
@@ -1222,6 +1306,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           setState(() {
             _isBusinessVerified = workerData?['isapproved'] ?? false;
             _dealerType = workerData?['dealertype'] ?? 'exempt';
+            _workerName = workerData?['name']?.toString().trim();
           });
 
           // Fetch from verification_info sub-collection for business details
@@ -1234,7 +1319,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           if (vInfoDoc.exists && mounted) {
             final vData = vInfoDoc.data();
             final businessLogoUrl =
-                (vData?['businessLogoUrl'] ?? workerData?['businessLogoUrl'] ?? '')
+                (vData?['businessLogoUrl'] ??
+                        workerData?['businessLogoUrl'] ??
+                        '')
                     .toString()
                     .trim();
             setState(() {
@@ -1269,10 +1356,16 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           .collection('metadata')
           .doc('system')
           .get();
-      final vatPercent = _parseVatPercent(systemDoc.data()?['vatPercent']);
+      final systemData = systemDoc.data();
+      final vatPercent = _parseVatPercent(systemData?['vatPercent']);
+      final allocationMinAmount = _parsePositiveAmount(
+        systemData?['allocationNumberMinAmountBeforeVat'],
+      );
       if (!mounted) return;
       setState(() {
         _vatRate = vatPercent / 100;
+        _allocationNumberMinAmountBeforeVat =
+            allocationMinAmount ?? double.infinity;
       });
     } catch (e) {
       dev.log('Error loading VAT rate: $e');
@@ -1312,6 +1405,161 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     } catch (e) {
       dev.log("Font load failed: $e");
     }
+  }
+
+  Future<bool> _isTaxAuthorityConnected() async {
+    try {
+      final callable = _functions.httpsCallable(
+        'getTaxAuthorityConnectionStatus',
+      );
+      final result = await callable.call<Map<String, dynamic>>();
+      final data = Map<String, dynamic>.from(result.data);
+      return data['connected'] == true;
+    } catch (e) {
+      dev.log('Tax Authority connection check failed: $e');
+      return false;
+    }
+  }
+
+  Future<void> _openTaxAuthorityConnection() async {
+    final uri = Uri.parse(_taxAuthorityOAuthStartUrl);
+    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!opened && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open Tax Authority login.')),
+      );
+    }
+  }
+
+  int _taxAuthorityInvoiceType() {
+    return _selectedDocType == 'invoice_receipt' ? 320 : 305;
+  }
+
+  List<Map<String, dynamic>> _taxAuthorityItemsPayload() {
+    final totalBeforeDiscount = _itemsSubtotalBeforeTax;
+    final discountAmount = _discountAmount;
+    var remainingDiscount = discountAmount;
+
+    return _items.asMap().entries.map((entry) {
+      final index = entry.key;
+      final item = entry.value;
+      final isLastItem = index == _items.length - 1;
+      final lineBeforeDiscount = _itemTotalBeforeTax(item);
+      final proportionalDiscount = discountAmount > 0 && totalBeforeDiscount > 0
+          ? discountAmount * (lineBeforeDiscount / totalBeforeDiscount)
+          : 0.0;
+      final lineDiscount = discountAmount > 0
+          ? (isLastItem ? remainingDiscount : proportionalDiscount)
+          : 0.0;
+      remainingDiscount -= lineDiscount;
+      final totalAmount = lineBeforeDiscount - lineDiscount;
+
+      return {
+        'index': index + 1,
+        'description': item.description,
+        'quantity': item.quantity,
+        'price_per_unit': _unitPriceBeforeTax(item),
+        'discount': lineDiscount,
+        'total_amount': totalAmount,
+        'vat_rate': _vatRate * 100,
+        'vat_amount': totalAmount * _vatRate,
+      };
+    }).toList();
+  }
+
+  Future<_TaxAuthorityAllocationResult> _requestTaxAuthorityAllocation() async {
+    final strings = _withRequiredDefaults(
+      _getLocalizedStrings(context, listen: false),
+    );
+    final businessVatNumber = _digitsOnly(_businessId);
+    final customerVatNumber = _digitsOnly(_clientIdController.text);
+    if (businessVatNumber.isEmpty || customerVatNumber.isEmpty) {
+      throw StateError(strings['tax_authority_missing_tax_ids']!);
+    }
+
+    final invoiceDocId = _invoiceDocIdFor(_selectedDocType, _invoiceNumber);
+    final callable = _functions.httpsCallable('requestTaxInvoiceAllocation');
+    final HttpsCallableResult<Map<String, dynamic>> result;
+    try {
+      result = await callable.call<Map<String, dynamic>>({
+        'invoiceDocId': invoiceDocId,
+        'invoice': {
+          'invoice_id': invoiceDocId,
+          'invoice_type': _taxAuthorityInvoiceType(),
+          'vat_number': int.parse(businessVatNumber),
+          'user_name': (_workerName == null || _workerName!.isEmpty)
+              ? 'Hiro'
+              : _workerName,
+          'invoice_reference_number': _invoiceNumber,
+          'customer_vat_number': int.parse(customerVatNumber),
+          'customer_name': _clientNameController.text.trim(),
+          'invoice_date': _invoiceDateIsoValue(),
+          'invoice_issuance_date': _invoiceDateIsoValue(),
+          'accounting_software_number': _sandboxAccountingSoftwareNumber,
+          'amount_before_discount': _itemsSubtotalBeforeTax,
+          'discount': _discountAmount,
+          'payment_amount': _subtotalAmount,
+          'vat_amount': _vatAmount,
+          'payment_amount_including_vat': _totalBeforeRoundingAmount,
+          'invoice_note': _notesController.text.trim(),
+          'action': 0,
+          'items': _taxAuthorityItemsPayload(),
+        },
+      });
+    } on FirebaseFunctionsException catch (e) {
+      if (e.code == 'failed-precondition' &&
+          e.message?.contains('OAuth authorization') == true) {
+        throw StateError(strings['tax_authority_not_connected']!);
+      }
+      final authorityMessage = _taxAuthorityErrorMessageFromDetails(e.details);
+      throw StateError(
+        authorityMessage ??
+            e.message ??
+            strings['tax_authority_allocation_failed']!,
+      );
+    }
+    final data = Map<String, dynamic>.from(result.data);
+    final confirmationNumber = data['confirmationNumber']?.toString().trim();
+
+    if (data['approved'] != true ||
+        confirmationNumber == null ||
+        confirmationNumber.isEmpty) {
+      throw StateError(strings['tax_authority_allocation_failed']!);
+    }
+
+    return _TaxAuthorityAllocationResult(
+      approved: data['approved'] == true,
+      confirmationNumber: confirmationNumber,
+      invoiceId: data['invoiceId']?.toString(),
+      transactionId: data['transactionId']?.toString(),
+      raw: data,
+    );
+  }
+
+  String? _taxAuthorityErrorMessageFromDetails(dynamic details) {
+    final messages = <String>{};
+
+    void collect(dynamic value) {
+      if (value is Map) {
+        final message = value['message'];
+        if (message is String && message.trim().isNotEmpty) {
+          messages.add(message.trim());
+        } else {
+          collect(message);
+        }
+        for (final entry in value.values) {
+          collect(entry);
+        }
+      } else if (value is Iterable) {
+        for (final entry in value) {
+          collect(entry);
+        }
+      }
+    }
+
+    collect(details);
+    if (messages.isEmpty) return null;
+    return messages.take(3).join('\n');
   }
 
   Future<void> _loadDefaultBusinessLogo() async {
@@ -1475,6 +1723,19 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
               'חשוב להזין את המספר הנכון. אם תזין מספר שגוי, האחריות היא שלך ולא תוכל לשנות אותו אחר כך.',
           'doc_start_field': 'מספר פתיחה',
           'doc_start_invalid': 'יש להזין מספר תקין גדול מ-0',
+          'allocation_number': 'מספר הקצאה מרשות המס',
+          'tax_authority_connect_title': 'חיבור לרשות המסים',
+          'tax_authority_connect_message':
+              'הסכום לפני מע"מ מחייב מספר הקצאה מרשות המסים. כדי לקבל אותו יש להתחבר לרשות המסים.',
+          'tax_authority_connect_action': 'התחבר לרשות המסים',
+          'tax_authority_continue_without_connection': 'להמשיך בלי חיבור',
+          'tax_authority_requesting_allocation': 'מבקש מספר הקצאה מרשות המס...',
+          'tax_authority_missing_tax_ids':
+              'כדי לקבל מספר הקצאה יש למלא מספר עוסק של העסק ומספר עוסק/ת.ז. של הלקוח.',
+          'tax_authority_not_connected':
+              'צריך להשלים חיבור לרשות המסים לפני שמירת החשבונית.',
+          'tax_authority_allocation_failed':
+              'לא התקבל מספר הקצאה מרשות המס. החשבונית לא נשמרה.',
           'continue': 'המשך',
           'cancel': 'ביטול',
         };
@@ -1872,6 +2133,20 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
               'It is important to enter the correct number. If you enter the wrong number, it is your responsibility and you will not be able to change it later.',
           'doc_start_field': 'Starting Number',
           'doc_start_invalid': 'Enter a valid number greater than 0',
+          'allocation_number': 'Tax Authority allocation number',
+          'tax_authority_connect_title': 'Connect to the Tax Authority',
+          'tax_authority_connect_message':
+              'This amount before VAT requires a Tax Authority allocation number. Connect to request it.',
+          'tax_authority_connect_action': 'Connect to Tax Authority',
+          'tax_authority_continue_without_connection': 'Continue without it',
+          'tax_authority_requesting_allocation':
+              'Requesting Tax Authority allocation number...',
+          'tax_authority_missing_tax_ids':
+              'To request an allocation number, enter the business tax ID and the customer tax ID.',
+          'tax_authority_not_connected':
+              'Complete the Tax Authority connection before saving this invoice.',
+          'tax_authority_allocation_failed':
+              'No allocation number was received from the Tax Authority. The invoice was not saved.',
           'continue': 'Continue',
           'cancel': 'Cancel',
         };
@@ -1972,6 +2247,20 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'It is important to enter the correct number. If you enter the wrong number, it is your responsibility and you will not be able to change it later.',
       'doc_start_field': 'Starting Number',
       'doc_start_invalid': 'Enter a valid number greater than 0',
+      'allocation_number': 'Tax Authority allocation number',
+      'tax_authority_connect_title': 'Connect to the Tax Authority',
+      'tax_authority_connect_message':
+          'This amount before VAT requires a Tax Authority allocation number. Connect to request it.',
+      'tax_authority_connect_action': 'Connect to Tax Authority',
+      'tax_authority_continue_without_connection': 'Continue without it',
+      'tax_authority_requesting_allocation':
+          'Requesting Tax Authority allocation number...',
+      'tax_authority_missing_tax_ids':
+          'To request an allocation number, enter the business tax ID and the customer tax ID.',
+      'tax_authority_not_connected':
+          'Complete the Tax Authority connection before saving this invoice.',
+      'tax_authority_allocation_failed':
+          'No allocation number was received from the Tax Authority. The invoice was not saved.',
       'continue': 'Continue',
       'cancel': 'Cancel',
     };
@@ -2197,7 +2486,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     }
   }
 
-  Future<Uint8List?> _getGeneratedPdfBytes() async {
+  Future<Uint8List?> _getGeneratedPdfBytes({String? allocationNumber}) async {
     if (_items.isEmpty) return null;
 
     try {
@@ -2207,6 +2496,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         _cachedFont!,
         _cachedFontBold!,
         _cachedLogo,
+        allocationNumber: allocationNumber,
       );
     } catch (e) {
       dev.log("Error generating PDF: $e");
@@ -2215,7 +2505,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   }
 
   Widget _buildBusinessLogoSection(Map<String, String> strings) {
-    final hasLogo = _businessLogoBytes != null && _businessLogoBytes!.isNotEmpty;
+    final hasLogo =
+        _businessLogoBytes != null && _businessLogoBytes!.isNotEmpty;
 
     return _buildSectionCard(
       title: strings['business_logo_section']!,
@@ -2673,8 +2964,46 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           builder: (_) => InvoicePreviewPage(
             pdfBytes: pdfBytes,
             fileName: _previewFileName(),
+            requireTaxAuthorityConnectionPrompt:
+                _requiresTaxAuthorityAllocation,
+            isTaxAuthorityConnected: _isTaxAuthorityConnected,
+            onConnectTaxAuthority: _openTaxAuthorityConnection,
             onSave: () async {
-              savedDraftResult = await _createInvoiceAndLog(pdfBytes: pdfBytes);
+              var finalPdfBytes = pdfBytes;
+              Map<String, dynamic>? taxAuthorityAllocation;
+
+              if (_requiresTaxAuthorityAllocation) {
+                final strings = _withRequiredDefaults(
+                  _getLocalizedStrings(context, listen: false),
+                );
+                final connected = await _isTaxAuthorityConnected();
+                if (!connected) {
+                  throw StateError(strings['tax_authority_not_connected']!);
+                }
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        strings['tax_authority_requesting_allocation']!,
+                      ),
+                    ),
+                  );
+                }
+                final allocation = await _requestTaxAuthorityAllocation();
+                taxAuthorityAllocation = allocation.toMap();
+                final allocatedPdfBytes = await _getGeneratedPdfBytes(
+                  allocationNumber: allocation.confirmationNumber,
+                );
+                if (allocatedPdfBytes != null) {
+                  finalPdfBytes = allocatedPdfBytes;
+                }
+              }
+
+              savedDraftResult = await _createInvoiceAndLog(
+                pdfBytes: finalPdfBytes,
+                taxAuthorityAllocation: taxAuthorityAllocation,
+              );
+              return finalPdfBytes;
             },
           ),
         ),
@@ -3103,14 +3432,14 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     pdf.PdfPageFormat format,
     pw.Font font,
     pw.Font fontBold,
-    pw.MemoryImage? logo,
-  ) async {
+    pw.MemoryImage? logo, {
+    String? allocationNumber,
+  }) async {
     final doc = pw.Document();
     final strings = _localizedStringsForLocale('he');
 
     final isInvoice =
-        _selectedDocType == 'invoice' ||
-        _selectedDocType == 'invoice_receipt';
+        _selectedDocType == 'invoice' || _selectedDocType == 'invoice_receipt';
     final docTitle = _selectedDocType == 'quote'
         ? strings['quote']!
         : _selectedDocType == 'work_order'
@@ -3125,6 +3454,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         ? strings['credit_note']!
         : strings['doc_type']!;
     final creditNoteLegalData = _creditNoteLegalData;
+    final cleanAllocationNumber = allocationNumber?.trim();
 
     doc.addPage(
       pw.MultiPage(
@@ -3195,6 +3525,17 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                 color: pdf.PdfColors.blueGrey800,
                               ),
                             ),
+                          if (isInvoice &&
+                              cleanAllocationNumber != null &&
+                              cleanAllocationNumber.isNotEmpty)
+                            pw.Text(
+                              "${strings['allocation_number'] ?? 'מספר הקצאה מרשות המס'}: $cleanAllocationNumber",
+                              style: pw.TextStyle(
+                                fontWeight: pw.FontWeight.bold,
+                                fontSize: 12,
+                                color: pdf.PdfColors.blueGrey800,
+                              ),
+                            ),
                           pw.Text(
                             "${strings['date']} ${_formattedInvoiceDate()}",
                             style: pw.TextStyle(
@@ -3216,10 +3557,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           alignment: pw.Alignment.centerLeft,
           child: pw.Text(
             '${context.pageNumber} / ${context.pagesCount}',
-            style: pw.TextStyle(
-              fontSize: 10,
-              color: pdf.PdfColors.blueGrey700,
-            ),
+            style: pw.TextStyle(fontSize: 10, color: pdf.PdfColors.blueGrey700),
           ),
         ),
         build: (pw.Context context) => [
@@ -3230,383 +3568,382 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
               children: [
                 // Business & Client Info
                 pw.Row(
-                      crossAxisAlignment: pw.CrossAxisAlignment.start,
-                      children: [
-                        // Business Details
-                        pw.Expanded(
-                          child: pw.Container(
-                            padding: const pw.EdgeInsets.all(10),
-                            decoration: pw.BoxDecoration(
-                              color: pdf.PdfColors.blue50,
-                              borderRadius: pw.BorderRadius.circular(8),
-                            ),
-                            child: pw.Column(
-                              crossAxisAlignment: pw.CrossAxisAlignment.start,
-                              children: [
-                                pw.Text(
-                                  strings['worker']!,
-                                  style: pw.TextStyle(
-                                    fontWeight: pw.FontWeight.bold,
-                                    fontSize: 13,
-                                    color: pdf.PdfColors.blue900,
-                                  ),
-                                ),
-                                pw.SizedBox(height: 6),
-                                pw.Text(
-                                  widget.workerName,
-                                  style: pw.TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: pw.FontWeight.bold,
-                                  ),
-                                ),
-                                if (_businessId != null &&
-                                    _businessId!.isNotEmpty) ...[
-                                  pw.Text(
-                                    "${strings['authorized_dealer_label']} $_businessId",
-                                    style: pw.TextStyle(
-                                      fontWeight: pw.FontWeight.bold,
-                                      fontSize: 11,
-                                    ),
-                                  ),
-                                  pw.Text(
-                                    "${strings['vat_id']} $_businessId",
-                                    style: pw.TextStyle(fontSize: 11),
-                                  ),
-                                  pw.Text(
-                                    _dealerType == 'company'
-                                        ? strings['company_dealer']!
-                                        : _isLicensedDealerType
-                                        ? strings['licensed_dealer']!
-                                        : strings['exempt_dealer']!,
-                                    style: pw.TextStyle(
-                                      fontSize: 10,
-                                      color: pdf.PdfColors.blueGrey800,
-                                    ),
-                                  ),
-                                ],
-                                if (_businessAddress != null &&
-                                    _businessAddress!.isNotEmpty)
-                                  pw.Text(
-                                    "${strings['business_address']} $_businessAddress",
-                                    style: pw.TextStyle(fontSize: 11),
-                                  ),
-                                if (widget.workerPhone != null)
-                                  pw.Text(
-                                    widget.workerPhone!,
-                                    style: pw.TextStyle(fontSize: 11),
-                                  ),
-                                if (widget.workerEmail != null)
-                                  pw.Text(
-                                    widget.workerEmail!,
-                                    style: pw.TextStyle(fontSize: 11),
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        pw.SizedBox(width: 24),
-                        // Client Details
-                        pw.Expanded(
-                          child: pw.Container(
-                            padding: const pw.EdgeInsets.all(10),
-                            decoration: pw.BoxDecoration(
-                              color: pdf.PdfColors.grey100,
-                              borderRadius: pw.BorderRadius.circular(8),
-                            ),
-                            child: pw.Column(
-                              crossAxisAlignment: pw.CrossAxisAlignment.start,
-                              children: [
-                                pw.Text(
-                                  strings['client_info']!,
-                                  style: pw.TextStyle(
-                                    fontWeight: pw.FontWeight.bold,
-                                    fontSize: 13,
-                                    color: pdf.PdfColors.blue900,
-                                  ),
-                                ),
-                                pw.SizedBox(height: 6),
-                                pw.Text(
-                                  _clientNameController.text,
-                                  style: pw.TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: pw.FontWeight.bold,
-                                  ),
-                                ),
-                                if (_clientIdController.text.trim().isNotEmpty)
-                                  pw.Text(
-                                    "${strings['client_id']!}: ${_clientIdController.text.trim()}",
-                                    style: pw.TextStyle(fontSize: 11),
-                                  ),
-                                if (_clientPhoneController.text.isNotEmpty)
-                                  pw.Text(
-                                    _clientPhoneController.text,
-                                    style: pw.TextStyle(fontSize: 11),
-                                  ),
-                                if (_clientAddressController.text.isNotEmpty)
-                                  pw.Text(
-                                    _clientAddressController.text,
-                                    style: pw.TextStyle(fontSize: 11),
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    pw.SizedBox(height: 28),
-                    if (creditNoteLegalData != null) ...[
-                      pw.Container(
-                        width: double.infinity,
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    // Business Details
+                    pw.Expanded(
+                      child: pw.Container(
                         padding: const pw.EdgeInsets.all(10),
                         decoration: pw.BoxDecoration(
-                          color: pdf.PdfColors.amber50,
+                          color: pdf.PdfColors.blue50,
                           borderRadius: pw.BorderRadius.circular(8),
-                          border: pw.Border.all(color: pdf.PdfColors.amber200),
                         ),
                         child: pw.Column(
                           crossAxisAlignment: pw.CrossAxisAlignment.start,
                           children: [
                             pw.Text(
-                              strings['credit_note_legal']!,
+                              strings['worker']!,
                               style: pw.TextStyle(
                                 fontWeight: pw.FontWeight.bold,
                                 fontSize: 13,
-                                color: pdf.PdfColors.orange900,
+                                color: pdf.PdfColors.blue900,
                               ),
                             ),
                             pw.SizedBox(height: 6),
                             pw.Text(
-                              "${strings['original_invoice_number']!}: ${creditNoteLegalData['originalInvoiceNumber']}",
-                              style: const pw.TextStyle(fontSize: 11),
+                              widget.workerName,
+                              style: pw.TextStyle(
+                                fontSize: 15,
+                                fontWeight: pw.FontWeight.bold,
+                              ),
                             ),
-                            pw.Text(
-                              "${strings['original_invoice_date']!}: ${creditNoteLegalData['originalInvoiceDate']}",
-                              style: const pw.TextStyle(fontSize: 11),
-                            ),
-                            pw.Text(
-                              "${strings['credit_reason']!}: ${creditNoteLegalData['creditReason']}",
-                              style: const pw.TextStyle(fontSize: 11),
-                            ),
-                            pw.Text(
-                              "${strings['delivery_method']!}: ${_creditDeliveryMethodLabel(strings, creditNoteLegalData['deliveryMethod'] as String)}",
-                              style: const pw.TextStyle(fontSize: 11),
-                            ),
-                            pw.Text(
-                              "${strings['receipt_confirmation']!}: ${creditNoteLegalData['receiptConfirmation']}",
-                              style: const pw.TextStyle(fontSize: 11),
-                            ),
+                            if (_businessId != null &&
+                                _businessId!.isNotEmpty) ...[
+                              pw.Text(
+                                "${strings['authorized_dealer_label']} $_businessId",
+                                style: pw.TextStyle(
+                                  fontWeight: pw.FontWeight.bold,
+                                  fontSize: 11,
+                                ),
+                              ),
+                              pw.Text(
+                                "${strings['vat_id']} $_businessId",
+                                style: pw.TextStyle(fontSize: 11),
+                              ),
+                              pw.Text(
+                                _dealerType == 'company'
+                                    ? strings['company_dealer']!
+                                    : _isLicensedDealerType
+                                    ? strings['licensed_dealer']!
+                                    : strings['exempt_dealer']!,
+                                style: pw.TextStyle(
+                                  fontSize: 10,
+                                  color: pdf.PdfColors.blueGrey800,
+                                ),
+                              ),
+                            ],
+                            if (_businessAddress != null &&
+                                _businessAddress!.isNotEmpty)
+                              pw.Text(
+                                "${strings['business_address']} $_businessAddress",
+                                style: pw.TextStyle(fontSize: 11),
+                              ),
+                            if (widget.workerPhone != null)
+                              pw.Text(
+                                widget.workerPhone!,
+                                style: pw.TextStyle(fontSize: 11),
+                              ),
+                            if (widget.workerEmail != null)
+                              pw.Text(
+                                widget.workerEmail!,
+                                style: pw.TextStyle(fontSize: 11),
+                              ),
                           ],
                         ),
                       ),
-                      pw.SizedBox(height: 18),
-                    ],
-                    // Items Table
-                    pw.TableHelper.fromTextArray(
-                      headers: [
-                        strings['desc']!,
-                        strings['qty']!,
-                        strings['price']!,
-                        strings['total']!,
-                      ],
-                      data: _items
-                          .map(
-                            (item) => [
-                              item.description,
-                              item.quantity.toString(),
-                              "${_unitPriceAfterTax(item).toStringAsFixed(2)} ₪",
-                              "${_signedItemTotal(item).toStringAsFixed(2)} ₪",
-                            ],
-                          )
-                          .toList(),
-                      headerStyle: pw.TextStyle(
-                        fontWeight: pw.FontWeight.bold,
-                        color: pdf.PdfColors.white,
-                        fontSize: 12,
-                      ),
-                      headerDecoration: const pw.BoxDecoration(
-                        color: pdf.PdfColors.blue,
-                      ),
-                      cellAlignment: pw.Alignment.centerRight,
-                      cellStyle: const pw.TextStyle(fontSize: 11),
-                      columnWidths: {
-                        0: const pw.FlexColumnWidth(4),
-                        1: const pw.FixedColumnWidth(60),
-                        2: const pw.FixedColumnWidth(100),
-                        3: const pw.FixedColumnWidth(100),
-                      },
-                      border: pw.TableBorder.all(
-                        color: pdf.PdfColors.grey400,
-                        width: 0.5,
-                      ),
                     ),
-                    pw.SizedBox(height: 18),
-                    // Summary Box
-                    pw.Align(
-                      alignment: pw.Alignment.centerRight,
+                    pw.SizedBox(width: 24),
+                    // Client Details
+                    pw.Expanded(
                       child: pw.Container(
-                        padding: const pw.EdgeInsets.all(14),
-                        width: 260,
+                        padding: const pw.EdgeInsets.all(10),
                         decoration: pw.BoxDecoration(
-                          color: pdf.PdfColors.blue50,
-                          borderRadius: pw.BorderRadius.circular(10),
-                          border: pw.Border.all(color: pdf.PdfColors.blue100),
+                          color: pdf.PdfColors.grey100,
+                          borderRadius: pw.BorderRadius.circular(8),
                         ),
                         child: pw.Column(
                           crossAxisAlignment: pw.CrossAxisAlignment.start,
                           children: [
-                            if (_selectedDocType != 'receipt' &&
-                                _isLicensedDealerType) ...[
-                              pw.Row(
-                                mainAxisAlignment:
-                                    pw.MainAxisAlignment.spaceBetween,
-                                children: [
-                                  pw.Text(
-                                    strings['subtotal']!,
-                                    style: pw.TextStyle(fontSize: 11),
-                                  ),
-                                  pw.Text(
-                                    "${_signedSubtotalAmount.toStringAsFixed(2)} ₪",
-                                    style: pw.TextStyle(fontSize: 11),
-                                  ),
-                                ],
+                            pw.Text(
+                              strings['client_info']!,
+                              style: pw.TextStyle(
+                                fontWeight: pw.FontWeight.bold,
+                                fontSize: 13,
+                                color: pdf.PdfColors.blue900,
                               ),
-                              pw.SizedBox(height: 4),
-                              pw.Row(
-                                mainAxisAlignment:
-                                    pw.MainAxisAlignment.spaceBetween,
-                                children: [
-                                  pw.Text(
-                                    _vatLabel(true),
-                                    style: pw.TextStyle(fontSize: 11),
-                                  ),
-                                  pw.Text(
-                                    "${_signedVatAmount.toStringAsFixed(2)} ₪",
-                                    style: pw.TextStyle(fontSize: 11),
-                                  ),
-                                ],
-                              ),
-                              pw.Divider(
-                                thickness: 1,
-                                color: pdf.PdfColors.grey400,
-                              ),
-                            ],
-                            if (_discountAmount > 0) ...[
-                              pw.Row(
-                                mainAxisAlignment:
-                                    pw.MainAxisAlignment.spaceBetween,
-                                children: [
-                                  pw.Text(
-                                    strings['discount']!,
-                                    style: pw.TextStyle(fontSize: 11),
-                                  ),
-                                  pw.Text(
-                                    "-${_discountAmount.toStringAsFixed(2)} ₪",
-                                    style: pw.TextStyle(fontSize: 11),
-                                  ),
-                                ],
-                              ),
-                              pw.Divider(
-                                thickness: 1,
-                                color: pdf.PdfColors.grey400,
-                              ),
-                            ],
-                            if (_roundingAmount > 0) ...[
-                              pw.Row(
-                                mainAxisAlignment:
-                                    pw.MainAxisAlignment.spaceBetween,
-                                children: [
-                                  pw.Text(
-                                    strings['rounding_amount']!,
-                                    style: pw.TextStyle(fontSize: 11),
-                                  ),
-                                  pw.Text(
-                                    "${_signedRoundingAmount.toStringAsFixed(2)} ₪",
-                                    style: pw.TextStyle(fontSize: 11),
-                                  ),
-                                ],
-                              ),
-                              pw.Divider(
-                                thickness: 1,
-                                color: pdf.PdfColors.grey400,
-                              ),
-                            ],
-                            pw.Row(
-                              mainAxisAlignment:
-                                  pw.MainAxisAlignment.spaceBetween,
-                              children: [
-                                pw.Text(
-                                  strings['total']!,
-                                  style: pw.TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: pw.FontWeight.bold,
-                                    color: pdf.PdfColors.blue900,
-                                  ),
-                                ),
-                                pw.Text(
-                                  "${_signedTotalAmount.toStringAsFixed(2)} ₪",
-                                  style: pw.TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: pw.FontWeight.bold,
-                                    color: pdf.PdfColors.blue900,
-                                  ),
-                                ),
-                              ],
                             ),
-                            if (_showsDueDateSection &&
-                                _selectedPaymentDueDate != null) ...[
-                              pw.SizedBox(height: 8),
-                              pw.Row(
-                                mainAxisAlignment:
-                                    pw.MainAxisAlignment.spaceBetween,
-                                children: [
-                                  pw.Text(
-                                    strings['payment_due_date']!,
-                                    style: pw.TextStyle(
-                                      fontSize: 11,
-                                      color: pdf.PdfColors.blueGrey800,
-                                    ),
-                                  ),
-                                  pw.Text(
-                                    _formattedPaymentDueDate(),
-                                    style: pw.TextStyle(
-                                      fontSize: 11,
-                                      fontWeight: pw.FontWeight.bold,
-                                      color: pdf.PdfColors.blueGrey800,
-                                    ),
-                                  ),
-                                ],
+                            pw.SizedBox(height: 6),
+                            pw.Text(
+                              _clientNameController.text,
+                              style: pw.TextStyle(
+                                fontSize: 15,
+                                fontWeight: pw.FontWeight.bold,
                               ),
-                            ],
+                            ),
+                            if (_clientIdController.text.trim().isNotEmpty)
+                              pw.Text(
+                                "${strings['client_id']!}: ${_clientIdController.text.trim()}",
+                                style: pw.TextStyle(fontSize: 11),
+                              ),
+                            if (_clientPhoneController.text.isNotEmpty)
+                              pw.Text(
+                                _clientPhoneController.text,
+                                style: pw.TextStyle(fontSize: 11),
+                              ),
+                            if (_clientAddressController.text.isNotEmpty)
+                              pw.Text(
+                                _clientAddressController.text,
+                                style: pw.TextStyle(fontSize: 11),
+                              ),
                           ],
                         ),
                       ),
                     ),
-                    if (_showsPaymentMethodSection) ...[
-                      pw.SizedBox(height: 24),
-                      pw.Text(
-                        strings['payment_method']!,
-                        style: pw.TextStyle(
-                          fontWeight: pw.FontWeight.bold,
-                          fontSize: 11,
-                          color: pdf.PdfColors.blue900,
-                        ),
-                      ),
-                      pw.Container(
-                        width: double.infinity,
-                        padding: const pw.EdgeInsets.all(10),
-                        decoration: pw.BoxDecoration(
-                          border: pw.Border.all(color: pdf.PdfColors.grey300),
-                          borderRadius: const pw.BorderRadius.all(
-                            pw.Radius.circular(5),
+                  ],
+                ),
+                pw.SizedBox(height: 28),
+                if (creditNoteLegalData != null) ...[
+                  pw.Container(
+                    width: double.infinity,
+                    padding: const pw.EdgeInsets.all(10),
+                    decoration: pw.BoxDecoration(
+                      color: pdf.PdfColors.amber50,
+                      borderRadius: pw.BorderRadius.circular(8),
+                      border: pw.Border.all(color: pdf.PdfColors.amber200),
+                    ),
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text(
+                          strings['credit_note_legal']!,
+                          style: pw.TextStyle(
+                            fontWeight: pw.FontWeight.bold,
+                            fontSize: 13,
+                            color: pdf.PdfColors.orange900,
                           ),
                         ),
-                        child: pw.Text(
-                          _paymentMethodsSummaryText(true),
+                        pw.SizedBox(height: 6),
+                        pw.Text(
+                          "${strings['original_invoice_number']!}: ${creditNoteLegalData['originalInvoiceNumber']}",
                           style: const pw.TextStyle(fontSize: 11),
                         ),
+                        pw.Text(
+                          "${strings['original_invoice_date']!}: ${creditNoteLegalData['originalInvoiceDate']}",
+                          style: const pw.TextStyle(fontSize: 11),
+                        ),
+                        pw.Text(
+                          "${strings['credit_reason']!}: ${creditNoteLegalData['creditReason']}",
+                          style: const pw.TextStyle(fontSize: 11),
+                        ),
+                        pw.Text(
+                          "${strings['delivery_method']!}: ${_creditDeliveryMethodLabel(strings, creditNoteLegalData['deliveryMethod'] as String)}",
+                          style: const pw.TextStyle(fontSize: 11),
+                        ),
+                        pw.Text(
+                          "${strings['receipt_confirmation']!}: ${creditNoteLegalData['receiptConfirmation']}",
+                          style: const pw.TextStyle(fontSize: 11),
+                        ),
+                      ],
+                    ),
+                  ),
+                  pw.SizedBox(height: 18),
+                ],
+                // Items Table
+                pw.TableHelper.fromTextArray(
+                  headers: [
+                    strings['desc']!,
+                    strings['qty']!,
+                    strings['price']!,
+                    strings['total']!,
+                  ],
+                  data: _items
+                      .map(
+                        (item) => [
+                          item.description,
+                          item.quantity.toString(),
+                          "${_unitPriceAfterTax(item).toStringAsFixed(2)} ₪",
+                          "${_signedItemTotal(item).toStringAsFixed(2)} ₪",
+                        ],
+                      )
+                      .toList(),
+                  headerStyle: pw.TextStyle(
+                    fontWeight: pw.FontWeight.bold,
+                    color: pdf.PdfColors.white,
+                    fontSize: 12,
+                  ),
+                  headerDecoration: const pw.BoxDecoration(
+                    color: pdf.PdfColors.blue,
+                  ),
+                  cellAlignment: pw.Alignment.centerRight,
+                  cellStyle: const pw.TextStyle(fontSize: 11),
+                  columnWidths: {
+                    0: const pw.FlexColumnWidth(4),
+                    1: const pw.FixedColumnWidth(60),
+                    2: const pw.FixedColumnWidth(100),
+                    3: const pw.FixedColumnWidth(100),
+                  },
+                  border: pw.TableBorder.all(
+                    color: pdf.PdfColors.grey400,
+                    width: 0.5,
+                  ),
+                ),
+                pw.SizedBox(height: 18),
+                // Summary Box
+                pw.Align(
+                  alignment: pw.Alignment.centerRight,
+                  child: pw.Container(
+                    padding: const pw.EdgeInsets.all(14),
+                    width: 260,
+                    decoration: pw.BoxDecoration(
+                      color: pdf.PdfColors.blue50,
+                      borderRadius: pw.BorderRadius.circular(10),
+                      border: pw.Border.all(color: pdf.PdfColors.blue100),
+                    ),
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        if (_selectedDocType != 'receipt' &&
+                            _isLicensedDealerType) ...[
+                          pw.Row(
+                            mainAxisAlignment:
+                                pw.MainAxisAlignment.spaceBetween,
+                            children: [
+                              pw.Text(
+                                strings['subtotal']!,
+                                style: pw.TextStyle(fontSize: 11),
+                              ),
+                              pw.Text(
+                                "${_signedSubtotalAmount.toStringAsFixed(2)} ₪",
+                                style: pw.TextStyle(fontSize: 11),
+                              ),
+                            ],
+                          ),
+                          pw.SizedBox(height: 4),
+                          pw.Row(
+                            mainAxisAlignment:
+                                pw.MainAxisAlignment.spaceBetween,
+                            children: [
+                              pw.Text(
+                                _vatLabel(true),
+                                style: pw.TextStyle(fontSize: 11),
+                              ),
+                              pw.Text(
+                                "${_signedVatAmount.toStringAsFixed(2)} ₪",
+                                style: pw.TextStyle(fontSize: 11),
+                              ),
+                            ],
+                          ),
+                          pw.Divider(
+                            thickness: 1,
+                            color: pdf.PdfColors.grey400,
+                          ),
+                        ],
+                        if (_discountAmount > 0) ...[
+                          pw.Row(
+                            mainAxisAlignment:
+                                pw.MainAxisAlignment.spaceBetween,
+                            children: [
+                              pw.Text(
+                                strings['discount']!,
+                                style: pw.TextStyle(fontSize: 11),
+                              ),
+                              pw.Text(
+                                "-${_discountAmount.toStringAsFixed(2)} ₪",
+                                style: pw.TextStyle(fontSize: 11),
+                              ),
+                            ],
+                          ),
+                          pw.Divider(
+                            thickness: 1,
+                            color: pdf.PdfColors.grey400,
+                          ),
+                        ],
+                        if (_roundingAmount > 0) ...[
+                          pw.Row(
+                            mainAxisAlignment:
+                                pw.MainAxisAlignment.spaceBetween,
+                            children: [
+                              pw.Text(
+                                strings['rounding_amount']!,
+                                style: pw.TextStyle(fontSize: 11),
+                              ),
+                              pw.Text(
+                                "${_signedRoundingAmount.toStringAsFixed(2)} ₪",
+                                style: pw.TextStyle(fontSize: 11),
+                              ),
+                            ],
+                          ),
+                          pw.Divider(
+                            thickness: 1,
+                            color: pdf.PdfColors.grey400,
+                          ),
+                        ],
+                        pw.Row(
+                          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                          children: [
+                            pw.Text(
+                              strings['total']!,
+                              style: pw.TextStyle(
+                                fontSize: 15,
+                                fontWeight: pw.FontWeight.bold,
+                                color: pdf.PdfColors.blue900,
+                              ),
+                            ),
+                            pw.Text(
+                              "${_signedTotalAmount.toStringAsFixed(2)} ₪",
+                              style: pw.TextStyle(
+                                fontSize: 15,
+                                fontWeight: pw.FontWeight.bold,
+                                color: pdf.PdfColors.blue900,
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (_showsDueDateSection &&
+                            _selectedPaymentDueDate != null) ...[
+                          pw.SizedBox(height: 8),
+                          pw.Row(
+                            mainAxisAlignment:
+                                pw.MainAxisAlignment.spaceBetween,
+                            children: [
+                              pw.Text(
+                                strings['payment_due_date']!,
+                                style: pw.TextStyle(
+                                  fontSize: 11,
+                                  color: pdf.PdfColors.blueGrey800,
+                                ),
+                              ),
+                              pw.Text(
+                                _formattedPaymentDueDate(),
+                                style: pw.TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: pw.FontWeight.bold,
+                                  color: pdf.PdfColors.blueGrey800,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+                if (_showsPaymentMethodSection) ...[
+                  pw.SizedBox(height: 24),
+                  pw.Text(
+                    strings['payment_method']!,
+                    style: pw.TextStyle(
+                      fontWeight: pw.FontWeight.bold,
+                      fontSize: 11,
+                      color: pdf.PdfColors.blue900,
+                    ),
+                  ),
+                  pw.Container(
+                    width: double.infinity,
+                    padding: const pw.EdgeInsets.all(10),
+                    decoration: pw.BoxDecoration(
+                      border: pw.Border.all(color: pdf.PdfColors.grey300),
+                      borderRadius: const pw.BorderRadius.all(
+                        pw.Radius.circular(5),
                       ),
-                      pw.SizedBox(height: 16),
-                    ],
+                    ),
+                    child: pw.Text(
+                      _paymentMethodsSummaryText(true),
+                      style: const pw.TextStyle(fontSize: 11),
+                    ),
+                  ),
+                  pw.SizedBox(height: 16),
+                ],
                 if (_notesController.text.isNotEmpty) ...[
                   pw.Text(
                     strings['notes']!,
@@ -4798,13 +5135,19 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
 class InvoicePreviewPage extends StatefulWidget {
   final Uint8List pdfBytes;
   final String fileName;
-  final Future<void> Function() onSave;
+  final Future<Uint8List?> Function() onSave;
+  final bool requireTaxAuthorityConnectionPrompt;
+  final Future<bool> Function()? isTaxAuthorityConnected;
+  final Future<void> Function()? onConnectTaxAuthority;
 
   const InvoicePreviewPage({
     super.key,
     required this.pdfBytes,
     required this.fileName,
     required this.onSave,
+    this.requireTaxAuthorityConnectionPrompt = false,
+    this.isTaxAuthorityConnected,
+    this.onConnectTaxAuthority,
   });
 
   @override
@@ -4814,15 +5157,116 @@ class InvoicePreviewPage extends StatefulWidget {
 class _InvoicePreviewPageState extends State<InvoicePreviewPage> {
   bool _isSaved = false;
   bool _isSaving = false;
+  late Uint8List _pdfBytes;
+
+  @override
+  void initState() {
+    super.initState();
+    _pdfBytes = widget.pdfBytes;
+    if (widget.requireTaxAuthorityConnectionPrompt) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _showTaxAuthorityConnectionPromptIfNeeded();
+      });
+    }
+  }
+
+  Future<bool> _showTaxAuthorityConnectionPromptIfNeeded({
+    bool requiredForSave = false,
+  }) async {
+    if (!mounted) return false;
+    final isConnected = await widget.isTaxAuthorityConnected?.call() ?? true;
+    if (!mounted || isConnected) return true;
+
+    final isRtl =
+        Provider.of<LanguageProvider>(
+              context,
+              listen: false,
+            ).locale.languageCode ==
+            'he' ||
+        Provider.of<LanguageProvider>(
+              context,
+              listen: false,
+            ).locale.languageCode ==
+            'ar';
+
+    final shouldConnect = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => Directionality(
+        textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
+        child: AlertDialog(
+          title: Text(
+            isRtl ? 'חיבור לרשות המסים' : 'Connect to the Tax Authority',
+          ),
+          content: Text(
+            requiredForSave
+                ? (isRtl
+                      ? 'אי אפשר לשמור את החשבונית לפני קבלת מספר הקצאה. השלם חיבור לרשות המסים ואז לחץ שמור שוב.'
+                      : 'This invoice cannot be saved before receiving an allocation number. Complete the Tax Authority connection, then press Save again.')
+                : (isRtl
+                      ? 'הסכום לפני מע"מ מחייב מספר הקצאה מרשות המסים. כדי לקבל אותו יש להתחבר לרשות המסים.'
+                      : 'This amount before VAT requires a Tax Authority allocation number. Connect to request it.'),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: Text(
+                requiredForSave
+                    ? (isRtl ? 'ביטול' : 'Cancel')
+                    : (isRtl ? 'להמשיך בלי חיבור' : 'Continue without it'),
+              ),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: Text(isRtl ? 'התחבר לרשות המסים' : 'Connect'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (shouldConnect == true) {
+      await widget.onConnectTaxAuthority?.call();
+    }
+    return false;
+  }
+
+  String _friendlySaveError(Object error) {
+    final text = error.toString();
+    const badStatePrefix = 'Bad state: ';
+    if (text.startsWith(badStatePrefix)) {
+      return text.substring(badStatePrefix.length);
+    }
+    return text;
+  }
 
   Future<void> _handleSave() async {
     if (_isSaving || _isSaved) return;
 
     setState(() => _isSaving = true);
     try {
-      await widget.onSave();
+      if (widget.requireTaxAuthorityConnectionPrompt) {
+        final connected = await widget.isTaxAuthorityConnected?.call() ?? true;
+        if (!mounted) return;
+        if (!connected) {
+          await _showTaxAuthorityConnectionPromptIfNeeded(
+            requiredForSave: true,
+          );
+          return;
+        }
+      }
+      final savedPdfBytes = await widget.onSave();
       if (!mounted) return;
-      setState(() => _isSaved = true);
+      setState(() {
+        if (savedPdfBytes != null) {
+          _pdfBytes = savedPdfBytes;
+        }
+        _isSaved = true;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_friendlySaveError(e))));
     } finally {
       if (mounted) {
         setState(() => _isSaving = false);
@@ -4852,7 +5296,7 @@ class _InvoicePreviewPageState extends State<InvoicePreviewPage> {
           allowSharing: false,
           useActions: false,
           initialPageFormat: pdf.PdfPageFormat.a4,
-          build: (_) async => widget.pdfBytes,
+          build: (_) async => _pdfBytes,
         ),
         bottomNavigationBar: SafeArea(
           minimum: const EdgeInsets.fromLTRB(16, 8, 16, 16),
@@ -4900,7 +5344,7 @@ class _InvoicePreviewPageState extends State<InvoicePreviewPage> {
                         onPressed: () {
                           Printing.layoutPdf(
                             name: widget.fileName,
-                            onLayout: (_) async => widget.pdfBytes,
+                            onLayout: (_) async => _pdfBytes,
                           );
                         },
                         icon: const Icon(Icons.print_rounded),
@@ -4917,7 +5361,7 @@ class _InvoicePreviewPageState extends State<InvoicePreviewPage> {
                       child: ElevatedButton.icon(
                         onPressed: () {
                           Printing.sharePdf(
-                            bytes: widget.pdfBytes,
+                            bytes: _pdfBytes,
                             filename: widget.fileName,
                           );
                         },

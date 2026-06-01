@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:share_plus/share_plus.dart';
@@ -50,7 +51,8 @@ class Profile extends StatefulWidget {
   State<Profile> createState() => _ProfileState();
 }
 
-class _ProfileState extends State<Profile> with TickerProviderStateMixin {
+class _ProfileState extends State<Profile>
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   static const Color _kPrimaryBlue = Color(0xFF1976D2);
   static const Color _kPageTint = Color(0xFFF7FBFF);
   static const Color _kTextMain = Color(0xFF070B18);
@@ -113,11 +115,18 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
   bool _isBusinessVerified = false;
   bool _isInsured = false;
   bool _areProfessionsExpanded = false;
+  bool _isTaxAuthorityConnected = false;
+  bool _isTaxAuthorityConnectionLoading = false;
 
   String _distanceStr = "";
   double? _proLat;
   double? _proLng;
   final ScrollController _aboutScrollController = ScrollController();
+  final FirebaseFunctions _functions = FirebaseFunctions.instanceFor(
+    region: 'me-west1',
+  );
+  static const String _taxAuthorityOAuthStartUrl =
+      'https://me-west1-hire-hub-fe6c4.cloudfunctions.net/taxesOAuthStart';
 
   bool get _hasActiveWorkerSubscription {
     return SubscriptionAccessService.hasActiveWorkerSubscriptionFromData({
@@ -149,6 +158,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _backgroundAnimationController;
     _checkInitialOwnership();
     _initTabController();
@@ -161,6 +171,16 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
     });
 
     _fetchUserData();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.resumed &&
+        _isOwnProfile &&
+        _userRole == 'worker') {
+      unawaited(_loadTaxAuthorityConnectionStatus());
+    }
   }
 
   Future<void> _loadProfessionTranslations() async {
@@ -517,6 +537,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
               _subscriptionStatus = accessState.subscriptionStatus;
             });
           }
+          await _loadTaxAuthorityConnectionStatus();
         }
 
         if (!_isOwnProfile) {
@@ -585,6 +606,51 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
       debugPrint("FETCH ERROR: $e");
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  Future<void> _loadTaxAuthorityConnectionStatus() async {
+    if (!_isOwnProfile) return;
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) return;
+
+    if (mounted) {
+      setState(() => _isTaxAuthorityConnectionLoading = true);
+    }
+
+    try {
+      final callable = _functions.httpsCallable(
+        'getTaxAuthorityConnectionStatus',
+      );
+      final response = await callable.call<Map<String, dynamic>>();
+      final data = response.data;
+      if (!mounted) return;
+      setState(() {
+        _isTaxAuthorityConnected = data['connected'] == true;
+      });
+    } catch (e) {
+      debugPrint('Failed to load Tax Authority connection status: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _isTaxAuthorityConnectionLoading = false);
+      }
+    }
+  }
+
+  Future<void> _connectTaxAuthority(Map<String, String> strings) async {
+    final uri = Uri.parse(_taxAuthorityOAuthStartUrl);
+    final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!launched && mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(strings['open_link_failed']!)));
+      return;
+    }
+
+    unawaited(
+      Future<void>.delayed(const Duration(seconds: 2)).then((_) {
+        if (mounted) return _loadTaxAuthorityConnectionStatus();
+      }),
+    );
   }
 
   Future<void> _calculateDistance() async {
@@ -2676,9 +2742,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
             const SizedBox(height: 32),
             Row(
               children: [
-                Expanded(
-                  child: _buildSectionTitle(strings['social_links']!),
-                ),
+                Expanded(child: _buildSectionTitle(strings['social_links']!)),
                 if (_isOwnProfile)
                   TextButton.icon(
                     onPressed: _showSocialLinksEditor,
@@ -2697,6 +2761,12 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
 
           if (_isOwnProfile) ...[
             const SizedBox(height: 32),
+            if (_userRole == 'worker' &&
+                !_isTaxAuthorityConnected &&
+                !_isTaxAuthorityConnectionLoading) ...[
+              _buildTaxAuthorityConnectCard(strings),
+              const SizedBox(height: 24),
+            ],
             _buildSectionTitle(
               _userRole == 'worker'
                   ? strings['business_tools']!
@@ -2856,6 +2926,97 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
                   borderRadius: BorderRadius.circular(16),
                 ),
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTaxAuthorityConnectCard(Map<String, String> strings) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.95),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: const Color(0xFFBAE6FD)),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF0284C7).withValues(alpha: 0.10),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(11),
+            decoration: BoxDecoration(
+              color: const Color(0xFFE0F2FE),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: const Icon(
+              Icons.account_balance_rounded,
+              color: Color(0xFF0369A1),
+              size: 24,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  strings['tax_authority_connect_title'] ??
+                      'Connect to Israel Tax Authority',
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                    color: _kTextMain,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  strings['tax_authority_connect_body'] ??
+                      'Authorize invoice allocation numbers for tax invoices.',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    height: 1.45,
+                    color: _kTextMuted,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: ElevatedButton.icon(
+                    onPressed: () => _connectTaxAuthority(strings),
+                    icon: const Icon(Icons.open_in_new_rounded, size: 18),
+                    label: Text(
+                      strings['tax_authority_connect_button'] ??
+                          'Connect Tax Authority',
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF0369A1),
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 13,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      textStyle: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -3073,9 +3234,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
                       decoration: BoxDecoration(
                         color: const Color(0xFFEAF5FF),
                         borderRadius: BorderRadius.circular(18),
-                        border: Border.all(
-                          color: const Color(0xFFBFDBFE),
-                        ),
+                        border: Border.all(color: const Color(0xFFBFDBFE)),
                       ),
                       child: _buildSocialLinkIcon(type),
                     ),
@@ -3119,11 +3278,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
           ),
         );
       default:
-        return Icon(
-          _socialLinkIcon(type),
-          size: 20,
-          color: _kPrimaryBlue,
-        );
+        return Icon(_socialLinkIcon(type), size: 20, color: _kPrimaryBlue);
     }
   }
 
@@ -3186,20 +3341,17 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
     final uri = Uri.tryParse(normalized);
     if (uri == null) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(strings['open_link_failed']!)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(strings['open_link_failed']!)));
       return;
     }
 
-    final launched = await launchUrl(
-      uri,
-      mode: LaunchMode.externalApplication,
-    );
+    final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!launched && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(strings['open_link_failed']!)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(strings['open_link_failed']!)));
     }
   }
 
@@ -3246,11 +3398,13 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
               }
 
               final cleaned = draftLinks
-                  .map((link) => {
-                        'type': (link['type'] ?? 'website').trim(),
-                        'name': (link['name'] ?? '').trim(),
-                        'url': _normalizeExternalUrl(link['url'] ?? ''),
-                      })
+                  .map(
+                    (link) => {
+                      'type': (link['type'] ?? 'website').trim(),
+                      'name': (link['name'] ?? '').trim(),
+                      'url': _normalizeExternalUrl(link['url'] ?? ''),
+                    },
+                  )
                   .toList();
               Navigator.of(context).pop(cleaned);
             }
@@ -3280,7 +3434,10 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
               ),
               backgroundColor: Colors.transparent,
               child: Container(
-                constraints: const BoxConstraints(maxWidth: 640, maxHeight: 760),
+                constraints: const BoxConstraints(
+                  maxWidth: 640,
+                  maxHeight: 760,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(28),
@@ -3419,7 +3576,9 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
                                 ),
                               )
                             : Column(
-                                children: draftLinks.asMap().entries.map((entry) {
+                                children: draftLinks.asMap().entries.map((
+                                  entry,
+                                ) {
                                   final index = entry.key;
                                   final link = entry.value;
                                   final isOther =
@@ -3588,8 +3747,9 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
                               onPressed: () => Navigator.of(context).pop(),
                               style: OutlinedButton.styleFrom(
                                 foregroundColor: const Color(0xFF475569),
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 14),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 14,
+                                ),
                                 side: const BorderSide(
                                   color: Color(0xFFD7E1EC),
                                 ),
@@ -3609,8 +3769,9 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: _kPrimaryBlue,
                                 foregroundColor: Colors.white,
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 14),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 14,
+                                ),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(16),
                                 ),
@@ -3648,9 +3809,9 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
       });
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(strings['save_links_failed']!)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(strings['save_links_failed']!)));
     }
   }
 
@@ -3938,6 +4099,7 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _tabController?.dispose();
     _authSubscription?.cancel();
     _backgroundController?.dispose();
@@ -4004,6 +4166,10 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
           'analytics': 'אנליטיקה',
           'invoice_builder': 'יוצר חשבוניות',
           'saved_invoices': 'חשבוניות שמורות',
+          'tax_authority_connect_title': 'חיבור לרשות המסים',
+          'tax_authority_connect_body':
+              'אפשר קבלת מספרי הקצאה לחשבוניות מס מתוך האפליקציה.',
+          'tax_authority_connect_button': 'חבר את רשות המסים',
           'verify_business': 'אמת עסק',
           'change_business': 'עדכן פרטי עסק',
           'renew_subscription': 'חדש מנוי',
@@ -4456,6 +4622,10 @@ class _ProfileState extends State<Profile> with TickerProviderStateMixin {
           'analytics': 'Analytics',
           'invoice_builder': 'Invoice Builder',
           'saved_invoices': 'Saved Invoices',
+          'tax_authority_connect_title': 'Connect to Israel Tax Authority',
+          'tax_authority_connect_body':
+              'Authorize invoice allocation numbers for tax invoices from the app.',
+          'tax_authority_connect_button': 'Connect Tax Authority',
           'verify_business': 'Verify Business',
           'change_business': 'Update Business',
           'renew_subscription': 'Renew Subscription',
