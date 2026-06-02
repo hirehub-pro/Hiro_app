@@ -350,6 +350,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     final calculatedVat = _vatAmount;
     final vatAmount = calculatedVat;
     final logTargets = _logTargetsForDocType(docType);
+    final assignedSequenceNumber = _currentDocumentCounter;
+    final assignedDocumentNumber = _invoiceNumber.trim();
 
     final userDoc = FirebaseFirestore.instance.collection('users').doc(userId);
     final counterRef = userDoc
@@ -532,13 +534,29 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         logCounterSnaps.add(await transaction.get(logBucketRef));
       }
 
-      nextNumber = 1;
-      if (counterSnap.exists) {
-        final data = counterSnap.data() as Map<String, dynamic>;
-        nextNumber = (data['value'] as num?)?.toInt() ?? 1;
+      final storedNextNumber = counterSnap.exists
+          ? ((counterSnap.data() as Map<String, dynamic>)['value'] as num?)
+                ?.toInt()
+          : null;
+
+      if (assignedSequenceNumber != null &&
+          assignedSequenceNumber > 0 &&
+          assignedDocumentNumber.isNotEmpty) {
+        if (storedNextNumber != null &&
+            storedNextNumber > 0 &&
+            storedNextNumber != assignedSequenceNumber) {
+          throw StateError(
+            'Document number changed before save. Please preview and save again.',
+          );
+        }
+        nextNumber = assignedSequenceNumber;
+        nextDocumentNumber = assignedDocumentNumber;
+      } else {
+        nextNumber = storedNextNumber ?? 1;
+        if (nextNumber < 1) nextNumber = 1;
+        nextDocumentNumber = _formatDocumentNumber(nextNumber);
       }
-      if (nextNumber < 1) nextNumber = 1;
-      nextDocumentNumber = _formatDocumentNumber(nextNumber);
+
       invoiceDocId = _invoiceDocIdFor(docType, nextDocumentNumber);
 
       transaction.set(counterRef, {
@@ -688,6 +706,21 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       }
     });
 
+    // Upload PDF to Storage (after transaction). Regenerate from the saved
+    // allocation number so Storage cannot receive stale pre-allocation bytes.
+    var uploadPdfBytes = pdfBytes;
+    if (allocationNumber != null && allocationNumber.isNotEmpty) {
+      final allocatedPdfBytes = await _getGeneratedPdfBytes(
+        allocationNumber: allocationNumber,
+      );
+      if (allocatedPdfBytes == null) {
+        throw StateError(
+          'Could not generate the invoice PDF with the Tax Authority allocation number.',
+        );
+      }
+      uploadPdfBytes = allocatedPdfBytes;
+    }
+
     // Upload PDF to Storage (after transaction)
     final fileName =
         'invoice_${userId}_${DateTime.now().millisecondsSinceEpoch}.pdf';
@@ -695,7 +728,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     final ref = firebase_storage.FirebaseStorage.instance.ref().child(
       storagePath,
     );
-    await ref.putData(pdfBytes);
+    await ref.putData(uploadPdfBytes);
     final downloadUrl = await ref.getDownloadURL();
     final clientName = _clientNameController.text.trim();
     final savedInvoiceName = clientName.isNotEmpty
@@ -2994,9 +3027,10 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                 final allocatedPdfBytes = await _getGeneratedPdfBytes(
                   allocationNumber: allocation.confirmationNumber,
                 );
-                if (allocatedPdfBytes != null) {
-                  finalPdfBytes = allocatedPdfBytes;
+                if (allocatedPdfBytes == null) {
+                  throw StateError(strings['tax_authority_allocation_failed']!);
                 }
+                finalPdfBytes = allocatedPdfBytes;
               }
 
               savedDraftResult = await _createInvoiceAndLog(
@@ -3014,7 +3048,16 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           Navigator.pop(context, savedDraftResult);
           return;
         }
-        if (widget.receiverId != null) {
+        if (widget.receiverId != null && savedDraftResult != null) {
+          final sent = await _sendSavedInvoiceToContact(
+            widget.receiverId!,
+            widget.receiverName ?? "User",
+            savedDraftResult!,
+          );
+          if (sent && mounted) {
+            Navigator.pop(context);
+          }
+        } else if (widget.receiverId != null) {
           final sent = await _sendToContact(
             widget.receiverId!,
             widget.receiverName ?? "User",
@@ -3023,7 +3066,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
             Navigator.pop(context);
           }
         } else {
-          await _showContactPickerAndSend();
+          await _showContactPickerAndSend(savedInvoice: savedDraftResult);
         }
       }
 
@@ -3229,7 +3272,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         .trim();
   }
 
-  Future<void> _showContactPickerAndSend() async {
+  Future<void> _showContactPickerAndSend({
+    InvoiceBuilderDraftResult? savedInvoice,
+  }) async {
     if (_items.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -3242,7 +3287,15 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     }
 
     if (widget.receiverId != null) {
-      _sendToContact(widget.receiverId!, widget.receiverName ?? "User");
+      if (savedInvoice != null) {
+        _sendSavedInvoiceToContact(
+          widget.receiverId!,
+          widget.receiverName ?? "User",
+          savedInvoice,
+        );
+      } else {
+        _sendToContact(widget.receiverId!, widget.receiverName ?? "User");
+      }
       return;
     }
 
@@ -3315,7 +3368,15 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                           title: Text(otherName),
                           onTap: () {
                             Navigator.pop(context);
-                            _sendToContact(otherId, otherName);
+                            if (savedInvoice != null) {
+                              _sendSavedInvoiceToContact(
+                                otherId,
+                                otherName,
+                                savedInvoice,
+                              );
+                            } else {
+                              _sendToContact(otherId, otherName);
+                            }
                           },
                         );
                       },
@@ -3328,6 +3389,76 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         );
       },
     );
+  }
+
+  Future<bool> _sendSavedInvoiceToContact(
+    String receiverId,
+    String receiverName,
+    InvoiceBuilderDraftResult saved,
+  ) async {
+    if (saved.url.isEmpty) return false;
+
+    try {
+      if (mounted) setState(() => _isPreparing = true);
+
+      final currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser == null) return false;
+
+      final ids = [currentUser.uid, receiverId]..sort();
+      final roomId = ids.join('_');
+      final documentLabel = saved.documentNumber?.isNotEmpty == true
+          ? saved.documentNumber!
+          : (_invoiceNumber.isNotEmpty
+                ? _invoiceNumber
+                : _labelForDocType(saved.docType));
+      final messageText = 'Sent a document: $documentLabel';
+
+      await FirebaseFirestore.instance
+          .collection('chat_rooms')
+          .doc(roomId)
+          .collection('messages')
+          .add({
+            'senderId': currentUser.uid,
+            'receiverId': receiverId,
+            'message': messageText,
+            'text': messageText,
+            'type': 'file',
+            'url': saved.url,
+            'fileUrl': saved.url,
+            'fileName': saved.fileName,
+            'timestamp': FieldValue.serverTimestamp(),
+            'isRead': false,
+          });
+
+      await FirebaseFirestore.instance.collection('chat_rooms').doc(roomId).set(
+        {
+          'lastMessage': messageText,
+          'lastMessageTime': FieldValue.serverTimestamp(),
+          'users': [currentUser.uid, receiverId],
+          'user_names': {
+            currentUser.uid: widget.workerName,
+            receiverId: receiverName,
+          },
+        },
+        SetOptions(merge: true),
+      );
+
+      if (mounted) {
+        setState(() => _isPreparing = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              _getLocalizedStrings(context, listen: false)['sent_success']!,
+            ),
+          ),
+        );
+      }
+      return true;
+    } catch (e) {
+      if (mounted) setState(() => _isPreparing = false);
+      dev.log("Error sending saved PDF: $e");
+      return false;
+    }
   }
 
   Future<bool> _sendToContact(String receiverId, String receiverName) async {
