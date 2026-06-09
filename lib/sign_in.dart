@@ -1,9 +1,15 @@
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter_facebook_auth/flutter_facebook_auth.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:provider/provider.dart';
+import 'package:crypto/crypto.dart';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:untitled1/services/language_provider.dart';
 import 'package:untitled1/services/analytics_service.dart';
 import 'package:untitled1/services/auth_service.dart';
@@ -20,6 +26,8 @@ class SignInPage extends StatefulWidget {
 }
 
 class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
+  static Future<void>? _googleSignInInit;
+
   final _phoneController = TextEditingController();
   final _codeController = TextEditingController();
 
@@ -196,6 +204,9 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
           'verify': 'אמת והתחבר',
           'or': 'או',
           'guest': 'המשך כאורח',
+          'google': 'המשך עם Google',
+          'facebook': 'המשך עם Facebook',
+          'apple': 'המשך עם Apple',
           'signup': 'הרשמה',
           'no_account': 'אין לך חשבון? ',
           'not_registered_title': 'משתמש לא רשום',
@@ -223,6 +234,7 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
           'generic_error': 'שגיאה: {err}',
           'invalid_code_error': 'קוד לא תקין או אירעה שגיאה',
           'sign_in_error': 'שגיאת התחברות: {err}',
+          'social_unavailable': 'אפשרות ההתחברות הזו אינה זמינה במכשיר הזה.',
         };
       case 'ar':
         return {
@@ -238,6 +250,9 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
           'verify': 'تحقق وسجّل الدخول',
           'or': 'أو',
           'guest': 'المتابعة كضيف',
+          'google': 'المتابعة عبر Google',
+          'facebook': 'المتابعة عبر Facebook',
+          'apple': 'المتابعة عبر Apple',
           'signup': 'إنشاء حساب',
           'no_account': 'ليس لديك حساب؟ ',
           'not_registered_title': 'المستخدم غير مسجل',
@@ -265,6 +280,8 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
           'generic_error': 'خطأ: {err}',
           'invalid_code_error': 'رمز غير صالح أو حدث خطأ',
           'sign_in_error': 'خطأ في تسجيل الدخول: {err}',
+          'social_unavailable':
+              'طريقة تسجيل الدخول هذه غير متاحة على هذا الجهاز.',
         };
       case 'ru':
         return {
@@ -280,6 +297,9 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
           'verify': 'Подтвердить и войти',
           'or': 'или',
           'guest': 'Продолжить как гость',
+          'google': 'Продолжить с Google',
+          'facebook': 'Продолжить с Facebook',
+          'apple': 'Продолжить с Apple',
           'signup': 'Регистрация',
           'no_account': 'Нет аккаунта? ',
           'not_registered_title': 'Пользователь не зарегистрирован',
@@ -309,6 +329,8 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
           'generic_error': 'Ошибка: {err}',
           'invalid_code_error': 'Неверный код или произошла ошибка',
           'sign_in_error': 'Ошибка входа: {err}',
+          'social_unavailable':
+              'Этот способ входа недоступен на этом устройстве.',
         };
       case 'am':
         return {
@@ -324,6 +346,9 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
           'verify': 'ያረጋግጡ እና ይግቡ',
           'or': 'ወይም',
           'guest': 'እንደ እንግዳ ቀጥል',
+          'google': 'በGoogle ቀጥል',
+          'facebook': 'በFacebook ቀጥል',
+          'apple': 'በApple ቀጥል',
           'signup': 'መመዝገብ',
           'no_account': 'መለያ የለዎትም? ',
           'not_registered_title': 'ተጠቃሚው አልተመዘገበም',
@@ -350,6 +375,7 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
           'generic_error': 'ስህተት: {err}',
           'invalid_code_error': 'ልክ ያልሆነ ኮድ ወይም ስህተት ተከሰተ',
           'sign_in_error': 'የመግቢያ ስህተት: {err}',
+          'social_unavailable': 'ይህ የመግቢያ አማራጭ በዚህ መሣሪያ ላይ አይገኝም።',
         };
       default:
         return {
@@ -365,6 +391,9 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
           'verify': 'Verify & Sign In',
           'or': 'or',
           'guest': 'Continue as Guest',
+          'google': 'Continue with Google',
+          'facebook': 'Continue with Facebook',
+          'apple': 'Continue with Apple',
           'signup': 'Register',
           'no_account': "Don't have an account? ",
           'not_registered_title': 'User Not Registered',
@@ -393,6 +422,8 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
           'generic_error': 'Error: {err}',
           'invalid_code_error': 'Invalid code or an error occurred',
           'sign_in_error': 'Sign in error: {err}',
+          'social_unavailable':
+              'This sign-in option is not available on this device.',
         };
     }
   }
@@ -674,71 +705,15 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
   }
 
   Future<void> _signInAndCheckRegistration(
-    PhoneAuthCredential credential,
-  ) async {
+    AuthCredential credential, {
+    String method = 'phone',
+  }) async {
     final strings = _getLocalizedStrings(context);
     try {
       final userCredential = await FirebaseAuth.instance.signInWithCredential(
         credential,
       );
-      final user = userCredential.user;
-
-      if (user != null) {
-        final firestore = FirebaseFirestore.instance;
-
-        // Check unified 'users' collection
-        DocumentSnapshot userDoc = await firestore
-            .collection('users')
-            .doc(user.uid)
-            .get();
-
-        if (userDoc.exists) {
-          await AnalyticsService.logSignInSuccess(method: 'phone');
-          if (mounted) {
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(builder: (_) => const MyHomePage()),
-            );
-          }
-        } else {
-          // User is authenticated but NOT in our database
-          await AuthService().signOut();
-          if (mounted) {
-            showDialog(
-              context: context,
-              builder: (context) => AlertDialog(
-                title: Text(
-                  strings['not_registered_title'] ?? 'User Not Registered',
-                ),
-                content: Text(
-                  strings['not_registered_body'] ??
-                      'The phone number you entered is not registered.',
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: Text(strings['ok'] ?? 'OK'),
-                  ),
-                  TextButton(
-                    onPressed: () {
-                      Navigator.of(context).pop();
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const SignUpPage()),
-                      );
-                    },
-                    child: Text(strings['signup'] ?? 'Sign Up'),
-                  ),
-                ],
-              ),
-            );
-            setState(() {
-              _loading = false;
-              _codeSent = false;
-            });
-          }
-        }
-      }
+      await _routeAuthenticatedUser(userCredential.user, method: method);
     } catch (e) {
       debugPrint("SIGN IN ERROR: $e");
       if (mounted) {
@@ -752,6 +727,212 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
         setState(() => _loading = false);
       }
     }
+  }
+
+  Future<void> _routeAuthenticatedUser(
+    User? user, {
+    required String method,
+  }) async {
+    if (user == null) {
+      if (mounted) setState(() => _loading = false);
+      return;
+    }
+
+    final firestore = FirebaseFirestore.instance;
+    final userDoc = await firestore.collection('users').doc(user.uid).get();
+
+    if (userDoc.exists) {
+      await AnalyticsService.logSignInSuccess(method: method);
+      if (mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const MyHomePage()),
+        );
+      }
+      return;
+    }
+
+    await AuthService().signOut();
+    if (mounted) {
+      setState(() {
+        _loading = false;
+        _codeSent = false;
+      });
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const SignUpPage()),
+      );
+    }
+  }
+
+  Future<void> _signInWithGoogle() async {
+    final strings = _getLocalizedStrings(context);
+    setState(() => _loading = true);
+    try {
+      UserCredential userCredential;
+      if (kIsWeb) {
+        final provider = GoogleAuthProvider()
+          ..addScope('email')
+          ..addScope('profile');
+        userCredential = await FirebaseAuth.instance.signInWithPopup(provider);
+      } else {
+        _googleSignInInit ??= GoogleSignIn.instance.initialize();
+        await _googleSignInInit;
+        if (!GoogleSignIn.instance.supportsAuthenticate()) {
+          throw UnsupportedError(
+            strings['social_unavailable'] ??
+                'This sign-in option is not available on this device.',
+          );
+        }
+        final googleUser = await GoogleSignIn.instance.authenticate(
+          scopeHint: const ['email', 'profile'],
+        );
+        final googleAuth = googleUser.authentication;
+        final credential = GoogleAuthProvider.credential(
+          idToken: googleAuth.idToken,
+        );
+        userCredential = await FirebaseAuth.instance.signInWithCredential(
+          credential,
+        );
+      }
+      await _routeAuthenticatedUser(userCredential.user, method: 'google');
+    } catch (e) {
+      debugPrint("SIGN IN ERROR: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              strings['sign_in_error']!.replaceAll('{err}', e.toString()),
+            ),
+          ),
+        );
+        setState(() => _loading = false);
+      }
+    }
+  }
+
+  Future<void> _signInWithFacebook() async {
+    final strings = _getLocalizedStrings(context);
+    setState(() => _loading = true);
+    try {
+      UserCredential userCredential;
+      if (kIsWeb) {
+        final provider = FacebookAuthProvider()
+          ..addScope('email')
+          ..addScope('public_profile');
+        userCredential = await FirebaseAuth.instance.signInWithPopup(provider);
+      } else {
+        final result = await FacebookAuth.instance.login(
+          permissions: const ['email', 'public_profile'],
+          loginTracking: LoginTracking.enabled,
+        );
+        if (result.status == LoginStatus.cancelled) {
+          if (mounted) setState(() => _loading = false);
+          return;
+        }
+        final accessToken = result.accessToken;
+        if (result.status != LoginStatus.success || accessToken == null) {
+          throw FirebaseAuthException(
+            code: 'facebook-sign-in-failed',
+            message: result.message ?? strings['social_unavailable'],
+          );
+        }
+        final credential = FacebookAuthProvider.credential(
+          accessToken.tokenString,
+        );
+        userCredential = await FirebaseAuth.instance.signInWithCredential(
+          credential,
+        );
+      }
+      await _routeAuthenticatedUser(userCredential.user, method: 'facebook');
+    } catch (e) {
+      debugPrint("SIGN IN ERROR: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              strings['sign_in_error']!.replaceAll('{err}', e.toString()),
+            ),
+          ),
+        );
+        setState(() => _loading = false);
+      }
+    }
+  }
+
+  Future<void> _signInWithApple() async {
+    final strings = _getLocalizedStrings(context);
+    setState(() => _loading = true);
+    try {
+      UserCredential userCredential;
+      if (kIsWeb) {
+        final provider = OAuthProvider('apple.com')
+          ..addScope('email')
+          ..addScope('name');
+        userCredential = await FirebaseAuth.instance.signInWithPopup(provider);
+      } else {
+        final isAvailable = await SignInWithApple.isAvailable();
+        if (!isAvailable) {
+          throw UnsupportedError(
+            strings['social_unavailable'] ??
+                'This sign-in option is not available on this device.',
+          );
+        }
+
+        final rawNonce = _generateNonce();
+        final appleCredential = await SignInWithApple.getAppleIDCredential(
+          scopes: const [
+            AppleIDAuthorizationScopes.email,
+            AppleIDAuthorizationScopes.fullName,
+          ],
+          nonce: _sha256ofString(rawNonce),
+        );
+        final idToken = appleCredential.identityToken;
+        if (idToken == null) {
+          throw FirebaseAuthException(
+            code: 'missing-apple-id-token',
+            message: strings['social_unavailable'],
+          );
+        }
+        final credential = OAuthProvider('apple.com').credential(
+          idToken: idToken,
+          rawNonce: rawNonce,
+          accessToken: appleCredential.authorizationCode,
+        );
+        userCredential = await FirebaseAuth.instance.signInWithCredential(
+          credential,
+        );
+      }
+      await _routeAuthenticatedUser(userCredential.user, method: 'apple');
+    } catch (e) {
+      debugPrint("SIGN IN ERROR: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              strings['sign_in_error']!.replaceAll('{err}', e.toString()),
+            ),
+          ),
+        );
+        setState(() => _loading = false);
+      }
+    }
+  }
+
+  String _generateNonce([int length = 32]) {
+    const charset =
+        '0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._';
+    final random = math.Random.secure();
+    return List.generate(
+      length,
+      (_) => charset[random.nextInt(charset.length)],
+    ).join();
+  }
+
+  String _sha256ofString(String input) {
+    final bytes = utf8.encode(input);
+    final digest = sha256.convert(bytes);
+    return digest.toString();
   }
 
   Future<void> _handleGuestSignIn() async {
@@ -1389,6 +1570,8 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
           const SizedBox(height: 26),
           _buildDivider(strings),
           const SizedBox(height: 26),
+          _buildSocialSignInButtons(strings),
+          const SizedBox(height: 14),
           SizedBox(
             width: double.infinity,
             height: 58,
@@ -1424,6 +1607,73 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
           const SizedBox(height: 18),
           _buildSignUpLink(strings),
         ],
+      ),
+    );
+  }
+
+  Widget _buildSocialSignInButtons(Map<String, String> strings) {
+    return Column(
+      children: [
+        _buildSocialButton(
+          label: strings['google'] ?? 'Continue with Google',
+          icon: Icons.g_mobiledata_rounded,
+          iconColor: const Color(0xFF4285F4),
+          onPressed: _loading ? null : _signInWithGoogle,
+        ),
+        const SizedBox(height: 12),
+        _buildSocialButton(
+          label: strings['facebook'] ?? 'Continue with Facebook',
+          icon: Icons.facebook_rounded,
+          iconColor: const Color(0xFF1877F2),
+          onPressed: _loading ? null : _signInWithFacebook,
+        ),
+        const SizedBox(height: 12),
+        _buildSocialButton(
+          label: strings['apple'] ?? 'Continue with Apple',
+          icon: Icons.apple_rounded,
+          iconColor: const Color(0xFF111827),
+          onPressed: _loading ? null : _signInWithApple,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSocialButton({
+    required String label,
+    required IconData icon,
+    required Color iconColor,
+    required VoidCallback? onPressed,
+  }) {
+    return SizedBox(
+      width: double.infinity,
+      height: 56,
+      child: OutlinedButton(
+        onPressed: onPressed,
+        style: OutlinedButton.styleFrom(
+          foregroundColor: const Color(0xFF111827),
+          side: const BorderSide(color: Color(0xFFDCE5EE)),
+          backgroundColor: Colors.white.withValues(alpha: 0.82),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+          ),
+        ),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 26, color: iconColor),
+              const SizedBox(width: 12),
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -1716,10 +1966,7 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
             ),
             child: Text(
               strings['signup'] ?? 'Sign Up',
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w800,
-              ),
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
             ),
           ),
         ),
