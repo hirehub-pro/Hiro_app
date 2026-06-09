@@ -3,7 +3,10 @@ const path = require("path");
 const crypto = require("crypto");
 
 const admin = require("firebase-admin");
-const {onDocumentCreated} = require("firebase-functions/v2/firestore");
+const {
+  onDocumentCreated,
+  onDocumentWritten,
+} = require("firebase-functions/v2/firestore");
 const {onCall, HttpsError, onRequest} = require("firebase-functions/v2/https");
 const {defineSecret} = require("firebase-functions/params");
 const {onMessagePublished} = require("firebase-functions/v2/pubsub");
@@ -384,6 +387,134 @@ exports.sendNotificationPush = onDocumentCreated(
           type: payload.type,
           error,
         });
+      }
+    },
+);
+
+exports.syncReceivedInvoices = onCall(
+    {
+      region: "us-central1",
+    },
+    async (request) => {
+      const uid = request.auth?.uid;
+      if (!uid) {
+        throw new HttpsError("unauthenticated", "Authentication required.");
+      }
+
+      const db = admin.firestore();
+      const userDoc = await db.collection("users").doc(uid).get();
+      const userData = userDoc.data() || {};
+      const phoneValues = [
+        request.auth?.token?.phone_number,
+        userData.phone,
+        userData.phoneNumber,
+      ];
+      const candidates = [...new Set(
+          phoneValues.flatMap((phone) => phoneCandidates(phone)),
+      )];
+
+      if (candidates.length === 0) {
+        return {synced: 0};
+      }
+
+      const mirrorIds = new Set();
+      const writer = new BatchWriter(db);
+
+      for (const chunk of chunkArray(candidates, 30)) {
+        const snapshot = await db.collectionGroup("invoices")
+            .where("clientPhone", "in", chunk)
+            .get();
+
+        for (const doc of snapshot.docs) {
+          const senderUserRef = doc.ref.parent.parent;
+          if (!senderUserRef || senderUserRef.id === uid) continue;
+
+          const mirrorId = `${senderUserRef.id}_${doc.id}`;
+          mirrorIds.add(mirrorId);
+          const data = doc.data() || {};
+          writer.set(db.collection("users")
+              .doc(uid)
+              .collection("receivedInvoices")
+              .doc(mirrorId), {
+            ...data,
+            sourceUserId: senderUserRef.id,
+            sourceInvoiceId: doc.id,
+            invoiceDocId: data.invoiceDocId || doc.id,
+            mirroredAt: admin.firestore.FieldValue.serverTimestamp(),
+          }, {merge: true});
+        }
+      }
+
+      const existingMirrors = await db.collection("users")
+          .doc(uid)
+          .collection("receivedInvoices")
+          .limit(500)
+          .get();
+      for (const doc of existingMirrors.docs) {
+        if (!mirrorIds.has(doc.id)) {
+          writer.delete(doc.ref);
+        }
+      }
+
+      await writer.commit();
+      return {synced: mirrorIds.size};
+    },
+);
+
+exports.mirrorReceivedInvoice = onDocumentWritten(
+    {
+      document: "users/{senderUserId}/invoices/{invoiceId}",
+      region: "us-central1",
+    },
+    async (event) => {
+      const beforeData = event.data?.before?.data() || null;
+      const afterData = event.data?.after?.data() || null;
+      const senderUserId = event.params.senderUserId;
+      const invoiceId = event.params.invoiceId;
+
+      const beforeRecipients = beforeData ?
+        await findInvoiceRecipientUserIds(beforeData.clientPhone, senderUserId) :
+        [];
+      const afterRecipients = afterData ?
+        await findInvoiceRecipientUserIds(afterData.clientPhone, senderUserId) :
+        [];
+
+      const db = admin.firestore();
+      const mirrorId = `${senderUserId}_${invoiceId}`;
+      const beforeSet = new Set(beforeRecipients);
+      const afterSet = new Set(afterRecipients);
+      const batch = db.batch();
+      let writeCount = 0;
+
+      for (const recipientId of beforeSet) {
+        if (afterSet.has(recipientId)) continue;
+        batch.delete(db.collection("users")
+            .doc(recipientId)
+            .collection("receivedInvoices")
+            .doc(mirrorId));
+        writeCount += 1;
+      }
+
+      if (afterData) {
+        const mirrorData = {
+          ...afterData,
+          sourceUserId: senderUserId,
+          sourceInvoiceId: invoiceId,
+          invoiceDocId: afterData.invoiceDocId || invoiceId,
+          mirroredAt: admin.firestore.FieldValue.serverTimestamp(),
+        };
+
+        for (const recipientId of afterSet) {
+          batch.set(db.collection("users")
+              .doc(recipientId)
+              .collection("receivedInvoices")
+              .doc(mirrorId), mirrorData, {merge: true});
+          writeCount += 1;
+        }
+      }
+
+      if (writeCount > 0) {
+        await batch.commit();
       }
     },
 );
@@ -1724,6 +1855,105 @@ function getLatestExpiry(lineItems) {
 function hasEnabledAutoRenew(lineItems) {
   const latest = getLatestLineItem(lineItems);
   return latest?.autoRenewingPlan?.autoRenewEnabled === true;
+}
+
+async function findInvoiceRecipientUserIds(rawPhone, senderUserId) {
+  const candidates = phoneCandidates(rawPhone);
+  if (candidates.length === 0) return [];
+
+  const db = admin.firestore();
+  const recipientIds = new Set();
+
+  for (const field of ["phone", "phoneNumber"]) {
+    for (const chunk of chunkArray(candidates, 30)) {
+      const snapshot = await db.collection("users")
+          .where(field, "in", chunk)
+          .limit(30)
+          .get();
+
+      for (const doc of snapshot.docs) {
+        if (doc.id !== senderUserId) {
+          recipientIds.add(doc.id);
+        }
+      }
+    }
+  }
+
+  return [...recipientIds];
+}
+
+function phoneCandidates(input) {
+  const normalized = normalizeString(input).trim().replace(/[\s\-()]/g, "");
+  const digits = normalized.replace(/\D/g, "");
+  const candidates = new Set();
+
+  if (normalized) candidates.add(normalized);
+  if (digits) candidates.add(digits);
+
+  if (digits.startsWith("0") && digits.length === 10) {
+    candidates.add(`+972${digits.slice(1)}`);
+  }
+  if (digits.length === 9) {
+    candidates.add(`0${digits}`);
+    candidates.add(`+972${digits}`);
+  }
+  if (digits.startsWith("972")) {
+    candidates.add(`+${digits}`);
+    if (digits.length === 12) {
+      candidates.add(`0${digits.slice(3)}`);
+    }
+    if (digits.length > 4 && digits[3] === "0") {
+      candidates.add(`+972${digits.slice(4)}`);
+    }
+  }
+  if (normalized.startsWith("+9720") && normalized.length > 5) {
+    candidates.add(`+972${normalized.slice(5)}`);
+  }
+
+  return [...candidates].filter(Boolean);
+}
+
+function chunkArray(values, size) {
+  const chunks = [];
+  for (let i = 0; i < values.length; i += size) {
+    chunks.push(values.slice(i, i + size));
+  }
+  return chunks;
+}
+
+class BatchWriter {
+  constructor(db) {
+    this.db = db;
+    this.batch = db.batch();
+    this.writeCount = 0;
+    this.commits = [];
+  }
+
+  set(ref, data, options) {
+    this.batch.set(ref, data, options);
+    this.writeCount += 1;
+    this.flushIfNeeded();
+  }
+
+  delete(ref) {
+    this.batch.delete(ref);
+    this.writeCount += 1;
+    this.flushIfNeeded();
+  }
+
+  flushIfNeeded() {
+    if (this.writeCount < 450) return;
+    this.commits.push(this.batch.commit());
+    this.batch = this.db.batch();
+    this.writeCount = 0;
+  }
+
+  async commit() {
+    if (this.writeCount > 0) {
+      this.commits.push(this.batch.commit());
+    }
+    await Promise.all(this.commits);
+  }
 }
 
 function normalizeString(value) {

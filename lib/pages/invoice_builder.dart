@@ -499,6 +499,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       }
       if (allocationNumber != null && allocationNumber.isNotEmpty) {
         quoteData['allocationNumber'] = allocationNumber;
+        quoteData['taxAuthorityAllocationNumber'] = allocationNumber;
       }
       await quoteDocRef.set(quoteData);
       return InvoiceBuilderDraftResult(
@@ -620,6 +621,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       }
       if (allocationNumber != null && allocationNumber.isNotEmpty) {
         invoiceData['allocationNumber'] = allocationNumber;
+        invoiceData['taxAuthorityAllocationNumber'] = allocationNumber;
       }
 
       final invoiceDoc = invoicesRef.doc(invoiceDocId);
@@ -701,6 +703,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         }
         if (allocationNumber != null && allocationNumber.isNotEmpty) {
           logData['allocationNumber'] = allocationNumber;
+          logData['taxAuthorityAllocationNumber'] = allocationNumber;
         }
         transaction.set(logFileRef, logData);
       }
@@ -740,6 +743,10 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'fileName': fileName,
       'url': downloadUrl,
       'storagePath': storagePath,
+      if (allocationNumber != null && allocationNumber.isNotEmpty)
+        'allocationNumber': allocationNumber,
+      if (allocationNumber != null && allocationNumber.isNotEmpty)
+        'taxAuthorityAllocationNumber': allocationNumber,
     });
     if (docType != 'quote' && docType != 'work_order') {
       await _addToTotalEarned(userId: userId, amount: totalEarnedDelta);
@@ -752,6 +759,10 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'fileName': fileName,
           'storagePath': storagePath,
           'url': downloadUrl,
+          if (allocationNumber != null && allocationNumber.isNotEmpty)
+            'allocationNumber': allocationNumber,
+          if (allocationNumber != null && allocationNumber.isNotEmpty)
+            'taxAuthorityAllocationNumber': allocationNumber,
         });
       }),
     );

@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -21,9 +22,13 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
   Stream<QuerySnapshot<Map<String, dynamic>>>? _invoicesStream;
+  Stream<QuerySnapshot<Map<String, dynamic>>>? _receivedInvoicesStream;
+  bool _isLoadingReceivedInvoices = true;
+  bool _hasReceivedInvoicePhone = false;
   String _searchQuery = '';
   String _selectedDocType = 'all';
   DateTimeRange? _selectedDateRange;
+  _InvoiceScope _selectedScope = _InvoiceScope.createdByMe;
 
   String _paymentStatusLabel(String? status, bool isRtl) {
     switch (status) {
@@ -74,8 +79,61 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
           .collection('invoices')
           .orderBy('createdAt', descending: true)
           .snapshots();
+      _loadReceivedInvoicesStream(user);
     }
     _searchController.addListener(_handleSearchChanged);
+  }
+
+  Future<void> _loadReceivedInvoicesStream(User user) async {
+    final rawPhones = <String>{user.phoneNumber ?? ''};
+
+    try {
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
+      final userData = userDoc.data() ?? <String, dynamic>{};
+      rawPhones
+        ..add((userData['phone'] ?? '').toString())
+        ..add((userData['phoneNumber'] ?? '').toString());
+    } catch (_) {
+      // The auth phone is enough for the common path; profile loading is a
+      // best-effort expansion for older data formats.
+    }
+
+    final phoneCandidates = <String>{};
+    for (final phone in rawPhones) {
+      phoneCandidates.addAll(_phoneCandidates(phone));
+    }
+
+    if (phoneCandidates.isNotEmpty) {
+      await _syncReceivedInvoices();
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _hasReceivedInvoicePhone = phoneCandidates.isNotEmpty;
+      _isLoadingReceivedInvoices = false;
+      _receivedInvoicesStream = phoneCandidates.isEmpty
+          ? null
+          : FirebaseFirestore.instance
+                .collection('users')
+                .doc(user.uid)
+                .collection('receivedInvoices')
+                .orderBy('createdAt', descending: true)
+                .snapshots();
+    });
+  }
+
+  Future<void> _syncReceivedInvoices() async {
+    try {
+      await FirebaseFunctions.instanceFor(
+        region: 'us-central1',
+      ).httpsCallable('syncReceivedInvoices').call();
+    } catch (_) {
+      // Sync is best effort. The stream below still shows anything already
+      // mirrored by the backend trigger.
+    }
   }
 
   void _handleSearchChanged() {
@@ -524,6 +582,38 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
     return normalized.split(' ').where((term) => term.isNotEmpty).toList();
   }
 
+  List<String> _phoneCandidates(String input) {
+    final normalized = input.trim().replaceAll(RegExp(r'[\s\-\(\)]'), '');
+    final digits = normalized.replaceAll(RegExp(r'\D'), '');
+    final candidates = <String>{};
+
+    if (normalized.isNotEmpty) candidates.add(normalized);
+    if (digits.isNotEmpty) candidates.add(digits);
+
+    if (digits.startsWith('0') && digits.length == 10) {
+      candidates.add('+972${digits.substring(1)}');
+    }
+    if (digits.length == 9) {
+      candidates
+        ..add('0$digits')
+        ..add('+972$digits');
+    }
+    if (digits.startsWith('972')) {
+      candidates.add('+$digits');
+      if (digits.length == 12) {
+        candidates.add('0${digits.substring(3)}');
+      }
+      if (digits.length > 4 && digits[3] == '0') {
+        candidates.add('+972${digits.substring(4)}');
+      }
+    }
+    if (normalized.startsWith('+9720') && normalized.length > 5) {
+      candidates.add('+972${normalized.substring(5)}');
+    }
+
+    return candidates.toList();
+  }
+
   bool _matchesSearch(
     Map<String, dynamic> data,
     List<String> terms,
@@ -537,6 +627,7 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
       data['name'],
       data['fileName'],
       data['clientName'],
+      data['clientPhone'],
       data['invoiceNumber'],
       data['docType'],
       data['amount'],
@@ -581,21 +672,59 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
       child: Scaffold(
         backgroundColor: const Color(0xFFF8FAFC),
         appBar: AppBar(
-          title: Text(isRtl ? 'חשבוניות שמורות' : 'Saved Invoices'),
+          title: Text(isRtl ? 'מסמכים' : 'Documents'),
           backgroundColor: Colors.white,
           foregroundColor: const Color(0xFF1976D2),
           elevation: 0,
         ),
         body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-          stream: _invoicesStream,
+          stream: _selectedScope == _InvoiceScope.createdByMe
+              ? _invoicesStream
+              : _receivedInvoicesStream,
           builder: (context, snapshot) {
+            final isReceivedScope = _selectedScope == _InvoiceScope.sentToMe;
+            if (isReceivedScope &&
+                _isLoadingReceivedInvoices &&
+                _receivedInvoicesStream == null) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (isReceivedScope && !_hasReceivedInvoicePhone) {
+              return Column(
+                children: [
+                  _buildScopeSwitcher(isRtl),
+                  Expanded(child: _buildNoPhoneState(isRtl)),
+                ],
+              );
+            }
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const Center(child: CircularProgressIndicator());
             }
+            if (snapshot.hasError) {
+              return Column(
+                children: [
+                  _buildScopeSwitcher(isRtl),
+                  Expanded(child: _buildLoadErrorState(isRtl)),
+                ],
+              );
+            }
 
-            final docs = snapshot.data?.docs ?? const [];
+            final docs = [...(snapshot.data?.docs ?? const [])];
+            if (isReceivedScope) {
+              docs.sort((a, b) {
+                final aDate = a.data()['createdAt'] as Timestamp?;
+                final bDate = b.data()['createdAt'] as Timestamp?;
+                return (bDate?.toDate() ?? DateTime(0)).compareTo(
+                  aDate?.toDate() ?? DateTime(0),
+                );
+              });
+            }
             if (docs.isEmpty) {
-              return _buildEmptyState(isRtl);
+              return Column(
+                children: [
+                  _buildScopeSwitcher(isRtl),
+                  Expanded(child: _buildEmptyState(isRtl, isReceivedScope)),
+                ],
+              );
             }
 
             final query = _searchQuery.trim();
@@ -627,6 +756,7 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
 
             return Column(
               children: [
+                _buildScopeSwitcher(isRtl),
                 Container(
                   padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
                   decoration: const BoxDecoration(
@@ -678,6 +808,7 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                             isRtl: isRtl,
                             count: docs.length,
                             totalAmount: totalAmount,
+                            isReceivedScope: isReceivedScope,
                           ),
                         ],
                       ),
@@ -812,9 +943,11 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                             final createdAt = data['createdAt'] as Timestamp?;
                             final amount = (data['amount'] as num?)?.toDouble();
                             final canCreateCreditNote =
-                                docType == 'invoice' ||
-                                docType == 'invoice_receipt';
-                            final canCreateReceipt = docType == 'invoice';
+                                !isReceivedScope &&
+                                (docType == 'invoice' ||
+                                    docType == 'invoice_receipt');
+                            final canCreateReceipt =
+                                !isReceivedScope && docType == 'invoice';
                             final paidAmount =
                                 (data['paidAmount'] as num?)?.toDouble() ??
                                 (docType == 'invoice_receipt'
@@ -1176,10 +1309,62 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
     );
   }
 
+  Widget _buildScopeSwitcher(bool isRtl) {
+    return Container(
+      width: double.infinity,
+      color: Colors.white,
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      child: SegmentedButton<_InvoiceScope>(
+        showSelectedIcon: false,
+        style: ButtonStyle(
+          backgroundColor: WidgetStateProperty.resolveWith((states) {
+            if (states.contains(WidgetState.selected)) {
+              return const Color(0xFFEFF6FF);
+            }
+            return const Color(0xFFF8FAFC);
+          }),
+          foregroundColor: WidgetStateProperty.resolveWith((states) {
+            if (states.contains(WidgetState.selected)) {
+              return const Color(0xFF1976D2);
+            }
+            return const Color(0xFF475569);
+          }),
+          side: WidgetStateProperty.all(
+            const BorderSide(color: Color(0xFFD6E4F5)),
+          ),
+          textStyle: WidgetStateProperty.all(
+            const TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+          ),
+        ),
+        segments: [
+          ButtonSegment(
+            value: _InvoiceScope.createdByMe,
+            icon: const Icon(Icons.drive_file_rename_outline_rounded),
+            label: Text(isRtl ? 'שיצרתי' : 'Created by me'),
+          ),
+          ButtonSegment(
+            value: _InvoiceScope.sentToMe,
+            icon: const Icon(Icons.mark_email_read_outlined),
+            label: Text(isRtl ? 'נשלחו אליי' : 'Sent to me'),
+          ),
+        ],
+        selected: {_selectedScope},
+        onSelectionChanged: (selection) {
+          final nextScope = selection.first;
+          if (nextScope == _selectedScope) return;
+          setState(() {
+            _selectedScope = nextScope;
+          });
+        },
+      ),
+    );
+  }
+
   Widget _buildSummaryBadge({
     required bool isRtl,
     required int count,
     required double totalAmount,
+    required bool isReceivedScope,
   }) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -1200,7 +1385,9 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
           ),
           const SizedBox(height: 2),
           Text(
-            isRtl ? 'מסמכים' : 'Docs',
+            isReceivedScope
+                ? (isRtl ? 'אליי' : 'To me')
+                : (isRtl ? 'מסמכים' : 'Docs'),
             style: const TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w700,
@@ -1242,7 +1429,7 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
     );
   }
 
-  Widget _buildEmptyState(bool isRtl) {
+  Widget _buildEmptyState(bool isRtl, bool isReceivedScope) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -1264,7 +1451,13 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
             ),
             const SizedBox(height: 20),
             Text(
-              isRtl ? 'עדיין אין מסמכים שמורים' : 'No saved documents yet',
+              isReceivedScope
+                  ? (isRtl
+                        ? 'לא נמצאו מסמכים שנשלחו אליך'
+                        : 'No documents sent to you yet')
+                  : (isRtl
+                        ? 'עדיין אין מסמכים שמורים'
+                        : 'No saved documents yet'),
               style: const TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.w800,
@@ -1273,9 +1466,13 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
             ),
             const SizedBox(height: 8),
             Text(
-              isRtl
-                  ? 'כשתשמור חשבונית, קבלה או זיכוי, הם יופיעו כאן לצפייה מהירה.'
-                  : 'When you save an invoice, receipt, or credit note, it will appear here for quick access.',
+              isReceivedScope
+                  ? (isRtl
+                        ? 'כאן יופיעו חשבוניות ומסמכים שנוצרו למספר הטלפון שלך.'
+                        : 'Invoices and documents created for your phone number will appear here.')
+                  : (isRtl
+                        ? 'כשתשמור חשבונית, קבלה או זיכוי, הם יופיעו כאן לצפייה מהירה.'
+                        : 'When you save an invoice, receipt, or credit note, it will appear here for quick access.'),
               textAlign: TextAlign.center,
               style: const TextStyle(color: Color(0xFF64748B), height: 1.5),
             ),
@@ -1331,7 +1528,95 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
       ),
     );
   }
+
+  Widget _buildNoPhoneState(bool isRtl) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 84,
+              height: 84,
+              decoration: BoxDecoration(
+                color: const Color(0xFFE8F1FB),
+                borderRadius: BorderRadius.circular(28),
+              ),
+              child: const Icon(
+                Icons.phone_android_outlined,
+                size: 42,
+                color: Color(0xFF1976D2),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              isRtl ? 'לא נמצא מספר טלפון' : 'No phone number found',
+              style: const TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+                color: Color(0xFF0F172A),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              isRtl
+                  ? 'כדי להציג מסמכים שנוצרו עבורך, צריך מספר טלפון בפרופיל או בחשבון.'
+                  : 'Add a phone number to your account or profile to see documents created for you.',
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Color(0xFF64748B), height: 1.5),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLoadErrorState(bool isRtl) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 84,
+              height: 84,
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF1F2),
+                borderRadius: BorderRadius.circular(28),
+              ),
+              child: const Icon(
+                Icons.error_outline_rounded,
+                size: 42,
+                color: Color(0xFFE11D48),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              isRtl ? 'לא הצלחנו לטעון מסמכים' : 'Could not load documents',
+              style: const TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+                color: Color(0xFF0F172A),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              isRtl
+                  ? 'נסו שוב בעוד רגע. אם המסמך חדש, ייתכן שהוא עדיין מסתנכרן.'
+                  : 'Try again in a moment. If the document is new, it may still be syncing.',
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Color(0xFF64748B), height: 1.5),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
+
+enum _InvoiceScope { createdByMe, sentToMe }
 
 class _ReceiptPaymentDraft {
   final double amount;
