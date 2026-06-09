@@ -953,44 +953,27 @@ class _SchedulePageState extends State<SchedulePage> {
     await _updateScheduleWidget();
   }
 
-  Future<void> _showVacationDialog() async {
+  Future<void> _setVacationForDay(DateTime date) async {
     final strings = _getLocalizedStrings(context);
-    DateTimeRange? picked = await showDateRangePicker(
-      context: context,
-      firstDate: DateTime.now(),
-      lastDate: DateTime.now().add(const Duration(days: 365)),
-    );
+    final dateStr = "${date.year}-${date.month}-${date.day}";
 
-    if (picked != null) {
-      for (
-        DateTime d = picked.start;
-        d.isBefore(picked.end.add(const Duration(days: 1)));
-        d = d.add(const Duration(days: 1))
-      ) {
-        final dStr = "${d.year}-${d.month}-${d.day}";
-        if (_availableDates.contains(dStr)) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text(strings['work_conflict']!)));
-          return;
-        }
-      }
-
-      final startStr =
-          "${picked.start.year}-${picked.start.month}-${picked.start.day}";
-      final endStr = "${picked.end.year}-${picked.end.month}-${picked.end.day}";
-
-      setState(() {
-        _vacations.add({'start': startStr, 'end': endStr});
-      });
-
-      await _scheduleDoc.set({
-        'vacations': FieldValue.arrayUnion([
-          {'start': startStr, 'end': endStr},
-        ]),
-      }, SetOptions(merge: true));
-      await _updateScheduleWidget();
+    if (_availableDates.contains(dateStr)) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(strings['work_conflict']!)));
+      return;
     }
+
+    final vacation = {'start': dateStr, 'end': dateStr};
+
+    setState(() {
+      _vacations.add(vacation);
+    });
+
+    await _scheduleDoc.set({
+      'vacations': FieldValue.arrayUnion([vacation]),
+    }, SetOptions(merge: true));
+    await _updateScheduleWidget();
   }
 
   Future<void> _addReminder(String text) async {
@@ -1822,7 +1805,9 @@ class _SchedulePageState extends State<SchedulePage> {
             onVac ? strings['on_vacation']! : strings['set_vacation']!,
             onVac,
             Colors.red,
-            onVac ? () => _cancelVacation(_selectedDay) : _showVacationDialog,
+            onVac
+                ? () => _cancelVacation(_selectedDay)
+                : () => _setVacationForDay(_selectedDay),
           ),
         ],
       ),
