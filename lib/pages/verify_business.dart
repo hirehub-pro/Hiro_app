@@ -394,8 +394,10 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
         'address': _addressController.text.trim(),
         'dealerType': _dealerType,
         'status': 'pending',
-        'legalAccepted': true,
-        'responsibilityAccepted': true,
+        'legalAccepted': _acceptedTerms && _isLegalDeclarationSigned,
+        'termsAccepted': _acceptedTerms,
+        'legalDeclarationAccepted': _isLegalDeclarationSigned,
+        'responsibilityAccepted': _acceptedResponsibility,
         'timestamp': FieldValue.serverTimestamp(),
         'businessLogoUrl': businessLogoUrl,
       };
@@ -407,9 +409,14 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
           .doc('latest')
           .set(verificationData, SetOptions(merge: true));
 
-      await FirebaseFirestore.instance.collection('users').doc(user.uid).update(
-        {'businessId': businessId, 'businessLogoUrl': businessLogoUrl},
-      );
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .update({
+            'businessId': businessId,
+            'businessLogoUrl': businessLogoUrl,
+            'businessVerificationStatus': 'pending',
+          });
 
       if (mounted) {
         _showSuccessDialog(strings);

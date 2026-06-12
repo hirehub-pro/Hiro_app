@@ -2462,6 +2462,13 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                 ],
               ),
               actions: [
+                TextButton.icon(
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  icon: const BackButtonIcon(),
+                  label: Text(
+                    MaterialLocalizations.of(dialogContext).backButtonTooltip,
+                  ),
+                ),
                 ElevatedButton(
                   onPressed: () {
                     final parsed = int.tryParse(controller.text.trim());

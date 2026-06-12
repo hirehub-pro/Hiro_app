@@ -6,7 +6,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:untitled1/ptofile.dart';
 import 'package:untitled1/pages/admin_reports_page.dart';
 import 'package:untitled1/utils/booking_mode.dart';
@@ -253,91 +252,306 @@ class _AdminPanelState extends State<AdminPanel> {
       backgroundColor: Colors.transparent,
       builder: (context) => _AdminBottomSheet(
         title: 'Business Verifications',
-        stream: _firestore
-            .collectionGroup('verification_info')
-            .where('status', isEqualTo: 'pending')
-            .snapshots(),
+        stream: _verificationRequestsStream(),
         itemBuilder: (context, doc) {
-          final data = doc.data() as Map<String, dynamic>;
-          final verificationRef =
-              doc.reference as DocumentReference<Map<String, dynamic>>;
+          final data = doc.data() ?? <String, dynamic>{};
+          final verificationRef = doc.reference;
           final String uid =
               data['userId'] ?? verificationRef.parent.parent?.id ?? doc.id;
-          final String dealerType = data['dealerType'] ?? 'exempt';
-          final String businessName = data['businessName'] ?? 'Business';
-
-          return Card(
-            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: ExpansionTile(
-              title: Text(businessName),
-              subtitle: Text('ID: ${data['businessId']} • $dealerType'),
-              children: [
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    children: [
-                      _buildInfoRow('Address', data['address']),
-                      _buildInfoRow('Tax Branch', data['taxBranch']),
-                      const SizedBox(height: 12),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: [
-                          _buildViewDocButton('ID Card', data['idCardUrl']),
-                          _buildViewDocButton(
-                            'Certificate',
-                            data['businessCertUrl'],
-                          ),
-                          if (data['insuranceUrl'] != null)
-                            _buildViewDocButton(
-                              'Insurance',
-                              data['insuranceUrl'],
-                            ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: ElevatedButton(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.green,
-                                foregroundColor: Colors.white,
-                              ),
-                              onPressed: () => _handleVerification(
-                                verificationRef,
-                                uid,
-                                true,
-                                businessName,
-                              ),
-                              child: const Text('Approve'),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: OutlinedButton(
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: Colors.red,
-                                side: const BorderSide(color: Colors.red),
-                              ),
-                              onPressed: () => _showRejectDialog(
-                                verificationRef,
-                                uid,
-                                businessName,
-                              ),
-                              child: const Text('Reject'),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
+          return _buildVerificationCard(
+            data: data,
+            verificationRef: verificationRef,
+            uid: uid,
           );
         },
       ),
     );
+  }
+
+  Widget _buildVerificationCard({
+    required Map<String, dynamic> data,
+    required DocumentReference<Map<String, dynamic>> verificationRef,
+    required String uid,
+  }) {
+    final businessName = _verificationValue(data['businessName'], 'Business');
+    final businessId = _verificationValue(data['businessId']);
+    final address = _verificationValue(data['address']);
+    final dealerType = _dealerTypeLabel(data['dealerType']?.toString());
+    final logoUrl = data['businessLogoUrl']?.toString().trim() ?? '';
+    final submittedAt = _formatVerificationDate(data['timestamp']);
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0A0F172A),
+            blurRadius: 18,
+            offset: Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(22),
+          side: const BorderSide(color: Color(0xFFE2E8F0)),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => Profile(userId: uid)),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 58,
+                      height: 58,
+                      clipBehavior: Clip.antiAlias,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEFF6FF),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: logoUrl.isEmpty
+                          ? const Icon(
+                              Icons.business_rounded,
+                              color: Color(0xFF2563EB),
+                              size: 30,
+                            )
+                          : Image.network(
+                              logoUrl,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, error, stackTrace) =>
+                                  const Icon(
+                                    Icons.business_rounded,
+                                    color: Color(0xFF2563EB),
+                                    size: 30,
+                                  ),
+                            ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            businessName,
+                            style: const TextStyle(
+                              color: Color(0xFF0F172A),
+                              fontSize: 18,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(height: 5),
+                          Text(
+                            submittedAt == null
+                                ? 'Awaiting admin review'
+                                : 'Submitted $submittedAt',
+                            style: const TextStyle(
+                              color: Color(0xFF64748B),
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFF7ED),
+                        borderRadius: BorderRadius.circular(30),
+                      ),
+                      child: const Text(
+                        'PENDING',
+                        style: TextStyle(
+                          color: Color(0xFFC2410C),
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: .5,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Column(
+                    children: [
+                      _buildVerificationDetail(
+                        Icons.badge_outlined,
+                        'Business ID / VAT ID',
+                        businessId,
+                      ),
+                      const Divider(height: 22, color: Color(0xFFE2E8F0)),
+                      _buildVerificationDetail(
+                        Icons.account_balance_outlined,
+                        'Tax classification',
+                        dealerType,
+                      ),
+                      const Divider(height: 22, color: Color(0xFFE2E8F0)),
+                      _buildVerificationDetail(
+                        Icons.location_on_outlined,
+                        'Business address',
+                        address,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFFDC2626),
+                          side: const BorderSide(color: Color(0xFFFCA5A5)),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        onPressed: () => _showRejectDialog(
+                          verificationRef,
+                          uid,
+                          businessName,
+                        ),
+                        icon: const Icon(Icons.close_rounded, size: 19),
+                        label: const Text('Reject'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF16A34A),
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        onPressed: () => _handleVerification(
+                          verificationRef,
+                          uid,
+                          true,
+                          businessName,
+                        ),
+                        icon: const Icon(Icons.verified_rounded, size: 19),
+                        label: const Text('Approve business'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildVerificationDetail(IconData icon, String label, String value) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 20, color: const Color(0xFF2563EB)),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: const TextStyle(
+                  color: Color(0xFF64748B),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                value,
+                style: const TextStyle(
+                  color: Color(0xFF0F172A),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _verificationValue(dynamic value, [String fallback = 'Not provided']) {
+    final text = value?.toString().trim() ?? '';
+    return text.isEmpty ? fallback : text;
+  }
+
+  String _dealerTypeLabel(String? type) {
+    return switch (type?.toLowerCase()) {
+      'licensed' => 'Licensed Dealer',
+      'company' => 'Limited Company',
+      _ => 'Exempt Dealer',
+    };
+  }
+
+  String? _formatVerificationDate(dynamic value) {
+    if (value is! Timestamp) return null;
+    final date = value.toDate().toLocal();
+    final day = date.day.toString().padLeft(2, '0');
+    final month = date.month.toString().padLeft(2, '0');
+    final hour = date.hour.toString().padLeft(2, '0');
+    final minute = date.minute.toString().padLeft(2, '0');
+    return '$day/$month/${date.year} at $hour:$minute';
+  }
+
+  Stream<List<DocumentSnapshot<Map<String, dynamic>>>>
+  _verificationRequestsStream() {
+    return _firestore.collection('users').snapshots().asyncMap((
+      usersSnapshot,
+    ) async {
+      final verificationDocs = await Future.wait(
+        usersSnapshot.docs.map(
+          (userDoc) => userDoc.reference
+              .collection('verification_info')
+              .doc('latest')
+              .get(),
+        ),
+      );
+
+      final pendingDocs = verificationDocs.where((doc) {
+        final status = doc.data()?['status']?.toString().toLowerCase();
+        return doc.exists && status == 'pending';
+      }).toList();
+
+      pendingDocs.sort((a, b) {
+        final aTimestamp = a.data()?['timestamp'] as Timestamp?;
+        final bTimestamp = b.data()?['timestamp'] as Timestamp?;
+        return (bTimestamp?.millisecondsSinceEpoch ?? 0).compareTo(
+          aTimestamp?.millisecondsSinceEpoch ?? 0,
+        );
+      });
+      return pendingDocs;
+    });
   }
 
   void _showCategoriesEditor(BuildContext context) {
@@ -1009,6 +1223,7 @@ class _AdminPanelState extends State<AdminPanel> {
           'isapproved': true, // As per request
           'isVerified': true,
           'isPro': true,
+          'businessVerificationStatus': 'approved',
           'verifiedAt': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
 
@@ -1028,6 +1243,9 @@ class _AdminPanelState extends State<AdminPanel> {
           'status': 'rejected',
           'rejectedAt': FieldValue.serverTimestamp(),
           if (reason != null && reason.isNotEmpty) 'rejectionReason': reason,
+        }, SetOptions(merge: true));
+        await _firestore.collection('users').doc(uid).set({
+          'businessVerificationStatus': 'rejected',
         }, SetOptions(merge: true));
 
         final String adminUid =
@@ -1391,37 +1609,6 @@ class _AdminPanelState extends State<AdminPanel> {
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildInfoRow(String label, dynamic value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          Text('$label: ', style: const TextStyle(fontWeight: FontWeight.bold)),
-          Text(value?.toString() ?? 'N/A'),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildViewDocButton(String label, String? url) {
-    return Column(
-      children: [
-        IconButton(
-          icon: const Icon(Icons.file_present_rounded, color: Colors.red),
-          onPressed: () async {
-            if (url != null && url.isNotEmpty) {
-              final Uri uri = Uri.parse(url);
-              if (await canLaunchUrl(uri)) {
-                await launchUrl(uri, mode: LaunchMode.externalApplication);
-              }
-            }
-          },
-        ),
-        Text(label, style: const TextStyle(fontSize: 10)),
-      ],
     );
   }
 }
@@ -2601,65 +2788,168 @@ class _ProfessionCategoriesSheetState
 
 class _AdminBottomSheet extends StatelessWidget {
   final String title;
-  final Stream stream;
-  final Widget Function(BuildContext, dynamic) itemBuilder;
-  final bool isListStream;
-  final List<Widget>? actions;
+  final Stream<List<DocumentSnapshot<Map<String, dynamic>>>> stream;
+  final Widget Function(BuildContext, DocumentSnapshot<Map<String, dynamic>>)
+  itemBuilder;
 
   const _AdminBottomSheet({
     required this.title,
     required this.stream,
     required this.itemBuilder,
-    this.isListStream = false,
-    this.actions,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: MediaQuery.of(context).size.height * 0.85,
+      height: MediaQuery.of(context).size.height * 0.9,
       decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        color: Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
       child: Column(
         children: [
+          const SizedBox(height: 10),
           Container(
-            padding: const EdgeInsets.all(20),
+            width: 44,
+            height: 4,
             decoration: BoxDecoration(
-              border: Border(bottom: BorderSide(color: Colors.grey[200]!)),
+              color: const Color(0xFFCBD5E1),
+              borderRadius: BorderRadius.circular(20),
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.fromLTRB(20, 16, 12, 18),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
             ),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEFF6FF),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Icon(
+                    Icons.verified_user_rounded,
+                    color: Color(0xFF2563EB),
                   ),
                 ),
-                if (actions != null) Row(children: actions!),
+                const SizedBox(width: 13),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          color: Color(0xFF0F172A),
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      const Text(
+                        'Review submitted business details',
+                        style: TextStyle(
+                          color: Color(0xFF64748B),
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Close',
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close_rounded),
+                  color: const Color(0xFF64748B),
+                ),
               ],
             ),
           ),
           Expanded(
-            child: StreamBuilder(
+            child: StreamBuilder<List<DocumentSnapshot<Map<String, dynamic>>>>(
               stream: stream,
               builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting)
-                  return const Center(child: CircularProgressIndicator());
-                if (!snapshot.hasData)
-                  return const Center(child: Text('No data found'));
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(
+                    child: CircularProgressIndicator(color: Color(0xFF2563EB)),
+                  );
+                }
+                if (snapshot.hasError) {
+                  return Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.cloud_off_rounded,
+                            size: 46,
+                            color: Color(0xFFDC2626),
+                          ),
+                          const SizedBox(height: 12),
+                          const Text(
+                            'Could not load requests',
+                            style: TextStyle(
+                              color: Color(0xFF0F172A),
+                              fontSize: 17,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            snapshot.error.toString(),
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: Color(0xFF64748B),
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }
 
-                final List items = isListStream
-                    ? (snapshot.data as List)
-                    : (snapshot.data as QuerySnapshot).docs;
-                if (items.isEmpty)
-                  return const Center(child: Text('No entries found'));
+                final items = snapshot.data ?? const [];
+                if (items.isEmpty) {
+                  return const Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.task_alt_rounded,
+                          size: 52,
+                          color: Color(0xFF16A34A),
+                        ),
+                        SizedBox(height: 14),
+                        Text(
+                          'All caught up',
+                          style: TextStyle(
+                            color: Color(0xFF0F172A),
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        SizedBox(height: 5),
+                        Text(
+                          'There are no pending business verifications.',
+                          style: TextStyle(
+                            color: Color(0xFF64748B),
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }
 
                 return ListView.builder(
-                  padding: const EdgeInsets.only(bottom: 40),
+                  padding: const EdgeInsets.fromLTRB(0, 10, 0, 36),
                   itemCount: items.length,
                   itemBuilder: (context, index) =>
                       itemBuilder(context, items[index]),
