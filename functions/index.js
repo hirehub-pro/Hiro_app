@@ -1,7 +1,8 @@
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
-const {PDFDocument, StandardFonts, rgb} = require("pdf-lib");
+const fontkit = require("@pdf-lib/fontkit");
+const {PDFDocument, rgb} = require("pdf-lib");
 
 const admin = require("firebase-admin");
 const {
@@ -55,6 +56,12 @@ const GOOGLE_PLAY_SUBSCRIPTION_PRODUCT_IDS = new Set([
 ]);
 const PUBLIC_APP_ORIGIN = "https://hiro-service.web.app";
 const SIGNING_REQUEST_LIFETIME_DAYS = 30;
+const SIGNING_FONT_PATH = path.join(
+    __dirname,
+    "assets",
+    "fonts",
+    "Rubik-VariableFont_wght.ttf",
+);
 
 exports.createDocumentSigningRequest = onCall(
     {region: "us-central1"},
@@ -123,6 +130,9 @@ exports.createDocumentSigningRequest = onCall(
         receiverId: receiverId || null,
         docType,
         documentName: normalizeString(invoice.name || invoice.fileName),
+        documentNumber: normalizeString(invoice.invoiceNumber),
+        documentDate: normalizeString(invoice.date),
+        amount: Number(invoice.amount) || 0,
         fileName: normalizeString(invoice.fileName) || "document.pdf",
         storagePath,
         status: "pending",
@@ -2744,12 +2754,14 @@ async function signAndReplacePdf(signingRequest, signatureBytes, signerName) {
   const [originalBytes] = await file.download();
   const [existingMetadata] = await file.getMetadata();
   const pdfDocument = await PDFDocument.load(originalBytes);
+  pdfDocument.registerFontkit(fontkit);
   const signature = await pdfDocument.embedPng(signatureBytes);
-  const font = await pdfDocument.embedFont(StandardFonts.Helvetica);
+  const fontBytes = fs.readFileSync(SIGNING_FONT_PATH);
+  const font = await pdfDocument.embedFont(fontBytes, {subset: true});
   const page = pdfDocument.getPages().at(-1);
   const pageWidth = page.getWidth();
-  const maxWidth = Math.min(210, pageWidth - 80);
-  const maxHeight = 75;
+  const maxWidth = Math.min(190, pageWidth - 100);
+  const maxHeight = 62;
   const scale = Math.min(
       maxWidth / signature.width,
       maxHeight / signature.height,
@@ -2758,32 +2770,95 @@ async function signAndReplacePdf(signingRequest, signatureBytes, signerName) {
   const width = signature.width * scale;
   const height = signature.height * scale;
   const x = Math.max(40, (pageWidth - width) / 2);
-  const y = 42;
+  const y = 166;
 
   page.drawRectangle({
-    x: x - 12,
-    y: y - 22,
-    width: width + 24,
-    height: height + 46,
-    borderColor: rgb(0.75, 0.78, 0.82),
-    borderWidth: 1,
+    x: 24,
+    y: 24,
+    width: pageWidth - 48,
+    height: 210,
     color: rgb(1, 1, 1),
-    opacity: 0.96,
+    opacity: 1,
   });
   page.drawImage(signature, {x, y, width, height});
-  page.drawText(`Signed by: ${asciiForPdf(signerName)}`, {
-    x,
-    y: y - 12,
-    size: 9,
+  const signatureLineWidth = Math.min(260, pageWidth - 100);
+  const signatureLineX = (pageWidth - signatureLineWidth) / 2;
+  const signatureLabel = "Signature:";
+  const signatureLabelSize = 10;
+  const signatureLabelWidth = font.widthOfTextAtSize(
+      signatureLabel,
+      signatureLabelSize,
+  );
+  page.drawText(signatureLabel, {
+    x: signatureLineX,
+    y: 151,
+    size: signatureLabelSize,
     font,
-    color: rgb(0.15, 0.18, 0.22),
+    color: rgb(0.2, 0.24, 0.28),
   });
-  page.drawText(`Signed at: ${new Date().toISOString()}`, {
-    x,
-    y: y - 24,
+  page.drawLine({
+    start: {
+      x: signatureLineX + signatureLabelWidth + 6,
+      y: 153,
+    },
+    end: {x: signatureLineX + signatureLineWidth, y: 153},
+    thickness: 0.8,
+    color: rgb(0.2, 0.24, 0.28),
+  });
+  const signedAt = new Date();
+  const signerLine =
+    `נחתם על ידי ${signerName} בתאריך ${formatSigningDate(signedAt)}`;
+  drawCenteredPdfText(page, signerLine, {
+    font,
+    size: 8.5,
+    y: 132,
+    color: rgb(0.2, 0.22, 0.25),
+  });
+
+  page.drawLine({
+    start: {x: 32, y: 112},
+    end: {x: pageWidth - 32, y: 112},
+    thickness: 1,
+    color: rgb(0.08, 0.08, 0.08),
+  });
+
+  drawRightAlignedPdfText(
+      page,
+      "חתימה דיגיטלית מאובטחת",
+      {
+        font,
+        size: 16,
+        x: pageWidth - 32,
+        y: 84,
+        color: rgb(0.03, 0.03, 0.03),
+      },
+  );
+  drawRightAlignedPdfText(
+      page,
+      "מסמך זה נחתם דיגיטלית באמצעות מערכת הירו",
+      {
+        font,
+        size: 8.5,
+        x: pageWidth - 32,
+        y: 64,
+        color: rgb(0.08, 0.08, 0.08),
+      },
+  );
+
+  const documentLabel =
+    normalizeString(signingRequest.documentName) ||
+    normalizeString(signingRequest.fileName) ||
+    "מסמך";
+  const pageCount = pdfDocument.getPageCount();
+  const metadataLine =
+    `הופק ב ${formatSigningDate(signedAt)} | ${documentLabel} | ` +
+    `עמוד ${pageCount} מתוך ${pageCount}`;
+  page.drawText(metadataLine, {
+    x: 32,
+    y: 64,
     size: 8,
     font,
-    color: rgb(0.35, 0.38, 0.42),
+    color: rgb(0.08, 0.08, 0.08),
   });
 
   const signedBytes = await pdfDocument.save();
@@ -2971,9 +3046,43 @@ function safeHeaderFileName(value) {
   return (name || "document.pdf").replace(/["\\]/g, "_");
 }
 
-function asciiForPdf(value) {
-  const ascii = normalizeString(value).replace(/[^\x20-\x7E]/g, "").trim();
-  return ascii || "Customer";
+function formatSigningDate(date) {
+  const parts = new Intl.DateTimeFormat("he-IL", {
+    timeZone: "Asia/Jerusalem",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+  const values = Object.fromEntries(
+      parts.map((part) => [part.type, part.value]),
+  );
+  return `${values.hour}:${values.minute} ` +
+    `${values.day}/${values.month}/${values.year}`;
+}
+
+function drawRightAlignedPdfText(page, text, options) {
+  const width = options.font.widthOfTextAtSize(text, options.size);
+  page.drawText(text, {
+    x: options.x - width,
+    y: options.y,
+    size: options.size,
+    font: options.font,
+    color: options.color,
+  });
+}
+
+function drawCenteredPdfText(page, text, options) {
+  const width = options.font.widthOfTextAtSize(text, options.size);
+  page.drawText(text, {
+    x: (page.getWidth() - width) / 2,
+    y: options.y,
+    size: options.size,
+    font: options.font,
+    color: options.color,
+  });
 }
 
 function datesEqual(left, right) {

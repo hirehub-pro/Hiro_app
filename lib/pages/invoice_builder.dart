@@ -4396,18 +4396,21 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                   ),
                 ),
                 pw.SizedBox(height: 18),
-                pw.Row(
-                  mainAxisAlignment: pw.MainAxisAlignment.end,
-                  children: [
-                    pw.Text(
-                      'Signature: ______________________',
-                      style: pw.TextStyle(
-                        fontSize: 11,
-                        color: pdf.PdfColors.blueGrey800,
+                if (_isQuoteLike)
+                  pw.SizedBox(height: 220)
+                else
+                  pw.Row(
+                    mainAxisAlignment: pw.MainAxisAlignment.end,
+                    children: [
+                      pw.Text(
+                        'Signature: ______________________',
+                        style: pw.TextStyle(
+                          fontSize: 11,
+                          color: pdf.PdfColors.blueGrey800,
+                        ),
                       ),
-                    ),
-                  ],
-                ),
+                    ],
+                  ),
               ],
             ),
           ),
