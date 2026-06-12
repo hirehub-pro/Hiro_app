@@ -3856,6 +3856,12 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         : strings['doc_type']!;
     final creditNoteLegalData = _creditNoteLegalData;
     final cleanAllocationNumber = allocationNumber?.trim();
+    final generatedAt = intl.DateFormat(
+      'HH:mm dd/MM/yyyy',
+    ).format(DateTime.now());
+    final signingDocumentLabel = _invoiceNumber.isEmpty
+        ? docTitle
+        : '$docTitle $_invoiceNumber';
 
     doc.addPage(
       pw.MultiPage(
@@ -4370,35 +4376,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                   ),
                   pw.SizedBox(height: 16),
                 ],
-                // Thank you & signature
-                pw.Divider(thickness: 1, color: pdf.PdfColors.blueGrey800),
-                pw.SizedBox(height: 8),
-                pw.Center(
-                  child: pw.Text(
-                    strings['legal_disclaimer']!,
-                    style: pw.TextStyle(
-                      fontSize: 11,
-                      fontWeight: pw.FontWeight.bold,
-                      color: pdf.PdfColors.blueGrey800,
-                    ),
-                    textAlign: pw.TextAlign.center,
-                  ),
-                ),
-                pw.SizedBox(height: 8),
-                pw.Center(
-                  child: pw.Text(
-                    'Thank you for your business!',
-                    style: pw.TextStyle(
-                      fontSize: 13,
-                      fontWeight: pw.FontWeight.bold,
-                      color: pdf.PdfColors.blue,
-                    ),
-                  ),
-                ),
-                pw.SizedBox(height: 18),
-                if (_isQuoteLike)
-                  pw.SizedBox(height: 220)
-                else
+                if (!_isQuoteLike)
                   pw.Row(
                     mainAxisAlignment: pw.MainAxisAlignment.end,
                     children: [
@@ -4414,6 +4392,97 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
               ],
             ),
           ),
+          if (_isQuoteLike) pw.NewPage(freeSpace: 170),
+          if (_isQuoteLike) pw.Spacer(),
+          if (_isQuoteLike)
+            pw.Directionality(
+              textDirection: pw.TextDirection.rtl,
+              child: pw.Container(
+                height: 160,
+                padding: const pw.EdgeInsets.symmetric(horizontal: 8),
+                child: pw.Column(
+                  mainAxisAlignment: pw.MainAxisAlignment.end,
+                  children: [
+                    pw.Row(
+                      mainAxisAlignment: pw.MainAxisAlignment.center,
+                      children: [
+                        pw.Text(
+                          'חתימה:',
+                          style: pw.TextStyle(
+                            fontSize: 10,
+                            color: pdf.PdfColors.blueGrey800,
+                          ),
+                        ),
+                        pw.SizedBox(width: 6),
+                        pw.Container(
+                          width: 230,
+                          height: 12,
+                          decoration: const pw.BoxDecoration(
+                            border: pw.Border(
+                              bottom: pw.BorderSide(
+                                color: pdf.PdfColors.blueGrey800,
+                                width: 0.8,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    pw.SizedBox(height: 18),
+                    pw.Divider(thickness: 1, color: pdf.PdfColors.blueGrey900),
+                    pw.SizedBox(height: 10),
+                    pw.Align(
+                      alignment: pw.Alignment.centerRight,
+                      child: pw.Text(
+                        'חתימה דיגיטלית מאובטחת',
+                        style: pw.TextStyle(
+                          fontSize: 16,
+                          fontWeight: pw.FontWeight.bold,
+                          color: pdf.PdfColors.black,
+                        ),
+                      ),
+                    ),
+                    pw.SizedBox(height: 5),
+                    pw.Directionality(
+                      textDirection: pw.TextDirection.ltr,
+                      child: pw.Row(
+                        crossAxisAlignment: pw.CrossAxisAlignment.start,
+                        children: [
+                          pw.Expanded(
+                            child: pw.Directionality(
+                              textDirection: pw.TextDirection.rtl,
+                              child: pw.Text(
+                                'הופק ב $generatedAt | $signingDocumentLabel',
+                                style: pw.TextStyle(
+                                  fontSize: 8,
+                                  color: pdf.PdfColors.blueGrey900,
+                                ),
+                                textAlign: pw.TextAlign.left,
+                              ),
+                            ),
+                          ),
+                          pw.SizedBox(width: 18),
+                          pw.Expanded(
+                            child: pw.Directionality(
+                              textDirection: pw.TextDirection.rtl,
+                              child: pw.Text(
+                                'מסמך זה מיועד לחתימה דיגיטלית '
+                                'באמצעות מערכת הירו',
+                                style: pw.TextStyle(
+                                  fontSize: 8.5,
+                                  color: pdf.PdfColors.blueGrey900,
+                                ),
+                                textAlign: pw.TextAlign.right,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
         ],
       ),
     );

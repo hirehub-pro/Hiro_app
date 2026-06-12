@@ -2783,32 +2783,34 @@ async function signAndReplacePdf(signingRequest, signatureBytes, signerName) {
   page.drawImage(signature, {x, y, width, height});
   const signatureLineWidth = Math.min(260, pageWidth - 100);
   const signatureLineX = (pageWidth - signatureLineWidth) / 2;
-  const signatureLabel = "Signature:";
+  const signatureLabel = "חתימה:";
   const signatureLabelSize = 10;
   const signatureLabelWidth = font.widthOfTextAtSize(
       signatureLabel,
       signatureLabelSize,
   );
+  const signatureLabelX =
+    signatureLineX + signatureLineWidth - signatureLabelWidth;
   page.drawText(signatureLabel, {
-    x: signatureLineX,
+    x: signatureLabelX,
     y: 151,
     size: signatureLabelSize,
     font,
     color: rgb(0.2, 0.24, 0.28),
   });
   page.drawLine({
-    start: {
-      x: signatureLineX + signatureLabelWidth + 6,
-      y: 153,
-    },
-    end: {x: signatureLineX + signatureLineWidth, y: 153},
+    start: {x: signatureLineX, y: 153},
+    end: {x: signatureLabelX - 6, y: 153},
     thickness: 0.8,
     color: rgb(0.2, 0.24, 0.28),
   });
   const signedAt = new Date();
-  const signerLine =
-    `נחתם על ידי ${signerName} בתאריך ${formatSigningDate(signedAt)}`;
-  drawCenteredPdfText(page, signerLine, {
+  drawCenteredPdfParts(page, [
+    {text: formatSigningDate(signedAt), direction: "ltr"},
+    {text: "בתאריך", direction: "rtl"},
+    {text: signerName, direction: "ltr"},
+    {text: "נחתם על ידי", direction: "rtl"},
+  ], {
     font,
     size: 8.5,
     y: 132,
@@ -2850,10 +2852,17 @@ async function signAndReplacePdf(signingRequest, signatureBytes, signerName) {
     normalizeString(signingRequest.fileName) ||
     "מסמך";
   const pageCount = pdfDocument.getPageCount();
-  const metadataLine =
-    `הופק ב ${formatSigningDate(signedAt)} | ${documentLabel} | ` +
-    `עמוד ${pageCount} מתוך ${pageCount}`;
-  page.drawText(metadataLine, {
+  drawPdfParts(page, [
+    {text: "הופק ב", direction: "rtl"},
+    {text: formatSigningDate(signedAt), direction: "ltr"},
+    {text: "|", direction: "ltr"},
+    {text: documentLabel, direction: "ltr"},
+    {text: "|", direction: "ltr"},
+    {text: "עמוד", direction: "rtl"},
+    {text: String(pageCount), direction: "ltr"},
+    {text: "מתוך", direction: "rtl"},
+    {text: String(pageCount), direction: "ltr"},
+  ], {
     x: 32,
     y: 64,
     size: 8,
@@ -3082,6 +3091,39 @@ function drawCenteredPdfText(page, text, options) {
     size: options.size,
     font: options.font,
     color: options.color,
+  });
+}
+
+function drawPdfParts(page, parts, options) {
+  let x = options.x;
+  for (const part of parts) {
+    const text = normalizeString(part.text);
+    const width = options.font.widthOfTextAtSize(text, options.size);
+    page.drawText(text, {
+      x,
+      y: options.y,
+      size: options.size,
+      font: options.font,
+      color: options.color,
+    });
+    x += width + (options.gap ?? 4);
+  }
+}
+
+function drawCenteredPdfParts(page, parts, options) {
+  const gap = options.gap ?? 4;
+  const widths = parts.map((part) =>
+    options.font.widthOfTextAtSize(
+        normalizeString(part.text),
+        options.size,
+    ),
+  );
+  const totalWidth = widths.reduce((sum, width) => sum + width, 0) +
+    gap * Math.max(0, parts.length - 1);
+  drawPdfParts(page, parts, {
+    ...options,
+    x: (page.getWidth() - totalWidth) / 2,
+    gap,
   });
 }
 
