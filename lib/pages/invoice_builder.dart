@@ -1349,7 +1349,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           final workerData = workerDoc.data();
           setState(() {
             _isBusinessVerified = workerData?['isapproved'] ?? false;
-            _dealerType = workerData?['dealertype'] ?? 'exempt';
             _workerName = workerData?['name']?.toString().trim();
           });
 
@@ -1371,6 +1370,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
             setState(() {
               _businessId = vData?['businessId'];
               _businessAddress = vData?['address'];
+              _dealerType = vData?['dealerType'] ?? 'exempt';
               _verifiedBusinessLogoUrl = businessLogoUrl.isEmpty
                   ? null
                   : businessLogoUrl;

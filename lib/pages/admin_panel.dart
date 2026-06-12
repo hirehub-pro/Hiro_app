@@ -307,7 +307,6 @@ class _AdminPanelState extends State<AdminPanel> {
                                 verificationRef,
                                 uid,
                                 true,
-                                dealerType,
                                 businessName,
                               ),
                               child: const Text('Approve'),
@@ -323,7 +322,6 @@ class _AdminPanelState extends State<AdminPanel> {
                               onPressed: () => _showRejectDialog(
                                 verificationRef,
                                 uid,
-                                dealerType,
                                 businessName,
                               ),
                               child: const Text('Reject'),
@@ -942,7 +940,6 @@ class _AdminPanelState extends State<AdminPanel> {
   void _showRejectDialog(
     DocumentReference<Map<String, dynamic>> verificationRef,
     String uid,
-    String dealerType,
     String businessName,
   ) {
     final controller = TextEditingController();
@@ -969,7 +966,6 @@ class _AdminPanelState extends State<AdminPanel> {
                 verificationRef,
                 uid,
                 false,
-                dealerType,
                 businessName,
                 reason: controller.text.trim(),
               );
@@ -986,7 +982,6 @@ class _AdminPanelState extends State<AdminPanel> {
     DocumentReference<Map<String, dynamic>> verificationRef,
     String uid,
     bool approve,
-    String dealerType,
     String businessName, {
     String? reason,
   }) async {
@@ -1012,7 +1007,6 @@ class _AdminPanelState extends State<AdminPanel> {
         await _firestore.collection('users').doc(uid).set({
           'role': 'worker',
           'isapproved': true, // As per request
-          'dealertype': dealerType, // As per request
           'isVerified': true,
           'isPro': true,
           'verifiedAt': FieldValue.serverTimestamp(),

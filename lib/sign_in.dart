@@ -1,18 +1,15 @@
-import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter_facebook_auth/flutter_facebook_auth.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 import 'package:provider/provider.dart';
-import 'package:crypto/crypto.dart';
-import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:untitled1/services/language_provider.dart';
 import 'package:untitled1/services/analytics_service.dart';
 import 'package:untitled1/services/auth_service.dart';
+import 'package:untitled1/services/firebase_options.dart';
+import 'package:untitled1/forgot_password.dart';
 import 'package:untitled1/sign_up.dart';
 import 'main.dart';
 
@@ -26,10 +23,9 @@ class SignInPage extends StatefulWidget {
 }
 
 class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
-  static Future<void>? _googleSignInInit;
-
   final _phoneController = TextEditingController();
   final _codeController = TextEditingController();
+  final _passwordController = TextEditingController();
 
   AnimationController? _introController;
   AnimationController? _backgroundController;
@@ -162,6 +158,7 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
   int? _resendToken;
   bool _codeSent = false;
   bool _loading = false;
+  bool _obscurePassword = true;
 
   @override
   void initState() {
@@ -181,6 +178,7 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
     _logoTapController?.dispose();
     _phoneController.dispose();
     _codeController.dispose();
+    _passwordController.dispose();
     super.dispose();
   }
 
@@ -204,9 +202,6 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
           'verify': 'אמת והתחבר',
           'or': 'או',
           'guest': 'המשך כאורח',
-          'google': 'המשך עם Google',
-          'facebook': 'המשך עם Facebook',
-          'apple': 'המשך עם Apple',
           'signup': 'הרשמה',
           'no_account': 'אין לך חשבון? ',
           'not_registered_title': 'משתמש לא רשום',
@@ -234,7 +229,6 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
           'generic_error': 'שגיאה: {err}',
           'invalid_code_error': 'קוד לא תקין או אירעה שגיאה',
           'sign_in_error': 'שגיאת התחברות: {err}',
-          'social_unavailable': 'אפשרות ההתחברות הזו אינה זמינה במכשיר הזה.',
         };
       case 'ar':
         return {
@@ -250,9 +244,6 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
           'verify': 'تحقق وسجّل الدخول',
           'or': 'أو',
           'guest': 'المتابعة كضيف',
-          'google': 'المتابعة عبر Google',
-          'facebook': 'المتابعة عبر Facebook',
-          'apple': 'المتابعة عبر Apple',
           'signup': 'إنشاء حساب',
           'no_account': 'ليس لديك حساب؟ ',
           'not_registered_title': 'المستخدم غير مسجل',
@@ -280,8 +271,6 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
           'generic_error': 'خطأ: {err}',
           'invalid_code_error': 'رمز غير صالح أو حدث خطأ',
           'sign_in_error': 'خطأ في تسجيل الدخول: {err}',
-          'social_unavailable':
-              'طريقة تسجيل الدخول هذه غير متاحة على هذا الجهاز.',
         };
       case 'ru':
         return {
@@ -297,9 +286,6 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
           'verify': 'Подтвердить и войти',
           'or': 'или',
           'guest': 'Продолжить как гость',
-          'google': 'Продолжить с Google',
-          'facebook': 'Продолжить с Facebook',
-          'apple': 'Продолжить с Apple',
           'signup': 'Регистрация',
           'no_account': 'Нет аккаунта? ',
           'not_registered_title': 'Пользователь не зарегистрирован',
@@ -329,8 +315,6 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
           'generic_error': 'Ошибка: {err}',
           'invalid_code_error': 'Неверный код или произошла ошибка',
           'sign_in_error': 'Ошибка входа: {err}',
-          'social_unavailable':
-              'Этот способ входа недоступен на этом устройстве.',
         };
       case 'am':
         return {
@@ -346,9 +330,6 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
           'verify': 'ያረጋግጡ እና ይግቡ',
           'or': 'ወይም',
           'guest': 'እንደ እንግዳ ቀጥል',
-          'google': 'በGoogle ቀጥል',
-          'facebook': 'በFacebook ቀጥል',
-          'apple': 'በApple ቀጥል',
           'signup': 'መመዝገብ',
           'no_account': 'መለያ የለዎትም? ',
           'not_registered_title': 'ተጠቃሚው አልተመዘገበም',
@@ -375,7 +356,6 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
           'generic_error': 'ስህተት: {err}',
           'invalid_code_error': 'ልክ ያልሆነ ኮድ ወይም ስህተት ተከሰተ',
           'sign_in_error': 'የመግቢያ ስህተት: {err}',
-          'social_unavailable': 'ይህ የመግቢያ አማራጭ በዚህ መሣሪያ ላይ አይገኝም።',
         };
       default:
         return {
@@ -391,9 +371,6 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
           'verify': 'Verify & Sign In',
           'or': 'or',
           'guest': 'Continue as Guest',
-          'google': 'Continue with Google',
-          'facebook': 'Continue with Facebook',
-          'apple': 'Continue with Apple',
           'signup': 'Register',
           'no_account': "Don't have an account? ",
           'not_registered_title': 'User Not Registered',
@@ -422,8 +399,6 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
           'generic_error': 'Error: {err}',
           'invalid_code_error': 'Invalid code or an error occurred',
           'sign_in_error': 'Sign in error: {err}',
-          'social_unavailable':
-              'This sign-in option is not available on this device.',
         };
     }
   }
@@ -570,19 +545,43 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
     return '+972$digits';
   }
 
-  Future<bool> _isPhoneRegistered(String normalizedPhone) async {
+  Future<QueryDocumentSnapshot<Map<String, dynamic>>?> _getUserByPhone(
+    String normalizedPhone,
+  ) async {
     final snapshot = await FirebaseFirestore.instance
         .collection('users')
         .where('phone', isEqualTo: normalizedPhone)
         .limit(1)
         .get();
-    return snapshot.docs.isNotEmpty;
+    return snapshot.docs.isEmpty ? null : snapshot.docs.first;
+  }
+
+  Future<void> _verifyPasswordWithoutChangingSession({
+    required String email,
+    required String password,
+  }) async {
+    final verifierApp = await Firebase.initializeApp(
+      name: 'password-verifier-${DateTime.now().microsecondsSinceEpoch}',
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+    final verifierAuth = FirebaseAuth.instanceFor(app: verifierApp);
+
+    try {
+      await verifierAuth.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+    } finally {
+      await verifierAuth.signOut();
+      await verifierApp.delete();
+    }
   }
 
   Future<void> _sendCode() async {
     final strings = _getLocalizedStrings(context);
     String input = _phoneController.text.trim();
     if (input.isEmpty) return;
+    final password = _passwordController.text;
 
     String phone = _normalizePhone(input);
     final regExp = RegExp(r'^\+9725\d{8}$');
@@ -596,10 +595,21 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
       return;
     }
 
+    if (password.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            strings['password_required'] ?? 'Please enter your password.',
+          ),
+        ),
+      );
+      return;
+    }
+
     setState(() => _loading = true);
     try {
-      final isRegistered = await _isPhoneRegistered(phone);
-      if (!isRegistered) {
+      final userDoc = await _getUserByPhone(phone);
+      if (userDoc == null) {
         if (mounted) {
           setState(() => _loading = false);
           showDialog(
@@ -628,6 +638,43 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
                   child: Text(strings['signup'] ?? 'Sign Up'),
                 ),
               ],
+            ),
+          );
+        }
+        return;
+      }
+
+      final email = (userDoc.data()['email'] ?? '').toString().trim();
+      if (email.isEmpty) {
+        if (mounted) {
+          setState(() => _loading = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                strings['password_unavailable'] ??
+                    'Password sign-in is not available for this account yet.',
+              ),
+            ),
+          );
+        }
+        return;
+      }
+
+      try {
+        await _verifyPasswordWithoutChangingSession(
+          email: email,
+          password: password,
+        );
+      } on FirebaseAuthException catch (e) {
+        if (mounted) {
+          setState(() => _loading = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                e.code == 'wrong-password' || e.code == 'invalid-credential'
+                    ? (strings['wrong_password'] ?? 'Incorrect password.')
+                    : (e.message ?? e.code),
+              ),
             ),
           );
         }
@@ -765,176 +812,6 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
     }
   }
 
-  Future<void> _signInWithGoogle() async {
-    final strings = _getLocalizedStrings(context);
-    setState(() => _loading = true);
-    try {
-      UserCredential userCredential;
-      if (kIsWeb) {
-        final provider = GoogleAuthProvider()
-          ..addScope('email')
-          ..addScope('profile');
-        userCredential = await FirebaseAuth.instance.signInWithPopup(provider);
-      } else {
-        _googleSignInInit ??= GoogleSignIn.instance.initialize();
-        await _googleSignInInit;
-        if (!GoogleSignIn.instance.supportsAuthenticate()) {
-          throw UnsupportedError(
-            strings['social_unavailable'] ??
-                'This sign-in option is not available on this device.',
-          );
-        }
-        final googleUser = await GoogleSignIn.instance.authenticate(
-          scopeHint: const ['email', 'profile'],
-        );
-        final googleAuth = googleUser.authentication;
-        final credential = GoogleAuthProvider.credential(
-          idToken: googleAuth.idToken,
-        );
-        userCredential = await FirebaseAuth.instance.signInWithCredential(
-          credential,
-        );
-      }
-      await _routeAuthenticatedUser(userCredential.user, method: 'google');
-    } catch (e) {
-      debugPrint("SIGN IN ERROR: $e");
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              strings['sign_in_error']!.replaceAll('{err}', e.toString()),
-            ),
-          ),
-        );
-        setState(() => _loading = false);
-      }
-    }
-  }
-
-  Future<void> _signInWithFacebook() async {
-    final strings = _getLocalizedStrings(context);
-    setState(() => _loading = true);
-    try {
-      UserCredential userCredential;
-      if (kIsWeb) {
-        final provider = FacebookAuthProvider()
-          ..addScope('email')
-          ..addScope('public_profile');
-        userCredential = await FirebaseAuth.instance.signInWithPopup(provider);
-      } else {
-        final result = await FacebookAuth.instance.login(
-          permissions: const ['email', 'public_profile'],
-          loginTracking: LoginTracking.enabled,
-        );
-        if (result.status == LoginStatus.cancelled) {
-          if (mounted) setState(() => _loading = false);
-          return;
-        }
-        final accessToken = result.accessToken;
-        if (result.status != LoginStatus.success || accessToken == null) {
-          throw FirebaseAuthException(
-            code: 'facebook-sign-in-failed',
-            message: result.message ?? strings['social_unavailable'],
-          );
-        }
-        final credential = FacebookAuthProvider.credential(
-          accessToken.tokenString,
-        );
-        userCredential = await FirebaseAuth.instance.signInWithCredential(
-          credential,
-        );
-      }
-      await _routeAuthenticatedUser(userCredential.user, method: 'facebook');
-    } catch (e) {
-      debugPrint("SIGN IN ERROR: $e");
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              strings['sign_in_error']!.replaceAll('{err}', e.toString()),
-            ),
-          ),
-        );
-        setState(() => _loading = false);
-      }
-    }
-  }
-
-  Future<void> _signInWithApple() async {
-    final strings = _getLocalizedStrings(context);
-    setState(() => _loading = true);
-    try {
-      UserCredential userCredential;
-      if (kIsWeb) {
-        final provider = OAuthProvider('apple.com')
-          ..addScope('email')
-          ..addScope('name');
-        userCredential = await FirebaseAuth.instance.signInWithPopup(provider);
-      } else {
-        final isAvailable = await SignInWithApple.isAvailable();
-        if (!isAvailable) {
-          throw UnsupportedError(
-            strings['social_unavailable'] ??
-                'This sign-in option is not available on this device.',
-          );
-        }
-
-        final rawNonce = _generateNonce();
-        final appleCredential = await SignInWithApple.getAppleIDCredential(
-          scopes: const [
-            AppleIDAuthorizationScopes.email,
-            AppleIDAuthorizationScopes.fullName,
-          ],
-          nonce: _sha256ofString(rawNonce),
-        );
-        final idToken = appleCredential.identityToken;
-        if (idToken == null) {
-          throw FirebaseAuthException(
-            code: 'missing-apple-id-token',
-            message: strings['social_unavailable'],
-          );
-        }
-        final credential = OAuthProvider('apple.com').credential(
-          idToken: idToken,
-          rawNonce: rawNonce,
-          accessToken: appleCredential.authorizationCode,
-        );
-        userCredential = await FirebaseAuth.instance.signInWithCredential(
-          credential,
-        );
-      }
-      await _routeAuthenticatedUser(userCredential.user, method: 'apple');
-    } catch (e) {
-      debugPrint("SIGN IN ERROR: $e");
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              strings['sign_in_error']!.replaceAll('{err}', e.toString()),
-            ),
-          ),
-        );
-        setState(() => _loading = false);
-      }
-    }
-  }
-
-  String _generateNonce([int length = 32]) {
-    const charset =
-        '0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._';
-    final random = math.Random.secure();
-    return List.generate(
-      length,
-      (_) => charset[random.nextInt(charset.length)],
-    ).join();
-  }
-
-  String _sha256ofString(String input) {
-    final bytes = utf8.encode(input);
-    final digest = sha256.convert(bytes);
-    return digest.toString();
-  }
-
   Future<void> _handleGuestSignIn() async {
     await AnalyticsService.logGuestSignIn();
     if (mounted) {
@@ -943,6 +820,13 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
         MaterialPageRoute(builder: (_) => const MyHomePage()),
       );
     }
+  }
+
+  void _openForgotPasswordPage() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const ForgotPasswordPage()),
+    );
   }
 
   @override
@@ -1570,8 +1454,6 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
           const SizedBox(height: 26),
           _buildDivider(strings),
           const SizedBox(height: 26),
-          _buildSocialSignInButtons(strings),
-          const SizedBox(height: 14),
           SizedBox(
             width: double.infinity,
             height: 58,
@@ -1607,73 +1489,6 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
           const SizedBox(height: 18),
           _buildSignUpLink(strings),
         ],
-      ),
-    );
-  }
-
-  Widget _buildSocialSignInButtons(Map<String, String> strings) {
-    return Column(
-      children: [
-        _buildSocialButton(
-          label: strings['google'] ?? 'Continue with Google',
-          icon: Icons.g_mobiledata_rounded,
-          iconColor: const Color(0xFF4285F4),
-          onPressed: _loading ? null : _signInWithGoogle,
-        ),
-        const SizedBox(height: 12),
-        _buildSocialButton(
-          label: strings['facebook'] ?? 'Continue with Facebook',
-          icon: Icons.facebook_rounded,
-          iconColor: const Color(0xFF1877F2),
-          onPressed: _loading ? null : _signInWithFacebook,
-        ),
-        const SizedBox(height: 12),
-        _buildSocialButton(
-          label: strings['apple'] ?? 'Continue with Apple',
-          icon: Icons.apple_rounded,
-          iconColor: const Color(0xFF111827),
-          onPressed: _loading ? null : _signInWithApple,
-        ),
-      ],
-    );
-  }
-
-  Widget _buildSocialButton({
-    required String label,
-    required IconData icon,
-    required Color iconColor,
-    required VoidCallback? onPressed,
-  }) {
-    return SizedBox(
-      width: double.infinity,
-      height: 56,
-      child: OutlinedButton(
-        onPressed: onPressed,
-        style: OutlinedButton.styleFrom(
-          foregroundColor: const Color(0xFF111827),
-          side: const BorderSide(color: Color(0xFFDCE5EE)),
-          backgroundColor: Colors.white.withValues(alpha: 0.82),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
-          ),
-        ),
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 26, color: iconColor),
-              const SizedBox(width: 12),
-              Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }
@@ -1731,6 +1546,7 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
         TextField(
           controller: _phoneController,
           keyboardType: TextInputType.phone,
+          textInputAction: TextInputAction.next,
           style: const TextStyle(
             color: Color(0xFF111827),
             fontSize: 17,
@@ -1767,6 +1583,53 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
             ),
           ),
         ),
+        const SizedBox(height: 16),
+        Text(
+          strings['password_label'] ?? 'Password',
+          style: const TextStyle(
+            fontWeight: FontWeight.w800,
+            fontSize: 15,
+            color: Color(0xFF374151),
+          ),
+        ),
+        const SizedBox(height: 9),
+        TextField(
+          controller: _passwordController,
+          obscureText: _obscurePassword,
+          textInputAction: TextInputAction.done,
+          autofillHints: const [AutofillHints.password],
+          onSubmitted: (_) => _loading ? null : _sendCode(),
+          style: const TextStyle(
+            color: Color(0xFF111827),
+            fontSize: 17,
+            fontWeight: FontWeight.w600,
+          ),
+          decoration: _inputDecoration(
+            icon: Icons.lock_outline_rounded,
+            suffixIcon: IconButton(
+              onPressed: () =>
+                  setState(() => _obscurePassword = !_obscurePassword),
+              icon: Icon(
+                _obscurePassword
+                    ? Icons.visibility_outlined
+                    : Icons.visibility_off_outlined,
+                color: const Color(0xFF9CA3AF),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Align(
+          alignment: AlignmentDirectional.centerEnd,
+          child: TextButton(
+            onPressed: _loading ? null : _openForgotPasswordPage,
+            style: TextButton.styleFrom(
+              foregroundColor: const Color(0xFF1976D2),
+              textStyle: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+            child: Text(strings['forgot_password'] ?? 'Forgot password?'),
+          ),
+        ),
         const SizedBox(height: 24),
         _buildPrimaryButton(
           label: strings['get_code'] ?? 'Send Verification Code',
@@ -1774,6 +1637,34 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
           onPressed: _loading ? null : _sendCode,
         ),
       ],
+    );
+  }
+
+  InputDecoration _inputDecoration({
+    String? hintText,
+    required IconData icon,
+    Widget? suffixIcon,
+  }) {
+    return InputDecoration(
+      hintText: hintText,
+      hintStyle: const TextStyle(
+        color: Color(0xFF9CA3AF),
+        fontWeight: FontWeight.w500,
+      ),
+      prefixIcon: Icon(icon, color: const Color(0xFF9CA3AF), size: 22),
+      suffixIcon: suffixIcon,
+      filled: true,
+      fillColor: const Color(0xFFF9FAFB),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(color: Color(0xFF1976D2), width: 1.4),
+      ),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
     );
   }
 

@@ -65,6 +65,8 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
   final _codeController = TextEditingController();
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
   final _altPhoneController = TextEditingController();
   final _descriptionController = TextEditingController();
 
@@ -80,7 +82,10 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
   bool _autoCompletingFromPaidWorker = false;
   bool _professionSelectorOpen = false;
   bool _agreedToPolicy = false;
+  bool _obscurePassword = true;
+  bool _obscureConfirmPassword = true;
   bool _codeSent = false;
+  bool _smsDialogOpen = false;
   String _verificationId = "";
   int? _resendToken;
   File? _image;
@@ -596,9 +601,7 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
     super.initState();
     _ensureAnimationControllers();
 
-    _currentStep = widget.startAtStep == 1
-        ? SignUpStep.phone
-        : SignUpStep.profile;
+    _currentStep = SignUpStep.profile;
     _image = widget.pendingWorkerImage;
 
     if (widget.pendingWorkerData != null) {
@@ -631,6 +634,11 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
       _phoneController.text =
           widget.pendingWorkerData!['phone'] ??
           (FirebaseAuth.instance.currentUser?.phoneNumber ?? '');
+      final pendingLat = widget.pendingWorkerData!['lat'] as num?;
+      final pendingLng = widget.pendingWorkerData!['lng'] as num?;
+      if (pendingLat != null && pendingLng != null) {
+        _workCenter = LatLng(pendingLat.toDouble(), pendingLng.toDouble());
+      }
       final pendingRadius = (widget.pendingWorkerData!['workRadius'] as num?)
           ?.toDouble();
       if (pendingRadius != null) {
@@ -1287,6 +1295,8 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
     _codeController.dispose();
     _nameController.dispose();
     _emailController.dispose();
+    _passwordController.dispose();
+    _confirmPasswordController.dispose();
     _altPhoneController.dispose();
     _descriptionController.dispose();
     super.dispose();
@@ -1319,7 +1329,7 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
           'verify_code': 'אמת וסיים הרשמה',
           'enter_code': 'הכנס קוד שקיבלת ב-SMS',
           'name_label': 'שם מלא',
-          'email_label': 'אימייל (אופציונלי)',
+          'email_label': 'אימייל',
           'town_label': 'עיר',
           'user_type': 'סוג חשבון',
           'normal': 'לקוח',
@@ -1418,7 +1428,7 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
           'verify_code': 'تحقق وأكمل',
           'enter_code': 'أدخل رمز SMS',
           'name_label': 'الاسم الكامل',
-          'email_label': 'البريد الإلكتروني (اختياري)',
+          'email_label': 'البريد الإلكتروني',
           'town_label': 'المدينة',
           'user_type': 'نوع المستخدم',
           'normal': 'عميل',
@@ -1522,7 +1532,7 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
           'verify_code': 'Подтвердить и завершить',
           'enter_code': 'Введите SMS-код',
           'name_label': 'Полное имя',
-          'email_label': 'Электронная почта (необязательно)',
+          'email_label': 'Электронная почта',
           'town_label': 'Город',
           'user_type': 'Тип пользователя',
           'normal': 'Клиент',
@@ -1626,7 +1636,7 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
           'verify_code': 'ያረጋግጡ እና ያጠናቅቁ',
           'enter_code': 'የSMS ኮድ ያስገቡ',
           'name_label': 'ሙሉ ስም',
-          'email_label': 'ኢሜይል (አማራጭ)',
+          'email_label': 'ኢሜይል',
           'town_label': 'ከተማ',
           'user_type': 'የተጠቃሚ አይነት',
           'normal': 'ደንበኛ',
@@ -1725,7 +1735,7 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
           'verify_code': 'Verify & Complete',
           'enter_code': 'Enter SMS Code',
           'name_label': 'Full Name',
-          'email_label': 'Email (Optional)',
+          'email_label': 'Email',
           'town_label': 'City',
           'user_type': 'User Type',
           'normal': 'Client',
@@ -1908,6 +1918,11 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
               _codeSent = true;
               _loading = false;
             });
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted && !_smsDialogOpen) {
+                _showSmsVerificationDialog();
+              }
+            });
           }
           AnalyticsService.logSignUpCodeRequested(
             userType: _userType == UserType.worker ? 'worker' : 'customer',
@@ -1928,6 +1943,163 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
           ),
         );
       }
+    }
+  }
+
+  Future<void> _showSmsVerificationDialog() async {
+    final strings = _getLocalizedStrings(context);
+    _smsDialogOpen = true;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return Directionality(
+          textDirection: Directionality.of(context),
+          child: Dialog(
+            insetPadding: const EdgeInsets.symmetric(
+              horizontal: 22,
+              vertical: 24,
+            ),
+            backgroundColor: Colors.transparent,
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: 460),
+              padding: const EdgeInsets.fromLTRB(24, 24, 24, 20),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.97),
+                borderRadius: BorderRadius.circular(30),
+                border: Border.all(color: Colors.white),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.16),
+                    blurRadius: 44,
+                    offset: const Offset(0, 24),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 68,
+                    height: 68,
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [Color(0xFF1E88E5), Color(0xFF0D47A1)],
+                      ),
+                      borderRadius: BorderRadius.circular(22),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(
+                            0xFF1976D2,
+                          ).withValues(alpha: 0.25),
+                          blurRadius: 24,
+                          offset: const Offset(0, 14),
+                        ),
+                      ],
+                    ),
+                    child: const Icon(
+                      Icons.sms_outlined,
+                      color: Colors.white,
+                      size: 32,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    strings['phone_card_title']!,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Color(0xFF070B18),
+                      fontSize: 27,
+                      fontWeight: FontWeight.w800,
+                      height: 1.05,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    strings['phone_card_subtitle']!,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Color(0xFF6B7280),
+                      fontSize: 15,
+                      height: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _normalizePhone(_phoneController.text.trim()),
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Color(0xFF1976D2),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  _buildStyledTextField(
+                    controller: _codeController,
+                    labelText: strings['enter_code']!,
+                    icon: Icons.lock_outline_rounded,
+                    required: true,
+                    keyboardType: TextInputType.number,
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 24),
+                  _buildPrimaryButton(
+                    label: strings['verify_code']!,
+                    icon: Icons.verified_rounded,
+                    onPressed: _loading ? null : _handleVerifyCode,
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    alignment: WrapAlignment.center,
+                    spacing: 6,
+                    children: [
+                      TextButton(
+                        onPressed: _loading ? null : _handleSendCode,
+                        child: Text(
+                          strings['resend_code']!,
+                          style: const TextStyle(
+                            color: Color(0xFF1976D2),
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: _loading
+                            ? null
+                            : () {
+                                setState(() {
+                                  _codeSent = false;
+                                  _verificationId = '';
+                                  _codeController.clear();
+                                });
+                                Navigator.of(dialogContext).pop();
+                              },
+                        child: Text(
+                          strings['edit_phone']!,
+                          style: const TextStyle(
+                            color: Color(0xFF1976D2),
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+
+    if (mounted) {
+      setState(() => _smsDialogOpen = false);
+    } else {
+      _smsDialogOpen = false;
     }
   }
 
@@ -1968,8 +2140,8 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
       'optionalPhone': _altPhoneController.text.trim(),
       'description': _descriptionController.text.trim(),
       'workRadius': _workRadius,
-      'workCenterLat': _workCenter?.latitude,
-      'workCenterLng': _workCenter?.longitude,
+      'lat': _workCenter?.latitude,
+      'lng': _workCenter?.longitude,
       'hideSchedule': _hideSchedule,
       'disabledDays': _disabledDays,
       'defaultWorkingHours': {
@@ -1981,7 +2153,47 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
     };
   }
 
+  Future<bool> _linkEmailPasswordToCurrentUser() async {
+    final strings = _getLocalizedStrings(context);
+    final user = FirebaseAuth.instance.currentUser;
+    final email = _emailController.text.trim();
+    final password = _passwordController.text;
+
+    if (user == null || email.isEmpty || password.isEmpty) {
+      return false;
+    }
+
+    try {
+      final credential = EmailAuthProvider.credential(
+        email: email,
+        password: password,
+      );
+      await user.linkWithCredential(credential);
+      return true;
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'provider-already-linked') return true;
+      if (mounted) {
+        setState(() => _loading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              e.message ??
+                  (strings['auth_error'] ?? 'Auth Error: {err}').replaceAll(
+                    '{err}',
+                    e.code,
+                  ),
+            ),
+          ),
+        );
+      }
+      return false;
+    }
+  }
+
   Future<void> _onPhoneVerifiedAndSignedIn() async {
+    final linkedPassword = await _linkEmailPasswordToCurrentUser();
+    if (!linkedPassword) return;
+
     if (_userType == UserType.worker &&
         !SubscriptionAccessService.isEntitledSubscriptionStatus(
           widget.pendingWorkerData?['subscriptionStatus']?.toString(),
@@ -2158,8 +2370,6 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
           'subscriptionTransactionDate':
               widget.pendingWorkerData?['subscriptionTransactionDate'],
           'workRadius': _workRadius,
-          'workCenterLat': _workCenter?.latitude,
-          'workCenterLng': _workCenter?.longitude,
           'hideSchedule': _hideSchedule,
           'disabledDays': _disabledDays,
           'subscriptionDate': hasActiveSubscriptionFromPending
@@ -2274,6 +2484,7 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
   }
 
   void _submitProfile() {
+    if (_loading) return;
     if (!_formKey.currentState!.validate()) return;
     final strings = _getLocalizedStrings(context);
 
@@ -2298,13 +2509,7 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
       return;
     }
 
-    if (_userType == UserType.worker) {
-      setState(() {
-        _currentStep = SignUpStep.phone;
-      });
-    } else {
-      setState(() => _currentStep = SignUpStep.phone);
-    }
+    _handleSendCode();
   }
 
   @override
@@ -2796,7 +3001,84 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
               controller: _emailController,
               labelText: strings['email_label']!,
               icon: Icons.email_outlined,
+              required: true,
               keyboardType: TextInputType.emailAddress,
+              validator: (value) {
+                final email = value?.trim() ?? '';
+                if (email.isEmpty) return strings['req'];
+                final isValid = RegExp(
+                  r'^[^@\s]+@[^@\s]+\.[^@\s]+$',
+                ).hasMatch(email);
+                return isValid
+                    ? null
+                    : (strings['email_invalid'] ?? 'Enter a valid email');
+              },
+            ),
+            const SizedBox(height: 16),
+            _buildStyledTextField(
+              controller: _passwordController,
+              labelText: strings['password_label'] ?? 'Password',
+              icon: Icons.lock_outline_rounded,
+              required: true,
+              obscureText: _obscurePassword,
+              suffixIcon: IconButton(
+                onPressed: () =>
+                    setState(() => _obscurePassword = !_obscurePassword),
+                icon: Icon(
+                  _obscurePassword
+                      ? Icons.visibility_outlined
+                      : Icons.visibility_off_outlined,
+                  color: const Color(0xFF9CA3AF),
+                ),
+              ),
+              validator: (value) {
+                if ((value ?? '').length < 6) {
+                  return strings['password_min_error'] ??
+                      'Password must be at least 6 characters';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 16),
+            _buildStyledTextField(
+              controller: _confirmPasswordController,
+              labelText:
+                  strings['confirm_password_label'] ?? 'Confirm Password',
+              icon: Icons.lock_reset_rounded,
+              required: true,
+              obscureText: _obscureConfirmPassword,
+              suffixIcon: IconButton(
+                onPressed: () => setState(
+                  () => _obscureConfirmPassword = !_obscureConfirmPassword,
+                ),
+                icon: Icon(
+                  _obscureConfirmPassword
+                      ? Icons.visibility_outlined
+                      : Icons.visibility_off_outlined,
+                  color: const Color(0xFF9CA3AF),
+                ),
+              ),
+              validator: (value) {
+                if (value != _passwordController.text) {
+                  return strings['password_match_error'] ??
+                      'Passwords do not match';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 16),
+            _buildStyledTextField(
+              controller: _phoneController,
+              labelText: strings['phone_label']!,
+              icon: Icons.phone_iphone_rounded,
+              required: true,
+              keyboardType: TextInputType.phone,
+              hintText: strings['phone_hint'],
+              validator: (value) {
+                final phone = _normalizePhone(value ?? '');
+                final isValid = RegExp(r'^\+9725\d{8}$').hasMatch(phone);
+                return isValid ? null : strings['invalid_phone'];
+              },
             ),
             const SizedBox(height: 16),
             _buildLocationSelectionSection(strings),
@@ -3829,7 +4111,9 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
     if (!launched && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Unable to open the store right now. Please try again.'),
+          content: Text(
+            'Unable to open the store right now. Please try again.',
+          ),
         ),
       );
     }
@@ -3851,6 +4135,8 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
     FocusNode? focusNode,
     TextAlign textAlign = TextAlign.start,
     ValueChanged<String>? onChanged,
+    bool obscureText = false,
+    Widget? suffixIcon,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -3867,6 +4153,7 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
           onChanged: onChanged,
           focusNode: focusNode,
           textAlign: textAlign,
+          obscureText: obscureText,
           style: const TextStyle(
             color: Color(0xFF111827),
             fontSize: 16,
@@ -3880,6 +4167,7 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
               fontWeight: FontWeight.w500,
             ),
             prefixIcon: Icon(icon, color: const Color(0xFF9CA3AF), size: 21),
+            suffixIcon: suffixIcon,
             filled: true,
             fillColor: enabled
                 ? const Color(0xFFF9FAFB)

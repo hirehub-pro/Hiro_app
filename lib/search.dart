@@ -784,10 +784,8 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
 
   double _localDistanceToWorker(Map<String, dynamic> worker) {
     if (_currentPosition == null) return double.infinity;
-    final lat =
-        worker['workCenterLat']?.toDouble() ?? worker['lat']?.toDouble();
-    final lng =
-        worker['workCenterLng']?.toDouble() ?? worker['lng']?.toDouble();
+    final lat = worker['lat']?.toDouble();
+    final lng = worker['lng']?.toDouble();
     if (lat == null || lng == null) return double.infinity;
     return Geolocator.distanceBetween(
       _currentPosition!.latitude,
@@ -1051,10 +1049,8 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
           if (_filterByRadius && _currentPosition != null) {
             double? radius = w['workRadius']?.toDouble();
 
-            double? workerLat =
-                w['workCenterLat']?.toDouble() ?? w['lat']?.toDouble();
-            double? workerLng =
-                w['workCenterLng']?.toDouble() ?? w['lng']?.toDouble();
+            double? workerLat = w['lat']?.toDouble();
+            double? workerLng = w['lng']?.toDouble();
 
             if (workerLat != null && workerLng != null && radius != null) {
               double distance = Geolocator.distanceBetween(

@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:untitled1/services/language_provider.dart';
+import 'package:untitled1/utils/israeli_id_validator.dart';
 
 class VerifyBusinessPage extends StatefulWidget {
   const VerifyBusinessPage({super.key});
@@ -48,7 +49,7 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
   }
 
   Map<String, String> _getLocalizedStrings(BuildContext context) {
-    final locale = Provider.of<LanguageProvider>(context).locale.languageCode;
+    final locale = context.read<LanguageProvider>().locale.languageCode;
     switch (locale) {
       case 'he':
         return {
@@ -73,6 +74,7 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
           'remove_logo': 'הסר לוגו',
           'required': 'חובה',
           'business_id_9_digits': 'מספר העסק חייב להכיל 9 ספרות',
+          'business_id_invalid': 'מספר העוסק / ח.פ / ת.ז אינו תקין',
           'step_classification': 'סיווג עוסק לצרכי מס',
           'classification_note':
               'שים לב: הגדרה זו תקבע את סוגי המסמכים (חשבונית/קבלה) שתוכל להפיק.',
@@ -118,6 +120,8 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
           'remove_logo': 'إزالة الشعار',
           'required': 'مطلوب',
           'business_id_9_digits': 'يجب أن يتكون رقم النشاط من 9 أرقام بالضبط',
+          'business_id_invalid':
+              'رقم النشاط التجاري / الشركة / الهوية الإسرائيلية غير صالح',
           'step_classification': 'تصنيف دافع الضريبة',
           'classification_note':
               'ملاحظة: هذا الإعداد يحدد أنواع المستندات (فاتورة/إيصال) التي يمكنك إصدارها.',
@@ -166,6 +170,8 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
           'remove_logo': 'Удалить логотип',
           'required': 'Обязательно',
           'business_id_9_digits': 'Бизнес ID должен состоять ровно из 9 цифр',
+          'business_id_invalid':
+              'Недействительный израильский бизнес-ID или номер удостоверения личности',
           'step_classification': 'Налоговая категория бизнеса',
           'classification_note':
               'Примечание: эта настройка определяет типы документов (счет/квитанция), которые вы сможете создавать.',
@@ -206,13 +212,13 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
           'business_address': 'የንግድ አድራሻ',
           'business_logo': 'የንግድ አርማ',
           'business_logo_optional': 'የንግድ አርማ (አማራጭ)',
-          'business_logo_hint':
-              'ንግድዎን በፍጥነት እንድንለይ ለማገዝ አርማ ማከል ይችላሉ።',
+          'business_logo_hint': 'ንግድዎን በፍጥነት እንድንለይ ለማገዝ አርማ ማከል ይችላሉ።',
           'add_logo': 'አርማ ጨምር',
           'change_logo': 'አርማ ቀይር',
           'remove_logo': 'አርማ አስወግድ',
           'required': 'ያስፈልጋል',
           'business_id_9_digits': 'የንግድ መለያው በትክክል 9 አሃዞች መሆን አለበት',
+          'business_id_invalid': 'የእስራኤል የንግድ ወይም የመታወቂያ ቁጥሩ ትክክል አይደለም',
           'step_classification': 'የግብር ንግድ ምድብ',
           'classification_note':
               'ማስታወሻ: ይህ ቅንብር ሊያወጡ የሚችሉትን የሰነድ አይነቶች (ደረሰኝ/ቅብዓት) ይወስናል።',
@@ -252,13 +258,14 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
           'business_address': 'Business Address',
           'business_logo': 'Business Logo',
           'business_logo_optional': 'Business Logo (Optional)',
-          'business_logo_hint':
-              'Add logo to put on your documents.',
+          'business_logo_hint': 'Add logo to put on your documents.',
           'add_logo': 'Add Logo',
           'change_logo': 'Change Logo',
           'remove_logo': 'Remove Logo',
           'required': 'Required',
           'business_id_9_digits': 'Business ID must be exactly 9 digits',
+          'business_id_invalid':
+              'Enter a valid Israeli business or identity number',
           'step_classification': 'Tax Dealer Classification',
           'classification_note':
               'Note: This setting determines the document types (Invoice/Receipt) you can generate.',
@@ -292,8 +299,10 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
     if (user != null) {
       try {
         final doc = await FirebaseFirestore.instance
-            .collection('verifications')
+            .collection('users')
             .doc(user.uid)
+            .collection('verification_info')
+            .doc('latest')
             .get();
         if (doc.exists && mounted) {
           setState(() {
@@ -398,15 +407,9 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
           .doc('latest')
           .set(verificationData, SetOptions(merge: true));
 
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .update({
-            'dealerType': _dealerType,
-            'businessId': businessId,
-            'businessVerificationStatus': 'pending',
-            'businessLogoUrl': businessLogoUrl,
-          });
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).update(
+        {'businessId': businessId, 'businessLogoUrl': businessLogoUrl},
+      );
 
       if (mounted) {
         _showSuccessDialog(strings);
@@ -534,6 +537,9 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
                           if (value.isEmpty) return strings['required'];
                           if (!RegExp(r'^\d{9}$').hasMatch(value)) {
                             return strings['business_id_9_digits'];
+                          }
+                          if (!isValidIsraeliId(value)) {
+                            return strings['business_id_invalid'];
                           }
                           return null;
                         },

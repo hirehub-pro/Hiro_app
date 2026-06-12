@@ -77,14 +77,7 @@ class _EditProfilePageState extends State<EditProfilePage>
     _loadProfessionItems();
 
     _workRadius = (widget.userData['workRadius'] ?? 25000.0).toDouble();
-    if (widget.userData['workCenterLat'] != null &&
-        widget.userData['workCenterLng'] != null) {
-      _workCenter = LatLng(
-        widget.userData['workCenterLat'],
-        widget.userData['workCenterLng'],
-      );
-    } else if (widget.userData['lat'] != null &&
-        widget.userData['lng'] != null) {
+    if (widget.userData['lat'] != null && widget.userData['lng'] != null) {
       _workCenter = LatLng(widget.userData['lat'], widget.userData['lng']);
     }
   }
@@ -355,8 +348,6 @@ class _EditProfilePageState extends State<EditProfilePage>
         'lat': lat,
         'lng': lng,
         'workRadius': _workRadius,
-        'workCenterLat': _workCenter?.latitude,
-        'workCenterLng': _workCenter?.longitude,
         'optionalPhone': _altPhoneController.text.trim(),
         'description': _descriptionController.text.trim(),
         'professions': _selectedProfessions,

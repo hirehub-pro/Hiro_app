@@ -116,7 +116,6 @@ class _SettingsPageState extends State<SettingsPage>
           _notificationsEnabled = notificationsAllowed;
           _isLoadingSettings = false;
         });
-        await _updateSetting('notificationsEnabled', notificationsAllowed);
       } else {
         if (!mounted) return;
         setState(() => _isLoadingSettings = false);
@@ -222,7 +221,6 @@ class _SettingsPageState extends State<SettingsPage>
 
       if (isAlreadyGranted) {
         setState(() => _notificationsEnabled = true);
-        await _updateSetting('notificationsEnabled', true);
         return;
       }
 
@@ -231,14 +229,11 @@ class _SettingsPageState extends State<SettingsPage>
 
       if (isGranted) {
         setState(() => _notificationsEnabled = true);
-        await _updateSetting('notificationsEnabled', true);
       } else if (await _isNotificationPermissionBlocked()) {
         _showPermissionDialog();
         setState(() => _notificationsEnabled = false);
-        await _updateSetting('notificationsEnabled', false);
       } else {
         setState(() => _notificationsEnabled = false);
-        await _updateSetting('notificationsEnabled', false);
       }
     } else {
       final isGranted = await _isNotificationPermissionGranted();
@@ -247,8 +242,6 @@ class _SettingsPageState extends State<SettingsPage>
       setState(() => _notificationsEnabled = isGranted);
       if (isGranted) {
         _showPermissionDialog(messageKey: 'permission_controlled_by_phone');
-      } else {
-        await _updateSetting('notificationsEnabled', false);
       }
     }
   }
@@ -316,7 +309,6 @@ class _SettingsPageState extends State<SettingsPage>
     if (!mounted) return;
 
     setState(() => _notificationsEnabled = isGranted);
-    await _updateSetting('notificationsEnabled', isGranted);
   }
 
   void _showPermissionDialog({String messageKey = 'permission_denied'}) {

@@ -180,8 +180,8 @@ class _SendRequestPageState extends State<SendRequestPage> {
           (workerData['town'] ?? workerData['address'] ?? widget.workerName)
               .toString()
               .trim();
-      final lat = (workerData['workCenterLat'] ?? workerData['lat']) as num?;
-      final lng = (workerData['workCenterLng'] ?? workerData['lng']) as num?;
+      final lat = workerData['lat'] as num?;
+      final lng = workerData['lng'] as num?;
 
       setState(() {
         _providerLocationName = locationName.isEmpty

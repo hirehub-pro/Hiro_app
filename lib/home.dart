@@ -1189,7 +1189,15 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           'saved_invoices': 'חשבוניות שמורות',
           'verify_business': 'אמת עסק',
           'upgrade_worker': 'שדרג לחשבון בעל מקצוע',
-          'upgrade_msg': 'האם ברצונך לשדרג לחשבון בעל מקצוע?',
+          'upgrade_msg':
+              'פתח פרופיל מקצועי והתחל לקבל פניות מלקוחות שמחפשים את השירותים שלך.',
+          'upgrade_benefit_profile': 'פרופיל מקצועי שמציג את העסק שלך',
+          'upgrade_benefit_requests': 'קבלת בקשות עבודה מלקוחות',
+          'upgrade_benefit_tools': 'גישה לכלי ניהול עסק מתקדמים',
+          'upgrade_benefit_invoices':
+              'יצירת חשבוניות עם מספר הקצאה והצעות מחיר מקצועיות',
+          'upgrade_note': 'לאחר השדרוג נעזור לך להשלים את הפרופיל המקצועי.',
+          'upgrade_confirm': 'כן, שדרג את החשבון',
           'confirm': 'אשר',
           'cancel': 'ביטול',
           'subscribe_cta_title': 'הפעלת מנוי Pro',
@@ -1451,7 +1459,15 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           'saved_invoices': 'الفواتير المحفوظة',
           'verify_business': 'توثيق العمل',
           'upgrade_worker': 'الترقية لحساب عامل',
-          'upgrade_msg': 'هل تريد الترقية إلى حساب عامل؟',
+          'upgrade_msg':
+              'أنشئ ملفاً مهنياً وابدأ باستقبال طلبات من عملاء يبحثون عن خدماتك.',
+          'upgrade_benefit_profile': 'ملف مهني يعرض نشاطك وخدماتك',
+          'upgrade_benefit_requests': 'استقبال طلبات عمل من العملاء',
+          'upgrade_benefit_tools': 'الوصول إلى أدوات متقدمة لإدارة العمل',
+          'upgrade_benefit_invoices':
+              'إنشاء فواتير مع رقم تخصيص وعروض أسعار احترافية',
+          'upgrade_note': 'بعد الترقية سنساعدك على إكمال ملفك المهني.',
+          'upgrade_confirm': 'نعم، قم بترقية الحساب',
           'confirm': 'تأكيد',
           'cancel': 'إلغاء',
           'subscribe_cta_title': 'تفعيل اشتراك Pro',
@@ -1728,7 +1744,17 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           'saved_invoices': 'Saved Invoices',
           'verify_business': 'Verify Business',
           'upgrade_worker': 'Upgrade to Worker',
-          'upgrade_msg': 'Do you want to upgrade to a worker account?',
+          'upgrade_msg':
+              'Create a professional profile and start receiving requests from customers looking for your services.',
+          'upgrade_benefit_profile':
+              'A professional profile that showcases your business',
+          'upgrade_benefit_requests': 'Receive job requests from customers',
+          'upgrade_benefit_tools': 'Access advanced business management tools',
+          'upgrade_benefit_invoices':
+              'Create invoices with allocation numbers and professional quotes',
+          'upgrade_note':
+              'After upgrading, we will help you complete your professional profile.',
+          'upgrade_confirm': 'Yes, upgrade my account',
           'confirm': 'Confirm',
           'cancel': 'Cancel',
           'subscribe_cta_title': 'Activate Pro Subscription',
@@ -1798,30 +1824,216 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(
-          strings['upgrade_worker'] ?? 'Upgrade to Worker',
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
-        content: Text(
-          strings['upgrade_msg'] ??
-              'Do you want to upgrade to a worker account?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text(strings['cancel'] ?? 'Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF1976D2),
-              foregroundColor: Colors.white,
+      barrierColor: const Color(0xFF0F172A).withValues(alpha: 0.58),
+      builder: (dialogContext) => Dialog(
+        insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 460),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(28),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF0F172A).withValues(alpha: 0.22),
+                  blurRadius: 36,
+                  offset: const Offset(0, 20),
+                ),
+              ],
             ),
-            child: Text(strings['confirm'] ?? 'Confirm'),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(28),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.fromLTRB(24, 16, 16, 26),
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [Color(0xFF0F172A), Color(0xFF1D4ED8)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                      ),
+                      child: Column(
+                        children: [
+                          Align(
+                            alignment: AlignmentDirectional.centerEnd,
+                            child: IconButton(
+                              onPressed: () =>
+                                  Navigator.pop(dialogContext, false),
+                              style: IconButton.styleFrom(
+                                backgroundColor: Colors.white.withValues(
+                                  alpha: 0.12,
+                                ),
+                                foregroundColor: Colors.white,
+                              ),
+                              icon: const Icon(Icons.close_rounded, size: 20),
+                              tooltip: strings['cancel'] ?? 'Cancel',
+                            ),
+                          ),
+                          Container(
+                            width: 72,
+                            height: 72,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(22),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.16),
+                                  blurRadius: 18,
+                                  offset: const Offset(0, 8),
+                                ),
+                              ],
+                            ),
+                            child: const Icon(
+                              Icons.workspace_premium_rounded,
+                              color: Color(0xFF1D4ED8),
+                              size: 38,
+                            ),
+                          ),
+                          const SizedBox(height: 18),
+                          Text(
+                            strings['upgrade_worker'] ?? 'Upgrade to Worker',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 24,
+                              height: 1.15,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          Text(
+                            strings['upgrade_msg'] ??
+                                'Create a professional profile and start receiving customer requests.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.82),
+                              fontSize: 14,
+                              height: 1.5,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(24, 24, 24, 22),
+                      child: Column(
+                        children: [
+                          _buildUpgradeBenefit(
+                            Icons.storefront_rounded,
+                            strings['upgrade_benefit_profile'] ??
+                                'A professional profile that showcases your business',
+                          ),
+                          const SizedBox(height: 14),
+                          _buildUpgradeBenefit(
+                            Icons.mark_unread_chat_alt_rounded,
+                            strings['upgrade_benefit_requests'] ??
+                                'Receive job requests from customers',
+                          ),
+                          const SizedBox(height: 14),
+                          _buildUpgradeBenefit(
+                            Icons.insights_rounded,
+                            strings['upgrade_benefit_tools'] ??
+                                'Access advanced business management tools',
+                          ),
+                          const SizedBox(height: 14),
+                          _buildUpgradeBenefit(
+                            Icons.receipt_long_rounded,
+                            strings['upgrade_benefit_invoices'] ??
+                                'Create invoices with allocation numbers and professional quotes',
+                          ),
+                          const SizedBox(height: 20),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(13),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFEFF6FF),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                color: const Color(0xFFDBEAFE),
+                              ),
+                            ),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Icon(
+                                  Icons.info_outline_rounded,
+                                  size: 19,
+                                  color: Color(0xFF2563EB),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    strings['upgrade_note'] ??
+                                        'After upgrading, we will help you complete your professional profile.',
+                                    style: const TextStyle(
+                                      color: Color(0xFF1E3A8A),
+                                      fontSize: 12.5,
+                                      height: 1.4,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 22),
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton.icon(
+                              onPressed: () =>
+                                  Navigator.pop(dialogContext, true),
+                              icon: const Icon(
+                                Icons.arrow_forward_rounded,
+                                size: 19,
+                              ),
+                              label: Text(
+                                strings['upgrade_confirm'] ??
+                                    'Yes, upgrade my account',
+                              ),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF1D4ED8),
+                                foregroundColor: Colors.white,
+                                elevation: 0,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 18,
+                                  vertical: 15,
+                                ),
+                                textStyle: const TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(15),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          TextButton(
+                            onPressed: () =>
+                                Navigator.pop(dialogContext, false),
+                            style: TextButton.styleFrom(
+                              foregroundColor: _kTextMuted,
+                            ),
+                            child: Text(strings['cancel'] ?? 'Cancel'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
-        ],
+        ),
       ),
     );
 
@@ -1871,6 +2083,39 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     } catch (e) {
       debugPrint("Upgrade error: $e");
     }
+  }
+
+  Widget _buildUpgradeBenefit(IconData icon, String label) {
+    return Row(
+      children: [
+        Container(
+          width: 42,
+          height: 42,
+          decoration: BoxDecoration(
+            color: const Color(0xFFEFF6FF),
+            borderRadius: BorderRadius.circular(13),
+          ),
+          child: Icon(icon, color: const Color(0xFF2563EB), size: 21),
+        ),
+        const SizedBox(width: 13),
+        Expanded(
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: _kTextMain,
+              fontSize: 14,
+              height: 1.35,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        const Icon(
+          Icons.check_circle_rounded,
+          color: Color(0xFF16A34A),
+          size: 20,
+        ),
+      ],
+    );
   }
 
   DateTime? _toDate(dynamic value) {
@@ -2444,18 +2689,35 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Align(
         alignment: AlignmentDirectional.centerStart,
-        child: OutlinedButton.icon(
-          onPressed: () {
-            _upgradeToWorkerFromHome(strings);
-          },
-          icon: const Icon(Icons.workspace_premium_rounded, size: 16),
-          label: Text(strings['upgrade_worker'] ?? 'Upgrade to Worker'),
-          style: OutlinedButton.styleFrom(
-            visualDensity: VisualDensity.compact,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            foregroundColor: const Color(0xFF1D4ED8),
-            side: const BorderSide(color: Color(0xFFBFDBFE)),
-            backgroundColor: Colors.white.withValues(alpha: 0.9),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFF1D4ED8), Color(0xFF2563EB)],
+            ),
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF1D4ED8).withValues(alpha: 0.22),
+                blurRadius: 16,
+                offset: const Offset(0, 7),
+              ),
+            ],
+          ),
+          child: ElevatedButton.icon(
+            onPressed: () => _upgradeToWorkerFromHome(strings),
+            icon: const Icon(Icons.workspace_premium_rounded, size: 18),
+            label: Text(strings['upgrade_worker'] ?? 'Upgrade to Worker'),
+            style: ElevatedButton.styleFrom(
+              elevation: 0,
+              shadowColor: Colors.transparent,
+              backgroundColor: Colors.transparent,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+              textStyle: const TextStyle(fontWeight: FontWeight.w800),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+            ),
           ),
         ),
       ),
