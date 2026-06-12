@@ -1,6 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const {PDFDocument, StandardFonts, rgb} = require("pdf-lib");
 
 const admin = require("firebase-admin");
 const {
@@ -52,6 +53,213 @@ const GOOGLE_PLAY_SUBSCRIPTION_PRODUCT_IDS = new Set([
   "pro_worker_monthly",
   "com-hiro-app-pro-worker-monthly",
 ]);
+const PUBLIC_APP_ORIGIN = "https://hiro-service.web.app";
+const SIGNING_REQUEST_LIFETIME_DAYS = 30;
+
+exports.createDocumentSigningRequest = onCall(
+    {region: "us-central1"},
+    async (request) => {
+      const workerId = request.auth?.uid;
+      if (!workerId) {
+        throw new HttpsError("unauthenticated", "Authentication required.");
+      }
+
+      const invoiceDocId =
+        normalizeString(request.data?.invoiceDocId).trim();
+      const receiverId = normalizeString(request.data?.receiverId).trim();
+      if (!invoiceDocId) {
+        throw new HttpsError(
+            "invalid-argument",
+            "A saved document ID is required.",
+        );
+      }
+
+      const db = admin.firestore();
+      const invoiceRef = db
+          .collection("users")
+          .doc(workerId)
+          .collection("invoices")
+          .doc(invoiceDocId);
+      const invoiceSnap = await invoiceRef.get();
+      if (!invoiceSnap.exists) {
+        throw new HttpsError("not-found", "Saved document not found.");
+      }
+
+      const invoice = invoiceSnap.data() || {};
+      const docType = normalizeString(invoice.docType || invoice.type);
+      const storagePath = normalizeString(invoice.storagePath).trim();
+      if (!["quote", "work_order"].includes(docType) || !storagePath) {
+        throw new HttpsError(
+            "failed-precondition",
+            "Only saved quotes and work orders can be sent for signature.",
+        );
+      }
+
+      if (receiverId) {
+        const roomId = [workerId, receiverId].sort().join("_");
+        const roomSnap = await db.collection("chat_rooms").doc(roomId).get();
+        const users = roomSnap.data()?.users;
+        if (!roomSnap.exists ||
+            !Array.isArray(users) ||
+            !users.includes(workerId) ||
+            !users.includes(receiverId)) {
+          throw new HttpsError(
+              "permission-denied",
+              "The selected Hiro conversation was not found.",
+          );
+        }
+      }
+
+      const token = crypto.randomBytes(32).toString("base64url");
+      const requestId = hashSigningToken(token);
+      const now = new Date();
+      const expiresAt = new Date(
+          now.getTime() +
+          SIGNING_REQUEST_LIFETIME_DAYS * 24 * 60 * 60 * 1000,
+      );
+      await db.collection("documentSigningRequests").doc(requestId).set({
+        workerId,
+        invoiceDocId,
+        receiverId: receiverId || null,
+        docType,
+        documentName: normalizeString(invoice.name || invoice.fileName),
+        fileName: normalizeString(invoice.fileName) || "document.pdf",
+        storagePath,
+        status: "pending",
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        expiresAt: admin.firestore.Timestamp.fromDate(expiresAt),
+        signedAt: null,
+      });
+
+      await invoiceRef.set({
+        signatureStatus: "pending",
+        signingRequestedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, {merge: true});
+
+      return {
+        url: `${PUBLIC_APP_ORIGIN}/sign/${token}`,
+        expiresAt: expiresAt.toISOString(),
+      };
+    },
+);
+
+exports.publicDocumentSigning = onRequest(
+    {region: "us-central1", cors: false, timeoutSeconds: 60},
+    async (req, res) => {
+      try {
+        const token = signingTokenFromRequest(req);
+        if (!token) {
+          res.status(404).send(renderSigningMessage(
+              "הקישור אינו תקין",
+              "לא נמצא מסמך לחתימה.",
+          ));
+          return;
+        }
+
+        const requestRef = admin.firestore()
+            .collection("documentSigningRequests")
+            .doc(hashSigningToken(token));
+        const requestSnap = await requestRef.get();
+        if (!requestSnap.exists) {
+          res.status(404).send(renderSigningMessage(
+              "הקישור אינו תקין",
+              "לא נמצא מסמך לחתימה.",
+          ));
+          return;
+        }
+
+        const signingRequest = requestSnap.data() || {};
+        const expiresAt = toDate(signingRequest.expiresAt);
+        if (!expiresAt || expiresAt.getTime() < Date.now()) {
+          res.status(410).send(renderSigningMessage(
+              "תוקף הקישור פג",
+              "יש לבקש מבעל המקצוע קישור חדש.",
+          ));
+          return;
+        }
+
+        if (req.method === "GET" && req.query.pdf === "1") {
+          await streamSigningPdf(res, signingRequest);
+          return;
+        }
+
+        if (req.method === "GET") {
+          res.set("Cache-Control", "no-store");
+          res.status(200).send(renderSigningPage(token, signingRequest));
+          return;
+        }
+
+        if (req.method !== "POST") {
+          res.status(405).send("Method Not Allowed");
+          return;
+        }
+
+        if (signingRequest.status === "signed") {
+          res.status(409).json({error: "המסמך כבר נחתם."});
+          return;
+        }
+
+        const signatureData = normalizeString(req.body?.signature).trim();
+        const signerName = normalizeString(req.body?.signerName)
+            .trim()
+            .slice(0, 100);
+        if (!signerName || !signatureData.startsWith("data:image/png;base64,")) {
+          res.status(400).json({error: "יש להזין שם ולצייר חתימה."});
+          return;
+        }
+        const signatureBytes = Buffer.from(
+            signatureData.substring("data:image/png;base64,".length),
+            "base64",
+        );
+        if (signatureBytes.length === 0 || signatureBytes.length > 1500000) {
+          res.status(400).json({error: "החתימה אינה תקינה."});
+          return;
+        }
+
+        const signedResult = await signAndReplacePdf(
+            signingRequest,
+            signatureBytes,
+            signerName,
+        );
+        const signedAt = admin.firestore.Timestamp.now();
+        const db = admin.firestore();
+        const invoiceRef = db
+            .collection("users")
+            .doc(signingRequest.workerId)
+            .collection("invoices")
+            .doc(signingRequest.invoiceDocId);
+        const batch = db.batch();
+        batch.set(requestRef, {
+          status: "signed",
+          signerName,
+          signedAt,
+          signedUrl: signedResult.url,
+        }, {merge: true});
+        batch.set(invoiceRef, {
+          url: signedResult.url,
+          signatureStatus: "signed",
+          signerName,
+          signedAt,
+        }, {merge: true});
+        await batch.commit();
+
+        await publishSignedDocument(signingRequest, {
+          signerName,
+          signedUrl: signedResult.url,
+          signedAt,
+        });
+
+        res.status(200).json({
+          ok: true,
+          message: "המסמך נחתם ונשלח לבעל המקצוע.",
+          shareUrl: `${PUBLIC_APP_ORIGIN}/sign/${token}`,
+        });
+      } catch (error) {
+        logger.error("Public document signing failed", {error});
+        res.status(500).json({error: "לא ניתן היה לחתום על המסמך."});
+      }
+    },
+);
 
 exports.taxesOAuthStart = onRequest(
     {
@@ -295,6 +503,7 @@ exports.sendNotificationPush = onDocumentCreated(
 
       const supportedTypes = new Set([
         "chat_message",
+        "document_signed",
         "work_request",
         "quote_request",
         "request_accepted",
@@ -2499,6 +2708,274 @@ function chatMessageBody(payload) {
   return "Sent you a message";
 }
 
+function hashSigningToken(token) {
+  return crypto.createHash("sha256").update(token).digest("hex");
+}
+
+function signingTokenFromRequest(req) {
+  const pathToken = normalizeString(req.path)
+      .split("/")
+      .filter(Boolean)
+      .pop();
+  const token = normalizeString(req.query.token || pathToken).trim();
+  return /^[A-Za-z0-9_-]{40,60}$/.test(token) ? token : "";
+}
+
+async function streamSigningPdf(res, signingRequest) {
+  const storagePath = normalizeString(signingRequest.storagePath).trim();
+  if (!storagePath) {
+    res.status(404).send("Document not found");
+    return;
+  }
+  const [bytes] = await admin.storage().bucket().file(storagePath).download();
+  res.set({
+    "Content-Type": "application/pdf",
+    "Content-Disposition": `inline; filename="${
+      safeHeaderFileName(signingRequest.fileName)
+    }"`,
+    "Cache-Control": "private, no-store",
+  });
+  res.status(200).send(bytes);
+}
+
+async function signAndReplacePdf(signingRequest, signatureBytes, signerName) {
+  const bucket = admin.storage().bucket();
+  const file = bucket.file(signingRequest.storagePath);
+  const [originalBytes] = await file.download();
+  const [existingMetadata] = await file.getMetadata();
+  const pdfDocument = await PDFDocument.load(originalBytes);
+  const signature = await pdfDocument.embedPng(signatureBytes);
+  const font = await pdfDocument.embedFont(StandardFonts.Helvetica);
+  const page = pdfDocument.getPages().at(-1);
+  const pageWidth = page.getWidth();
+  const maxWidth = Math.min(210, pageWidth - 80);
+  const maxHeight = 75;
+  const scale = Math.min(
+      maxWidth / signature.width,
+      maxHeight / signature.height,
+      1,
+  );
+  const width = signature.width * scale;
+  const height = signature.height * scale;
+  const x = Math.max(40, (pageWidth - width) / 2);
+  const y = 42;
+
+  page.drawRectangle({
+    x: x - 12,
+    y: y - 22,
+    width: width + 24,
+    height: height + 46,
+    borderColor: rgb(0.75, 0.78, 0.82),
+    borderWidth: 1,
+    color: rgb(1, 1, 1),
+    opacity: 0.96,
+  });
+  page.drawImage(signature, {x, y, width, height});
+  page.drawText(`Signed by: ${asciiForPdf(signerName)}`, {
+    x,
+    y: y - 12,
+    size: 9,
+    font,
+    color: rgb(0.15, 0.18, 0.22),
+  });
+  page.drawText(`Signed at: ${new Date().toISOString()}`, {
+    x,
+    y: y - 24,
+    size: 8,
+    font,
+    color: rgb(0.35, 0.38, 0.42),
+  });
+
+  const signedBytes = await pdfDocument.save();
+  const metadata = {...(existingMetadata.metadata || {})};
+  if (!metadata.firebaseStorageDownloadTokens) {
+    metadata.firebaseStorageDownloadTokens = crypto.randomUUID();
+  }
+  await file.save(Buffer.from(signedBytes), {
+    resumable: false,
+    contentType: "application/pdf",
+    metadata: {metadata},
+  });
+  const token = metadata.firebaseStorageDownloadTokens;
+  const encodedPath = encodeURIComponent(signingRequest.storagePath);
+  return {
+    url: `https://firebasestorage.googleapis.com/v0/b/${
+      bucket.name
+    }/o/${encodedPath}?alt=media&token=${encodeURIComponent(token)}`,
+  };
+}
+
+async function publishSignedDocument(signingRequest, signed) {
+  const db = admin.firestore();
+  const workerId = normalizeString(signingRequest.workerId);
+  const receiverId = normalizeString(signingRequest.receiverId);
+  const documentName =
+    normalizeString(signingRequest.documentName) || "מסמך";
+  const notificationRef = db
+      .collection("users")
+      .doc(workerId)
+      .collection("notifications")
+      .doc();
+  const batch = db.batch();
+
+  batch.set(notificationRef, {
+    type: "document_signed",
+    title: "המסמך נחתם",
+    body: `${signed.signerName} חתם/ה על ${documentName}`,
+    message: `${signed.signerName} חתם/ה על ${documentName}`,
+    fromId: receiverId,
+    fromName: signed.signerName,
+    chatPartnerId: receiverId,
+    chatPartnerName: signed.signerName,
+    invoiceDocId: signingRequest.invoiceDocId,
+    isRead: false,
+    timestamp: signed.signedAt,
+  });
+
+  if (receiverId) {
+    const roomId = [workerId, receiverId].sort().join("_");
+    const messageRef = db
+        .collection("chat_rooms")
+        .doc(roomId)
+        .collection("messages")
+        .doc();
+    const text = `המסמך נחתם על ידי ${signed.signerName}`;
+    batch.set(messageRef, {
+      senderId: receiverId,
+      receiverId: workerId,
+      message: text,
+      text,
+      type: "file",
+      url: signed.signedUrl,
+      fileUrl: signed.signedUrl,
+      fileName: `חתום - ${
+        normalizeString(signingRequest.fileName) || "document.pdf"
+      }`,
+      invoiceDocId: signingRequest.invoiceDocId,
+      signedDocument: true,
+      timestamp: signed.signedAt,
+      isRead: false,
+    });
+    batch.set(db.collection("chat_rooms").doc(roomId), {
+      lastMessage: text,
+      lastMessageTime: signed.signedAt,
+      lastTimestamp: signed.signedAt,
+      users: [workerId, receiverId],
+      unreadCount: {
+        [workerId]: admin.firestore.FieldValue.increment(1),
+      },
+    }, {merge: true});
+  }
+
+  await batch.commit();
+}
+
+function renderSigningPage(token, signingRequest) {
+  const alreadySigned = signingRequest.status === "signed";
+  const title = escapeHtml(
+      normalizeString(signingRequest.documentName) || "מסמך לחתימה",
+  );
+  const pdfUrl = `/sign/${encodeURIComponent(token)}?pdf=1`;
+  return `<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>${title}</title>
+  <style>
+    *{box-sizing:border-box}body{margin:0;background:#f4f7fb;color:#0f172a;
+    font-family:Arial,sans-serif}.top{padding:18px 5%;background:#0f172a;
+    color:#fff}.top h1{font-size:20px;margin:0}.wrap{width:min(1100px,94%);
+    margin:20px auto;display:grid;grid-template-columns:1.5fr 1fr;gap:18px}
+    .card{background:#fff;border:1px solid #dbe3ee;border-radius:16px;
+    overflow:hidden;box-shadow:0 8px 24px #0f172a12}.pdf{width:100%;height:72vh;
+    border:0}.form{padding:20px}.form h2{margin-top:0}label{display:block;
+    font-weight:700;margin:14px 0 6px}input{width:100%;padding:12px;
+    border:1px solid #cbd5e1;border-radius:10px;font-size:16px}canvas{width:100%;
+    height:180px;border:2px dashed #94a3b8;border-radius:10px;touch-action:none;
+    background:#fff}button{width:100%;border:0;border-radius:10px;padding:13px;
+    margin-top:12px;font-size:16px;font-weight:700;cursor:pointer}.primary{
+    background:#7c3aed;color:#fff}.secondary{background:#e2e8f0;color:#0f172a}
+    .status{padding:12px;border-radius:10px;background:#ecfdf5;color:#166534;
+    margin-bottom:12px}.error{background:#fef2f2;color:#991b1b}
+    @media(max-width:800px){.wrap{grid-template-columns:1fr}.pdf{height:58vh}}
+  </style>
+</head>
+<body>
+  <header class="top"><h1>${title}</h1></header>
+  <main class="wrap">
+    <section class="card"><iframe class="pdf" src="${pdfUrl}"></iframe></section>
+    <section class="card form">
+      ${alreadySigned ? `
+        <div class="status">המסמך כבר נחתם ונשלח לבעל המקצוע.</div>
+        <button class="primary" id="share">שלח מחדש את המסמך</button>
+      ` : `
+        <h2>חתימה על המסמך</h2>
+        <p>יש לעיין במסמך, לכתוב שם מלא ולחתום בתיבה.</p>
+        <div id="message"></div>
+        <label for="name">שם מלא</label>
+        <input id="name" maxlength="100" autocomplete="name">
+        <label>חתימה</label>
+        <canvas id="signature"></canvas>
+        <button class="secondary" id="clear">נקה חתימה</button>
+        <button class="primary" id="submit">חתום ושלח מחדש</button>
+      `}
+    </section>
+  </main>
+  <script>
+  const shareDocument=async()=>{const data={title:${JSON.stringify(title)},
+    text:'מסמך חתום',url:location.href};if(navigator.share){await navigator.share(data)}
+    else{await navigator.clipboard.writeText(location.href);alert('הקישור הועתק')}}
+  document.getElementById('share')?.addEventListener('click',shareDocument);
+  const canvas=document.getElementById('signature');
+  if(canvas){
+    const ctx=canvas.getContext('2d');let drawing=false;
+    const resize=()=>{const ratio=devicePixelRatio||1;const rect=canvas.getBoundingClientRect();
+      canvas.width=rect.width*ratio;canvas.height=rect.height*ratio;ctx.scale(ratio,ratio);
+      ctx.lineWidth=2.4;ctx.lineCap='round';ctx.strokeStyle='#111827'};resize();
+    const point=e=>{const r=canvas.getBoundingClientRect();const p=e.touches?.[0]||e;
+      return{x:p.clientX-r.left,y:p.clientY-r.top}};
+    const start=e=>{e.preventDefault();drawing=true;const p=point(e);ctx.beginPath();
+      ctx.moveTo(p.x,p.y)};const move=e=>{if(!drawing)return;e.preventDefault();
+      const p=point(e);ctx.lineTo(p.x,p.y);ctx.stroke()};const stop=()=>drawing=false;
+    canvas.addEventListener('pointerdown',start);canvas.addEventListener('pointermove',move);
+    window.addEventListener('pointerup',stop);
+    document.getElementById('clear').onclick=()=>ctx.clearRect(0,0,canvas.width,canvas.height);
+    document.getElementById('submit').onclick=async()=>{
+      const button=document.getElementById('submit');const message=document.getElementById('message');
+      button.disabled=true;button.textContent='שולח...';
+      try{const response=await fetch(location.pathname,{method:'POST',
+        headers:{'Content-Type':'application/json'},body:JSON.stringify({
+          signerName:document.getElementById('name').value,
+          signature:canvas.toDataURL('image/png')})});
+        const result=await response.json();if(!response.ok)throw new Error(result.error);
+        message.className='status';message.textContent=result.message;
+        button.textContent='שלח מחדש את המסמך';button.disabled=false;
+        button.onclick=shareDocument;document.querySelector('.pdf').src='${pdfUrl}&v='+Date.now();
+      }catch(error){message.className='status error';message.textContent=error.message;
+        button.disabled=false;button.textContent='חתום ושלח מחדש'}}
+  }
+  </script>
+</body></html>`;
+}
+
+function renderSigningMessage(title, message) {
+  return `<!doctype html><html lang="he" dir="rtl"><meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <body style="font-family:Arial;padding:40px;text-align:center;background:#f4f7fb">
+  <h1>${escapeHtml(title)}</h1><p>${escapeHtml(message)}</p></body></html>`;
+}
+
+function safeHeaderFileName(value) {
+  const name = normalizeString(value).replace(/[^\x20-\x7E]/g, "_");
+  return (name || "document.pdf").replace(/["\\]/g, "_");
+}
+
+function asciiForPdf(value) {
+  const ascii = normalizeString(value).replace(/[^\x20-\x7E]/g, "").trim();
+  return ascii || "Customer";
+}
+
 function datesEqual(left, right) {
   if (!left && !right) return true;
   if (!left || !right) return false;
@@ -2507,6 +2984,8 @@ function datesEqual(left, right) {
 
 function defaultTitleForType(type) {
   switch (type) {
+    case "document_signed":
+      return "המסמך נחתם";
     case "work_request":
       return "New work request";
     case "quote_request":
@@ -2525,6 +3004,8 @@ function defaultTitleForType(type) {
 
 function defaultBodyForType(type) {
   switch (type) {
+    case "document_signed":
+      return "הלקוח חתם על המסמך";
     case "work_request":
       return "You received a new work request";
     case "quote_request":
@@ -2543,6 +3024,8 @@ function defaultBodyForType(type) {
 
 function dataTypeForNotification(type) {
   switch (type) {
+    case "document_signed":
+      return "chat";
     case "work_request":
     case "quote_request":
       return "job_request";

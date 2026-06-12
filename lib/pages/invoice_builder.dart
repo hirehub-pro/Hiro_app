@@ -18,6 +18,7 @@ import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:untitled1/services/bkmv_export_service.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:share_plus/share_plus.dart';
 
 class _SavedInvoiceResult {
   final String url;
@@ -34,6 +35,8 @@ class _SavedInvoiceResult {
 class InvoiceBuilderDraftResult {
   final String url;
   final String fileName;
+  final String invoiceDocId;
+  final String storagePath;
   final double amount;
   final String docType;
   final String? documentNumber;
@@ -42,6 +45,8 @@ class InvoiceBuilderDraftResult {
   const InvoiceBuilderDraftResult({
     required this.url,
     required this.fileName,
+    required this.invoiceDocId,
+    required this.storagePath,
     required this.amount,
     required this.docType,
     this.documentNumber,
@@ -505,6 +510,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       return InvoiceBuilderDraftResult(
         url: downloadUrl,
         fileName: fileName,
+        invoiceDocId: quoteDocRef.id,
+        storagePath: storagePath,
         amount: signedTotalAmount,
         docType: docType,
         items: _items
@@ -780,6 +787,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     return InvoiceBuilderDraftResult(
       url: downloadUrl,
       fileName: fileName,
+      invoiceDocId: invoiceDocId,
+      storagePath: storagePath,
       amount: signedTotalAmount,
       docType: docType,
       documentNumber: nextDocumentNumber,
@@ -3057,6 +3066,21 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
               );
               return finalPdfBytes;
             },
+            onSendForSignature: _isQuoteLike
+                ? () async {
+                    final saved = savedDraftResult;
+                    if (saved == null) {
+                      throw StateError(
+                        _getLocalizedStrings(
+                              context,
+                              listen: false,
+                            )['save_before_signing'] ??
+                            'Save the document before sending it for signature.',
+                      );
+                    }
+                    await _sendForSignature(saved);
+                  }
+                : null,
           ),
         ),
       );
@@ -3477,6 +3501,234 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       dev.log("Error sending saved PDF: $e");
       return false;
     }
+  }
+
+  Future<String> _createSigningLink(
+    InvoiceBuilderDraftResult saved, {
+    String? receiverId,
+  }) async {
+    final callable = FirebaseFunctions.instanceFor(
+      region: 'us-central1',
+    ).httpsCallable('createDocumentSigningRequest');
+    final result = await callable.call(<String, dynamic>{
+      'invoiceDocId': saved.invoiceDocId,
+      if (receiverId != null && receiverId.isNotEmpty) 'receiverId': receiverId,
+    });
+    final link = (result.data as Map<Object?, Object?>?)?['url']?.toString();
+    if (link == null || link.isEmpty) {
+      throw StateError('The signing link could not be created.');
+    }
+    return link;
+  }
+
+  Future<void> _sendSigningLinkToContact(
+    InvoiceBuilderDraftResult saved,
+    String receiverId,
+    String receiverName,
+  ) async {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) return;
+
+    final link = await _createSigningLink(saved, receiverId: receiverId);
+    final ids = [currentUser.uid, receiverId]..sort();
+    final roomId = ids.join('_');
+    final label = _labelForDocType(saved.docType);
+    final messageText = 'מסמך לחתימה: $label';
+
+    await FirebaseFirestore.instance
+        .collection('chat_rooms')
+        .doc(roomId)
+        .collection('messages')
+        .add({
+          'senderId': currentUser.uid,
+          'receiverId': receiverId,
+          'message': messageText,
+          'text': messageText,
+          'type': 'file',
+          'url': link,
+          'fileUrl': link,
+          'fileName': '$label - לחתימה',
+          'signingRequest': true,
+          'invoiceDocId': saved.invoiceDocId,
+          'timestamp': FieldValue.serverTimestamp(),
+          'isRead': false,
+        });
+
+    await FirebaseFirestore.instance.collection('chat_rooms').doc(roomId).set({
+      'lastMessage': messageText,
+      'lastMessageTime': FieldValue.serverTimestamp(),
+      'lastTimestamp': FieldValue.serverTimestamp(),
+      'users': [currentUser.uid, receiverId],
+      'user_names': {
+        currentUser.uid: widget.workerName,
+        receiverId: receiverName,
+      },
+      'unreadCount.$receiverId': FieldValue.increment(1),
+    }, SetOptions(merge: true));
+
+    await FirebaseFirestore.instance
+        .collection('users')
+        .doc(receiverId)
+        .collection('notifications')
+        .add({
+          'type': 'chat_message',
+          'title': widget.workerName,
+          'body': messageText,
+          'message': messageText,
+          'fromId': currentUser.uid,
+          'fromName': widget.workerName,
+          'chatPartnerId': currentUser.uid,
+          'chatPartnerName': widget.workerName,
+          'isRead': false,
+          'timestamp': FieldValue.serverTimestamp(),
+        });
+  }
+
+  Future<void> _sendForSignature(InvoiceBuilderDraftResult saved) async {
+    if (widget.receiverId != null) {
+      await _sendSigningLinkToContact(
+        saved,
+        widget.receiverId!,
+        widget.receiverName ?? 'User',
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('הקישור לחתימה נשלח בצ׳אט')),
+        );
+      }
+      return;
+    }
+
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || !mounted) return;
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'שליחת מסמך לחתימה',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 12),
+              ListTile(
+                leading: const Icon(Icons.chat_bubble_rounded),
+                title: const Text('שלח בצ׳אט של Hiro'),
+                onTap: () => Navigator.pop(sheetContext, 'hiro'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.ios_share_rounded),
+                title: const Text('שלח באפליקציה אחרת'),
+                onTap: () => Navigator.pop(sheetContext, 'external'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (!mounted || choice == null) return;
+
+    if (choice == 'external') {
+      final link = await _createSigningLink(saved);
+      await SharePlus.instance.share(
+        ShareParams(text: 'נא לפתוח את המסמך, לחתום ולשלוח אותו מחדש:\n$link'),
+      );
+      return;
+    }
+
+    await _showSigningContactPicker(saved);
+  }
+
+  Future<void> _showSigningContactPicker(
+    InvoiceBuilderDraftResult saved,
+  ) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || !mounted) return;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: SizedBox(
+          height: MediaQuery.of(sheetContext).size.height * 0.65,
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              children: [
+                const Text(
+                  'בחר לקוח',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: StreamBuilder<QuerySnapshot>(
+                    stream: FirebaseFirestore.instance
+                        .collection('chat_rooms')
+                        .where('users', arrayContains: user.uid)
+                        .snapshots(),
+                    builder: (context, snapshot) {
+                      if (!snapshot.hasData) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+                      final rooms = snapshot.data!.docs.where((doc) {
+                        final data = doc.data() as Map<String, dynamic>;
+                        final users = (data['users'] as List?) ?? const [];
+                        return !users.contains('hiro_manager');
+                      }).toList();
+                      if (rooms.isEmpty) {
+                        return const Center(child: Text('לא נמצאו שיחות'));
+                      }
+                      return ListView.builder(
+                        itemCount: rooms.length,
+                        itemBuilder: (context, index) {
+                          final data =
+                              rooms[index].data() as Map<String, dynamic>;
+                          final users = (data['users'] as List).cast<String>();
+                          final otherId = users.firstWhere(
+                            (id) => id != user.uid,
+                          );
+                          final otherName =
+                              data['user_names']?[otherId]?.toString() ??
+                              'User';
+                          return ListTile(
+                            leading: const CircleAvatar(
+                              child: Icon(Icons.person_rounded),
+                            ),
+                            title: Text(otherName),
+                            onTap: () async {
+                              Navigator.pop(sheetContext);
+                              await _sendSigningLinkToContact(
+                                saved,
+                                otherId,
+                                otherName,
+                              );
+                              if (!mounted) return;
+                              ScaffoldMessenger.of(this.context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('הקישור לחתימה נשלח בצ׳אט'),
+                                ),
+                              );
+                            },
+                          );
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   Future<bool> _sendToContact(String receiverId, String receiverName) async {
@@ -5288,6 +5540,7 @@ class InvoicePreviewPage extends StatefulWidget {
   final bool requireTaxAuthorityConnectionPrompt;
   final Future<bool> Function()? isTaxAuthorityConnected;
   final Future<void> Function()? onConnectTaxAuthority;
+  final Future<void> Function()? onSendForSignature;
 
   const InvoicePreviewPage({
     super.key,
@@ -5297,6 +5550,7 @@ class InvoicePreviewPage extends StatefulWidget {
     this.requireTaxAuthorityConnectionPrompt = false,
     this.isTaxAuthorityConnected,
     this.onConnectTaxAuthority,
+    this.onSendForSignature,
   });
 
   @override
@@ -5306,6 +5560,7 @@ class InvoicePreviewPage extends StatefulWidget {
 class _InvoicePreviewPageState extends State<InvoicePreviewPage> {
   bool _isSaved = false;
   bool _isSaving = false;
+  bool _isSendingForSignature = false;
   late Uint8List _pdfBytes;
 
   @override
@@ -5316,6 +5571,22 @@ class _InvoicePreviewPageState extends State<InvoicePreviewPage> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _showTaxAuthorityConnectionPromptIfNeeded();
       });
+    }
+  }
+
+  Future<void> _handleSendForSignature() async {
+    if (_isSendingForSignature || widget.onSendForSignature == null) return;
+    setState(() => _isSendingForSignature = true);
+    try {
+      await widget.onSendForSignature!.call();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_friendlySaveError(e))));
+      }
+    } finally {
+      if (mounted) setState(() => _isSendingForSignature = false);
     }
   }
 
@@ -5473,6 +5744,37 @@ class _InvoicePreviewPageState extends State<InvoicePreviewPage> {
               ),
               if (_isSaved) ...[
                 const SizedBox(height: 12),
+                if (widget.onSendForSignature != null) ...[
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: _isSendingForSignature
+                          ? null
+                          : _handleSendForSignature,
+                      icon: _isSendingForSignature
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(Icons.draw_rounded),
+                      label: Text(
+                        _isSendingForSignature
+                            ? (isRtl ? 'יוצר קישור...' : 'Creating link...')
+                            : (isRtl ? 'שלח לחתימה' : 'Send it to be signed'),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF7C3AED),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 Row(
                   children: [
                     Expanded(

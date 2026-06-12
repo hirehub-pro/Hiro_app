@@ -748,7 +748,14 @@ class _ChatPageState extends State<ChatPage> {
             }
           });
         } else if (type == 'file') {
-          _openFile(url, fileName);
+          if (message['signingRequest'] == true) {
+            final uri = Uri.tryParse(url);
+            if (uri != null) {
+              launchUrl(uri, mode: LaunchMode.externalApplication);
+            }
+          } else {
+            _openFile(url, fileName);
+          }
         } else if (type == 'image') {
           _openImageFullscreen(url, fileName: fileName);
         } else if (type == 'video') {
