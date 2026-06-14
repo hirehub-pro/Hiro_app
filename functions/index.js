@@ -282,6 +282,7 @@ exports.createTaxAuthorityAuthorizationUrl = onCall(
         throw new HttpsError("unauthenticated", "Authentication required.");
       }
 
+      const businessId = await getVerifiedTaxAuthorityBusinessId(userId);
       const state = crypto.randomUUID();
       const now = admin.firestore.Timestamp.now();
       const expiresAt = admin.firestore.Timestamp.fromDate(
@@ -292,6 +293,7 @@ exports.createTaxAuthorityAuthorizationUrl = onCall(
           .doc(state)
           .set({
             userId,
+            businessId,
             createdAt: now,
             expiresAt,
             usedAt: null,
@@ -374,14 +376,16 @@ exports.taxesOAuthCallback = onRequest(
       }
 
       const stateRef = db.collection("taxAuthorityOAuthStates").doc(state);
-      const userId = await db.runTransaction(async (transaction) => {
+      const oauthOwner = await db.runTransaction(async (transaction) => {
         const stateSnap = await transaction.get(stateRef);
         if (!stateSnap.exists) return null;
 
         const stateData = stateSnap.data() || {};
         const stateUserId = normalizeString(stateData.userId).trim();
+        const stateBusinessId = normalizeBusinessId(stateData.businessId);
         const stateExpiresAt = toDate(stateData.expiresAt);
         if (!stateUserId ||
+            !stateBusinessId ||
             stateData.usedAt ||
             !stateExpiresAt ||
             stateExpiresAt < new Date()) {
@@ -389,12 +393,38 @@ exports.taxesOAuthCallback = onRequest(
         }
 
         transaction.update(stateRef, {usedAt: now});
-        return stateUserId;
+        return {
+          userId: stateUserId,
+          businessId: stateBusinessId,
+        };
       });
-      if (!userId) {
+      if (!oauthOwner) {
         res.status(400).send(renderOAuthCallbackPage({
           title: "Invalid authorization state",
           message: "Please start the Tax Authority connection again.",
+        }));
+        return;
+      }
+      const {userId, businessId} = oauthOwner;
+
+      let currentBusinessId;
+      try {
+        currentBusinessId = await getVerifiedTaxAuthorityBusinessId(userId);
+      } catch (error) {
+        res.status(400).send(renderOAuthCallbackPage({
+          title: "Business verification changed",
+          message:
+            "Your verified business details changed during authorization. " +
+            "Return to Hiro and start the connection again.",
+        }));
+        return;
+      }
+      if (currentBusinessId !== businessId) {
+        res.status(400).send(renderOAuthCallbackPage({
+          title: "Business verification changed",
+          message:
+            "Your verified business ID changed during authorization. " +
+            "Return to Hiro and start the connection again.",
         }));
         return;
       }
@@ -403,6 +433,7 @@ exports.taxesOAuthCallback = onRequest(
           .collection("taxAuthorityOAuthCallbacks")
           .add({
             userId,
+            businessId,
             code,
             state,
             createdAt: now,
@@ -436,6 +467,7 @@ exports.taxesOAuthCallback = onRequest(
           .set({
             ...tokenResponse,
             userId,
+            businessId,
             callbackId: docRef.id,
             updatedAt: now,
             environment: "sandbox",
@@ -472,7 +504,16 @@ exports.requestTaxInvoiceAllocation = onCall(
       }
 
       const payload = normalizeTaxInvoiceAllocationPayload(request.data || {});
-      const tokenData = await getTaxAuthorityTokenData(auth.uid);
+      const businessId = await getVerifiedTaxAuthorityBusinessId(auth.uid);
+      const payloadBusinessId = normalizeBusinessId(payload.vat_number);
+      if (payloadBusinessId !== businessId) {
+        throw new HttpsError(
+            "permission-denied",
+            "The invoice VAT ID does not match your verified business ID.",
+        );
+      }
+
+      const tokenData = await getTaxAuthorityTokenData(auth.uid, businessId);
       const response = await callTaxAuthorityMultiApproval({
         accessToken: tokenData.accessToken,
         payload,
@@ -512,6 +553,18 @@ exports.getTaxAuthorityConnectionStatus = onCall(
         throw new HttpsError("unauthenticated", "Authentication required.");
       }
 
+      let businessId;
+      try {
+        businessId = await getVerifiedTaxAuthorityBusinessId(request.auth.uid);
+      } catch (error) {
+        return {
+          connected: false,
+          environment: "sandbox",
+          expiresAt: null,
+          reason: "business-verification-required",
+        };
+      }
+
       const tokenSnap = await admin.firestore()
           .collection("taxAuthorityOAuthTokens")
           .doc(request.auth.uid)
@@ -521,12 +574,19 @@ exports.getTaxAuthorityConnectionStatus = onCall(
         normalizeString(data.access_token).trim().length > 0;
       const hasRefreshToken =
         normalizeString(data.refresh_token).trim().length > 0;
+      const tokenBusinessId = normalizeBusinessId(data.businessId);
       const expiresAt = toIsoString(data.expiresAt);
 
       return {
-        connected: tokenSnap.exists && (hasAccessToken || hasRefreshToken),
+        connected:
+          tokenSnap.exists &&
+          tokenBusinessId === businessId &&
+          (hasAccessToken || hasRefreshToken),
         environment: "sandbox",
         expiresAt,
+        reason: tokenSnap.exists && tokenBusinessId !== businessId ?
+          "business-id-mismatch" :
+          null,
       };
     },
 );
@@ -2211,6 +2271,44 @@ function normalizeString(value) {
   return value == null ? "" : String(value);
 }
 
+function normalizeBusinessId(value) {
+  const digits = normalizeString(value).replace(/\D/g, "");
+  return /^\d{9}$/.test(digits) ? digits : null;
+}
+
+async function getVerifiedTaxAuthorityBusinessId(userId) {
+  const db = admin.firestore();
+  const userRef = db.collection("users").doc(userId);
+  const verificationRef = userRef
+      .collection("verification_info")
+      .doc("latest");
+  const [userSnap, verificationSnap] = await Promise.all([
+    userRef.get(),
+    verificationRef.get(),
+  ]);
+  const userData = userSnap.data() || {};
+  const verificationData = verificationSnap.data() || {};
+  const businessId = normalizeBusinessId(
+      verificationData.businessId || userData.businessId,
+  );
+  const dealerType = normalizeString(verificationData.dealerType).trim();
+  const isApproved =
+    userData.isapproved === true &&
+    normalizeString(verificationData.status).trim() === "approved";
+
+  if (!isApproved ||
+      !businessId ||
+      !["licensed", "company"].includes(dealerType)) {
+    throw new HttpsError(
+        "failed-precondition",
+        "An approved licensed business is required before connecting " +
+        "to the Tax Authority.",
+    );
+  }
+
+  return businessId;
+}
+
 function maskOAuthState(state) {
   if (!state) return null;
   return state.length <= 8 ? "set" : `${state.slice(0, 4)}...${state.slice(-4)}`;
@@ -2298,7 +2396,7 @@ async function refreshTaxAuthorityToken(refreshToken) {
   }
 }
 
-async function getTaxAuthorityTokenData(userId) {
+async function getTaxAuthorityTokenData(userId, businessId) {
   const tokenRef = admin.firestore()
       .collection("taxAuthorityOAuthTokens")
       .doc(userId);
@@ -2311,6 +2409,14 @@ async function getTaxAuthorityTokenData(userId) {
   }
 
   const tokenData = tokenSnap.data() || {};
+  const tokenBusinessId = normalizeBusinessId(tokenData.businessId);
+  if (!tokenBusinessId || tokenBusinessId !== businessId) {
+    throw new HttpsError(
+        "failed-precondition",
+        "Reconnect the Tax Authority account for your verified business ID.",
+    );
+  }
+
   const accessToken = normalizeString(tokenData.access_token).trim();
   if (!accessToken) {
     throw new HttpsError(
