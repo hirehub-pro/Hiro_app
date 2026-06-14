@@ -71,6 +71,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   String _subscriptionStatus = "inactive";
   DateTime? _subscriptionDate;
   DateTime? _subscriptionExpiresAt;
+  bool _isVip = false;
   bool _isBusinessVerified = false;
 
   AnimationController get _backgroundAnimationController {
@@ -909,6 +910,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             _subscriptionExpiresAt = _toDate(
               doc.data()?['subscriptionExpiresAt'],
             );
+            _isVip = doc.data()?['isVIP'] == true;
             _isBusinessVerified = doc.data()?['isVerified'] == true;
           });
         }
@@ -1772,6 +1774,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       'subscriptionStatus': _subscriptionStatus,
       'subscriptionDate': _subscriptionDate,
       'subscriptionExpiresAt': _subscriptionExpiresAt,
+      'isVIP': _isVip,
     });
   }
 

@@ -231,8 +231,6 @@ class InvoiceBuilderPage extends StatefulWidget {
 }
 
 class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
-  static const String _taxAuthorityOAuthStartUrl =
-      'https://me-west1-hire-hub-fe6c4.cloudfunctions.net/taxesOAuthStart';
   static const int _sandboxAccountingSoftwareNumber = 987654321;
 
   final FirebaseFunctions _functions = FirebaseFunctions.instanceFor(
@@ -1475,12 +1473,28 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   }
 
   Future<void> _openTaxAuthorityConnection() async {
-    final uri = Uri.parse(_taxAuthorityOAuthStartUrl);
-    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!opened && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not open Tax Authority login.')),
+    try {
+      final callable = _functions.httpsCallable(
+        'createTaxAuthorityAuthorizationUrl',
       );
+      final response = await callable.call<Map<String, dynamic>>();
+      final authorizationUrl = response.data['authorizationUrl']?.toString();
+      final uri = Uri.tryParse(authorizationUrl ?? '');
+      final opened =
+          uri != null &&
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!opened) {
+        throw StateError(
+          'Tax Authority authorization URL could not be opened.',
+        );
+      }
+    } catch (e) {
+      dev.log('Failed to start Tax Authority connection: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open Tax Authority login.')),
+        );
+      }
     }
   }
 

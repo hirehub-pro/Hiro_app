@@ -271,15 +271,15 @@ exports.publicDocumentSigning = onRequest(
     },
 );
 
-exports.taxesOAuthStart = onRequest(
+exports.createTaxAuthorityAuthorizationUrl = onCall(
     {
       region: "me-west1",
       secrets: [TAX_AUTH_CLIENT_ID],
     },
-    async (req, res) => {
-      if (req.method !== "GET") {
-        res.status(405).send("Method Not Allowed");
-        return;
+    async (request) => {
+      const userId = request.auth?.uid;
+      if (!userId) {
+        throw new HttpsError("unauthenticated", "Authentication required.");
       }
 
       const state = crypto.randomUUID();
@@ -291,21 +291,34 @@ exports.taxesOAuthStart = onRequest(
           .collection("taxAuthorityOAuthStates")
           .doc(state)
           .set({
+            userId,
             createdAt: now,
             expiresAt,
             usedAt: null,
-            userAgent: normalizeString(req.get("user-agent")).slice(0, 500),
-            ip: normalizeString(req.ip).slice(0, 80),
           });
 
       const authorizationUrl = new URL(TAX_AUTH_SANDBOX_AUTH_URL);
       authorizationUrl.searchParams.set("response_type", "code");
-      authorizationUrl.searchParams.set("client_id", TAX_AUTH_CLIENT_ID.value());
+      authorizationUrl.searchParams.set(
+          "client_id",
+          TAX_AUTH_CLIENT_ID.value(),
+      );
       authorizationUrl.searchParams.set("redirect_uri", TAX_AUTH_REDIRECT_URI);
       authorizationUrl.searchParams.set("scope", TAX_AUTH_SCOPE);
       authorizationUrl.searchParams.set("state", state);
 
-      res.redirect(302, authorizationUrl.toString());
+      return {authorizationUrl: authorizationUrl.toString()};
+    },
+);
+
+exports.taxesOAuthStart = onRequest(
+    {region: "me-west1"},
+    (_req, res) => {
+      res.status(410).send(renderOAuthCallbackPage({
+        title: "App update required",
+        message:
+          "Open the latest version of Hiro to connect your Tax Authority account.",
+      }));
     },
 );
 
@@ -352,32 +365,46 @@ exports.taxesOAuthCallback = onRequest(
       const expiresAt = admin.firestore.Timestamp.fromDate(
           addHours(now.toDate(), TAX_AUTH_OAUTH_CODE_RETENTION_HOURS),
       );
-      if (state) {
-        const stateRef = db.collection("taxAuthorityOAuthStates").doc(state);
-        const stateSnap = await stateRef.get();
-        if (!stateSnap.exists) {
-          res.status(400).send(renderOAuthCallbackPage({
-            title: "Invalid authorization state",
-            message: "Please start the Tax Authority connection again.",
-          }));
-          return;
-        }
+      if (!state) {
+        res.status(400).send(renderOAuthCallbackPage({
+          title: "Missing authorization state",
+          message: "Please start the Tax Authority connection again.",
+        }));
+        return;
+      }
+
+      const stateRef = db.collection("taxAuthorityOAuthStates").doc(state);
+      const userId = await db.runTransaction(async (transaction) => {
+        const stateSnap = await transaction.get(stateRef);
+        if (!stateSnap.exists) return null;
+
         const stateData = stateSnap.data() || {};
-        if (stateData.usedAt || toDate(stateData.expiresAt) < new Date()) {
-          res.status(400).send(renderOAuthCallbackPage({
-            title: "Expired authorization state",
-            message: "Please start the Tax Authority connection again.",
-          }));
-          return;
+        const stateUserId = normalizeString(stateData.userId).trim();
+        const stateExpiresAt = toDate(stateData.expiresAt);
+        if (!stateUserId ||
+            stateData.usedAt ||
+            !stateExpiresAt ||
+            stateExpiresAt < new Date()) {
+          return null;
         }
-        await stateRef.update({usedAt: now});
+
+        transaction.update(stateRef, {usedAt: now});
+        return stateUserId;
+      });
+      if (!userId) {
+        res.status(400).send(renderOAuthCallbackPage({
+          title: "Invalid authorization state",
+          message: "Please start the Tax Authority connection again.",
+        }));
+        return;
       }
 
       const docRef = await db
           .collection("taxAuthorityOAuthCallbacks")
           .add({
+            userId,
             code,
-            state: state || null,
+            state,
             createdAt: now,
             expiresAt,
             consumedAt: null,
@@ -396,15 +423,19 @@ exports.taxesOAuthCallback = onRequest(
         });
         res.status(502).send(renderOAuthCallbackPage({
           title: "Authorization could not be completed",
-          message: "Hiro received the authorization code, but could not exchange it for a Tax Authority token. Please try connecting again in a few minutes.",
+          message:
+            "Hiro received the authorization code, but could not exchange it " +
+            "for a Tax Authority token. Please try connecting again in a few " +
+            "minutes.",
         }));
         return;
       }
       await db
           .collection("taxAuthorityOAuthTokens")
-          .doc("sandbox")
+          .doc(userId)
           .set({
             ...tokenResponse,
+            userId,
             callbackId: docRef.id,
             updatedAt: now,
             environment: "sandbox",
@@ -417,6 +448,7 @@ exports.taxesOAuthCallback = onRequest(
       await docRef.update({consumedAt: admin.firestore.Timestamp.now()});
 
       logger.info("Stored Tax Authority OAuth callback code", {
+        userId,
         callbackId: docRef.id,
         state: maskOAuthState(state),
       });
@@ -440,7 +472,7 @@ exports.requestTaxInvoiceAllocation = onCall(
       }
 
       const payload = normalizeTaxInvoiceAllocationPayload(request.data || {});
-      const tokenData = await getTaxAuthorityTokenData();
+      const tokenData = await getTaxAuthorityTokenData(auth.uid);
       const response = await callTaxAuthorityMultiApproval({
         accessToken: tokenData.accessToken,
         payload,
@@ -482,7 +514,7 @@ exports.getTaxAuthorityConnectionStatus = onCall(
 
       const tokenSnap = await admin.firestore()
           .collection("taxAuthorityOAuthTokens")
-          .doc("sandbox")
+          .doc(request.auth.uid)
           .get();
       const data = tokenSnap.data() || {};
       const hasAccessToken =
@@ -2266,10 +2298,10 @@ async function refreshTaxAuthorityToken(refreshToken) {
   }
 }
 
-async function getTaxAuthorityTokenData() {
+async function getTaxAuthorityTokenData(userId) {
   const tokenRef = admin.firestore()
       .collection("taxAuthorityOAuthTokens")
-      .doc("sandbox");
+      .doc(userId);
   const tokenSnap = await tokenRef.get();
   if (!tokenSnap.exists) {
     throw new HttpsError(

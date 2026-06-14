@@ -12,21 +12,25 @@ import 'dart:convert';
 class SubscriptionAccessState {
   final String role;
   final String subscriptionStatus;
+  final bool isVip;
 
   const SubscriptionAccessState({
     required this.role,
     required this.subscriptionStatus,
+    this.isVip = false,
   });
 
   bool get isWorker => role == 'worker';
 
   bool get isSubscribed =>
+      isVip ||
       SubscriptionAccessService.isEntitledSubscriptionStatus(
         subscriptionStatus,
       );
 
   bool get hasActiveWorkerSubscription {
     if (!isWorker) return true;
+    if (isVip) return true;
     return SubscriptionAccessService.isEntitledSubscriptionStatus(
       subscriptionStatus,
     );
@@ -82,6 +86,7 @@ class SubscriptionAccessService {
   static bool hasActiveWorkerSubscriptionFromData(Map<String, dynamic>? data) {
     final role = (data?['role'] ?? 'customer').toString().toLowerCase();
     if (role != 'worker') return true;
+    if (data?['isVIP'] == true) return true;
 
     return _resolveSubscriptionStatusFromData(data) != 'inactive';
   }
@@ -279,9 +284,18 @@ class SubscriptionAccessService {
     final doc = await firestore.collection('users').doc(user.uid).get();
     final data = doc.data() ?? <String, dynamic>{};
     final role = (data['role'] ?? 'customer').toString().toLowerCase();
+    final isVip = data['isVIP'] == true;
     await ensureCurrentUserSubscriptionAccountToken(existingData: data);
 
     if (role == 'worker') {
+      if (isVip) {
+        return SubscriptionAccessState(
+          role: role,
+          subscriptionStatus: _resolveSubscriptionStatusFromData(data),
+          isVip: true,
+        );
+      }
+
       final liveStoreState = await _syncWorkerStoreState(existingData: data);
       if (liveStoreState != null) {
         return liveStoreState;
@@ -298,6 +312,7 @@ class SubscriptionAccessService {
     return SubscriptionAccessState(
       role: role,
       subscriptionStatus: _resolveSubscriptionStatusFromData(data),
+      isVip: isVip,
     );
   }
 

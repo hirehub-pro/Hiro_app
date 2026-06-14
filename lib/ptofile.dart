@@ -110,6 +110,7 @@ class _ProfileState extends State<Profile>
   String _subscriptionStatus = 'inactive';
   DateTime? _subscriptionDate;
   DateTime? _subscriptionExpiresAt;
+  bool _isVip = false;
 
   bool _isIdVerified = false;
   bool _isBusinessVerified = false;
@@ -125,8 +126,6 @@ class _ProfileState extends State<Profile>
   final FirebaseFunctions _functions = FirebaseFunctions.instanceFor(
     region: 'me-west1',
   );
-  static const String _taxAuthorityOAuthStartUrl =
-      'https://me-west1-hire-hub-fe6c4.cloudfunctions.net/taxesOAuthStart';
 
   bool get _hasActiveWorkerSubscription {
     return SubscriptionAccessService.hasActiveWorkerSubscriptionFromData({
@@ -134,6 +133,7 @@ class _ProfileState extends State<Profile>
       'subscriptionStatus': _subscriptionStatus,
       'subscriptionDate': _subscriptionDate,
       'subscriptionExpiresAt': _subscriptionExpiresAt,
+      'isVIP': _isVip,
     });
   }
 
@@ -507,6 +507,7 @@ class _ProfileState extends State<Profile>
               'inactive';
           _subscriptionDate = _toDate(data['subscriptionDate']);
           _subscriptionExpiresAt = _toDate(data['subscriptionExpiresAt']);
+          _isVip = data['isVIP'] == true;
 
           if (data['professions'] is List) {
             _userProfessions = List<String>.from(data['professions']);
@@ -637,20 +638,35 @@ class _ProfileState extends State<Profile>
   }
 
   Future<void> _connectTaxAuthority(Map<String, String> strings) async {
-    final uri = Uri.parse(_taxAuthorityOAuthStartUrl);
-    final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!launched && mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(strings['open_link_failed']!)));
-      return;
-    }
+    try {
+      final callable = _functions.httpsCallable(
+        'createTaxAuthorityAuthorizationUrl',
+      );
+      final response = await callable.call<Map<String, dynamic>>();
+      final authorizationUrl = response.data['authorizationUrl']?.toString();
+      final uri = Uri.tryParse(authorizationUrl ?? '');
+      final launched =
+          uri != null &&
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!launched) {
+        throw StateError(
+          'Tax Authority authorization URL could not be opened.',
+        );
+      }
 
-    unawaited(
-      Future<void>.delayed(const Duration(seconds: 2)).then((_) {
-        if (mounted) return _loadTaxAuthorityConnectionStatus();
-      }),
-    );
+      unawaited(
+        Future<void>.delayed(const Duration(seconds: 2)).then((_) {
+          if (mounted) return _loadTaxAuthorityConnectionStatus();
+        }),
+      );
+    } catch (e) {
+      debugPrint('Failed to start Tax Authority connection: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(strings['open_link_failed']!)));
+      }
+    }
   }
 
   Future<void> _calculateDistance() async {
