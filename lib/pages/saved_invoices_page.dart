@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart' as intl;
 import 'package:printing/printing.dart';
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:untitled1/pages/invoice_builder.dart';
 import 'package:untitled1/services/language_provider.dart';
 
@@ -29,6 +30,7 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
   String _selectedDocType = 'all';
   DateTimeRange? _selectedDateRange;
   _InvoiceScope _selectedScope = _InvoiceScope.createdByMe;
+  final Set<String> _generatingSigningLinks = <String>{};
 
   String _paymentStatusLabel(String? status, bool isRtl) {
     switch (status) {
@@ -187,6 +189,69 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
         return const Color(0xFFEF6C00);
       default:
         return const Color(0xFF546E7A);
+    }
+  }
+
+  String _signatureStatusLabel(String status, bool isRtl) {
+    switch (status) {
+      case 'signed':
+        return isRtl ? 'נחתם' : 'Signed';
+      case 'pending':
+        return isRtl ? 'ממתין לחתימה' : 'Awaiting Signature';
+      default:
+        return isRtl ? 'טרם נחתם' : 'Not Signed';
+    }
+  }
+
+  Color _signatureStatusColor(String status) {
+    switch (status) {
+      case 'signed':
+        return const Color(0xFF15803D);
+      case 'pending':
+        return const Color(0xFFD97706);
+      default:
+        return const Color(0xFF64748B);
+    }
+  }
+
+  Future<void> _generateSigningLink(String invoiceDocId, bool isRtl) async {
+    if (_generatingSigningLinks.contains(invoiceDocId)) return;
+
+    setState(() => _generatingSigningLinks.add(invoiceDocId));
+    try {
+      final callable = FirebaseFunctions.instanceFor(
+        region: 'us-central1',
+      ).httpsCallable('createDocumentSigningRequest');
+      final result = await callable.call(<String, dynamic>{
+        'invoiceDocId': invoiceDocId,
+      });
+      final link = (result.data as Map<Object?, Object?>?)?['url']?.toString();
+      if (link == null || link.isEmpty) {
+        throw StateError('The signing link could not be created.');
+      }
+
+      await SharePlus.instance.share(
+        ShareParams(
+          text: isRtl
+              ? 'נא לפתוח את המסמך ולחתום עליו:\n$link'
+              : 'Please open and sign the document:\n$link',
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            isRtl
+                ? 'לא הצלחנו ליצור קישור לחתימה.'
+                : 'Could not generate a signing link.',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _generatingSigningLinks.remove(invoiceDocId));
+      }
     }
   }
 
@@ -948,6 +1013,17 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                     docType == 'invoice_receipt');
                             final canCreateReceipt =
                                 !isReceivedScope && docType == 'invoice';
+                            final canBeSigned =
+                                !isReceivedScope &&
+                                (docType == 'quote' || docType == 'work_order');
+                            final signatureStatus =
+                                (data['signatureStatus'] ?? '')
+                                    .toString()
+                                    .trim()
+                                    .toLowerCase();
+                            final isSigned = signatureStatus == 'signed';
+                            final isGeneratingSigningLink =
+                                _generatingSigningLinks.contains(invoiceDoc.id);
                             final paidAmount =
                                 (data['paidAmount'] as num?)?.toDouble() ??
                                 (docType == 'invoice_receipt'
@@ -1132,6 +1208,41 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                                         ),
                                                       ),
                                                     ),
+                                                  if (canBeSigned)
+                                                    Container(
+                                                      padding:
+                                                          const EdgeInsets.symmetric(
+                                                            horizontal: 10,
+                                                            vertical: 5,
+                                                          ),
+                                                      decoration: BoxDecoration(
+                                                        color:
+                                                            _signatureStatusColor(
+                                                              signatureStatus,
+                                                            ).withValues(
+                                                              alpha: 0.12,
+                                                            ),
+                                                        borderRadius:
+                                                            BorderRadius.circular(
+                                                              999,
+                                                            ),
+                                                      ),
+                                                      child: Text(
+                                                        _signatureStatusLabel(
+                                                          signatureStatus,
+                                                          isRtl,
+                                                        ),
+                                                        style: TextStyle(
+                                                          color:
+                                                              _signatureStatusColor(
+                                                                signatureStatus,
+                                                              ),
+                                                          fontSize: 11,
+                                                          fontWeight:
+                                                              FontWeight.w700,
+                                                        ),
+                                                      ),
+                                                    ),
                                                 ],
                                               ),
                                               const SizedBox(height: 8),
@@ -1259,6 +1370,46 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                             ),
                                           ),
                                         ],
+                                      ),
+                                    ],
+                                    if (canBeSigned && !isSigned) ...[
+                                      const SizedBox(height: 8),
+                                      TextButton.icon(
+                                        onPressed: isGeneratingSigningLink
+                                            ? null
+                                            : () => _generateSigningLink(
+                                                invoiceDoc.id,
+                                                isRtl,
+                                              ),
+                                        icon: isGeneratingSigningLink
+                                            ? const SizedBox(
+                                                width: 18,
+                                                height: 18,
+                                                child:
+                                                    CircularProgressIndicator(
+                                                      strokeWidth: 2,
+                                                    ),
+                                              )
+                                            : const Icon(
+                                                Icons.draw_outlined,
+                                                size: 18,
+                                              ),
+                                        label: Text(
+                                          isGeneratingSigningLink
+                                              ? (isRtl
+                                                    ? 'יוצר קישור...'
+                                                    : 'Generating Link...')
+                                              : (isRtl
+                                                    ? 'צור קישור לחתימה'
+                                                    : 'Generate Signing Link'),
+                                        ),
+                                        style: TextButton.styleFrom(
+                                          foregroundColor: accent,
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 0,
+                                            vertical: 4,
+                                          ),
+                                        ),
                                       ),
                                     ],
                                     if (docType == 'invoice') ...[

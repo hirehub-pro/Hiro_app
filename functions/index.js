@@ -54,7 +54,7 @@ const GOOGLE_PLAY_SUBSCRIPTION_PRODUCT_IDS = new Set([
   "pro_worker_monthly",
   "com-hiro-app-pro-worker-monthly",
 ]);
-const PUBLIC_APP_ORIGIN = "https://hiro-service.web.app";
+const PUBLIC_APP_ORIGIN = "https://hiro-services.com";
 const SIGNING_REQUEST_LIFETIME_DAYS = 30;
 const SIGNING_FONT_PATH = path.join(
     __dirname,
@@ -429,20 +429,6 @@ exports.taxesOAuthCallback = onRequest(
         return;
       }
 
-      const docRef = await db
-          .collection("taxAuthorityOAuthCallbacks")
-          .add({
-            userId,
-            businessId,
-            code,
-            state,
-            createdAt: now,
-            expiresAt,
-            consumedAt: null,
-            userAgent: normalizeString(req.get("user-agent")).slice(0, 500),
-            ip: normalizeString(req.ip).slice(0, 80),
-          });
-
       let tokenResponse;
       try {
         tokenResponse = await exchangeTaxAuthorityCodeForTokens(code);
@@ -461,6 +447,41 @@ exports.taxesOAuthCallback = onRequest(
         }));
         return;
       }
+
+      const taxAuthorityIdentity =
+        extractTaxAuthorityIdentityNumber(tokenResponse);
+      if (!taxAuthorityIdentity || taxAuthorityIdentity !== businessId) {
+        logger.warn("Rejected mismatched Tax Authority identity", {
+          userId,
+          expectedBusinessId: maskBusinessId(businessId),
+          receivedIdentity: maskBusinessId(taxAuthorityIdentity),
+          identityFound: Boolean(taxAuthorityIdentity),
+        });
+        res.status(403).send(renderOAuthCallbackPage({
+          title: "החיבור לרשות המסים נדחה",
+          message: taxAuthorityIdentity ?
+            "מספר הזהות שהוזן ברשות המסים אינו תואם למספר העסק המאומת " +
+              "בחשבון הירו. לא נשמרו פרטי החיבור. יש להתחבר עם אותו מספר." :
+            "רשות המסים לא החזירה מספר זהות שניתן לאמת מול חשבון הירו. " +
+              "לא נשמרו פרטי החיבור. יש להתחבר מחדש עם מספר העסק המאומת.",
+        }));
+        return;
+      }
+
+      const docRef = await db
+          .collection("taxAuthorityOAuthCallbacks")
+          .add({
+            userId,
+            businessId,
+            code,
+            state,
+            createdAt: now,
+            expiresAt,
+            consumedAt: null,
+            userAgent: normalizeString(req.get("user-agent")).slice(0, 500),
+            ip: normalizeString(req.ip).slice(0, 80),
+          });
+
       await db
           .collection("taxAuthorityOAuthTokens")
           .doc(userId)
@@ -2276,6 +2297,63 @@ function normalizeBusinessId(value) {
   return /^\d{9}$/.test(digits) ? digits : null;
 }
 
+function maskBusinessId(value) {
+  const businessId = normalizeBusinessId(value);
+  return businessId ? `*****${businessId.slice(-4)}` : null;
+}
+
+function extractTaxAuthorityIdentityNumber(tokenResponse) {
+  const identityKeys = new Set([
+    "user_id",
+    "userid",
+    "useridentity",
+    "identity_number",
+    "identitynumber",
+    "israeli_id",
+    "israelid",
+    "teudat_zehut",
+    "teudatzehut",
+    "vat_number",
+    "vatnumber",
+  ]);
+
+  function findIdentity(value, depth = 0) {
+    if (!value || typeof value !== "object" || depth > 4) return null;
+    for (const [key, entry] of Object.entries(value)) {
+      const normalizedKey = key.toLowerCase().replace(/[^a-z0-9_]/g, "");
+      if (identityKeys.has(normalizedKey)) {
+        const identity = normalizeBusinessId(entry);
+        if (identity) return identity;
+      }
+    }
+    for (const entry of Object.values(value)) {
+      const identity = findIdentity(entry, depth + 1);
+      if (identity) return identity;
+    }
+    return null;
+  }
+
+  const responseIdentity = findIdentity(tokenResponse);
+  if (responseIdentity) return responseIdentity;
+
+  for (const tokenKey of ["id_token", "access_token"]) {
+    const claims = decodeJwtPayload(tokenResponse?.[tokenKey]);
+    const identity = findIdentity(claims);
+    if (identity) return identity;
+  }
+  return null;
+}
+
+function decodeJwtPayload(token) {
+  const parts = normalizeString(token).split(".");
+  if (parts.length !== 3 || !parts[1]) return null;
+  try {
+    return JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
+  } catch (error) {
+    return null;
+  }
+}
+
 async function getVerifiedTaxAuthorityBusinessId(userId) {
   const db = admin.firestore();
   const userRef = db.collection("users").doc(userId);
@@ -3094,8 +3172,10 @@ async function publishSignedDocument(signingRequest, signed) {
 
 function renderSigningPage(token, signingRequest) {
   const alreadySigned = signingRequest.status === "signed";
+  const documentName = normalizeString(signingRequest.documentName)
+      .replace(/^Quote\b/i, "הצעת מחיר");
   const title = escapeHtml(
-      normalizeString(signingRequest.documentName) || "מסמך לחתימה",
+      documentName || "מסמך לחתימה",
   );
   const pdfUrl = `/sign/${encodeURIComponent(token)}?pdf=1`;
   return `<!doctype html>
@@ -3106,8 +3186,13 @@ function renderSigningPage(token, signingRequest) {
   <title>${title}</title>
   <style>
     *{box-sizing:border-box}body{margin:0;background:#f4f7fb;color:#0f172a;
-    font-family:Arial,sans-serif}.top{padding:18px 5%;background:#0f172a;
-    color:#fff}.top h1{font-size:20px;margin:0}.wrap{width:min(1100px,94%);
+    font-family:Arial,sans-serif}.top{padding:14px 5%;background:#fff;
+    color:#0f172a;border-bottom:1px solid #dbe3ee;display:flex;
+    align-items:center;gap:14px}.top a{display:flex;
+    flex:0 0 auto;border-radius:12px}.top a:focus-visible{outline:3px solid #a78bfa;
+    outline-offset:3px}.app-icon{width:48px;height:48px;border-radius:12px;
+    object-fit:cover;display:block}.top h1{font-size:20px;margin:0}.wrap{
+    width:min(1100px,94%);
     margin:20px auto;display:grid;grid-template-columns:1.5fr 1fr;gap:18px}
     .card{background:#fff;border:1px solid #dbe3ee;border-radius:16px;
     overflow:hidden;box-shadow:0 8px 24px #0f172a12}.pdf{width:100%;height:72vh;
@@ -3124,7 +3209,13 @@ function renderSigningPage(token, signingRequest) {
   </style>
 </head>
 <body>
-  <header class="top"><h1>${title}</h1></header>
+  <header class="top">
+    <a href="${PUBLIC_APP_ORIGIN}" aria-label="מעבר לאתר Hiro">
+      <img class="app-icon" src="${PUBLIC_APP_ORIGIN}/apple-touch-icon.png"
+        alt="Hiro">
+    </a>
+    <h1>${title}</h1>
+  </header>
   <main class="wrap">
     <section class="card"><iframe class="pdf" src="${pdfUrl}"></iframe></section>
     <section class="card form">
