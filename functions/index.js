@@ -448,25 +448,11 @@ exports.taxesOAuthCallback = onRequest(
         return;
       }
 
-      const taxAuthorityIdentity =
-        extractTaxAuthorityIdentityNumber(tokenResponse);
-      if (!taxAuthorityIdentity || taxAuthorityIdentity !== businessId) {
-        logger.warn("Rejected mismatched Tax Authority identity", {
-          userId,
-          expectedBusinessId: maskBusinessId(businessId),
-          receivedIdentity: maskBusinessId(taxAuthorityIdentity),
-          identityFound: Boolean(taxAuthorityIdentity),
-        });
-        res.status(403).send(renderOAuthCallbackPage({
-          title: "החיבור לרשות המסים נדחה",
-          message: taxAuthorityIdentity ?
-            "מספר הזהות שהוזן ברשות המסים אינו תואם למספר העסק המאומת " +
-              "בחשבון הירו. לא נשמרו פרטי החיבור. יש להתחבר עם אותו מספר." :
-            "רשות המסים לא החזירה מספר זהות שניתן לאמת מול חשבון הירו. " +
-              "לא נשמרו פרטי החיבור. יש להתחבר מחדש עם מספר העסק המאומת.",
-        }));
-        return;
-      }
+      // The OAuth identity can belong to an authorized representative and is
+      // not necessarily the business VAT number. The single-use OAuth state
+      // binds this token to the verified Hiro business; the allocation request
+      // below always sends that VAT number, and the Tax Authority enforces
+      // whether this token may act for it.
 
       const docRef = await db
           .collection("taxAuthorityOAuthCallbacks")
@@ -2300,58 +2286,6 @@ function normalizeBusinessId(value) {
 function maskBusinessId(value) {
   const businessId = normalizeBusinessId(value);
   return businessId ? `*****${businessId.slice(-4)}` : null;
-}
-
-function extractTaxAuthorityIdentityNumber(tokenResponse) {
-  const identityKeys = new Set([
-    "user_id",
-    "userid",
-    "useridentity",
-    "identity_number",
-    "identitynumber",
-    "israeli_id",
-    "israelid",
-    "teudat_zehut",
-    "teudatzehut",
-    "vat_number",
-    "vatnumber",
-  ]);
-
-  function findIdentity(value, depth = 0) {
-    if (!value || typeof value !== "object" || depth > 4) return null;
-    for (const [key, entry] of Object.entries(value)) {
-      const normalizedKey = key.toLowerCase().replace(/[^a-z0-9_]/g, "");
-      if (identityKeys.has(normalizedKey)) {
-        const identity = normalizeBusinessId(entry);
-        if (identity) return identity;
-      }
-    }
-    for (const entry of Object.values(value)) {
-      const identity = findIdentity(entry, depth + 1);
-      if (identity) return identity;
-    }
-    return null;
-  }
-
-  const responseIdentity = findIdentity(tokenResponse);
-  if (responseIdentity) return responseIdentity;
-
-  for (const tokenKey of ["id_token", "access_token"]) {
-    const claims = decodeJwtPayload(tokenResponse?.[tokenKey]);
-    const identity = findIdentity(claims);
-    if (identity) return identity;
-  }
-  return null;
-}
-
-function decodeJwtPayload(token) {
-  const parts = normalizeString(token).split(".");
-  if (parts.length !== 3 || !parts[1]) return null;
-  try {
-    return JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
-  } catch (error) {
-    return null;
-  }
 }
 
 async function getVerifiedTaxAuthorityBusinessId(userId) {
