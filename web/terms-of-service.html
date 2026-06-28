@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Terms of Service - hiro</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-dark: #1e40af;
+            --secondary: #64748b;
+            --bg: #f8fafc;
+            --text-main: #0f172a;
+            --text-muted: #475569;
+            --card-bg: #ffffff;
+            --border: #e2e8f0;
+            --radius: 16px;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            scroll-behavior: smooth;
+        }
+
+        body {
+            font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+            line-height: 1.6;
+            color: var(--text-main);
+            background-color: var(--bg);
+            padding-bottom: 50px;
+        }
+
+        .header {
+            background: #0f172a;
+            color: white;
+            padding: 80px 20px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .header h1 {
+            font-size: 3rem;
+            font-weight: 900;
+            margin-bottom: 10px;
+            letter-spacing: -1px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .nav-container {
+            position: sticky;
+            top: 0;
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border);
+            z-index: 100;
+            padding: 10px 0;
+        }
+
+        .nav-inner {
+            max-width: 900px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            padding: 0 20px;
+        }
+
+        .nav-link {
+            padding: 8px 16px;
+            border-radius: 99px;
+            text-decoration: none;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            font-weight: 600;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            transition: 0.2s;
+        }
+
+        .nav-link:hover {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 40px auto;
+            padding: 0 20px;
+        }
+
+        .card {
+            background: var(--card-bg);
+            padding: 60px;
+            border-radius: var(--radius);
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.05);
+            border: 1px solid var(--border);
+        }
+
+        .lang-section {
+            display: none;
+        }
+
+        .lang-section.active {
+            display: block;
+            animation: fadeIn 0.4s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .section-title {
+            font-size: 2.2rem;
+            font-weight: 800;
+            margin-bottom: 30px;
+            color: var(--text-main);
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        h2 {
+            font-size: 1.4rem;
+            margin: 40px 0 20px;
+            color: var(--primary-dark);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .rtl { dir: rtl; text-align: right; }
+        .ltr { dir: ltr; text-align: left; }
+
+        .rules-grid {
+            display: grid;
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .rule-card {
+            background: var(--bg);
+            padding: 25px;
+            border-radius: 12px;
+            border-right: 4px solid var(--primary);
+        }
+
+        .ltr .rule-card {
+            border-right: none;
+            border-left: 4px solid var(--primary);
+        }
+
+        .rule-card strong {
+            display: block;
+            margin-bottom: 10px;
+            font-size: 1.1rem;
+            color: var(--text-main);
+        }
+
+        .rule-card p {
+            font-size: 0.95rem;
+            color: var(--text-muted);
+        }
+
+        .contact-box {
+            margin-top: 50px;
+            padding: 30px;
+            background: #eff6ff;
+            border-radius: 12px;
+            text-align: center;
+            border: 1px solid #dbeafe;
+        }
+
+        footer {
+            text-align: center;
+            margin-top: 60px;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            background: #e0e7ff;
+            color: #4338ca;
+            border-radius: 99px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+
+    <header class="header">
+        <h1>hiro</h1>
+        <p>Legal Terms & User Agreement</p>
+    </header>
+
+    <div class="nav-container">
+        <div class="nav-inner">
+            <a href="javascript:void(0)" class="nav-link" onclick="setLang('he')">עברית</a>
+            <a href="javascript:void(0)" class="nav-link" onclick="setLang('en')">English</a>
+            <a href="javascript:void(0)" class="nav-link" onclick="setLang('ar')">العربية</a>
+            <a href="javascript:void(0)" class="nav-link" onclick="setLang('ru')">Русский</a>
+            <a href="javascript:void(0)" class="nav-link" onclick="setLang('am')">አማርኛ</a>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="card">
+
+            <!-- HEBREW -->
+            <div id="lang-he" class="lang-section rtl active">
+                <span class="badge">עברית</span>
+                <h1 class="section-title"><i class="fas fa-gavel"></i> תנאי שימוש</h1>
+                <p>עדכון אחרון: 3/20262023</p>
+
+                <h2>1. מהות השירות</h2>
+                <div class="rules-grid">
+                    <div class="rule-card">
+                        <strong>פלטפורמת תיווך בלבד</strong>
+                        <p>הירו היא זירת מסחר טכנולוגית המקשרת בין לקוחות לבעלי מקצוע. אנו איננו צד בהסכם העבודה, בביצועה או בתשלום עבורה.</p>
+                    </div>
+                    <div class="rule-card">
+                        <strong>אחריות מקצועית</strong>
+                        <p>בעל המקצוע נושא באחריות בלעדית לטיב העבודה, עמידה בלוחות זמנים, והחזקת כל האישורים והביטוחים הנדרשים על פי דין.</p>
+                    </div>
+                </div>
+
+                <h2>2. חשבון ואבטחה</h2>
+                <p>השימוש באפליקציה מחייב אימות מספר טלפון. הנך אחראי לשמירת סודיות החשבון ולכל פעולה שתבוצע בו. חל איסור מוחלט על התחזות או מסירת פרטים כוזבים.</p>
+
+                <h2>3. מנויי PRO ותשלומים</h2>
+                <div class="rules-grid">
+                    <div class="rule-card">
+                        <strong>מנוי בתשלום</strong>
+                        <p>בעלי מקצוע יכולים להירשם למנוי PRO המעניק חשיפה משופרת וגישה לכלי ניהול. המנוי מתחדש אוטומטית אלא אם בוטל דרך הגדרות החנות (Apple/Google).</p>
+                    </div>
+                    <div class="rule-card">
+                        <strong>מדיניות החזרים</strong>
+                        <p>התשלום מבוצע מול חנויות האפሊקציות. בקשות להחזר כספי יטופלו בהתאם למדיניות של Apple App Store או Google Play Store.</p>
+                    </div>
+                </div>
+
+                <h2>4. הגבלת אחריות</h2>
+                <p>החברה לא תהיה אחראית לכל נזק ישיר או עקיף הנובע מהשימוש בשירות, מאיכות העבודה של בעל המקצוע או מכל אינטראקציה בין המשתמשים.</p>
+
+                <div class="contact-box">
+                    שאלות משפטיות? צרו קשר: <a href="mailto:my.hire.hub@gmail.com">my.hire.hub@gmail.com</a>
+                </div>
+            </div>
+
+            <!-- ENGLISH -->
+            <div id="lang-en" class="lang-section ltr">
+                <span class="badge">English</span>
+                <h1 class="section-title"><i class="fas fa-gavel"></i> Terms of Service</h1>
+                <p>Last Updated: 3/2026</p>
+
+                <h2>1. Nature of Service</h2>
+                <div class="rules-grid">
+                    <div class="rule-card">
+                        <strong>Matching Platform</strong>
+                        <p>Hiro is a technological marketplace connecting clients and professionals. We are not a party to any work agreement, performance, or payments.</p>
+                    </div>
+                    <div class="rule-card">
+                        <strong>Professional Responsibility</strong>
+                        <p>Professionals are solely responsible for the quality of work, timeliness, and maintaining all legal permits and insurances.</p>
+                    </div>
+                </div>
+
+                <h2>2. Accounts & Security</h2>
+                <p>App usage requires phone verification. You are responsible for account confidentiality. Impersonation or providing false information is strictly prohibited.</p>
+
+                <h2>3. PRO Subscriptions & Payments</h2>
+                <div class="rules-grid">
+                    <div class="rule-card">
+                        <strong>Paid Subscriptions</strong>
+                        <p>Professionals can subscribe to PRO status for enhanced visibility. Subscriptions auto-renew unless cancelled through Apple/Google store settings.</p>
+                    </div>
+                    <div class="rule-card">
+                        <strong>Refund Policy</strong>
+                        <p>Payments are handled via app stores. Refund requests are subject to the policies of Apple App Store or Google Play Store.</p>
+                    </div>
+                </div>
+
+                <h2>4. Limitation of Liability</h2>
+                <p>hiro is not liable for any direct or indirect damages resulting from the service, work quality, or interactions between users.</p>
+
+                <div class="contact-box">
+                    Legal questions? Contact us: <a href="mailto:my.hire.hub@gmail.com">my.hire.hub@gmail.com</a>
+                </div>
+            </div>
+
+            <!-- ARABIC -->
+            <div id="lang-ar" class="lang-section rtl">
+                <span class="badge">العربية</span>
+                <h1 class="section-title"><i class="fas fa-gavel"></i> شروط الخدمة</h1>
+                <p>آخر تحديث: 3/2026</p>
+
+                <h2>1. طبيعة الخدمة</h2>
+                <div class="rules-grid">
+                    <div class="rule-card">
+                        <strong>منصة وساطة فقط</strong>
+                        <p>هايرو هو سوق تكنولوجي يربط بين العملاء والمحترفين. نحن لسنا طرفاً في أي اتفاقية عمل أو تنفيذ أو مدفوعات.</p>
+                    </div>
+                    <div class="rule-card">
+                        <strong>المسؤولية المهنية</strong>
+                        <p>يتحمل المحترف المسؤولية الحصرية عن جودة العمل، والالتزام بالمواعيد النهائية، وحيازة جميع التصاريح والتأمينات المطلوبة بموجب القانون.</p>
+                    </div>
+                </div>
+
+                <h2>2. الحساب والأمان</h2>
+                <p>يتطلب استخدام التطبيق التحقق من رقم الهاتف. أنت مسؤول عن الحفاظ على سرية الحساب وعن أي إجراء يتم تنفيذه فيه. يمنع منعاً باتاً انتحال الشخصية أو تقديم تفاصيل كاذبة.</p>
+
+                <h2>3. اشتراكات PRO والمدفوعات</h2>
+                <div class="rules-grid">
+                    <div class="rule-card">
+                        <strong>اشتراك مدفوع</strong>
+                        <p>يمكن للمحترفين الاشتراك في ميزة PRO لزيادة الظهور. يتم تجديد الاشتراكات تلقائياً ما لم يتم إلغاؤها عبر إعدادات متجر Apple أو Google.</p>
+                    </div>
+                    <div class="rule-card">
+                        <strong>سياسة الاسترداد</strong>
+                        <p>تتم إدارة المدفوعات عبر متاجر التطبيقات. تخضع طلبات الاسترداد لسياسات Apple App Store أو Google Play Store.</p>
+                    </div>
+                </div>
+
+                <h2>4. تحديد المسؤولية</h2>
+                <p>لن تكون شركة هيرو مسؤولة عن أي ضرر مباشر أو غير مباشر ينتج عن استخدام الخدمة، أو عن جودة عمل المحترف، أو عن أي تفاعل بين المستخدمين.</p>
+
+                <div class="contact-box">
+                    للاستفسارات القانونية: <a href="mailto:my.hire.hub@gmail.com">my.hire.hub@gmail.com</a>
+                </div>
+            </div>
+
+            <!-- RUSSIAN -->
+            <div id="lang-ru" class="lang-section ltr">
+                <span class="badge">Русский</span>
+                <h1 class="section-title"><i class="fas fa-gavel"></i> Условия использования</h1>
+                <p>Последнее обновление: 3/2026 г.</p>
+
+                <h2>1. Характер сервиса</h2>
+                <div class="rules-grid">
+                    <div class="rule-card">
+                        <strong>Платформа-посредник</strong>
+                        <p>хиро — это технологическая площадка, соединяющая клиентов и специалистов. Мы не являемся стороной трудовых соглашений, выполнения работ или платежей.</p>
+                    </div>
+                    <div class="rule-card">
+                        <strong>Профессиональная ответственность</strong>
+                        <p>Специалисты несут единоличную ответственность за качество работы, соблюдение сроков и наличие всех необходимых разрешений и страховок.</p>
+                    </div>
+                </div>
+
+                <h2>2. Аккаунты и безопасность</h2>
+                <p>Для использования приложения требуется верификация номера телефона. Вы несете ответственность за конфиденциальность аккаунта и любые действия в нем. Выдача себя за другое лицо или предоставление ложной информации строго запрещены.</p>
+
+                <h2>3. PRO-подписки и платежи</h2>
+                <div class="rules-grid">
+                    <div class="rule-card">
+                        <strong>Платная подписка</strong>
+                        <p>Специалисты могут оформить PRO-подписку для продвижения. Подписка продлевается автоматически, если она не отменена в настройках Apple или Google.</p>
+                    </div>
+                    <div class="rule-card">
+                        <strong>Политика возврата</strong>
+                        <p>Платежи обрабатываются через магазины приложений. Запросы на возврат средств регулируются правилами Apple App Store или Google Play Store.</p>
+                    </div>
+                </div>
+
+                <h2>4. Ограничение ответственности</h2>
+                <p>Компания не несет ответственности за любой прямой или косвенный ущерб, возникший в результате использования сервиса, качества работы специалиста или любого взаимодействия между пользователями.</p>
+
+                <div class="contact-box">
+                    Юридические вопросы: <a href="mailto:my.hire.hub@gmail.com">my.hire.hub@gmail.com</a>
+                </div>
+            </div>
+
+            <!-- AMHARIC -->
+            <div id="lang-am" class="lang-section ltr">
+                <span class="badge">አማርኛ</span>
+                <h1 class="section-title"><i class="fas fa-gavel"></i> የአጠቃቀም ደንቦች</h1>
+                <p>መጨረሻ የተሻሻለው፡ 3/2026</p>
+
+                <h2>1. የአገልግሎቱ ባህሪ</h2>
+                <div class="rules-grid">
+                    <div class="rule-card">
+                        <strong>አገናኝ መድረክ ብቻ</strong>
+                        <p>ሂሮ ደንበኞችን እና ባለሙያዎችን የሚያገናኝ የቴክኖሎጂ ገበያ ቦታ ነው። እኛ በስራ ስምምነቱ፣ በአፈጻጸሙ ወይም በክፍያው ውስጥ ተሳታፊ አይደለንም።</p>
+                    </div>
+                    <div class="rule-card">
+                        <strong>የባለሙያ ኃላፊነት</strong>
+                        <p>ባለሙያው ለስራው ጥራት፣ ለጊዜ አጠቃቀም እና በህግ የሚፈለጉትን ሁሉንም ፈቃዶች እና ኢንሹራንስ የመያዝ ሙሉ ኃላፊነት አለበት።</p>
+                    </div>
+                </div>
+
+                <h2>2. አካውንት እና ደህንነት</h2>
+                <p>መተግበሪያውን ለመጠቀም በስልክ ቁጥር ማረጋገጥ ያስፈልጋል። ለአካውንትዎ ደህንነት እና በውስጡ ለሚደረጉ ማናቸውም ድርጊቶች እርስዎ ተጠያቂ ነዎት። ሌላ ሰው መስሎ መቅረብ ወይም የተሳሳተ መረጃ መስጠት በጥብቅ የተከለከለ ነው።</p>
+
+                <h2>3. የPRO የደንበኝነት ምዝገባ እና ክፍያዎች</h2>
+                <div class="rules-grid">
+                    <div class="rule-card">
+                        <strong>ክፍያ ያለበት ምዝገባ</strong>
+                        <p>ባለሙያዎች የተሻለ ታይነት ለማግኘት ለPRO አገልግሎት መመዝገብ ይችላሉ። ምዝገባው በApple ወይም Google በኩል ካልተሰረዘ በስተቀር በራሱ ይታደሳል።</p>
+                    </div>
+                    <div class="rule-card">
+                        <strong>የክፍያ ተመላሽ ፖሊሲ</strong>
+                        <p>ክፍያዎች የሚከናወኑት በመተግበሪያ መደብሮች በኩል ነው። የተመላሽ ገንዘብ ጥያቄዎች በApple App Store ወይም በGoogle Play Store ደንቦች መሠረት ይስተናገዳሉ።</p>
+                    </div>
+                </div>
+
+                <h2>4. የኃላፊነት ገደብ</h2>
+                <p>ኩባንያው ከአገልግሎቱ አጠቃቀም፣ ከባለሙያው ስራ ጥራት ወይም በተጠቃሚዎች መካከል ከሚደረጉ ግንኙነቶች ለሚመጡ ቀጥተኛም ሆነ ቀጥተኛ ያልሆኑ ጉዳቶች ተጠያቂ አይሆንም።</p>
+
+                <div class="contact-box">
+                    ጥያቄ ካለዎት በዚህ ኢሜይል ያግኙን: <a href="mailto:my.hire.hub@gmail.com">my.hire.hub@gmail.com</a>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <footer>
+        <p>&copy; 2026 hiro App. All rights reserved.</p>
+    </footer>
+
+    <script>
+        function setLang(lang) {
+            document.querySelectorAll('.lang-section').forEach(s => s.classList.remove('active'));
+            document.getElementById('lang-' + lang).classList.add('active');
+            document.documentElement.dir = (lang === 'he' || lang === 'ar') ? 'rtl' : 'ltr';
+        }
+    </script>
+</body>
+</html>

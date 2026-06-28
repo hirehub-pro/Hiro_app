@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Privacy Center - hiro</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-dark: #1e40af;
+            --secondary: #64748b;
+            --success: #059669;
+            --bg: #f8fafc;
+            --text-main: #0f172a;
+            --text-muted: #475569;
+            --card-bg: #ffffff;
+            --border: #e2e8f0;
+            --radius: 16px;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            scroll-behavior: smooth;
+        }
+
+        body {
+            font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+            line-height: 1.6;
+            color: var(--text-main);
+            background-color: var(--bg);
+            padding-bottom: 50px;
+        }
+
+        .header {
+            background: #0f172a;
+            color: white;
+            padding: 80px 20px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .header::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, rgba(37,99,235,0.1) 0%, rgba(0,0,0,0) 70%);
+            z-index: 0;
+        }
+
+        .header-content {
+            position: relative;
+            z-index: 1;
+        }
+
+        .header h1 {
+            font-size: 3rem;
+            font-weight: 900;
+            margin-bottom: 10px;
+            letter-spacing: -1px;
+        }
+
+        .header p {
+            font-size: 1.2rem;
+            color: #94a3b8;
+        }
+
+        .nav-container {
+            position: sticky;
+            top: 0;
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border);
+            z-index: 100;
+            padding: 10px 0;
+        }
+
+        .nav-inner {
+            max-width: 900px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            padding: 0 20px;
+        }
+
+        .nav-link {
+            padding: 8px 16px;
+            border-radius: 99px;
+            text-decoration: none;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            font-weight: 600;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            transition: 0.2s;
+        }
+
+        .nav-link:hover {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 40px auto;
+            padding: 0 20px;
+        }
+
+        .card {
+            background: var(--card-bg);
+            padding: 60px;
+            border-radius: var(--radius);
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.05);
+            border: 1px solid var(--border);
+        }
+
+        .lang-section {
+            display: none;
+        }
+
+        .lang-section.active {
+            display: block;
+            animation: fadeIn 0.4s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .section-title {
+            font-size: 2.2rem;
+            font-weight: 800;
+            margin-bottom: 30px;
+            color: var(--text-main);
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        h2 {
+            font-size: 1.4rem;
+            margin: 40px 0 20px;
+            color: var(--primary-dark);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .rtl { dir: rtl; text-align: right; }
+        .ltr { dir: ltr; text-align: left; }
+
+        .feature-list {
+            list-style: none;
+            display: grid;
+            gap: 15px;
+        }
+
+        .feature-item {
+            background: var(--bg);
+            padding: 20px;
+            border-radius: 12px;
+            display: flex;
+            align-items: flex-start;
+            gap: 15px;
+            border: 1px solid transparent;
+        }
+
+        .feature-item:hover {
+            border-color: var(--primary);
+            background: white;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+        }
+
+        .feature-icon {
+            background: white;
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--primary);
+            font-size: 1.2rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            flex-shrink: 0;
+        }
+
+        .feature-text strong {
+            display: block;
+            margin-bottom: 4px;
+            color: var(--text-main);
+        }
+
+        .contact-box {
+            margin-top: 50px;
+            padding: 30px;
+            background: #eff6ff;
+            border-radius: 12px;
+            text-align: center;
+            border: 1px solid #dbeafe;
+        }
+
+        .contact-box a {
+            color: var(--primary);
+            font-weight: 700;
+            text-decoration: none;
+        }
+
+        footer {
+            text-align: center;
+            margin-top: 60px;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+
+        @media (max-width: 768px) {
+            .card { padding: 30px; }
+            .header h1 { font-size: 2rem; }
+            .section-title { font-size: 1.8rem; }
+        }
+    </style>
+</head>
+<body>
+
+    <header class="header">
+        <div class="header-content">
+            <h1>hiro</h1>
+            <p>Transparency, Security & Trust</p>
+        </div>
+    </header>
+
+    <div class="nav-container">
+        <div class="nav-inner">
+            <a href="javascript:void(0)" class="nav-link" onclick="setLang('he')">עברית</a>
+            <a href="javascript:void(0)" class="nav-link" onclick="setLang('en')">English</a>
+            <a href="javascript:void(0)" class="nav-link" onclick="setLang('ar')">العربية</a>
+            <a href="javascript:void(0)" class="nav-link" onclick="setLang('ru')">Русский</a>
+            <a href="javascript:void(0)" class="nav-link" onclick="setLang('am')">አማርኛ</a>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="card">
+
+            <!-- HEBREW -->
+            <div id="lang-he" class="lang-section rtl active">
+                <h1 class="section-title"><i class="fas fa-shield-halved"></i> מדיניות פרטיות</h1>
+                <p>עדכון אחרון: 3/2026</p>
+                <p style="margin-top: 15px;">הפרטיות שלך בראש סדר העדיפויות שלנו. ב-הירו אנו שומרים על המידע שלך בצורה המאובטחת ביותר.</p>
+
+                <h2><i class="fas fa-database"></i> המידע שאנו אוספים</h2>
+                <div class="feature-list">
+                    <div class="feature-item">
+                        <div class="feature-icon"><i class="fas fa-user"></i></div>
+                        <div class="feature-text">
+                            <strong>מידע אישי</strong>
+                            שם מלא, טלפון לאימות וכתובת אימייל לצורך ניהול החשבון.
+                        </div>
+                    </div>
+                    <div class="feature-item">
+                        <div class="feature-icon"><i class="fas fa-credit-card"></i></div>
+                        <div class="feature-text">
+                            <strong>מנויים ותשלומים (Google Play)</strong>
+                            אנו אוספים נתונים על מצב המנוי שלך. פרטי התשלום מעובדים בצורה מאובטחת על ידי Google Play Billing ואינם נשמרים בשרתים שלנו.
+                        </div>
+                    </div>
+                    <div class="feature-item">
+                        <div class="feature-icon"><i class="fas fa-briefcase"></i></div>
+                        <div class="feature-text">
+                            <strong>לבעלי מקצוע</strong>
+                            מסמכי זהות, אישורי עוסק ופוליסות ביטוח לצורך אימות מקצועי ובטיחות הלקוחות.
+                        </div>
+                    </div>
+                </div>
+
+                <h2><i class="fas fa-user-shield"></i> זכויות המשתמש (GDPR / CCPA)</h2>
+                <p>הנך זכאי לגשת למידע שלך, לעדכנו, או לבקש את מחיקתו לצמיתות. המערכת תומכת בזכותך לפרטיות ומאפשרת ייצוא נתונים לפי דרישה.</p>
+
+                <h2><i class="fas fa-clock-rotate-left"></i> שמירת נתונים</h2>
+                <p>אנו שומרים את המידע שלך כל עוד החשבון פעיל. במקרה של סגירת חשבון, המידע יימחק מהמערכות שלנו תוך 30 יום, למעט מידע הנדרש על פי חוק.</p>
+
+                <h2><i class="fas fa-handshake"></i> שירותי צד ג'</h2>
+                <p>אנו משתמשים ב-<strong>Google Firebase</strong> לאחסון, <strong>Google Maps</strong> למיקום, ו-<strong>Google Play Billing</strong> לתשלומים. כל הספקים עומדים בתקני אבטחה מחמירים.</p>
+
+                <h2><i class="fas fa-child"></i> מדיניות ילדים</h2>
+                <p>השירות אינו מיועד לילדים מתחת לגיל 18. איננו אוספים מידע במודע מקטינים.</p>
+
+                <h2><i class="fas fa-balance-scale"></i> בסיס משפטי</h2>
+                <p>השימוש במידע מתבסס על הסכמתך לתנאי השירות, הצורך במתן השירות המבוקש, ועמידה בחובות משפטיות של העסק.</p>
+
+                <div class="contact-box">
+                    שאלות? ניתן לפנות אלינו תמיד בכתובת: <a href="mailto:my.hire.hub@gmail.com">my.hire.hub@gmail.com</a>
+                </div>
+            </div>
+
+            <!-- ENGLISH -->
+            <div id="lang-en" class="lang-section ltr">
+                <h1 class="section-title"><i class="fas fa-shield-halved"></i> Privacy Policy</h1>
+                <p>Last Updated: 3/2026 </p>
+                <p style="margin-top: 15px;">Your privacy is our top priority. At Hiro, we handle your data with the highest security standards.</p>
+
+                <h2><i class="fas fa-database"></i> Data We Collect</h2>
+                <div class="feature-list">
+                    <div class="feature-item">
+                        <div class="feature-icon"><i class="fas fa-user"></i></div>
+                        <div class="feature-text">
+                            <strong>Personal Identity</strong>
+                            Full name, phone for verification, and email address for account management.
+                        </div>
+                    </div>
+                    <div class="feature-item">
+                        <div class="feature-icon"><i class="fas fa-credit-card"></i></div>
+                        <div class="feature-text">
+                            <strong>Subscriptions & Payments (Google Play)</strong>
+                            We collect data regarding your subscription status. Payments are processed securely by Google Play Billing and are not stored on our servers.
+                        </div>
+                    </div>
+                    <div class="feature-item">
+                        <div class="feature-icon"><i class="fas fa-briefcase"></i></div>
+                        <div class="feature-text">
+                            <strong>For Professionals</strong>
+                            Identity documents, business certificates, and insurance policies for verification.
+                        </div>
+                    </div>
+                </div>
+
+                <h2><i class="fas fa-user-shield"></i> User Rights (GDPR / CCPA)</h2>
+                <p>You have the right to access, rectify, or erase your personal data. You can exercise these rights through the app settings or by contacting us.</p>
+
+                <h2><i class="fas fa-clock-rotate-left"></i> Data Retention</h2>
+                <p>We retain your data as long as your account is active. Upon account deletion, data is removed within 30 days, except for information we are legally required to keep.</p>
+
+                <h2><i class="fas fa-handshake"></i> Third-Party Services</h2>
+                <p>We use <strong>Google Firebase</strong> for storage, <strong>Google Maps</strong> for navigation, and <strong>Google Play Billing</strong> for secure transactions.</p>
+
+                <h2><i class="fas fa-child"></i> Children's Policy</h2>
+                <p>Our services are not intended for users under 18. We do not knowingly collect data from minors.</p>
+
+                <h2><i class="fas fa-balance-scale"></i> Legal Basis</h2>
+                <p>We process data based on your consent, the fulfillment of our service agreement, and compliance with legal obligations.</p>
+
+                <div class="contact-box">
+                    Questions? Contact us anytime at: <a href="mailto:my.hire.hub@gmail.com">my.hire.hub@gmail.com</a>
+                </div>
+            </div>
+
+            <!-- ARABIC -->
+            <div id="lang-ar" class="lang-section rtl">
+                <h1 class="section-title"><i class="fas fa-shield-halved"></i> سياسة الخصوصية</h1>
+                <p>آخر تحديث:3/2026</p>
+                <p style="margin-top: 15px;">خصوصيتك هي أولويتنا القصوى. في هايرو نتعامل مع بياناتك بأعلى معايير الأمان.</p>
+
+                <h2><i class="fas fa-database"></i> البيانات التي نجمعها</h2>
+                <div class="feature-list">
+                    <div class="feature-item">
+                        <div class="feature-icon"><i class="fas fa-user"></i></div>
+                        <div class="feature-text">
+                            <strong>الهوية الشخصية</strong>
+                            الاسم الكامل، ورقم الهاتف للتحقق، ועنوان البريد الإلكتروني.
+                        </div>
+                    </div>
+                    <div class="feature-item">
+                        <div class="feature-icon"><i class="fas fa-credit-card"></i></div>
+                        <div class="feature-text">
+                            <strong>الاشتراكات والمدفوعات (Google Play)</strong>
+                            نجمع بيانات حول حالة اشتراكك. تتم معالجة المدفوعات بشكل آمن عبر Google Play Billing ولا يتم تخزين بيانات البطاقة لدينا.
+                        </div>
+                    </div>
+                </div>
+
+                <h2><i class="fas fa-user-shield"></i> حقوق المستخدم (GDPR / CCPA)</h2>
+                <p>لديك الحق في الوصول إلى بياناتك أو تصحيحها או طلب حذفها نهائياً من أنظمتنا.</p>
+
+                <h2><i class="fas fa-clock-rotate-left"></i> الاحتفاظ بالبيانات</h2>
+                <p>نحتفظ ببياناتك طالما كان حسابك نشطاً. عند الحذف، يتم إزالتها خلال 30 يوماً، باستثناء المعلومات المطلوبة قانونياً.</p>
+
+                <h2><i class="fas fa-handshake"></i> خدمات الطرف الثالث</h2>
+                <p>نستخدم <strong>Google Firebase</strong> للتخزين، و <strong>Google Maps</strong> للموقع، و <strong>Google Play Billing</strong> للمدفوعات.</p>
+
+                <h2><i class="fas fa-child"></i> سياسة الأطفال</h2>
+                <p>الخدمة مخصصة للأشخاص فوق 18 عاماً فقط. نحن لا نجمع بيانات من القاصرين بشكل متعמד.</p>
+
+                <h2><i class="fas fa-balance-scale"></i> الأساس القانوني</h2>
+                <p>نعالج البيانات بناءً على موافقتك، وضرورة تقديم الخدمة، والامتثال للالتزامات القانونية.</p>
+
+                <div class="contact-box">
+                    للاستفسارات: <a href="mailto:my.hire.hub@gmail.com">my.hire.hub@gmail.com</a>
+                </div>
+            </div>
+
+            <!-- RUSSIAN -->
+            <div id="lang-ru" class="lang-section ltr">
+                <h1 class="section-title"><i class="fas fa-shield-halved"></i> Политика конфиденциальности</h1>
+                <p>Обновлено: 3/2026 г.</p>
+                <p style="margin-top: 15px;">Ваша конфиденциальность — наш главный приоритет. В Хиро мы обрабатываем ваши данные по самым высоким стандартам безопасности.</p>
+
+                <h2><i class="fas fa-database"></i> Данные, которые мы собираем</h2>
+                <div class="feature-list">
+                    <div class="feature-item">
+                        <div class="feature-icon"><i class="fas fa-user"></i></div>
+                        <div class="feature-text">
+                            <strong>Личная информация</strong>
+                            Полное имя, номер телефона для верификации и адрес электронной почты.
+                        </div>
+                    </div>
+                    <div class="feature-item">
+                        <div class="feature-icon"><i class="fas fa-credit-card"></i></div>
+                        <div class="feature-text">
+                            <strong>Подписки и платежи (Google Play)</strong>
+                            Мы собираем данные о статусе вашей подписки. Платежи обрабатываются через Google Play Billing и не хранятся на наших серверах.
+                        </div>
+                    </div>
+                </div>
+
+                <h2><i class="fas fa-user-shield"></i> Права пользователя (GDPR / CCPA)</h2>
+                <p>Вы имеете право на доступ, исправление или удаление ваших данных. Вы можете реализовать эти права через настройки приложения.</p>
+
+                <h2><i class="fas fa-clock-rotate-left"></i> Хранение данных</h2>
+                <p>Данные хранятся, пока ваш аккаунт активен. После удаления данные стираются в течение 30 дней.</p>
+
+                <h2><i class="fas fa-handshake"></i> Сторонние сервисы</h2>
+                <p>Мы используем <strong>Google Firebase</strong>, <strong>Google Maps</strong> и <strong>Google Play Billing</strong> для обеспечения работы сервиса.</p>
+
+                <h2><i class="fas fa-child"></i> Политика в отношении детей</h2>
+                <p>Наш сервис предназначен только для лиц старше 18 лет.</p>
+
+                <h2><i class="fas fa-balance-scale"></i> Правовая основа</h2>
+                <p>Обработка данных основана на вашем согласии и необходимости выполнения договора об оказании услуг.</p>
+
+                <div class="contact-box">
+                    Вопросы? Пишите нам: <a href="mailto:my.hire.hub@gmail.com">my.hire.hub@gmail.com</a>
+                </div>
+            </div>
+
+            <!-- AMHARIC -->
+            <div id="lang-am" class="lang-section ltr">
+                <h1 class="section-title"><i class="fas fa-shield-halved"></i> የግላዊነት ፖሊሲ</h1>
+                <p>መጨረሻ የተሻሻለው፡ 3/2026</p>
+                <p style="margin-top: 15px;">የእርስዎ ግላዊነት የእኛ ተቀዳሚ ተግባር ነው። በሂሮ መረጃዎን በከፍተኛ የደህንነት ደረጃዎች እንይዛለን።</p>
+
+                <h2><i class="fas fa-database"></i> የምንሰበስበው መረጃ</h2>
+                <div class="feature-list">
+                    <div class="feature-item">
+                        <div class="feature-icon"><i class="fas fa-user"></i></div>
+                        <div class="feature-text">
+                            <strong>የግል መረጃ</strong>
+                            ሙሉ ስም፣ ለድርጅቱ ማረጋገጫ ስልክ ቁጥር እና የኢሜል አድራሻ።
+                        </div>
+                    </div>
+                    <div class="feature-item">
+                        <div class="feature-icon"><i class="fas fa-credit-card"></i></div>
+                        <div class="feature-text">
+                            <strong>የደንበኝነት ምዝገባ እና ክፍያ (Google Play)</strong>
+                            ስለ ደንበኝነት ምዝገባዎ መረጃ እንሰበስባለን:: ክፍያዎች በGoogle Play Billing በኩል በጥንቃቄ የሚከናወኑ ሲሆን በእኛ ሰርቨር ላይ አይቀመጡም::
+                        </div>
+                    </div>
+                </div>
+
+                <h2><i class="fas fa-user-shield"></i> የተጠቃሚ መብቶች (GDPR / CCPA)</h2>
+                <p>መረጃዎን የማግኘት፣ የማስተካከል ወይም እንዲሰረዝ የመጠየቅ መብት አለዎት:: እነዚህን መብቶች በመተግበሪያው ቅንብር ውስጥ መጠቀም ይችላሉ::</p>
+
+                <h2><i class="fas fa-clock-rotate-left"></i> መረጃን ማቆየት</h2>
+                <p>አካውንትዎ እስካለ ድረስ መረጃዎን እናቆያለን:: አካውንቱ ሲሰረዝ በ30 ቀናት ውስጥ መረጃው ይወገዳል::</p>
+
+                <h2><i class="fas fa-handshake"></i> የሶስተኛ ወገን አገልግሎቶች</h2>
+                <p>ለአገልግሎታችን <strong>Google Firebase</strong>፣ <strong>Google Maps</strong> እና <strong>Google Play Billing</strong> እንጠቀማለን::</p>
+
+                <h2><i class="fas fa-child"></i> የልጆች ፖሊሲ</h2>
+                <p>ይህ አገልግሎት ዕድሜያቸው ከ18 ዓመት በታች ለሆኑ ልጆች የታሰበ አይደለም::</p>
+
+                <h2><i class="fas fa-balance-scale"></i> ህጋዊ መሰረት</h2>
+                <p>መረጃን የምንጠቀመው በእርስዎ ፈቃድ እና አገልግሎቱን ለመስጠት አስፈላጊ በሆነው ሁኔታ ላይ በመመስረት ነው::</p>
+
+                <div class="contact-box">
+                    ለበለጠ መረጃ: <a href="mailto:my.hire.hub@gmail.com">my.hire.hub@gmail.com</a>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <footer>
+        <p>&copy; 2026 Hiro. Built for professionals and clients.</p>
+    </footer>
+
+    <script>
+        function setLang(lang) {
+            document.querySelectorAll('.lang-section').forEach(s => s.classList.remove('active'));
+            document.getElementById('lang-' + lang).classList.add('active');
+            if (lang === 'he' || lang === 'ar') {
+                document.documentElement.dir = 'rtl';
+            } else {
+                document.documentElement.dir = 'ltr';
+            }
+        }
+    </script>
+</body>
+</html>
