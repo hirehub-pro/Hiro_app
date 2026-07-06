@@ -969,12 +969,6 @@ class _ReportsPageState extends State<ReportsPage> {
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.titleMedium,
             ),
-            const SizedBox(height: 16),
-            FilledButton.icon(
-              onPressed: _openCreateReportDialog,
-              icon: const Icon(Icons.add),
-              label: const Text('Create Report'),
-            ),
           ],
         ),
       ),
@@ -1273,7 +1267,8 @@ class _ReportsPageState extends State<ReportsPage> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Reports')),
-      floatingActionButton: user == null || user.isAnonymous
+      floatingActionButton:
+          user == null || user.isAnonymous || _statusFilter == 'block'
           ? null
           : FloatingActionButton.extended(
               onPressed: _openCreateReportDialog,
