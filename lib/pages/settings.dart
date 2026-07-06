@@ -36,10 +36,10 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage>
     with WidgetsBindingObserver {
-  static const List<int> _displayWeekdayOrder = [7, 1, 2, 3, 4, 5, 6];
+  static const List<int> _displayWeekdayOrder = [1, 2, 3, 4, 5, 6, 7];
   bool _notificationsEnabled = true;
   bool _hideSchedule = false;
-  List<int> _disabledDays = []; // 1 = Monday, 7 = Sunday
+  List<int> _disabledDays = []; // 1 = Sunday, 7 = Saturday
   TimeOfDay _workingHoursFrom = const TimeOfDay(hour: 8, minute: 0);
   TimeOfDay _workingHoursTo = const TimeOfDay(hour: 16, minute: 0);
   bool _isLoadingSettings = true;

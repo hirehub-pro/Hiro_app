@@ -48,7 +48,7 @@ class _SchedulePageState extends State<SchedulePage> {
 
   bool _isOwnSchedule = false;
   bool _hideScheduleFromOthers = false;
-  List<int> _permanentlyDisabledDays = []; // 1=Mon, 7=Sun
+  List<int> _permanentlyDisabledDays = []; // 1=Sun, 7=Sat
 
   final TextEditingController _notesController = TextEditingController();
 
@@ -56,6 +56,12 @@ class _SchedulePageState extends State<SchedulePage> {
   bool get _customerTravels =>
       _normalizedBookingMode == bookingModeCustomerTravels;
   bool get _onlineOnly => _normalizedBookingMode == bookingModeOnline;
+
+  int _storedWeekday(DateTime date) => (date.weekday % 7) + 1;
+
+  bool _isPermanentlyDisabled(DateTime date) {
+    return _permanentlyDisabledDays.contains(_storedWeekday(date));
+  }
 
   // Updated to use 'users' collection
   DocumentReference get _scheduleDoc => _firestore
@@ -1040,7 +1046,7 @@ class _SchedulePageState extends State<SchedulePage> {
         "${_selectedDay.year}-${_selectedDay.month}-${_selectedDay.day}";
     final isWorking = _availableDates.contains(dateStr);
 
-    if (_permanentlyDisabledDays.contains(_selectedDay.weekday)) {
+    if (_isPermanentlyDisabled(_selectedDay)) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(strings['weekend_msg']!)));
@@ -1105,7 +1111,7 @@ class _SchedulePageState extends State<SchedulePage> {
     final dateStr =
         "${_selectedDay.year}-${_selectedDay.month}-${_selectedDay.day}";
 
-    if (_permanentlyDisabledDays.contains(_selectedDay.weekday)) {
+    if (_isPermanentlyDisabled(_selectedDay)) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(strings['weekend_msg']!)));
@@ -1518,9 +1524,7 @@ class _SchedulePageState extends State<SchedulePage> {
         "${_selectedDay.year}-${_selectedDay.month}-${_selectedDay.day}";
 
     final isWorkingDay = _availableDates.contains(dateStr);
-    final isPermanentOff = _permanentlyDisabledDays.contains(
-      _selectedDay.weekday,
-    );
+    final isPermanentOff = _isPermanentlyDisabled(_selectedDay);
     final onVacation = _isVacation(_selectedDay);
     final isPast = _selectedDay.isBefore(
       DateTime.now().subtract(const Duration(days: 1)),
@@ -1598,7 +1602,7 @@ class _SchedulePageState extends State<SchedulePage> {
                             return _dayCircle(day, Colors.red);
                           if (_availableDates.contains(dStr))
                             return _dayCircle(day, Colors.green);
-                          if (_permanentlyDisabledDays.contains(day.weekday)) {
+                          if (_isPermanentlyDisabled(day)) {
                             return _dayCircle(
                               day,
                               Colors.grey.shade300,
@@ -1701,9 +1705,7 @@ class _SchedulePageState extends State<SchedulePage> {
         "${_selectedDay.year}-${_selectedDay.month}-${_selectedDay.day}";
     final isWorkingDay = _availableDates.contains(dateStr);
     final onVacation = _isVacation(_selectedDay);
-    final isPermanentOff = _permanentlyDisabledDays.contains(
-      _selectedDay.weekday,
-    );
+    final isPermanentOff = _isPermanentlyDisabled(_selectedDay);
 
     return Column(
       children: [

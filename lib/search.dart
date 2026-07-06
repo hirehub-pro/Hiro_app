@@ -143,6 +143,8 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
     'am',
   ];
 
+  int _storedWeekday(DateTime date) => (date.weekday % 7) + 1;
+
   bool _isRtl(String locale) => locale == 'he' || locale == 'ar';
 
   String _t(String key, String locale) {
@@ -753,7 +755,7 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
 
   bool _isWorkerAvailable(Map<String, dynamic> w, DateTime date) {
     final disabledDays = List<int>.from(w['disabledDays'] ?? []);
-    if (disabledDays.contains(date.weekday)) return false;
+    if (disabledDays.contains(_storedWeekday(date))) return false;
 
     final vacations = List<Map<String, dynamic>>.from(w['vacations'] ?? []);
     final d = DateTime(date.year, date.month, date.day);
@@ -864,7 +866,7 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final disabledDays = List<int>.from(worker['disabledDays'] ?? const []);
-    if (disabledDays.contains(now.weekday)) {
+    if (disabledDays.contains(_storedWeekday(now))) {
       return (
         label: _t('not_available_today', locale),
         color: const Color(0xFFDC2626),
