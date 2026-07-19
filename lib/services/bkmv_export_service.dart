@@ -712,8 +712,14 @@ class BkmvExportService {
       '${exportDirectory.path}${Platform.pathSeparator}INI.txt',
     );
 
-    await bkmvFile.writeAsString('${records.join('\r\n')}\r\n');
-    await iniFile.writeAsString('${iniLines.join('\r\n')}\r\n');
+    await bkmvFile.writeAsBytes(
+      _encodeIso88598('${records.join('\r\n')}\r\n'),
+      flush: true,
+    );
+    await iniFile.writeAsBytes(
+      _encodeIso88598('${iniLines.join('\r\n')}\r\n'),
+      flush: true,
+    );
 
     final annex4Summary = _buildAnnex4Summary(
       context: context,
@@ -1519,12 +1525,14 @@ class BkmvExportService {
   }
 
   static String _fitAlpha(String value, int length) {
-    final normalized = value
-        .replaceAll('\r\n', ' ')
-        .replaceAll('\n', ' ')
-        .replaceAll('\r', ' ')
-        .replaceAll(RegExp(r'\s+'), '')
-        .trim();
+    final normalized = _sanitizeIso88598Text(
+      value
+          .replaceAll('\r\n', ' ')
+          .replaceAll('\n', ' ')
+          .replaceAll('\r', ' ')
+          .replaceAll(RegExp(r'\s+'), '')
+          .trim(),
+    );
     if (length == 0) {
       return '';
     }
@@ -1618,6 +1626,160 @@ class BkmvExportService {
 
   static String _digitsOnly(String value) {
     return value.replaceAll(RegExp(r'[^0-9]'), '');
+  }
+
+  static List<int> _encodeIso88598(String value) {
+    return value.runes.map(_iso88598Byte).toList(growable: false);
+  }
+
+  static int _iso88598Byte(int rune) {
+    if (rune <= 0x7F) {
+      return rune;
+    }
+    if (rune == 0x00A0) {
+      return 0xA0;
+    }
+    if (rune == 0x00A2) {
+      return 0xA2;
+    }
+    if (rune == 0x00A3) {
+      return 0xA3;
+    }
+    if (rune == 0x00A4 || rune == 0x20AA) {
+      return 0xA4;
+    }
+    if (rune == 0x00A5) {
+      return 0xA5;
+    }
+    if (rune == 0x00A6) {
+      return 0xA6;
+    }
+    if (rune == 0x00A7) {
+      return 0xA7;
+    }
+    if (rune == 0x00A8) {
+      return 0xA8;
+    }
+    if (rune == 0x00A9) {
+      return 0xA9;
+    }
+    if (rune == 0x00AB) {
+      return 0xAB;
+    }
+    if (rune == 0x00AC) {
+      return 0xAC;
+    }
+    if (rune == 0x00AD) {
+      return 0xAD;
+    }
+    if (rune == 0x00AE) {
+      return 0xAE;
+    }
+    if (rune == 0x00AF) {
+      return 0xAF;
+    }
+    if (rune == 0x00B0) {
+      return 0xB0;
+    }
+    if (rune == 0x00B1) {
+      return 0xB1;
+    }
+    if (rune == 0x00B2) {
+      return 0xB2;
+    }
+    if (rune == 0x00B3) {
+      return 0xB3;
+    }
+    if (rune == 0x00B4) {
+      return 0xB4;
+    }
+    if (rune == 0x00B5) {
+      return 0xB5;
+    }
+    if (rune == 0x00B6) {
+      return 0xB6;
+    }
+    if (rune == 0x00B7) {
+      return 0xB7;
+    }
+    if (rune == 0x00B8) {
+      return 0xB8;
+    }
+    if (rune == 0x00B9) {
+      return 0xB9;
+    }
+    if (rune == 0x00BB) {
+      return 0xBB;
+    }
+    if (rune == 0x00BC) {
+      return 0xBC;
+    }
+    if (rune == 0x00BD) {
+      return 0xBD;
+    }
+    if (rune == 0x00BE) {
+      return 0xBE;
+    }
+    if (rune >= 0x05D0 && rune <= 0x05EA) {
+      return 0xE0 + (rune - 0x05D0);
+    }
+    return 0x3F;
+  }
+
+  static String _sanitizeIso88598Text(String value) {
+    final buffer = StringBuffer();
+    for (final rune in value.runes) {
+      buffer.writeCharCode(_sanitizeIso88598Rune(rune));
+    }
+    return buffer.toString();
+  }
+
+  static int _sanitizeIso88598Rune(int rune) {
+    if (rune <= 0x7F ||
+        rune == 0x00A0 ||
+        rune == 0x00A2 ||
+        rune == 0x00A3 ||
+        rune == 0x00A4 ||
+        rune == 0x00A5 ||
+        rune == 0x00A6 ||
+        rune == 0x00A7 ||
+        rune == 0x00A8 ||
+        rune == 0x00A9 ||
+        rune == 0x00AB ||
+        rune == 0x00AC ||
+        rune == 0x00AD ||
+        rune == 0x00AE ||
+        rune == 0x00AF ||
+        rune == 0x00B0 ||
+        rune == 0x00B1 ||
+        rune == 0x00B2 ||
+        rune == 0x00B3 ||
+        rune == 0x00B4 ||
+        rune == 0x00B5 ||
+        rune == 0x00B6 ||
+        rune == 0x00B7 ||
+        rune == 0x00B8 ||
+        rune == 0x00B9 ||
+        rune == 0x00BB ||
+        rune == 0x00BC ||
+        rune == 0x00BD ||
+        rune == 0x00BE ||
+        (rune >= 0x05D0 && rune <= 0x05EA)) {
+      return rune;
+    }
+    if (rune == 0x20AA) {
+      return 0x00A4;
+    }
+    if (rune == 0x05BE || rune == 0x2010 || rune == 0x2013 || rune == 0x2014) {
+      return 0x2D;
+    }
+    if (rune == 0x05F3 || rune == 0x2018 || rune == 0x2019) {
+      return 0x27;
+    }
+    if (rune == 0x05F4 || rune == 0x201C || rune == 0x201D) {
+      return 0x22;
+    }
+    return 0x3F;
   }
 
   static String _normalizeIsraeliPhone(String raw) {
