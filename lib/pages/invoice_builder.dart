@@ -918,6 +918,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   bool get _requiresTaxAuthorityAllocation =>
       _isTaxInvoiceDocType &&
       _usesVat &&
+      _digitsOnly(_clientIdController.text).isNotEmpty &&
       _subtotalAmount > _allocationNumberMinAmountBeforeVat;
 
   double _unitPriceAfterTax(InvoiceItem item) {
@@ -1704,6 +1705,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'client_address': 'כתובת הלקוח',
           'client_phone': 'טלפון הלקוח',
           'client_details_required': 'יש למלא לפחות את שם הלקוח.',
+          'client_id_invalid_length': 'מספר הלקוח חייב להיות בן 9 ספרות.',
           'items': 'פירוט פריטים ושירותים',
           'desc': 'תיאור השירות/מוצר',
           'qty': 'כמות',
@@ -1816,6 +1818,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'client_address': 'عنوان العميل',
           'client_phone': 'هاتف العميل',
           'client_details_required': 'يرجى إدخال اسم العميل على الأقل.',
+          'client_id_invalid_length': 'يجب أن يتكون رقم العميل من 9 أرقام.',
           'items': 'تفاصيل الخدمات والمنتجات',
           'desc': 'الوصف',
           'qty': 'الكمية',
@@ -1916,6 +1919,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'client_phone': 'Телефон клиента',
           'client_details_required':
               'Пожалуйста, укажите как минимум имя клиента.',
+          'client_id_invalid_length': 'ID клиента должен состоять из 9 цифр.',
           'items': 'Товары и услуги',
           'desc': 'Описание',
           'qty': 'Кол-во',
@@ -2016,6 +2020,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'client_address': 'የደንበኛ አድራሻ',
           'client_phone': 'የደንበኛ ስልክ',
           'client_details_required': 'ቢያንስ የደንበኛውን ስም ያስገቡ።',
+          'client_id_invalid_length': 'የደንበኛ መታወቂያ 9 አሃዞች መሆን አለበት።',
           'items': 'የአገልግሎት እና የእቃ ዝርዝሮች',
           'desc': 'መግለጫ',
           'qty': 'ብዛት',
@@ -2114,6 +2119,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'client_address': 'Client Address',
           'client_phone': 'Client Phone',
           'client_details_required': 'Please fill at least the client name.',
+          'client_id_invalid_length': 'Client ID must be 9 digits.',
           'items': 'Service Items & Details',
           'desc': 'Description',
           'qty': 'Qty',
@@ -2240,6 +2246,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'client_phone': 'Client Phone',
       'client_address': 'Client Address',
       'client_details_required': 'Please fill at least the client name.',
+      'client_id_invalid_length': 'Client ID must be 9 digits.',
       'items': 'Service Items & Details',
       'desc': 'Description',
       'qty': 'Qty',
@@ -2719,23 +2726,35 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   }
 
   bool _validateClientDetails() {
-    final strings = _getLocalizedStrings(context, listen: false);
+    final strings = _withRequiredDefaults(
+      _getLocalizedStrings(context, listen: false),
+    );
     final missingClientDetails = _clientNameController.text.trim().isEmpty;
 
-    if (!missingClientDetails) return true;
+    if (missingClientDetails) {
+      final locale = Provider.of<LanguageProvider>(
+        context,
+        listen: false,
+      ).locale.languageCode;
+      final fallback = (locale == 'he' || locale == 'ar')
+          ? 'יש למלא לפחות את שם הלקוח.'
+          : 'Please fill at least the client name.';
 
-    final locale = Provider.of<LanguageProvider>(
-      context,
-      listen: false,
-    ).locale.languageCode;
-    final fallback = (locale == 'he' || locale == 'ar')
-        ? 'יש למלא לפחות את שם הלקוח.'
-        : 'Please fill at least the client name.';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(strings['client_details_required'] ?? fallback)),
+      );
+      return false;
+    }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(strings['client_details_required'] ?? fallback)),
-    );
-    return false;
+    final clientIdDigits = _digitsOnly(_clientIdController.text);
+    if (clientIdDigits.isNotEmpty && clientIdDigits.length != 9) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(strings['client_id_invalid_length']!)),
+      );
+      return false;
+    }
+
+    return true;
   }
 
   bool _validateDiscount() {
@@ -4823,6 +4842,11 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                               _clientIdController,
                               strings['client_id']!,
                               Icons.badge_outlined,
+                              keyboardType: TextInputType.number,
+                              inputFormatters: [
+                                FilteringTextInputFormatter.digitsOnly,
+                                LengthLimitingTextInputFormatter(9),
+                              ],
                             ),
                             const SizedBox(height: 12),
                             _buildTextField(
@@ -5559,6 +5583,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     bool required = false,
     TextInputType keyboardType = TextInputType.text,
     TextInputAction? textInputAction,
+    List<TextInputFormatter>? inputFormatters,
     ValueChanged<String>? onChanged,
     ValueChanged<String>? onSubmitted,
   }) {
@@ -5566,6 +5591,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       controller: controller,
       keyboardType: keyboardType,
       textInputAction: textInputAction,
+      inputFormatters: inputFormatters,
       onChanged: onChanged,
       onSubmitted: onSubmitted,
       decoration: _inputStyle(label, icon, required: required),
