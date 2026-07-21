@@ -9,6 +9,7 @@ import 'package:intl/intl.dart' as intl;
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:untitled1/services/language_provider.dart';
+import 'package:untitled1/utils/israeli_id_validator.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -1706,6 +1707,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'client_phone': 'טלפון הלקוח',
           'client_details_required': 'יש למלא לפחות את שם הלקוח.',
           'client_id_invalid_length': 'מספר הלקוח חייב להיות בן 9 ספרות.',
+          'client_id_invalid': 'מספר הלקוח אינו תקין.',
           'items': 'פירוט פריטים ושירותים',
           'desc': 'תיאור השירות/מוצר',
           'qty': 'כמות',
@@ -1819,6 +1821,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'client_phone': 'هاتف العميل',
           'client_details_required': 'يرجى إدخال اسم العميل على الأقل.',
           'client_id_invalid_length': 'يجب أن يتكون رقم العميل من 9 أرقام.',
+          'client_id_invalid': 'رقم العميل غير صالح.',
           'items': 'تفاصيل الخدمات والمنتجات',
           'desc': 'الوصف',
           'qty': 'الكمية',
@@ -1920,6 +1923,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'client_details_required':
               'Пожалуйста, укажите как минимум имя клиента.',
           'client_id_invalid_length': 'ID клиента должен состоять из 9 цифр.',
+          'client_id_invalid': 'ID клиента недействителен.',
           'items': 'Товары и услуги',
           'desc': 'Описание',
           'qty': 'Кол-во',
@@ -2021,6 +2025,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'client_phone': 'የደንበኛ ስልክ',
           'client_details_required': 'ቢያንስ የደንበኛውን ስም ያስገቡ።',
           'client_id_invalid_length': 'የደንበኛ መታወቂያ 9 አሃዞች መሆን አለበት።',
+          'client_id_invalid': 'የደንበኛ መታወቂያው ትክክል አይደለም።',
           'items': 'የአገልግሎት እና የእቃ ዝርዝሮች',
           'desc': 'መግለጫ',
           'qty': 'ብዛት',
@@ -2120,6 +2125,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'client_phone': 'Client Phone',
           'client_details_required': 'Please fill at least the client name.',
           'client_id_invalid_length': 'Client ID must be 9 digits.',
+          'client_id_invalid': 'Client ID is not valid.',
           'items': 'Service Items & Details',
           'desc': 'Description',
           'qty': 'Qty',
@@ -2247,6 +2253,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'client_address': 'Client Address',
       'client_details_required': 'Please fill at least the client name.',
       'client_id_invalid_length': 'Client ID must be 9 digits.',
+      'client_id_invalid': 'Client ID is not valid.',
       'items': 'Service Items & Details',
       'desc': 'Description',
       'qty': 'Qty',
@@ -2751,6 +2758,12 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(strings['client_id_invalid_length']!)),
       );
+      return false;
+    }
+    if (clientIdDigits.isNotEmpty && !isValidIsraeliId(clientIdDigits)) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(strings['client_id_invalid']!)));
       return false;
     }
 
