@@ -182,6 +182,7 @@ class InvoiceBuilderPage extends StatefulWidget {
   final String? receiverId;
   final String? receiverName;
   final String? receiverPhone;
+  final String? receiverEmail;
   final String? receiverAddress;
   final String? initialDocType;
   final List<Map<String, dynamic>>? initialItems;
@@ -208,6 +209,7 @@ class InvoiceBuilderPage extends StatefulWidget {
     this.receiverId,
     this.receiverName,
     this.receiverPhone,
+    this.receiverEmail,
     this.receiverAddress,
     this.initialDocType,
     this.initialItems,
@@ -430,6 +432,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'name': _clientNameController.text,
       'address': _clientAddressController.text,
       'phone': _clientPhoneController.text,
+      'email': _clientEmailController.text.trim(),
       'taxId': _clientIdController.text.trim(),
     };
     final businessDetails = {
@@ -468,6 +471,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         'clientName': _clientNameController.text,
         'clientAddress': _clientAddressController.text,
         'clientPhone': _clientPhoneController.text,
+        'clientEmail': _clientEmailController.text.trim(),
         'clientTaxId': _clientIdController.text.trim(),
         'items': _items
             .map(
@@ -580,6 +584,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         'clientName': _clientNameController.text,
         'clientAddress': _clientAddressController.text,
         'clientPhone': _clientPhoneController.text,
+        'clientEmail': _clientEmailController.text.trim(),
         'clientTaxId': _clientIdController.text.trim(),
         'items': _items
             .map(
@@ -681,6 +686,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'clientName': _clientNameController.text,
           'clientAddress': _clientAddressController.text,
           'clientPhone': _clientPhoneController.text,
+          'clientEmail': _clientEmailController.text.trim(),
           'clientTaxId': _clientIdController.text.trim(),
           'paymentMethod': _paymentMethods.isNotEmpty
               ? _paymentMethods.first.method
@@ -873,6 +879,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   final _clientNameController = TextEditingController();
   final _clientAddressController = TextEditingController();
   final _clientPhoneController = TextEditingController();
+  final _clientEmailController = TextEditingController();
   final _clientIdController = TextEditingController();
   final _invoiceDateController = TextEditingController();
   final _paymentDueDateController = TextEditingController();
@@ -1130,6 +1137,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     }
     if (widget.receiverPhone != null) {
       _clientPhoneController.text = widget.receiverPhone!;
+    }
+    if (widget.receiverEmail != null) {
+      _clientEmailController.text = widget.receiverEmail!;
     }
     if (widget.receiverAddress != null) {
       _clientAddressController.text = widget.receiverAddress!;
@@ -1430,6 +1440,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     _clientNameController.dispose();
     _clientAddressController.dispose();
     _clientPhoneController.dispose();
+    _clientEmailController.dispose();
     _clientIdController.dispose();
     _invoiceDateController.dispose();
     _paymentDueDateController.dispose();
@@ -1705,6 +1716,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'client_id': 'מס\' עוסק / ת.ז. / ח.פ.',
           'client_address': 'כתובת הלקוח',
           'client_phone': 'טלפון הלקוח',
+          'client_email': 'דוא״ל הלקוח',
           'client_details_required': 'יש למלא לפחות את שם הלקוח.',
           'client_id_invalid_length': 'מספר הלקוח חייב להיות בן 9 ספרות.',
           'client_id_invalid': 'מספר הלקוח אינו תקין.',
@@ -1819,6 +1831,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'client_id': 'رقم النشاط / الهوية / الرقم الضريبي',
           'client_address': 'عنوان العميل',
           'client_phone': 'هاتف العميل',
+          'client_email': 'البريد الإلكتروني للعميل',
           'client_details_required': 'يرجى إدخال اسم العميل على الأقل.',
           'client_id_invalid_length': 'يجب أن يتكون رقم العميل من 9 أرقام.',
           'client_id_invalid': 'رقم العميل غير صالح.',
@@ -1920,6 +1933,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'client_id': 'Номер бизнеса / ID / налоговый номер',
           'client_address': 'Адрес клиента',
           'client_phone': 'Телефон клиента',
+          'client_email': 'Электронная почта клиента',
           'client_details_required':
               'Пожалуйста, укажите как минимум имя клиента.',
           'client_id_invalid_length': 'ID клиента должен состоять из 9 цифр.',
@@ -2023,6 +2037,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'client_id': 'የንግድ ቁጥር / መታወቂያ / የግብር ቁጥር',
           'client_address': 'የደንበኛ አድራሻ',
           'client_phone': 'የደንበኛ ስልክ',
+          'client_email': 'የደንበኛ ኢሜይል',
           'client_details_required': 'ቢያንስ የደንበኛውን ስም ያስገቡ።',
           'client_id_invalid_length': 'የደንበኛ መታወቂያ 9 አሃዞች መሆን አለበት።',
           'client_id_invalid': 'የደንበኛ መታወቂያው ትክክል አይደለም።',
@@ -2123,6 +2138,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'client_id': 'Business No. / ID / Tax ID',
           'client_address': 'Client Address',
           'client_phone': 'Client Phone',
+          'client_email': 'Client Email',
           'client_details_required': 'Please fill at least the client name.',
           'client_id_invalid_length': 'Client ID must be 9 digits.',
           'client_id_invalid': 'Client ID is not valid.',
@@ -2250,6 +2266,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'client_name': 'Client Name',
       'client_id': 'Business No. / ID / Tax ID',
       'client_phone': 'Client Phone',
+      'client_email': 'Client Email',
       'client_address': 'Client Address',
       'client_details_required': 'Please fill at least the client name.',
       'client_id_invalid_length': 'Client ID must be 9 digits.',
@@ -3261,6 +3278,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         'clientName': _clientNameController.text,
         'clientAddress': _clientAddressController.text,
         'clientPhone': _clientPhoneController.text,
+        'clientEmail': _clientEmailController.text.trim(),
         'clientTaxId': _clientIdController.text.trim(),
         'paymentMethod': _paymentMethods.isNotEmpty
             ? _paymentMethods.first.method
@@ -4035,6 +4053,15 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                           crossAxisAlignment: pw.CrossAxisAlignment.start,
                           children: [
                             pw.Text(
+                              'פרטי העסק',
+                              style: pw.TextStyle(
+                                fontSize: 16,
+                                fontWeight: pw.FontWeight.bold,
+                                color: pdf.PdfColors.blue900,
+                              ),
+                            ),
+                            pw.SizedBox(height: 6),
+                            pw.Text(
                               widget.workerName,
                               style: pw.TextStyle(
                                 fontSize: 15,
@@ -4079,6 +4106,15 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                           crossAxisAlignment: pw.CrossAxisAlignment.start,
                           children: [
                             pw.Text(
+                              'פרטי לקוח',
+                              style: pw.TextStyle(
+                                fontSize: 16,
+                                fontWeight: pw.FontWeight.bold,
+                                color: pdf.PdfColors.blue900,
+                              ),
+                            ),
+                            pw.SizedBox(height: 6),
+                            pw.Text(
                               'לכבוד: ${_clientNameController.text}',
                               style: pw.TextStyle(
                                 fontSize: 15,
@@ -4093,6 +4129,11 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                             if (_clientPhoneController.text.isNotEmpty)
                               pw.Text(
                                 'טלפון: ${_clientPhoneController.text}',
+                                style: pw.TextStyle(fontSize: 11),
+                              ),
+                            if (_clientEmailController.text.trim().isNotEmpty)
+                              pw.Text(
+                                'דוא״ל: ${_clientEmailController.text.trim()}',
                                 style: pw.TextStyle(fontSize: 11),
                               ),
                             if (_clientAddressController.text.isNotEmpty)
@@ -4829,6 +4870,13 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                               strings['client_phone']!,
                               Icons.phone_outlined,
                               keyboardType: TextInputType.phone,
+                            ),
+                            const SizedBox(height: 12),
+                            _buildTextField(
+                              _clientEmailController,
+                              strings['client_email']!,
+                              Icons.email_outlined,
+                              keyboardType: TextInputType.emailAddress,
                             ),
                             const SizedBox(height: 12),
                             _buildTextField(

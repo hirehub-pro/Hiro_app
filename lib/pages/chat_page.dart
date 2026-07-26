@@ -579,10 +579,12 @@ class _ChatPageState extends State<ChatPage> {
                 onTap: () async {
                   final receiverDoc = await _getUserDoc(widget.receiverId);
                   String? phone;
+                  String? email;
                   String? address;
                   if (receiverDoc != null && receiverDoc.exists) {
                     final data = receiverDoc.data() as Map<String, dynamic>;
                     phone = data['phone'];
+                    email = data['email'];
                     address = data['address'] ?? data['town'];
                   }
 
@@ -599,6 +601,7 @@ class _ChatPageState extends State<ChatPage> {
                         receiverId: widget.receiverId,
                         receiverName: widget.receiverName,
                         receiverPhone: phone,
+                        receiverEmail: email,
                         receiverAddress: address,
                       ),
                     ),
@@ -1970,8 +1973,9 @@ class _ChatPageState extends State<ChatPage> {
                         thumbColor: isMe
                             ? Colors.white
                             : const Color(0xFF1976D2),
-                        overlayColor: (isMe ? Colors.white : const Color(0xFF1976D2))
-                            .withValues(alpha: 0.18),
+                        overlayColor:
+                            (isMe ? Colors.white : const Color(0xFF1976D2))
+                                .withValues(alpha: 0.18),
                       ),
                       child: Slider(
                         value: isDownloading ? 0 : progress,
@@ -1986,8 +1990,7 @@ class _ChatPageState extends State<ChatPage> {
                                 });
                               }
                             : null,
-                        onChanged:
-                            !isDownloading && duration.inMilliseconds > 0
+                        onChanged: !isDownloading && duration.inMilliseconds > 0
                             ? (value) {
                                 final target = Duration(
                                   milliseconds:
