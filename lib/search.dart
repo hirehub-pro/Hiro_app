@@ -544,11 +544,10 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
         );
       }
 
-      if (_sortBy == 'rating') {
-        query = query.orderBy('avgRating', descending: true);
-      } else {
-        query = query.orderBy('name');
-      }
+      // Firestore excludes documents that do not have the ordered field.
+      // Ordering by avgRating therefore hid new workers with no ratings yet.
+      // Fetch by a field every worker has, then apply the rating order locally.
+      query = query.orderBy('name');
 
       query = query.limit(5);
       if (_lastDocument != null) {
@@ -1092,7 +1091,13 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
               matchesSelectedProf;
         }).toList();
 
-        if (_sortBy == 'distance' && _currentPosition != null) {
+        if (_sortBy == 'rating') {
+          _filteredWorkers.sort((a, b) {
+            final aRating = (a['avgRating'] as num?)?.toDouble() ?? 0.0;
+            final bRating = (b['avgRating'] as num?)?.toDouble() ?? 0.0;
+            return bRating.compareTo(aRating);
+          });
+        } else if (_sortBy == 'distance' && _currentPosition != null) {
           _filteredWorkers.sort((a, b) {
             final aDistance = _distanceValueForWorker(a);
             final bDistance = _distanceValueForWorker(b);
