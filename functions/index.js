@@ -63,6 +63,90 @@ const SIGNING_FONT_PATH = path.join(
     "Rubik-VariableFont_wght.ttf",
 );
 
+const REQUEST_EXPIRY_TIME_ZONE = "Asia/Jerusalem";
+
+function isPendingRequestExpired(request, now = new Date()) {
+  const status = normalizeString(request.status).trim().toLowerCase();
+  if (status !== "pending" && status !== "waiting_for_approval") return false;
+
+  const date = normalizeString(request.date).trim();
+  const time = normalizeString(
+      request.requestedTo || request.requestedFrom,
+  ).trim();
+  if (!/^\d{4}-\d{1,2}-\d{1,2}$/.test(date) ||
+      !/^\d{1,2}:\d{2}$/.test(time)) {
+    return false;
+  }
+
+  const [year, month, day] = date.split("-").map(Number);
+  const [hour, minute] = time.split(":").map(Number);
+  if (month < 1 || month > 12 || day < 1 || day > 31 ||
+      hour > 23 || minute > 59) {
+    return false;
+  }
+
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: REQUEST_EXPIRY_TIME_ZONE,
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    minute: "numeric",
+    hourCycle: "h23",
+  }).formatToParts(now).reduce((values, part) => {
+    if (part.type !== "literal") values[part.type] = Number(part.value);
+    return values;
+  }, {});
+  const deadline = [year, month, day, hour, minute];
+  const current = [
+    parts.year,
+    parts.month,
+    parts.day,
+    parts.hour,
+    parts.minute,
+  ];
+  for (let index = 0; index < deadline.length; index += 1) {
+    if (deadline[index] !== current[index]) {
+      return deadline[index] < current[index];
+    }
+  }
+  return false;
+}
+
+exports.expireUnansweredRequests = onSchedule(
+    {schedule: "every 15 minutes", timeZone: REQUEST_EXPIRY_TIME_ZONE},
+    async () => {
+      const db = admin.firestore();
+      const now = new Date();
+      let expiredCount = 0;
+
+      for (const collectionId of [
+        "requests",
+        "notifications",
+        "RequestToMe",
+      ]) {
+        const snapshot = await db.collectionGroup(collectionId)
+            .where("status", "in", ["pending", "waiting_for_approval"])
+            .get();
+        const expiredDocs = snapshot.docs.filter(
+            (doc) => isPendingRequestExpired(doc.data(), now),
+        );
+        for (let index = 0; index < expiredDocs.length; index += 450) {
+          const batch = db.batch();
+          for (const doc of expiredDocs.slice(index, index + 450)) {
+            batch.update(doc.ref, {
+              status: "expired",
+              expiredAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+          }
+          await batch.commit();
+          expiredCount += Math.min(450, expiredDocs.length - index);
+        }
+      }
+      logger.info("Expired unanswered requests", {expiredCount});
+    },
+);
+
 exports.createDocumentSigningRequest = onCall(
     {region: "us-central1"},
     async (request) => {

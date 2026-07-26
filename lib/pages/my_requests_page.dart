@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:untitled1/pages/my_request_details_page.dart';
 import 'package:untitled1/pages/request_details.dart';
 import 'package:untitled1/services/language_provider.dart';
+import 'package:untitled1/utils/request_expiration.dart';
 
 class MyRequestsPage extends StatefulWidget {
   const MyRequestsPage({super.key});
@@ -42,6 +43,7 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
           'accepted': 'התקבל',
           'rejected': 'נדחה',
           'cancelled': 'בוטל',
+          'expired': 'פג תוקף — ללא מענה',
           'all': 'הכל',
           'details': 'פרטי בקשה',
           'no_items_for_filter': 'לא נמצאו בקשות בסטטוס זה',
@@ -81,6 +83,7 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
           'accepted': 'تم القبول',
           'rejected': 'تم الرفض',
           'cancelled': 'تم الإلغاء',
+          'expired': 'منتهي الصلاحية — دون رد',
           'all': 'الكل',
           'details': 'تفاصيل الطلب',
           'no_items_for_filter': 'لا توجد طلبات بهذه الحالة',
@@ -120,6 +123,7 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
           'accepted': 'ተቀባ',
           'rejected': 'ተቀባይነት አላገኘም',
           'cancelled': 'ተሰርዟል',
+          'expired': 'ጊዜው አልፏል — ምላሽ የለም',
           'all': 'ሁሉም',
           'details': 'የጥያቄ ዝርዝሮች',
           'no_items_for_filter': 'በዚህ ሁኔታ ምንም ጥያቄዎች የሉም',
@@ -159,6 +163,7 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
           'accepted': 'Принято',
           'rejected': 'Отклонено',
           'cancelled': 'Отменено',
+          'expired': 'Срок истёк — нет ответа',
           'all': 'Все',
           'details': 'Детали запроса',
           'no_items_for_filter': 'Нет запросов с таким статусом',
@@ -198,6 +203,7 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
           'accepted': 'Accepted',
           'rejected': 'Rejected',
           'cancelled': 'Cancelled',
+          'expired': 'Expired — no response',
           'all': 'All',
           'details': 'Request Details',
           'no_items_for_filter': 'No requests with this status',
@@ -225,6 +231,8 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
         return Icons.block_rounded;
       case 'cancelled':
         return Icons.cancel_rounded;
+      case 'expired':
+        return Icons.timer_off_rounded;
       default:
         return Icons.hourglass_top_rounded;
     }
@@ -235,9 +243,7 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
   ) {
     if (_activeFilter == 'all') return docs;
     return docs.where((doc) {
-      final status = _normalizeStatus(
-        (doc.data()['status'] ?? 'pending').toString(),
-      );
+      final status = _displayStatus(doc.data());
       return status == _activeFilter;
     }).toList();
   }
@@ -261,12 +267,19 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
         return 'rejected';
       case 'cancelled':
         return 'cancelled';
+      case 'expired':
+        return 'expired';
       case 'waiting_for_approval':
       case 'pending':
       default:
         return 'waiting_for_approval';
     }
   }
+
+  String _displayStatus(Map<String, dynamic> data) =>
+      isPendingRequestExpired(data)
+      ? 'expired'
+      : _normalizeStatus((data['status'] ?? 'pending').toString());
 
   String _statusLabel(String status, Map<String, String> strings) {
     switch (status) {
@@ -276,6 +289,8 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
         return strings['rejected']!;
       case 'cancelled':
         return strings['cancelled']!;
+      case 'expired':
+        return strings['expired']!;
       default:
         return strings['waiting_for_approval']!;
     }
@@ -289,6 +304,8 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
         return const Color(0xFFC0392B);
       case 'cancelled':
         return const Color(0xFF6B7280);
+      case 'expired':
+        return const Color(0xFFDC2626);
       default:
         return const Color(0xFFB7791F);
     }
@@ -299,15 +316,7 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
     String status,
   ) {
     if (status == 'all') return docs.length;
-    return docs
-        .where(
-          (doc) =>
-              _normalizeStatus(
-                (doc.data()['status'] ?? 'pending').toString(),
-              ) ==
-              status,
-        )
-        .length;
+    return docs.where((doc) => _displayStatus(doc.data()) == status).length;
   }
 
   List<QueryDocumentSnapshot<Map<String, dynamic>>> _sortDocs(
@@ -405,7 +414,9 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
         }
 
         final docs = _sortDocs(snapshot.data);
-        final emptyLabel = isIncoming ? strings['empty_to_me']! : strings['empty']!;
+        final emptyLabel = isIncoming
+            ? strings['empty_to_me']!
+            : strings['empty']!;
 
         if (docs.isEmpty) {
           return Center(child: Text(emptyLabel));
@@ -518,15 +529,14 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
                         itemBuilder: (context, index) {
                           final doc = filteredDocs[index];
                           final data = doc.data();
-                          final status = _normalizeStatus(
-                            (data['status'] ?? 'pending').toString(),
-                          );
+                          final status = _displayStatus(data);
                           final type = (data['type'] ?? 'work_request')
                               .toString();
                           final date = (data['date'] ?? '-').toString();
                           final from = data['requestedFrom']?.toString();
                           final to = data['requestedTo']?.toString();
-                          final body = (data['jobDescription'] ?? '').toString();
+                          final body = (data['jobDescription'] ?? '')
+                              .toString();
                           final statusColor = _statusColor(status);
                           final otherPartyName = isIncoming
                               ? (data['fromName'] ?? '').toString()
@@ -570,7 +580,9 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
                                   ),
                                   boxShadow: [
                                     BoxShadow(
-                                      color: Colors.black.withValues(alpha: 0.02),
+                                      color: Colors.black.withValues(
+                                        alpha: 0.02,
+                                      ),
                                       blurRadius: 8,
                                       offset: const Offset(0, 4),
                                     ),

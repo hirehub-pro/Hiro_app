@@ -22,6 +22,7 @@ import 'package:untitled1/pages/location_manager_page.dart';
 import 'package:untitled1/pages/subscription.dart';
 import 'package:untitled1/pages/verify_business.dart';
 import 'package:untitled1/utils/profession_icons.dart';
+import 'package:untitled1/utils/request_expiration.dart';
 import 'package:untitled1/widgets/skeleton.dart';
 import 'package:untitled1/widgets/zoomable_image_viewer.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -1175,6 +1176,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           'request_scheduled': 'נקבע',
           'request_declined': 'נדחה',
           'request_cancelled': 'בוטל',
+          'request_expired': 'פג תוקף — ללא מענה',
           'request_swipe_hint': 'החלק ימינה/שמאלה כדי לעבור בין בקשות',
           'requests_to_me': 'בקשות אליי',
           'latest_request_to_me': 'הבקשות שנשלחו אליי',
@@ -1445,6 +1447,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           'request_scheduled': 'تمت الجدولة',
           'request_declined': 'تم الرفض',
           'request_cancelled': 'تم الإلغاء',
+          'request_expired': 'منتهي الصلاحية — دون رد',
           'request_swipe_hint': 'اسحب يمينًا/يسارًا للتنقل بين الطلبات',
           'requests_to_me': 'الطلبات المرسلة إليّ',
           'latest_request_to_me': 'الطلبات المرسلة إليّ',
@@ -1730,6 +1733,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           'request_scheduled': 'Scheduled',
           'request_declined': 'Declined',
           'request_cancelled': 'Cancelled',
+          'request_expired': 'Expired — no response',
           'request_swipe_hint': 'Swipe left/right to browse requests',
           'requests_to_me': 'Requests sent to me',
           'latest_request_to_me': 'Requests sent to me',
@@ -3692,9 +3696,11 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         final currentIndex = _requestSwipeIndex.clamp(0, docs.length - 1);
         final doc = docs[currentIndex];
         final data = doc.data();
-        final status = _normalizeHomeRequestStatus(
-          (data['status'] ?? 'pending').toString(),
-        );
+        final status = isPendingRequestExpired(data)
+            ? 'expired'
+            : _normalizeHomeRequestStatus(
+                (data['status'] ?? 'pending').toString(),
+              );
         final reviewedAt = data['reviewedAt'] as Timestamp?;
         final hasSchedule = data['acceptedWindow'] != null;
         final isReviewed =
@@ -3703,6 +3709,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             status == 'rejected' ||
             status == 'cancelled';
         final statusLabel = switch (status) {
+          'expired' => strings['request_expired'] ?? 'Expired — no response',
           'rejected' => strings['request_declined'] ?? 'Declined',
           'cancelled' => strings['request_cancelled'] ?? 'Cancelled',
           'accepted' when hasSchedule =>
@@ -3712,6 +3719,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           _ => strings['request_pending'] ?? 'Waiting for review',
         };
         final statusColor = switch (status) {
+          'expired' => const Color(0xFFDC2626),
           'rejected' => const Color(0xFFDC2626),
           'cancelled' => const Color(0xFF64748B),
           'accepted' => const Color(0xFF059669),
@@ -3721,7 +3729,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         final currentStep = switch (status) {
           'accepted' when hasSchedule => 3,
           'accepted' => 2,
-          'rejected' || 'cancelled' => 2,
+          'rejected' || 'cancelled' || 'expired' => 2,
           _ when isReviewed => 1,
           _ => 0,
         };
@@ -3732,6 +3740,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               ? (strings['request_declined'] ?? 'Declined')
               : status == 'cancelled'
               ? (strings['request_cancelled'] ?? 'Cancelled')
+              : status == 'expired'
+              ? (strings['request_expired'] ?? 'Expired — no response')
               : (strings['request_accepted'] ?? 'Accepted'),
           strings['request_scheduled'] ?? 'Scheduled',
         ];
@@ -5706,6 +5716,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         return 'rejected';
       case 'cancelled':
         return 'cancelled';
+      case 'expired':
+        return 'expired';
       case 'accepted':
         return 'accepted';
       default:

@@ -6,6 +6,7 @@ import 'package:untitled1/services/language_provider.dart';
 import 'package:untitled1/services/map_app_launcher.dart';
 import 'package:untitled1/services/notification_service.dart';
 import 'package:untitled1/pages/chat_page.dart';
+import 'package:untitled1/utils/request_expiration.dart';
 
 class RequestDetailsPage extends StatefulWidget {
   final String notificationId;
@@ -343,6 +344,15 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
 
   Future<void> _confirmAndProcess(bool accept) async {
     final strings = _getLocalizedStrings(context);
+
+    if (isPendingRequestExpired(widget.data)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('This request has expired — no response was sent.'),
+        ),
+      );
+      return;
+    }
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -894,7 +904,9 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
     final locale = Provider.of<LanguageProvider>(context).locale.languageCode;
     final isRtl = locale == 'he' || locale == 'ar';
     final isQuoteRequest = data['type'] == 'quote_request';
-    final isPending = _normalizeRequestStatus(data['status']) == 'pending';
+    final isPending =
+        _normalizeRequestStatus(data['status']) == 'pending' &&
+        !isPendingRequestExpired(data);
 
     return Directionality(
       textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,

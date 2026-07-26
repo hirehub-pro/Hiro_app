@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:untitled1/pages/chat_page.dart';
 import 'package:untitled1/services/language_provider.dart';
 import 'package:untitled1/services/map_app_launcher.dart';
+import 'package:untitled1/utils/request_expiration.dart';
 
 class MyRequestDetailsPage extends StatefulWidget {
   final DocumentReference<Map<String, dynamic>> requestRef;
@@ -48,6 +49,7 @@ class _MyRequestDetailsPageState extends State<MyRequestDetailsPage> {
           'accepted': 'התקבל',
           'rejected': 'נדחה',
           'cancelled': 'בוטל',
+          'expired': 'פג תוקף — ללא מענה',
           'cancel': 'בטל בקשה',
           'cancel_success': 'הבקשה בוטלה',
           'cancel_error': 'נכשל בביטול הבקשה',
@@ -85,6 +87,7 @@ class _MyRequestDetailsPageState extends State<MyRequestDetailsPage> {
           'accepted': 'تم القبول',
           'rejected': 'تم الرفض',
           'cancelled': 'تم الإلغاء',
+          'expired': 'منتهي الصلاحية — دون رد',
           'cancel': 'إلغاء الطلب',
           'cancel_success': 'تم إلغاء الطلب',
           'cancel_error': 'فشل إلغاء الطلب',
@@ -122,6 +125,7 @@ class _MyRequestDetailsPageState extends State<MyRequestDetailsPage> {
           'accepted': 'ተቀባ',
           'rejected': 'ተቀባይነት አላገኘም',
           'cancelled': 'ተሰርዟል',
+          'expired': 'ጊዜው አልፏል — ምላሽ የለም',
           'cancel': 'ጥያቄ ሰርዝ',
           'cancel_success': 'ጥያቄው ተሰርዟል',
           'cancel_error': 'ጥያቄውን ማሰረዝ አልተሳካም',
@@ -159,6 +163,7 @@ class _MyRequestDetailsPageState extends State<MyRequestDetailsPage> {
           'accepted': 'Принято',
           'rejected': 'Отклонено',
           'cancelled': 'Отменено',
+          'expired': 'Срок истёк — нет ответа',
           'cancel': 'Отменить запрос',
           'cancel_success': 'Запрос отменен',
           'cancel_error': 'Не удалось отменить запрос',
@@ -196,6 +201,7 @@ class _MyRequestDetailsPageState extends State<MyRequestDetailsPage> {
           'accepted': 'Accepted',
           'rejected': 'Rejected',
           'cancelled': 'Cancelled',
+          'expired': 'Expired — no response',
           'cancel': 'Cancel Request',
           'cancel_success': 'Request cancelled',
           'cancel_error': 'Failed to cancel request',
@@ -222,6 +228,8 @@ class _MyRequestDetailsPageState extends State<MyRequestDetailsPage> {
         return 'rejected';
       case 'cancelled':
         return 'cancelled';
+      case 'expired':
+        return 'expired';
       default:
         return 'waiting_for_approval';
     }
@@ -235,6 +243,8 @@ class _MyRequestDetailsPageState extends State<MyRequestDetailsPage> {
         return strings['rejected']!;
       case 'cancelled':
         return strings['cancelled']!;
+      case 'expired':
+        return strings['expired']!;
       default:
         return strings['waiting_for_approval']!;
     }
@@ -248,6 +258,8 @@ class _MyRequestDetailsPageState extends State<MyRequestDetailsPage> {
         return Icons.block_rounded;
       case 'cancelled':
         return Icons.cancel_rounded;
+      case 'expired':
+        return Icons.timer_off_rounded;
       default:
         return Icons.hourglass_top_rounded;
     }
@@ -452,9 +464,9 @@ class _MyRequestDetailsPageState extends State<MyRequestDetailsPage> {
             }
 
             final data = snapshot.data?.data() ?? widget.initialData;
-            final normalizedStatus = _normalizeStatus(
-              (data['status'] ?? 'pending').toString(),
-            );
+            final normalizedStatus = isPendingRequestExpired(data)
+                ? 'expired'
+                : _normalizeStatus((data['status'] ?? 'pending').toString());
             final requestType = _requestTypeLabel(
               (data['type'] ?? 'work_request').toString(),
               strings,
