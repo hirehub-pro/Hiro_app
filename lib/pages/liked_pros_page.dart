@@ -5,15 +5,15 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:untitled1/ptofile.dart';
+import 'package:untitled1/search.dart';
 import 'package:untitled1/services/language_provider.dart';
 
-const _pageBackground = Color(0xFFF6F8FC);
+const _pageBackground = Color(0xFFF6F8FB);
 const _surfaceColor = Color(0xFFFFFFFF);
-const _primaryColor = Color(0xFF1259A7);
-const _deepColor = Color(0xFF0A2A52);
-const _softBlue = Color(0xFFE9F2FF);
-const _textPrimary = Color(0xFF10243E);
-const _textMuted = Color(0xFF6B7A90);
+const _primaryColor = Color(0xFF1976D2);
+const _softBlue = Color(0xFFEFF4FA);
+const _textPrimary = Color(0xFF0F172A);
+const _textMuted = Color(0xFF64748B);
 
 class LikedProsPage extends StatefulWidget {
   const LikedProsPage({super.key});
@@ -159,19 +159,19 @@ class _LikedProsPageState extends State<LikedProsPage>
         };
       default:
         return {
-          'title': 'Liked Pros',
+          'title': 'Liked Users',
           'subtitle':
-              'Keep track of the pros you saved and the ones who liked you back.',
-          'tab_favorites': 'Pros I Like',
-          'tab_liked_me': 'Pros Who Like Me',
-          'empty_favorites': 'You have not added any pros to favorites yet.',
-          'empty_liked_me': 'No pros have favorited you yet.',
+              'Keep track of the users you saved and the ones who liked you back.',
+          'tab_favorites': 'Users I Like',
+          'tab_liked_me': 'Users Liked Me',
+          'empty_favorites': 'You have not added any users to favorites yet.',
+          'empty_liked_me': 'No users have favorited you yet.',
           'open_profile': 'Open Profile',
           'no_name': 'Pro',
           'saved_count': 'Saved',
           'incoming_count': 'Liked You',
           'member_since': 'Saved on',
-          'guest': 'Please sign in to view your liked pros.',
+          'guest': 'Please sign in to view your liked users.',
           'retry_error': 'Something went wrong while loading this page.',
           'search_hint': 'Search by name or profession',
           'no_results': 'No matches found for your search.',
@@ -180,7 +180,7 @@ class _LikedProsPageState extends State<LikedProsPage>
           'like_back': 'Like Back',
           'liked': 'Saved',
           'saved_now': 'Added to favorites',
-          'browse': 'Browse Pros',
+          'browse': 'Browse Users',
           'empty_title_favorites': 'No favorites yet',
           'empty_title_liked': 'No likes yet',
           'guest_title': 'Sign in to see this list',
@@ -416,128 +416,108 @@ class _LikedProsPageState extends State<LikedProsPage>
   }
 
   Widget _buildHeader(Map<String, String> strings) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF154C8D), Color(0xFF091D39)],
-        ),
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x29091D39),
-            blurRadius: 14,
-            offset: Offset(0, 7),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              _HeaderIconButton(
-                icon: Icons.arrow_back_ios_new_rounded,
-                onTap: () => Navigator.pop(context),
+    return Column(
+      children: [
+        Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: Material(
+            color: _surfaceColor,
+            borderRadius: BorderRadius.circular(14),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(14),
+              onTap: () => Navigator.pop(context),
+              child: Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: const Color(0xFFDDE6F0)),
+                ),
+                child: const Icon(
+                  Icons.arrow_back_rounded,
+                  color: _textPrimary,
+                  size: 20,
+                ),
               ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      strings['title']!,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 22,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 14),
+        Container(
+          height: 56,
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            color: const Color(0xFFEAF0F7),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFDCE6F1)),
+          ),
+          child: TabBar(
+            controller: _tabController,
+            dividerColor: Colors.transparent,
+            splashBorderRadius: BorderRadius.circular(12),
+            indicator: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x120F172A),
+                  blurRadius: 6,
+                  offset: Offset(0, 2),
+                ),
+              ],
+            ),
+            labelColor: _primaryColor,
+            unselectedLabelColor: _textMuted,
+            labelStyle: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+            ),
+            unselectedLabelStyle: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
+            tabs: [
+              Tab(
+                child: _LikedProsTabLabel(
+                  icon: Icons.favorite_rounded,
+                  label: strings['tab_favorites']!,
+                ),
+              ),
+              Tab(
+                child: _LikedProsTabLabel(
+                  icon: Icons.favorite_border_rounded,
+                  label: strings['tab_liked_me']!,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 14),
-          Container(
-            padding: const EdgeInsets.all(4),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.10),
-              borderRadius: BorderRadius.circular(18),
-            ),
-            child: TabBar(
-              controller: _tabController,
-              dividerColor: Colors.transparent,
-              indicator: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              labelColor: _deepColor,
-              unselectedLabelColor: Colors.white,
-              labelStyle: const TextStyle(fontWeight: FontWeight.w700),
-              tabs: [
-                Tab(text: strings['tab_favorites']),
-                Tab(text: strings['tab_liked_me']),
-              ],
-            ),
+        ),
+        const SizedBox(height: 14),
+        TextField(
+          controller: _searchController,
+          onChanged: (value) => setState(() => _searchQuery = value),
+          style: const TextStyle(
+            color: _textPrimary,
+            fontSize: 14.5,
+            fontWeight: FontWeight.w600,
           ),
-          const SizedBox(height: 12),
-          Container(
-            height: 52,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: TextField(
-              controller: _searchController,
-              onChanged: (value) {
-                setState(() {
-                  _searchQuery = value;
-                });
-              },
-              style: const TextStyle(
-                color: _textPrimary,
-                fontSize: 14.5,
-                fontWeight: FontWeight.w600,
-              ),
-              cursorColor: _primaryColor,
-              decoration: InputDecoration(
-                border: InputBorder.none,
-                prefixIcon: const Icon(
-                  CupertinoIcons.search,
-                  color: _primaryColor,
-                  size: 20,
-                ),
-                suffixIcon: _searchQuery.isEmpty
-                    ? null
-                    : IconButton(
-                        onPressed: () {
-                          _searchController.clear();
-                          setState(() {
-                            _searchQuery = '';
-                          });
-                        },
-                        icon: const Icon(
-                          Icons.close_rounded,
-                          color: _textMuted,
-                        ),
-                      ),
-                hintText: strings['search_hint']!,
-                hintStyle: const TextStyle(
-                  color: _textMuted,
-                  fontWeight: FontWeight.w500,
-                ),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 14,
-                ),
-              ),
-            ),
+          cursorColor: _primaryColor,
+          decoration: InputDecoration(
+            hintText: strings['search_hint']!,
+            prefixIcon: const Icon(CupertinoIcons.search, color: _primaryColor),
+            suffixIcon: _searchQuery.isEmpty
+                ? null
+                : IconButton(
+                    tooltip: 'Clear search',
+                    onPressed: () {
+                      _searchController.clear();
+                      setState(() => _searchQuery = '');
+                    },
+                    icon: const Icon(Icons.close_rounded, color: _textMuted),
+                  ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -600,7 +580,9 @@ class _LikedProsPageState extends State<LikedProsPage>
                     ? strings['browse']!
                     : null,
                 onAction: collectionName == 'favorites' && _searchQuery.isEmpty
-                    ? () => Navigator.pop(context)
+                    ? () => Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const SearchPage()),
+                      )
                     : null,
               );
             }
@@ -663,7 +645,7 @@ class _LikedProsPageState extends State<LikedProsPage>
                       );
                     },
                     separatorBuilder: (context, index) =>
-                        const SizedBox(height: 18),
+                        const SizedBox(height: 12),
                   ),
                 ),
               ],
@@ -671,6 +653,28 @@ class _LikedProsPageState extends State<LikedProsPage>
           },
         );
       },
+    );
+  }
+}
+
+class _LikedProsTabLabel extends StatelessWidget {
+  final IconData icon;
+  final String label;
+
+  const _LikedProsTabLabel({required this.icon, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 17),
+        const SizedBox(width: 7),
+        Flexible(
+          child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+        ),
+      ],
     );
   }
 }
@@ -988,30 +992,6 @@ class _LikedProsBackground extends StatelessWidget {
   }
 }
 
-class _HeaderIconButton extends StatelessWidget {
-  final IconData icon;
-  final VoidCallback onTap;
-
-  const _HeaderIconButton({required this.icon, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white.withValues(alpha: 0.14),
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: onTap,
-        child: SizedBox(
-          width: 46,
-          height: 46,
-          child: Icon(icon, color: Colors.white),
-        ),
-      ),
-    );
-  }
-}
-
 class _LikedProCard extends StatelessWidget {
   final String title;
   final String imageUrl;
@@ -1036,19 +1016,13 @@ class _LikedProCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      borderRadius: BorderRadius.circular(24),
+      borderRadius: BorderRadius.circular(18),
       onTap: onOpenProfile,
       child: Ink(
         decoration: BoxDecoration(
           color: _surfaceColor,
-          borderRadius: BorderRadius.circular(24),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x140A2A52),
-              blurRadius: 16,
-              offset: Offset(0, 8),
-            ),
-          ],
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: const Color(0xFFE1E8F0)),
         ),
         child: Padding(
           padding: const EdgeInsets.all(16),
@@ -1062,7 +1036,7 @@ class _LikedProCard extends StatelessWidget {
                     width: 68,
                     height: 68,
                     decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(22),
+                      borderRadius: BorderRadius.circular(16),
                       gradient: const LinearGradient(
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
@@ -1123,15 +1097,32 @@ class _LikedProCard extends StatelessWidget {
               ),
               if (professions.isNotEmpty) ...[
                 const SizedBox(height: 10),
-                Text(
-                  professions.first,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    color: _textMuted,
-                    fontWeight: FontWeight.w500,
-                  ),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: professions.take(3).map((profession) {
+                    return Container(
+                      constraints: const BoxConstraints(maxWidth: 180),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _softBlue,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        profession,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: _textMuted,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    );
+                  }).toList(),
                 ),
               ],
               const SizedBox(height: 16),
@@ -1149,11 +1140,25 @@ class _LikedProCard extends StatelessWidget {
                           borderRadius: BorderRadius.circular(16),
                         ),
                       ),
-                      child: Text(openProfileLabel),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.person_outline_rounded, size: 18),
+                          const SizedBox(width: 7),
+                          Flexible(
+                            child: Text(
+                              openProfileLabel,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                   const SizedBox(width: 10),
-                  actionButton,
+                  Expanded(child: actionButton),
                 ],
               ),
             ],
