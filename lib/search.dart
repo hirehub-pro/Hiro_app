@@ -129,6 +129,8 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
   bool _showWorkerList = false;
   String _sortBy = 'rating';
   AppLocation? _currentPosition;
+  bool _isLoadingLocation = false;
+  int _locationRequestId = 0;
   bool _filterByRadius = true;
   final bool _filterByVerified = false;
   DateTime? _filterByDate;
@@ -723,6 +725,11 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
   }
 
   Future<void> _getCurrentLocation({bool silent = false}) async {
+    final requestId = ++_locationRequestId;
+    if (mounted) {
+      setState(() => _isLoadingLocation = true);
+    }
+
     try {
       final position = await LocationContextService.getActiveLocation();
       if (!mounted) return;
@@ -737,6 +744,10 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
       _applyFilters();
     } catch (e) {
       debugPrint("Error getting location: $e");
+    } finally {
+      if (mounted && requestId == _locationRequestId) {
+        setState(() => _isLoadingLocation = false);
+      }
     }
   }
 
@@ -2273,6 +2284,19 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
                                 color: themeColor,
                                 fontSize: 12,
                                 fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ] else if (_isLoadingLocation) ...[
+                            const SizedBox(width: 8),
+                            Semantics(
+                              label: 'Loading distance',
+                              child: SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Color(0xFF1976D2),
+                                ),
                               ),
                             ),
                           ],
