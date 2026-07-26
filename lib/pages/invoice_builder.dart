@@ -4035,62 +4035,33 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                           crossAxisAlignment: pw.CrossAxisAlignment.start,
                           children: [
                             pw.Text(
-                              strings['worker']!,
-                              style: pw.TextStyle(
-                                fontWeight: pw.FontWeight.bold,
-                                fontSize: 13,
-                                color: pdf.PdfColors.blue900,
-                              ),
-                            ),
-                            pw.SizedBox(height: 6),
-                            pw.Text(
                               widget.workerName,
                               style: pw.TextStyle(
                                 fontSize: 15,
                                 fontWeight: pw.FontWeight.bold,
                               ),
                             ),
-                            if (_businessId != null &&
-                                _businessId!.isNotEmpty) ...[
-                              pw.Text(
-                                "${strings['authorized_dealer_label']} $_businessId",
-                                style: pw.TextStyle(
-                                  fontWeight: pw.FontWeight.bold,
-                                  fontSize: 11,
-                                ),
-                              ),
-                              pw.Text(
-                                "${strings['vat_id']} $_businessId",
-                                style: pw.TextStyle(fontSize: 11),
-                              ),
-                              pw.Text(
-                                _dealerType == 'company'
-                                    ? strings['company_dealer']!
-                                    : _isLicensedDealerType
-                                    ? strings['licensed_dealer']!
-                                    : strings['exempt_dealer']!,
-                                style: pw.TextStyle(
-                                  fontSize: 10,
-                                  color: pdf.PdfColors.blueGrey800,
-                                ),
-                              ),
-                            ],
-                            if (_businessAddress != null &&
-                                _businessAddress!.isNotEmpty)
-                              pw.Text(
-                                "${strings['business_address']} $_businessAddress",
-                                style: pw.TextStyle(fontSize: 11),
-                              ),
-                            if (widget.workerPhone != null)
-                              pw.Text(
-                                widget.workerPhone!,
-                                style: pw.TextStyle(fontSize: 11),
-                              ),
-                            if (widget.workerEmail != null)
-                              pw.Text(
-                                widget.workerEmail!,
-                                style: pw.TextStyle(fontSize: 11),
-                              ),
+                            pw.SizedBox(height: 4),
+                            pw.Text(
+                              '${_dealerType == 'company'
+                                  ? 'חברה בע״מ'
+                                  : _isLicensedDealerType
+                                  ? 'עוסק מורשה'
+                                  : 'עוסק פטור'}: ${_businessId ?? ''}',
+                              style: pw.TextStyle(fontSize: 11),
+                            ),
+                            pw.Text(
+                              'כתובת העסק: ${_businessAddress ?? ''}',
+                              style: pw.TextStyle(fontSize: 11),
+                            ),
+                            pw.Text(
+                              'טלפון: ${widget.workerPhone ?? ''}',
+                              style: pw.TextStyle(fontSize: 11),
+                            ),
+                            pw.Text(
+                              'דוא״ל: ${widget.workerEmail ?? ''}',
+                              style: pw.TextStyle(fontSize: 11),
+                            ),
                           ],
                         ),
                       ),
@@ -4108,16 +4079,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                           crossAxisAlignment: pw.CrossAxisAlignment.start,
                           children: [
                             pw.Text(
-                              strings['client_info']!,
-                              style: pw.TextStyle(
-                                fontWeight: pw.FontWeight.bold,
-                                fontSize: 13,
-                                color: pdf.PdfColors.blue900,
-                              ),
-                            ),
-                            pw.SizedBox(height: 6),
-                            pw.Text(
-                              _clientNameController.text,
+                              'לכבוד: ${_clientNameController.text}',
                               style: pw.TextStyle(
                                 fontSize: 15,
                                 fontWeight: pw.FontWeight.bold,
@@ -4130,12 +4092,12 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                               ),
                             if (_clientPhoneController.text.isNotEmpty)
                               pw.Text(
-                                _clientPhoneController.text,
+                                'טלפון: ${_clientPhoneController.text}',
                                 style: pw.TextStyle(fontSize: 11),
                               ),
                             if (_clientAddressController.text.isNotEmpty)
                               pw.Text(
-                                _clientAddressController.text,
+                                'כתובת: ${_clientAddressController.text}',
                                 style: pw.TextStyle(fontSize: 11),
                               ),
                           ],
