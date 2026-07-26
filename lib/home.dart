@@ -2142,6 +2142,16 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     });
   }
 
+  void _selectRequestMode(bool showIncomingRequests) {
+    if (_showRequestsSentToMe == showIncomingRequests) return;
+    setState(() {
+      // Keep the movement feeling intentional when the request source changes.
+      _requestTransitionDirection = showIncomingRequests ? 1 : -1;
+      _showRequestsSentToMe = showIncomingRequests;
+      _requestSwipeIndex = 0;
+    });
+  }
+
   Widget _buildRequestModeButton({
     required bool selected,
     required VoidCallback onPressed,
@@ -2152,12 +2162,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     required Color activeBorder,
   }) {
     return AnimatedScale(
-      scale: selected ? 1.02 : 1.0,
-      duration: const Duration(milliseconds: 180),
-      curve: Curves.easeOutBack,
+      scale: selected ? 1.015 : 1.0,
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeOutCubic,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 220),
-        curve: Curves.easeOutCubic,
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeOutQuart,
         decoration: BoxDecoration(
           color: selected
               ? activeBackground.withValues(alpha: 0.92)
@@ -3726,22 +3736,24 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           _ when isReviewed => const Color(0xFF1D4ED8),
           _ => const Color(0xFFF59E0B),
         };
+        final isExpired = status == 'expired';
         final currentStep = switch (status) {
           'accepted' when hasSchedule => 3,
           'accepted' => 2,
-          'rejected' || 'cancelled' || 'expired' => 2,
+          'rejected' || 'cancelled' => 2,
+          'expired' => 0,
           _ when isReviewed => 1,
           _ => 0,
         };
         final stepLabels = [
-          strings['request_sent'] ?? 'Sent',
+          isExpired
+              ? (strings['request_expired'] ?? 'Expired — no response')
+              : (strings['request_sent'] ?? 'Sent'),
           strings['request_reviewed'] ?? 'Reviewed',
           status == 'rejected'
               ? (strings['request_declined'] ?? 'Declined')
               : status == 'cancelled'
               ? (strings['request_cancelled'] ?? 'Cancelled')
-              : status == 'expired'
-              ? (strings['request_expired'] ?? 'Expired — no response')
               : (strings['request_accepted'] ?? 'Accepted'),
           strings['request_scheduled'] ?? 'Scheduled',
         ];
@@ -3842,10 +3854,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                     children: [
                       _buildRequestModeButton(
                         selected: !isIncomingForWorker,
-                        onPressed: () => setState(() {
-                          _showRequestsSentToMe = false;
-                          _requestSwipeIndex = 0;
-                        }),
+                        onPressed: () => _selectRequestMode(false),
                         icon: Icons.assignment_outlined,
                         label: strings['my_requests'] ?? 'My Requests',
                         activeForeground: const Color(0xFF1976D2),
@@ -3854,10 +3863,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                       ),
                       _buildRequestModeButton(
                         selected: isIncomingForWorker,
-                        onPressed: () => setState(() {
-                          _showRequestsSentToMe = true;
-                          _requestSwipeIndex = 0;
-                        }),
+                        onPressed: () => _selectRequestMode(true),
                         icon: Icons.mark_email_unread_outlined,
                         label:
                             strings['requests_to_me'] ?? 'Requests sent to me',
@@ -3903,248 +3909,282 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                       _goToRequest(currentIndex - 1, docs.length);
                     }
                   },
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 320),
-                    switchInCurve: Curves.easeOutCubic,
-                    switchOutCurve: Curves.easeInCubic,
-                    transitionBuilder: (child, animation) {
-                      final beginOffset = Offset(
-                        _requestTransitionDirection * 0.18,
-                        0,
-                      );
-                      return FadeTransition(
-                        opacity: animation,
-                        child: SlideTransition(
-                          position: Tween<Offset>(
-                            begin: beginOffset,
-                            end: Offset.zero,
-                          ).animate(animation),
-                          child: ScaleTransition(
-                            scale: Tween<double>(
-                              begin: 0.985,
-                              end: 1,
+                  child: ClipRect(
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 420),
+                      reverseDuration: const Duration(milliseconds: 300),
+                      switchInCurve: Curves.easeOutQuart,
+                      switchOutCurve: Curves.easeInCubic,
+                      layoutBuilder: (currentChild, previousChildren) => Stack(
+                        alignment: Alignment.topCenter,
+                        children: [
+                          ...previousChildren,
+                          currentChild ?? const SizedBox.shrink(),
+                        ],
+                      ),
+                      transitionBuilder: (child, animation) {
+                        final isIncoming =
+                            child.key ==
+                            ValueKey('$isIncomingForWorker:$doc.id');
+                        final offset = Offset(
+                          _requestTransitionDirection *
+                              (isIncoming ? 0.12 : -0.08),
+                          0,
+                        );
+                        return FadeTransition(
+                          opacity: CurvedAnimation(
+                            parent: animation,
+                            curve: isIncoming ? Curves.easeOut : Curves.easeIn,
+                          ),
+                          child: SlideTransition(
+                            position: Tween<Offset>(
+                              begin: offset,
+                              end: Offset.zero,
                             ).animate(animation),
-                            child: child,
+                            child: ScaleTransition(
+                              scale:
+                                  Tween<double>(
+                                    begin: isIncoming ? 0.975 : 1.0,
+                                    end: 1,
+                                  ).animate(
+                                    CurvedAnimation(
+                                      parent: animation,
+                                      curve: Curves.easeOutCubic,
+                                    ),
+                                  ),
+                              child: child,
+                            ),
                           ),
-                        ),
-                      );
-                    },
-                    child: Column(
-                      key: ValueKey(doc.id),
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          title.isEmpty ? 'Request' : title,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Color(0xFF334155),
-                            fontWeight: FontWeight.w700,
-                            height: 1.35,
-                          ),
-                        ),
-                        if (date.isNotEmpty) ...[
-                          const SizedBox(height: 6),
+                        );
+                      },
+                      child: Column(
+                        key: ValueKey('$isIncomingForWorker:$doc.id'),
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
                           Text(
-                            date,
+                            title.isEmpty ? 'Request' : title,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
-                              color: Color(0xFF64748B),
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
-                        const SizedBox(height: 16),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            color: statusColor.withValues(alpha: 0.10),
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                          child: Text(
-                            statusLabel,
-                            style: TextStyle(
-                              color: statusColor,
+                              color: Color(0xFF334155),
                               fontWeight: FontWeight.w700,
+                              height: 1.35,
                             ),
                           ),
-                        ),
-                        if (!isIncomingForWorker) ...[
-                          const SizedBox(height: 18),
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: List.generate(stepLabels.length * 2 - 1, (
-                              index,
-                            ) {
-                              if (index.isOdd) {
-                                final connectorIndex = index ~/ 2;
-                                final isActive = connectorIndex < currentStep;
-                                return Expanded(
-                                  child: Padding(
-                                    padding: const EdgeInsets.only(top: 15),
-                                    child: Container(
-                                      height: 3,
-                                      decoration: BoxDecoration(
-                                        color: isActive
-                                            ? const Color(0xFF1976D2)
-                                            : const Color(0xFFE2E8F0),
-                                        borderRadius: BorderRadius.circular(
-                                          999,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                );
-                              }
-
-                              final stepIndex = index ~/ 2;
-                              final isActive = stepIndex <= currentStep;
-                              final isRejectedStep =
-                                  status == 'rejected' &&
-                                  stepIndex == 2 &&
-                                  isActive;
-                              final isCancelledStep =
-                                  status == 'cancelled' &&
-                                  stepIndex == 2 &&
-                                  isActive;
-                              final stepColor = isRejectedStep
-                                  ? const Color(0xFFDC2626)
-                                  : isCancelledStep
-                                  ? const Color(0xFF64748B)
-                                  : isActive
-                                  ? const Color(0xFF1976D2)
-                                  : const Color(0xFFE2E8F0);
-                              final stepIcon = isRejectedStep
-                                  ? Icons.close_rounded
-                                  : isCancelledStep
-                                  ? Icons.remove_rounded
-                                  : isActive
-                                  ? Icons.check_rounded
-                                  : Icons.circle;
-                              final iconColor =
-                                  isActive &&
-                                      !isCancelledStep &&
-                                      !isRejectedStep
-                                  ? Colors.white
-                                  : isRejectedStep || isCancelledStep
-                                  ? Colors.white
-                                  : const Color(0xFF94A3B8);
-
-                              return SizedBox(
-                                width: 62,
-                                child: Column(
-                                  children: [
-                                    Container(
-                                      width: 34,
-                                      height: 34,
-                                      decoration: BoxDecoration(
-                                        color: stepColor,
-                                        shape: BoxShape.circle,
-                                      ),
-                                      child: Icon(
-                                        stepIcon,
-                                        size: 18,
-                                        color: iconColor,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      stepLabels[stepIndex],
-                                      textAlign: TextAlign.center,
-                                      style: const TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w600,
-                                        color: Color(0xFF475569),
-                                        height: 1.25,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            }),
-                          ),
-                        ] else ...[
-                          const SizedBox(height: 12),
-                        ],
-                        if (!isIncomingForWorker &&
-                            status == 'rejected' &&
-                            profession.isNotEmpty) ...[
-                          const SizedBox(height: 18),
-                          SizedBox(
-                            width: double.infinity,
-                            child: OutlinedButton.icon(
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: const Color(0xFFDC2626),
-                                side: const BorderSide(
-                                  color: Color(0xFFFCA5A5),
-                                ),
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 14,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(16),
-                                ),
-                              ),
-                              onPressed: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) =>
-                                        SearchPage(initialTrade: profession),
-                                  ),
-                                );
-                              },
-                              icon: const Icon(Icons.person_search_rounded),
-                              label: Text(
-                                strings['request_someone_else'] ??
-                                    'Request from someone else',
-                              ),
-                            ),
-                          ),
-                        ],
-                        if (docs.length > 1) ...[
-                          const SizedBox(height: 12),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: List.generate(docs.length, (index) {
-                              final selected = index == currentIndex;
-                              return GestureDetector(
-                                onTap: () => _goToRequest(index, docs.length),
-                                child: AnimatedContainer(
-                                  duration: const Duration(milliseconds: 180),
-                                  margin: const EdgeInsets.symmetric(
-                                    horizontal: 3,
-                                  ),
-                                  width: selected ? 16 : 6,
-                                  height: 6,
-                                  decoration: BoxDecoration(
-                                    color: selected
-                                        ? const Color(0xFF1976D2)
-                                        : const Color(0xFFCBD5E1),
-                                    borderRadius: BorderRadius.circular(999),
-                                  ),
-                                ),
-                              );
-                            }),
-                          ),
-                          const SizedBox(height: 8),
-                          Center(
-                            child: Text(
-                              strings['request_swipe_hint'] ??
-                                  'Swipe left/right to browse requests',
-                              textAlign: TextAlign.center,
+                          if (date.isNotEmpty) ...[
+                            const SizedBox(height: 6),
+                            Text(
+                              date,
                               style: const TextStyle(
                                 color: Color(0xFF64748B),
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: 16),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: statusColor.withValues(alpha: 0.10),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              statusLabel,
+                              style: TextStyle(
+                                color: statusColor,
+                                fontWeight: FontWeight.w700,
                               ),
                             ),
                           ),
+                          if (!isIncomingForWorker) ...[
+                            const SizedBox(height: 18),
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: List.generate(
+                                stepLabels.length * 2 - 1,
+                                (index) {
+                                  if (index.isOdd) {
+                                    final connectorIndex = index ~/ 2;
+                                    final isActive =
+                                        connectorIndex < currentStep;
+                                    return Expanded(
+                                      child: Padding(
+                                        padding: const EdgeInsets.only(top: 15),
+                                        child: Container(
+                                          height: 3,
+                                          decoration: BoxDecoration(
+                                            color: isActive
+                                                ? const Color(0xFF1976D2)
+                                                : const Color(0xFFE2E8F0),
+                                            borderRadius: BorderRadius.circular(
+                                              999,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  }
+
+                                  final stepIndex = index ~/ 2;
+                                  final isActive = stepIndex <= currentStep;
+                                  final isRejectedStep =
+                                      status == 'rejected' &&
+                                      stepIndex == 2 &&
+                                      isActive;
+                                  final isCancelledStep =
+                                      status == 'cancelled' &&
+                                      stepIndex == 2 &&
+                                      isActive;
+                                  final isExpiredStep =
+                                      isExpired && stepIndex == 0;
+                                  final stepColor = isExpiredStep
+                                      ? const Color(0xFFDC2626)
+                                      : isRejectedStep
+                                      ? const Color(0xFFDC2626)
+                                      : isCancelledStep
+                                      ? const Color(0xFF64748B)
+                                      : isActive
+                                      ? const Color(0xFF1976D2)
+                                      : const Color(0xFFE2E8F0);
+                                  final stepIcon = isExpiredStep
+                                      ? Icons.timer_off_rounded
+                                      : isRejectedStep
+                                      ? Icons.close_rounded
+                                      : isCancelledStep
+                                      ? Icons.remove_rounded
+                                      : isActive
+                                      ? Icons.check_rounded
+                                      : Icons.circle;
+                                  final iconColor =
+                                      isActive &&
+                                          !isCancelledStep &&
+                                          !isRejectedStep &&
+                                          !isExpiredStep
+                                      ? Colors.white
+                                      : isRejectedStep ||
+                                            isCancelledStep ||
+                                            isExpiredStep
+                                      ? Colors.white
+                                      : const Color(0xFF94A3B8);
+
+                                  return SizedBox(
+                                    width: 62,
+                                    child: Column(
+                                      children: [
+                                        Container(
+                                          width: 34,
+                                          height: 34,
+                                          decoration: BoxDecoration(
+                                            color: stepColor,
+                                            shape: BoxShape.circle,
+                                          ),
+                                          child: Icon(
+                                            stepIcon,
+                                            size: 18,
+                                            color: iconColor,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Text(
+                                          stepLabels[stepIndex],
+                                          textAlign: TextAlign.center,
+                                          style: const TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w600,
+                                            color: Color(0xFF475569),
+                                            height: 1.25,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          ] else ...[
+                            const SizedBox(height: 12),
+                          ],
+                          if (!isIncomingForWorker &&
+                              status == 'rejected' &&
+                              profession.isNotEmpty) ...[
+                            const SizedBox(height: 18),
+                            SizedBox(
+                              width: double.infinity,
+                              child: OutlinedButton.icon(
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: const Color(0xFFDC2626),
+                                  side: const BorderSide(
+                                    color: Color(0xFFFCA5A5),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 14,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                ),
+                                onPressed: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) =>
+                                          SearchPage(initialTrade: profession),
+                                    ),
+                                  );
+                                },
+                                icon: const Icon(Icons.person_search_rounded),
+                                label: Text(
+                                  strings['request_someone_else'] ??
+                                      'Request from someone else',
+                                ),
+                              ),
+                            ),
+                          ],
+                          if (docs.length > 1) ...[
+                            const SizedBox(height: 12),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: List.generate(docs.length, (index) {
+                                final selected = index == currentIndex;
+                                return GestureDetector(
+                                  onTap: () => _goToRequest(index, docs.length),
+                                  child: AnimatedContainer(
+                                    duration: const Duration(milliseconds: 180),
+                                    margin: const EdgeInsets.symmetric(
+                                      horizontal: 3,
+                                    ),
+                                    width: selected ? 16 : 6,
+                                    height: 6,
+                                    decoration: BoxDecoration(
+                                      color: selected
+                                          ? const Color(0xFF1976D2)
+                                          : const Color(0xFFCBD5E1),
+                                      borderRadius: BorderRadius.circular(999),
+                                    ),
+                                  ),
+                                );
+                              }),
+                            ),
+                            const SizedBox(height: 8),
+                            Center(
+                              child: Text(
+                                strings['request_swipe_hint'] ??
+                                    'Swipe left/right to browse requests',
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  color: Color(0xFF64748B),
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
                         ],
-                      ],
+                      ),
                     ),
                   ),
                 ),
@@ -4184,10 +4224,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               children: [
                 _buildRequestModeButton(
                   selected: !isIncomingForWorker,
-                  onPressed: () => setState(() {
-                    _showRequestsSentToMe = false;
-                    _requestSwipeIndex = 0;
-                  }),
+                  onPressed: () => _selectRequestMode(false),
                   icon: Icons.assignment_outlined,
                   label: strings['my_requests'] ?? 'My Requests',
                   activeForeground: const Color(0xFF1976D2),
@@ -4196,10 +4233,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 ),
                 _buildRequestModeButton(
                   selected: isIncomingForWorker,
-                  onPressed: () => setState(() {
-                    _showRequestsSentToMe = true;
-                    _requestSwipeIndex = 0;
-                  }),
+                  onPressed: () => _selectRequestMode(true),
                   icon: Icons.mark_email_unread_outlined,
                   label: strings['requests_to_me'] ?? 'Requests sent to me',
                   activeForeground: const Color(0xFF0F766E),
