@@ -3933,7 +3933,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     final creditNoteLegalData = _creditNoteLegalData;
     final cleanAllocationNumber = allocationNumber?.trim();
     final generatedAt = intl.DateFormat(
-      'dd.MM.yyyy HH:mm',
+      'dd/MM/yyyy HH:mm',
     ).format(DateTime.now());
     final signingDocumentLabel = _invoiceNumber.isEmpty
         ? docTitle
@@ -4057,7 +4057,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                         crossAxisAlignment: pw.CrossAxisAlignment.start,
                         children: [
                           pw.SizedBox(
-                            width: 190,
+                            width: 220,
                             child: pw.Align(
                               alignment: pw.Alignment.centerLeft,
                               child: pw.Directionality(
@@ -4073,7 +4073,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                         child: pw.Directionality(
                                           textDirection: pw.TextDirection.rtl,
                                           child: pw.Text(
-                                            'הופק ב $generatedAt | $docTitle',
+                                            'הופק ב $generatedAt | $docTitle${pdfInvoiceNumber.isEmpty ? '' : ' $pdfInvoiceNumber'}',
                                             textAlign: pw.TextAlign.left,
                                             style: pw.TextStyle(
                                               fontSize: 11,
