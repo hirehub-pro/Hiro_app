@@ -1108,6 +1108,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
 
   // State for dealer logic
   String _dealerType = 'exempt';
+  String? _businessName;
   String? _businessId;
   String? _businessAddress;
   String? _workerName;
@@ -1121,6 +1122,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   pw.Font? _cachedFont;
   pw.Font? _cachedFontBold;
   pw.MemoryImage? _cachedLogo;
+  pw.MemoryImage? _cachedAppIcon;
   Map<String, String>? _cachedStrings;
   String? _lastLocale;
   late final Future<SubscriptionAccessState> _accessFuture;
@@ -1387,6 +1389,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                     .toString()
                     .trim();
             setState(() {
+              _businessName = vData?['businessName']?.toString().trim();
               _businessId = vData?['businessId'];
               _businessAddress = vData?['address'];
               _dealerType = vData?['dealerType'] ?? 'exempt';
@@ -1466,6 +1469,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       );
       _cachedFont = pw.Font.ttf(fontData);
       _cachedFontBold = pw.Font.ttf(fontData);
+      final appIconData = await rootBundle.load('assets/icon/app_icon.jpg');
+      _cachedAppIcon = pw.MemoryImage(appIconData.buffer.asUint8List());
     } catch (e) {
       dev.log("Font load failed: $e");
     }
@@ -2601,6 +2606,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         _cachedFont!,
         _cachedFontBold!,
         _cachedLogo,
+        appIcon: _cachedAppIcon,
         allocationNumber: allocationNumber,
       );
     } catch (e) {
@@ -3898,6 +3904,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     pw.Font font,
     pw.Font fontBold,
     pw.MemoryImage? logo, {
+    pw.MemoryImage? appIcon,
     String? allocationNumber,
   }) async {
     final doc = pw.Document();
@@ -3921,7 +3928,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     final creditNoteLegalData = _creditNoteLegalData;
     final cleanAllocationNumber = allocationNumber?.trim();
     final generatedAt = intl.DateFormat(
-      'HH:mm dd/MM/yyyy',
+      'dd.MM.yyyy HH:mm',
     ).format(DateTime.now());
     final signingDocumentLabel = _invoiceNumber.isEmpty
         ? docTitle
@@ -3931,7 +3938,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       pw.MultiPage(
         pageFormat: format.copyWith(
           marginTop: 1.5 * pdf.PdfPageFormat.cm,
-          marginBottom: 3 * pdf.PdfPageFormat.cm,
+          marginBottom: 57,
           marginLeft: 1.5 * pdf.PdfPageFormat.cm,
           marginRight: 1.5 * pdf.PdfPageFormat.cm,
         ),
@@ -4043,8 +4050,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                       child: pw.Row(
                         crossAxisAlignment: pw.CrossAxisAlignment.start,
                         children: [
-                          pw.Expanded(
-                            flex: 2,
+                          pw.SizedBox(
+                            width: 190,
                             child: pw.Align(
                               alignment: pw.Alignment.centerLeft,
                               child: pw.Directionality(
@@ -4060,7 +4067,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                         child: pw.Directionality(
                                           textDirection: pw.TextDirection.rtl,
                                           child: pw.Text(
-                                            'הופק ב $generatedAt | $signingDocumentLabel',
+                                            'הופק ב $generatedAt | $docTitle',
                                             textAlign: pw.TextAlign.left,
                                             style: pw.TextStyle(
                                               fontSize: 11,
@@ -4092,9 +4099,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                               ),
                             ),
                           ),
-                          pw.SizedBox(width: 18),
-                          pw.Expanded(
-                            flex: 3,
+                          pw.Spacer(),
+                          pw.SizedBox(
+                            width: 250,
                             child: pw.Align(
                               alignment: pw.Alignment.centerRight,
                               child: pw.Directionality(
@@ -4117,12 +4124,34 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                     pw.SizedBox(height: 3),
                                     pw.SizedBox(
                                       width: double.infinity,
-                                      child: pw.Text(
-                                        'מסמך זה מיועד לחתימה דיגיטלית באמצעות מערכת הירו',
-                                        textAlign: pw.TextAlign.right,
-                                        style: pw.TextStyle(
-                                          fontSize: 11,
-                                          color: pdf.PdfColors.blueGrey900,
+                                      child: pw.Directionality(
+                                        textDirection: pw.TextDirection.ltr,
+                                        child: pw.Row(
+                                          mainAxisAlignment:
+                                              pw.MainAxisAlignment.end,
+                                          children: [
+                                            if (appIcon != null) ...[
+                                              pw.Image(
+                                                appIcon,
+                                                width: 20,
+                                                height:20,
+                                                fit: pw.BoxFit.contain,
+                                              ),
+                                              pw.SizedBox(width: 4),
+                                            ],
+                                            pw.Directionality(
+                                              textDirection:
+                                                  pw.TextDirection.rtl,
+                                              child: pw.Text(
+                                                'מסמך ממוחשב הופק על ידי הירו',
+                                                style: pw.TextStyle(
+                                                  fontSize: 11,
+                                                  color:
+                                                      pdf.PdfColors.blueGrey900,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                       ),
                                     ),
@@ -4181,7 +4210,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                             ),
                             pw.SizedBox(height: 6),
                             pw.Text(
-                              widget.workerName,
+                              (_businessName == null || _businessName!.isEmpty)
+                                  ? widget.workerName
+                                  : _businessName!,
                               style: pw.TextStyle(
                                 fontSize: 15,
                                 fontWeight: pw.FontWeight.bold,
