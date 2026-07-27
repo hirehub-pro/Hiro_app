@@ -3931,7 +3931,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       pw.MultiPage(
         pageFormat: format.copyWith(
           marginTop: 1.5 * pdf.PdfPageFormat.cm,
-          marginBottom: 1.5 * pdf.PdfPageFormat.cm,
+          marginBottom: 3 * pdf.PdfPageFormat.cm,
           marginLeft: 1.5 * pdf.PdfPageFormat.cm,
           marginRight: 1.5 * pdf.PdfPageFormat.cm,
         ),
@@ -4024,12 +4024,131 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
             ],
           ),
         ),
-        footer: (pw.Context context) => pw.Align(
-          alignment: pw.Alignment.centerLeft,
-          child: pw.Text(
-            '${context.pageNumber} / ${context.pagesCount}',
-            style: pw.TextStyle(fontSize: 10, color: pdf.PdfColors.blueGrey700),
-          ),
+        footer: (pw.Context context) => pw.Column(
+          mainAxisSize: pw.MainAxisSize.min,
+          children: [
+            if (!_isQuoteLike)
+              pw.Directionality(
+                textDirection: pw.TextDirection.rtl,
+                child: pw.Column(
+                  mainAxisSize: pw.MainAxisSize.min,
+                  children: [
+                    pw.Divider(
+                      thickness: 0.8,
+                      color: pdf.PdfColors.blueGrey900,
+                    ),
+                    pw.SizedBox(height: 6),
+                    pw.Directionality(
+                      textDirection: pw.TextDirection.ltr,
+                      child: pw.Row(
+                        crossAxisAlignment: pw.CrossAxisAlignment.start,
+                        children: [
+                          pw.Expanded(
+                            flex: 2,
+                            child: pw.Align(
+                              alignment: pw.Alignment.centerLeft,
+                              child: pw.Directionality(
+                                textDirection: pw.TextDirection.rtl,
+                                child: pw.Column(
+                                  crossAxisAlignment:
+                                      pw.CrossAxisAlignment.start,
+                                  children: [
+                                    pw.SizedBox(
+                                      width: double.infinity,
+                                      child: pw.Align(
+                                        alignment: pw.Alignment.centerLeft,
+                                        child: pw.Directionality(
+                                          textDirection: pw.TextDirection.rtl,
+                                          child: pw.Text(
+                                            'הופק ב $generatedAt | $signingDocumentLabel',
+                                            textAlign: pw.TextAlign.left,
+                                            style: pw.TextStyle(
+                                              fontSize: 11,
+                                              color: pdf.PdfColors.blueGrey900,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    pw.SizedBox(height: 7),
+                                    pw.SizedBox(
+                                      width: double.infinity,
+                                      child: pw.Align(
+                                        alignment: pw.Alignment.centerLeft,
+                                        child: pw.Directionality(
+                                          textDirection: pw.TextDirection.ltr,
+                                          child: pw.Text(
+                                            '${context.pageNumber} / ${context.pagesCount}',
+                                            style: pw.TextStyle(
+                                              fontSize: 13,
+                                              color: pdf.PdfColors.blueGrey700,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          pw.SizedBox(width: 18),
+                          pw.Expanded(
+                            flex: 3,
+                            child: pw.Align(
+                              alignment: pw.Alignment.centerRight,
+                              child: pw.Directionality(
+                                textDirection: pw.TextDirection.rtl,
+                                child: pw.Column(
+                                  crossAxisAlignment: pw.CrossAxisAlignment.end,
+                                  children: [
+                                    pw.SizedBox(
+                                      width: double.infinity,
+                                      child: pw.Text(
+                                        'חתימה דיגיטלית מאובטחת',
+                                        textAlign: pw.TextAlign.right,
+                                        style: pw.TextStyle(
+                                          fontSize: 21,
+                                          fontWeight: pw.FontWeight.bold,
+                                          color: pdf.PdfColors.black,
+                                        ),
+                                      ),
+                                    ),
+                                    pw.SizedBox(height: 3),
+                                    pw.SizedBox(
+                                      width: double.infinity,
+                                      child: pw.Text(
+                                        'מסמך זה מיועד לחתימה דיגיטלית באמצעות מערכת הירו',
+                                        textAlign: pw.TextAlign.right,
+                                        style: pw.TextStyle(
+                                          fontSize: 11,
+                                          color: pdf.PdfColors.blueGrey900,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            if (_isQuoteLike)
+              pw.Align(
+                alignment: pw.Alignment.centerLeft,
+                child: pw.Text(
+                  '${context.pageNumber} / ${context.pagesCount}',
+                  style: pw.TextStyle(
+                    fontSize: 10,
+                    color: pdf.PdfColors.blueGrey700,
+                  ),
+                ),
+              ),
+          ],
         ),
         build: (pw.Context context) => [
           pw.Directionality(
@@ -4425,19 +4544,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                   ),
                   pw.SizedBox(height: 16),
                 ],
-                if (!_isQuoteLike)
-                  pw.Row(
-                    mainAxisAlignment: pw.MainAxisAlignment.end,
-                    children: [
-                      pw.Text(
-                        'Signature: ______________________',
-                        style: pw.TextStyle(
-                          fontSize: 11,
-                          color: pdf.PdfColors.blueGrey800,
-                        ),
-                      ),
-                    ],
-                  ),
               ],
             ),
           ),
