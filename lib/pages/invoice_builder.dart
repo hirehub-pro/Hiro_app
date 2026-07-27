@@ -300,6 +300,11 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     return '$year-${counter.toString().padLeft(4, '0')}';
   }
 
+  String _invoiceNumberForPdf(String documentNumber) {
+    final sequence = documentNumber.split('-').last;
+    return int.tryParse(sequence)?.toString() ?? sequence;
+  }
+
   String _invoiceDocIdFor(String docType, String documentNumber) {
     return '${docType}_$documentNumber';
   }
@@ -3933,6 +3938,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     final signingDocumentLabel = _invoiceNumber.isEmpty
         ? docTitle
         : '$docTitle $_invoiceNumber';
+    final pdfInvoiceNumber = _invoiceNumberForPdf(_invoiceNumber);
 
     doc.addPage(
       pw.MultiPage(
@@ -3995,7 +4001,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                           if (_invoiceNumber.isNotEmpty)
                             pw.Text(
                               isInvoice
-                                  ? "${strings['tax_invoice_num']} $_invoiceNumber"
+                                  ? "${strings['tax_invoice_num']} $pdfInvoiceNumber"
                                   : "${strings['inv_no']} $_invoiceNumber",
                               style: pw.TextStyle(
                                 fontWeight: pw.FontWeight.bold,
@@ -4134,7 +4140,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                               pw.Image(
                                                 appIcon,
                                                 width: 20,
-                                                height:20,
+                                                height: 20,
                                                 fit: pw.BoxFit.contain,
                                               ),
                                               pw.SizedBox(width: 4),
