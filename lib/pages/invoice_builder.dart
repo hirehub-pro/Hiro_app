@@ -20,6 +20,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:untitled1/services/bkmv_export_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:untitled1/services/invoice_builder_lock_service.dart';
 
 class _SavedInvoiceResult {
   final String url;
@@ -235,6 +236,12 @@ class InvoiceBuilderPage extends StatefulWidget {
 
 class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   static const int _sandboxAccountingSoftwareNumber = 987654321;
+
+  final InvoiceBuilderLockService _invoiceBuilderLock =
+      InvoiceBuilderLockService();
+  bool _isAcquiringLock = true;
+  bool _hasInvoiceBuilderLock = false;
+  bool _lockLostDialogShown = false;
 
   final FirebaseFunctions _functions = FirebaseFunctions.instanceFor(
     region: 'me-west1',
@@ -1135,6 +1142,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   @override
   void initState() {
     super.initState();
+    _acquireInvoiceBuilderLock();
     _accessFuture = SubscriptionAccessService.getCurrentUserState();
     _invoiceNumber = "";
 
@@ -1160,6 +1168,49 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     _fetchWorkerInfo();
     _loadVatRate();
     _loadAssets();
+  }
+
+  Future<void> _acquireInvoiceBuilderLock() async {
+    _invoiceBuilderLock.onLeaseLost = _handleInvoiceBuilderLockLost;
+    final acquired = await _invoiceBuilderLock.acquire();
+    if (!mounted) return;
+    if (acquired) {
+      setState(() {
+        _isAcquiringLock = false;
+        _hasInvoiceBuilderLock = true;
+      });
+      return;
+    }
+
+    setState(() => _isAcquiringLock = false);
+    _showInvoiceBuilderLockedMessage();
+  }
+
+  void _handleInvoiceBuilderLockLost() {
+    if (!mounted || _lockLostDialogShown) return;
+    setState(() => _hasInvoiceBuilderLock = false);
+    _showInvoiceBuilderLockedMessage();
+  }
+
+  Future<void> _showInvoiceBuilderLockedMessage() async {
+    if (!mounted || _lockLostDialogShown) return;
+    _lockLostDialogShown = true;
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        content: const Text(
+          'Invoice builder is open on another device. Close it on the other device and try again.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+    if (mounted) Navigator.of(context).pop();
   }
 
   void _applyInitialTemplate() {
@@ -1445,6 +1496,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
 
   @override
   void dispose() {
+    unawaited(_invoiceBuilderLock.release());
     _clientNameController.dispose();
     _clientAddressController.dispose();
     _clientPhoneController.dispose();
@@ -4683,6 +4735,13 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (_isAcquiringLock) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    if (!_hasInvoiceBuilderLock) {
+      return const SizedBox.shrink();
+    }
+
     final strings = _withRequiredDefaults(_getLocalizedStrings(context));
     final isRtl =
         Provider.of<LanguageProvider>(context).locale.languageCode == 'he' ||
