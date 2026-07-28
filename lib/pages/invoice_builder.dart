@@ -1195,17 +1195,54 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   Future<void> _showInvoiceBuilderLockedMessage() async {
     if (!mounted || _lockLostDialogShown) return;
     _lockLostDialogShown = true;
+    final strings = _withRequiredDefaults(
+      _getLocalizedStrings(context, listen: false),
+    );
     await showDialog<void>(
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) => AlertDialog(
-        content: const Text(
-          'Invoice builder is open on another device. Close it on the other device and try again.',
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        icon: Container(
+          width: 56,
+          height: 56,
+          decoration: const BoxDecoration(
+            color: Color(0xFFFFF7ED),
+            shape: BoxShape.circle,
+          ),
+          child: const Icon(
+            Icons.devices_other_rounded,
+            color: Color(0xFFEA580C),
+            size: 28,
+          ),
         ),
+        title: Text(
+          strings['invoice_builder_locked_title']!,
+          textAlign: TextAlign.center,
+          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+        ),
+        content: Text(
+          strings['invoice_builder_locked']!,
+          textAlign: TextAlign.center,
+          style: const TextStyle(height: 1.45, color: Color(0xFF475569)),
+        ),
+        contentPadding: const EdgeInsets.fromLTRB(28, 8, 28, 20),
+        actionsPadding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('OK'),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFF0F766E),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: Text(strings['invoice_builder_locked_action']!),
+            ),
           ),
         ],
       ),
@@ -1773,6 +1810,11 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       case 'he':
         _cachedStrings = {
           'title': 'מפיק מסמכים עסקיים',
+          'invoice_builder_locked_title': 'יוצר החשבוניות כבר בשימוש',
+          'invoice_builder_locked':
+              'יוצר החשבוניות פתוח כעת במכשיר אחר. סגרו אותו במכשיר האחר ולאחר מכן נסו שוב.',
+          'invoice_builder_locked_action': 'חזרה',
+          'ok': 'אישור',
           'client_info': 'פרטי הלקוח:',
           'client_name': 'שם הלקוח',
           'client_id': 'מס\' עוסק / ת.ז. / ח.פ.',
@@ -1888,6 +1930,11 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       case 'ar':
         _cachedStrings = {
           'title': 'منشئ المستندات التجارية',
+          'invoice_builder_locked_title': 'منشئ الفواتير قيد الاستخدام',
+          'invoice_builder_locked':
+              'منشئ الفواتير مفتوح حاليًا على جهاز آخر. أغلقه على الجهاز الآخر، ثم حاول مرة أخرى.',
+          'invoice_builder_locked_action': 'رجوع',
+          'ok': 'حسنًا',
           'client_info': 'تفاصيل العميل:',
           'client_name': 'اسم العميل',
           'client_id': 'رقم النشاط / الهوية / الرقم الضريبي',
@@ -1990,6 +2037,11 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       case 'ru':
         _cachedStrings = {
           'title': 'Конструктор бизнес-документов',
+          'invoice_builder_locked_title': 'Конструктор счетов уже используется',
+          'invoice_builder_locked':
+              'Конструктор счетов сейчас открыт на другом устройстве. Закройте его там, затем повторите попытку.',
+          'invoice_builder_locked_action': 'Назад',
+          'ok': 'ОК',
           'client_info': 'Данные клиента:',
           'client_name': 'Имя клиента',
           'client_id': 'Номер бизнеса / ID / налоговый номер',
@@ -2094,6 +2146,11 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       case 'am':
         _cachedStrings = {
           'title': 'የንግድ ሰነድ አዘጋጅ',
+          'invoice_builder_locked_title': 'የኢንቮይስ አዘጋጁ በጥቅም ላይ ነው',
+          'invoice_builder_locked':
+              'የኢንቮይስ አዘጋጁ አሁን በሌላ መሣሪያ ላይ ክፍት ነው። በዚያ መሣሪያ ላይ ይዝጉት እና ከዚያ እንደገና ይሞክሩ።',
+          'invoice_builder_locked_action': 'ተመለስ',
+          'ok': 'እሺ',
           'client_info': 'የደንበኛ ዝርዝሮች:',
           'client_name': 'የደንበኛ ስም',
           'client_id': 'የንግድ ቁጥር / መታወቂያ / የግብር ቁጥር',
@@ -2195,6 +2252,11 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       default:
         _cachedStrings = {
           'title': 'Business Document Builder',
+          'invoice_builder_locked_title': 'Invoice Builder Is In Use',
+          'invoice_builder_locked':
+              'Invoice Builder is currently open on another device. Close it there, then try again.',
+          'invoice_builder_locked_action': 'Back',
+          'ok': 'OK',
           'client_info': 'Client Details:',
           'client_name': 'Client Name',
           'client_id': 'Business No. / ID / Tax ID',
@@ -2314,6 +2376,11 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   Map<String, String> _withRequiredDefaults(Map<String, String> source) {
     const defaults = {
       'title': 'Business Document Builder',
+      'invoice_builder_locked_title': 'Invoice Builder Is In Use',
+      'invoice_builder_locked':
+          'Invoice Builder is currently open on another device. Close it there, then try again.',
+      'invoice_builder_locked_action': 'Back',
+      'ok': 'OK',
       'preparing': 'Preparing document...',
       'doc_type': 'Document Type',
       'quote': 'Quote',
