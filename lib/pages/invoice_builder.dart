@@ -4159,149 +4159,132 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         footer: (pw.Context context) => pw.Column(
           mainAxisSize: pw.MainAxisSize.min,
           children: [
-            if (!_isQuoteLike)
-              pw.Directionality(
-                textDirection: pw.TextDirection.rtl,
-                child: pw.Column(
-                  mainAxisSize: pw.MainAxisSize.min,
-                  children: [
-                    pw.Divider(
-                      thickness: 0.8,
-                      color: pdf.PdfColors.blueGrey900,
-                    ),
-                    pw.SizedBox(height: 6),
-                    pw.Directionality(
-                      textDirection: pw.TextDirection.ltr,
-                      child: pw.Row(
-                        crossAxisAlignment: pw.CrossAxisAlignment.start,
-                        children: [
-                          pw.SizedBox(
-                            width: 220,
-                            child: pw.Align(
-                              alignment: pw.Alignment.centerLeft,
-                              child: pw.Directionality(
-                                textDirection: pw.TextDirection.rtl,
-                                child: pw.Column(
-                                  crossAxisAlignment:
-                                      pw.CrossAxisAlignment.start,
-                                  children: [
-                                    pw.SizedBox(
-                                      width: double.infinity,
-                                      child: pw.Align(
-                                        alignment: pw.Alignment.centerLeft,
-                                        child: pw.Directionality(
-                                          textDirection: pw.TextDirection.rtl,
-                                          child: pw.Text(
-                                            'הופק ב $generatedAt | $docTitle${pdfInvoiceNumber.isEmpty ? '' : ' $pdfInvoiceNumber'}',
-                                            textAlign: pw.TextAlign.left,
-                                            style: pw.TextStyle(
-                                              fontSize: 11,
-                                              color: pdf.PdfColors.blueGrey900,
-                                            ),
+            pw.Directionality(
+              textDirection: pw.TextDirection.rtl,
+              child: pw.Column(
+                mainAxisSize: pw.MainAxisSize.min,
+                children: [
+                  pw.Divider(thickness: 0.8, color: pdf.PdfColors.blueGrey900),
+                  pw.SizedBox(height: 6),
+                  pw.Directionality(
+                    textDirection: pw.TextDirection.ltr,
+                    child: pw.Row(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.SizedBox(
+                          width: 220,
+                          child: pw.Align(
+                            alignment: pw.Alignment.centerLeft,
+                            child: pw.Directionality(
+                              textDirection: pw.TextDirection.rtl,
+                              child: pw.Column(
+                                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                                children: [
+                                  pw.SizedBox(
+                                    width: double.infinity,
+                                    child: pw.Align(
+                                      alignment: pw.Alignment.centerLeft,
+                                      child: pw.Directionality(
+                                        textDirection: pw.TextDirection.rtl,
+                                        child: pw.Text(
+                                          'הופק ב $generatedAt | $signingDocumentLabel',
+                                          textAlign: pw.TextAlign.left,
+                                          style: pw.TextStyle(
+                                            fontSize: 11,
+                                            color: pdf.PdfColors.blueGrey900,
                                           ),
                                         ),
                                       ),
                                     ),
-                                    pw.SizedBox(height: 7),
-                                    pw.SizedBox(
-                                      width: double.infinity,
-                                      child: pw.Align(
-                                        alignment: pw.Alignment.centerLeft,
-                                        child: pw.Directionality(
-                                          textDirection: pw.TextDirection.ltr,
-                                          child: pw.Text(
-                                            '${context.pageNumber} / ${context.pagesCount}',
-                                            style: pw.TextStyle(
-                                              fontSize: 13,
-                                              color: pdf.PdfColors.blueGrey700,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                          pw.Spacer(),
-                          pw.SizedBox(
-                            width: 250,
-                            child: pw.Align(
-                              alignment: pw.Alignment.centerRight,
-                              child: pw.Directionality(
-                                textDirection: pw.TextDirection.rtl,
-                                child: pw.Column(
-                                  crossAxisAlignment: pw.CrossAxisAlignment.end,
-                                  children: [
-                                    pw.SizedBox(
-                                      width: double.infinity,
-                                      child: pw.Text(
-                                        'חתימה דיגיטלית מאובטחת',
-                                        textAlign: pw.TextAlign.right,
-                                        style: pw.TextStyle(
-                                          fontSize: 21,
-                                          fontWeight: pw.FontWeight.bold,
-                                          color: pdf.PdfColors.black,
-                                        ),
-                                      ),
-                                    ),
-                                    pw.SizedBox(height: 3),
-                                    pw.SizedBox(
-                                      width: double.infinity,
+                                  ),
+                                  pw.SizedBox(height: 7),
+                                  pw.SizedBox(
+                                    width: double.infinity,
+                                    child: pw.Align(
+                                      alignment: pw.Alignment.centerLeft,
                                       child: pw.Directionality(
                                         textDirection: pw.TextDirection.ltr,
-                                        child: pw.Row(
-                                          mainAxisAlignment:
-                                              pw.MainAxisAlignment.end,
-                                          children: [
-                                            if (appIcon != null) ...[
-                                              pw.Image(
-                                                appIcon,
-                                                width: 20,
-                                                height: 20,
-                                                fit: pw.BoxFit.contain,
-                                              ),
-                                              pw.SizedBox(width: 4),
-                                            ],
-                                            pw.Directionality(
-                                              textDirection:
-                                                  pw.TextDirection.rtl,
-                                              child: pw.Text(
-                                                'מסמך ממוחשב הופק על ידי הירו',
-                                                style: pw.TextStyle(
-                                                  fontSize: 11,
-                                                  color:
-                                                      pdf.PdfColors.blueGrey900,
-                                                ),
-                                              ),
-                                            ),
-                                          ],
+                                        child: pw.Text(
+                                          '${context.pageNumber} / ${context.pagesCount}',
+                                          style: pw.TextStyle(
+                                            fontSize: 13,
+                                            color: pdf.PdfColors.blueGrey700,
+                                          ),
                                         ),
                                       ),
                                     ),
-                                  ],
-                                ),
+                                  ),
+                                ],
                               ),
                             ),
                           ),
-                        ],
-                      ),
+                        ),
+                        pw.Spacer(),
+                        pw.SizedBox(
+                          width: 250,
+                          child: pw.Align(
+                            alignment: pw.Alignment.centerRight,
+                            child: pw.Directionality(
+                              textDirection: pw.TextDirection.rtl,
+                              child: pw.Column(
+                                crossAxisAlignment: pw.CrossAxisAlignment.end,
+                                children: [
+                                  pw.SizedBox(
+                                    width: double.infinity,
+                                    child: pw.Text(
+                                      'חתימה דיגיטלית מאובטחת',
+                                      textAlign: pw.TextAlign.right,
+                                      style: pw.TextStyle(
+                                        fontSize: 21,
+                                        fontWeight: pw.FontWeight.bold,
+                                        color: pdf.PdfColors.black,
+                                      ),
+                                    ),
+                                  ),
+                                  pw.SizedBox(height: 3),
+                                  pw.SizedBox(
+                                    width: double.infinity,
+                                    child: pw.Directionality(
+                                      textDirection: pw.TextDirection.ltr,
+                                      child: pw.Row(
+                                        mainAxisAlignment:
+                                            pw.MainAxisAlignment.end,
+                                        children: [
+                                          if (appIcon != null) ...[
+                                            pw.Image(
+                                              appIcon,
+                                              width: 20,
+                                              height: 20,
+                                              fit: pw.BoxFit.contain,
+                                            ),
+                                            pw.SizedBox(width: 4),
+                                          ],
+                                          pw.Directionality(
+                                            textDirection: pw.TextDirection.rtl,
+                                            child: pw.Text(
+                                              'מסמך ממוחשב הופק על ידי הירו',
+                                              style: pw.TextStyle(
+                                                fontSize: 11,
+                                                color:
+                                                    pdf.PdfColors.blueGrey900,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-              ),
-            if (_isQuoteLike)
-              pw.Align(
-                alignment: pw.Alignment.centerLeft,
-                child: pw.Text(
-                  '${context.pageNumber} / ${context.pagesCount}',
-                  style: pw.TextStyle(
-                    fontSize: 10,
-                    color: pdf.PdfColors.blueGrey700,
                   ),
-                ),
+                ],
               ),
+            ),
           ],
         ),
         build: (pw.Context context) => [
@@ -4703,91 +4686,34 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
               ],
             ),
           ),
-          if (_isQuoteLike) pw.NewPage(freeSpace: 170),
+          if (_isQuoteLike) pw.NewPage(freeSpace: 42),
           if (_isQuoteLike) pw.Spacer(),
           if (_isQuoteLike)
             pw.Directionality(
               textDirection: pw.TextDirection.rtl,
               child: pw.Container(
-                height: 160,
-                padding: const pw.EdgeInsets.symmetric(horizontal: 8),
-                child: pw.Column(
-                  mainAxisAlignment: pw.MainAxisAlignment.end,
+                padding: const pw.EdgeInsets.only(bottom: 8),
+                child: pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.center,
                   children: [
-                    pw.Row(
-                      mainAxisAlignment: pw.MainAxisAlignment.center,
-                      children: [
-                        pw.Text(
-                          'חתימה:',
-                          style: pw.TextStyle(
-                            fontSize: 10,
-                            color: pdf.PdfColors.blueGrey800,
-                          ),
-                        ),
-                        pw.SizedBox(width: 6),
-                        pw.Container(
-                          width: 230,
-                          height: 12,
-                          decoration: const pw.BoxDecoration(
-                            border: pw.Border(
-                              bottom: pw.BorderSide(
-                                color: pdf.PdfColors.blueGrey800,
-                                width: 0.8,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    pw.SizedBox(height: 18),
-                    pw.Divider(thickness: 1, color: pdf.PdfColors.blueGrey900),
-                    pw.SizedBox(height: 10),
-                    pw.Align(
-                      alignment: pw.Alignment.centerRight,
-                      child: pw.Text(
-                        'חתימה דיגיטלית מאובטחת',
-                        style: pw.TextStyle(
-                          fontSize: 16,
-                          fontWeight: pw.FontWeight.bold,
-                          color: pdf.PdfColors.black,
-                        ),
+                    pw.Text(
+                      'חתימה:',
+                      style: pw.TextStyle(
+                        fontSize: 10,
+                        color: pdf.PdfColors.blueGrey800,
                       ),
                     ),
-                    pw.SizedBox(height: 5),
-                    pw.Directionality(
-                      textDirection: pw.TextDirection.ltr,
-                      child: pw.Row(
-                        crossAxisAlignment: pw.CrossAxisAlignment.start,
-                        children: [
-                          pw.Expanded(
-                            child: pw.Directionality(
-                              textDirection: pw.TextDirection.rtl,
-                              child: pw.Text(
-                                'הופק ב $generatedAt | $signingDocumentLabel',
-                                style: pw.TextStyle(
-                                  fontSize: 8,
-                                  color: pdf.PdfColors.blueGrey900,
-                                ),
-                                textAlign: pw.TextAlign.left,
-                              ),
-                            ),
+                    pw.SizedBox(width: 6),
+                    pw.Container(
+                      width: 230,
+                      height: 12,
+                      decoration: const pw.BoxDecoration(
+                        border: pw.Border(
+                          bottom: pw.BorderSide(
+                            color: pdf.PdfColors.blueGrey800,
+                            width: 0.8,
                           ),
-                          pw.SizedBox(width: 18),
-                          pw.Expanded(
-                            child: pw.Directionality(
-                              textDirection: pw.TextDirection.rtl,
-                              child: pw.Text(
-                                'מסמך זה מיועד לחתימה דיגיטלית '
-                                'באמצעות מערכת הירו',
-                                style: pw.TextStyle(
-                                  fontSize: 8.5,
-                                  color: pdf.PdfColors.blueGrey900,
-                                ),
-                                textAlign: pw.TextAlign.right,
-                              ),
-                            ),
-                          ),
-                        ],
+                        ),
                       ),
                     ),
                   ],
