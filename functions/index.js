@@ -3203,15 +3203,29 @@ function renderSigningPage(token, signingRequest) {
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>${title}</title>
   <style>
-    *{box-sizing:border-box}body{margin:0;background:#f4f7fb;color:#0f172a;
-    font-family:Arial,sans-serif}.top{padding:14px 5%;background:#fff;
-    color:#0f172a;border-bottom:1px solid #dbe3ee;display:flex;
-    align-items:center;gap:14px}.top a{display:flex;
-    flex:0 0 auto;border-radius:12px}.top a:focus-visible{outline:3px solid #a78bfa;
-    outline-offset:3px}.app-icon{width:48px;height:48px;border-radius:12px;
-    object-fit:cover;display:block}.top h1{font-size:20px;margin:0}.wrap{
-    width:min(1100px,94%);
-    margin:20px auto;display:grid;grid-template-columns:1.5fr 1fr;gap:18px}
+    *{box-sizing:border-box}html,body{min-height:100%}body{margin:0;
+    background:#f4f7fb;color:#0f172a;font-family:Arial,sans-serif;display:flex;
+    flex-direction:column}.site-header{padding:16px 4% 0;position:relative;z-index:1}
+    .header-shell{width:min(1240px,100%);margin:auto;min-height:72px;padding:10px 14px;
+    display:flex;align-items:center;justify-content:space-between;gap:20px;
+    border:1px solid #ffffff99;border-radius:28px;background:#ffffffcc;
+    box-shadow:0 10px 28px #0f172a12;backdrop-filter:blur(14px)}.brand{display:flex;
+    align-items:center;gap:11px;color:#0f172a;text-decoration:none}.brand-mark{width:44px;
+    height:44px;border-radius:16px;object-fit:cover;box-shadow:0 5px 14px #2563eb40}
+    .brand-name{font-size:21px;font-weight:800;letter-spacing:-.4px}.brand-tagline{display:block;
+    margin-top:2px;color:#2563eb99;font-size:10px;font-weight:700;letter-spacing:2.8px;
+    text-transform:uppercase}.site-nav{display:flex;align-items:center;gap:4px;padding:5px;
+    border-radius:18px;background:#f8fafccc}.site-nav a{padding:9px 12px;border-radius:13px;
+    color:#475569;text-decoration:none;font-size:14px;font-weight:700;transition:.2s}.site-nav a:hover{
+    background:#eff6ff;color:#2563eb}.header-action{padding:10px 16px;border-radius:15px;
+    background:linear-gradient(135deg,#2563eb,#0ea5e9);color:#fff;text-decoration:none;
+    font-size:14px;font-weight:800;box-shadow:0 6px 16px #2563eb42}.header-tools{display:flex;
+    align-items:center;gap:12px}.language-switcher{display:flex;align-items:center;gap:2px;padding:5px;
+    border-radius:18px;background:#f1f5f9}.language-switcher span{padding:7px 10px;border-radius:12px;
+    color:#64748b;font-size:13px;font-weight:800}.language-switcher .active{background:#fff;color:#2563eb;
+    box-shadow:0 1px 4px #0f172a12}.sign-in{padding:9px 5px;color:#334155;text-decoration:none;
+    font-size:14px;font-weight:800}.page-content{flex:1}.wrap{
+    width:min(1100px,94%);margin:20px auto 36px;display:grid;grid-template-columns:1.5fr 1fr;gap:18px}
     .card{background:#fff;border:1px solid #dbe3ee;border-radius:16px;
     overflow:hidden;box-shadow:0 8px 24px #0f172a12}.pdf{width:100%;height:72vh;
     border:0}.form{padding:20px}.form h2{margin-top:0}label{display:block;
@@ -3223,18 +3237,50 @@ function renderSigningPage(token, signingRequest) {
     background:#7c3aed;color:#fff}.secondary{background:#e2e8f0;color:#0f172a}
     .status{padding:12px;border-radius:10px;background:#ecfdf5;color:#166534;
     margin-bottom:12px}.error{background:#fef2f2;color:#991b1b}
-    @media(max-width:800px){.wrap{grid-template-columns:1fr}.pdf{height:58vh}}
+    .site-footer{position:relative;overflow:hidden;margin-top:auto;padding:42px 4% 30px;
+    background:linear-gradient(135deg,#0e2236,#10283f 55%,#175181);color:#eff6ff}.site-footer:before,
+    .site-footer:after{content:'';position:absolute;border-radius:50%;filter:blur(45px);opacity:.32}
+    .site-footer:before{width:180px;height:180px;top:-90px;right:8%;background:#38bdf8}.site-footer:after{
+    width:210px;height:210px;bottom:-125px;left:5%;background:#60a5fa}.footer-shell{position:relative;
+    width:min(1240px,100%);margin:auto;padding:22px 24px;border:1px solid #ffffff26;border-radius:30px;
+    background:#ffffff0f;box-shadow:0 12px 36px #02061733}.footer-top,.footer-bottom{display:flex;
+    align-items:center;justify-content:space-between;gap:20px}.footer-brand{display:flex;align-items:center;
+    gap:11px;color:#fff;text-decoration:none}.footer-brand .brand-name{color:#fff}.footer-brand .brand-tagline{
+    color:#bae6fd}.footer-links{display:flex;flex-wrap:wrap;gap:18px}.footer-links a{color:#dbeafe;
+    text-decoration:none;font-size:14px;font-weight:700}.footer-links a:hover{color:#fff}.store-links{display:flex;
+    gap:9px}.store-links a{padding:8px 11px;border:1px solid #ffffff33;border-radius:14px;
+    color:#eff6ff;text-decoration:none;font-size:12px;font-weight:700;background:#ffffff12}.footer-rule{
+    height:1px;background:#ffffff33;margin:20px 0}.copyright{margin:0;color:#dbeafe;font-size:13px;font-weight:600}
+    @media(max-width:800px){.site-header{padding:12px 12px 0}.header-shell{min-height:64px;border-radius:23px}
+    .brand-mark{width:40px;height:40px}.site-nav,.language-switcher,.sign-in{display:none}.header-action{padding:9px 12px}.wrap{
+    grid-template-columns:1fr;margin-top:16px}.pdf{height:58vh}.site-footer{padding:30px 12px 20px}
+    .footer-shell{border-radius:24px;padding:20px}.footer-top,.footer-bottom{align-items:flex-start;
+    flex-direction:column}.footer-bottom{gap:14px}.store-links{width:100%;flex-wrap:wrap}}
   </style>
 </head>
 <body>
-  <header class="top">
-    <a href="${PUBLIC_APP_ORIGIN}" aria-label="מעבר לאתר Hiro">
-      <img class="app-icon" src="${PUBLIC_APP_ORIGIN}/apple-touch-icon.png"
-        alt="Hiro">
-    </a>
-    <h1>${title}</h1>
+  <header class="site-header">
+    <div class="header-shell">
+      <a class="brand" href="${PUBLIC_APP_ORIGIN}" aria-label="מעבר לאתר Hiro">
+        <img class="brand-mark" src="${PUBLIC_APP_ORIGIN}/web-app-manifest-192x192.png" alt="Hiro">
+        <span><span class="brand-name">Hiro</span><span class="brand-tagline">Trusted local pros</span></span>
+      </a>
+      <nav class="site-nav" aria-label="ניווט ראשי">
+        <a href="${PUBLIC_APP_ORIGIN}/">Home</a>
+        <a href="${PUBLIC_APP_ORIGIN}/search">Search</a>
+        <a href="${PUBLIC_APP_ORIGIN}/community">Community</a>
+        <a href="${PUBLIC_APP_ORIGIN}/messages">Messages</a>
+      </nav>
+      <div class="header-tools">
+        <div class="language-switcher" aria-label="Language">
+          <span class="active">EN</span><span>עב</span><span>ع</span>
+        </div>
+        <a class="sign-in" href="${PUBLIC_APP_ORIGIN}/auth/signin">Sign In</a>
+        <a class="header-action" href="${PUBLIC_APP_ORIGIN}/auth/signup">Sign Up</a>
+      </div>
+    </div>
   </header>
-  <main class="wrap">
+  <main class="page-content"><div class="wrap">
     <section class="card"><iframe class="pdf" src="${pdfUrl}"></iframe></section>
     <section class="card form">
       ${alreadySigned ? `
@@ -3252,7 +3298,30 @@ function renderSigningPage(token, signingRequest) {
         <button class="primary" id="submit">חתום ושלח מחדש</button>
       `}
     </section>
-  </main>
+  </div></main>
+  <footer class="site-footer">
+    <div class="footer-shell">
+      <div class="footer-top">
+        <a class="footer-brand" href="${PUBLIC_APP_ORIGIN}">
+          <img class="brand-mark" src="${PUBLIC_APP_ORIGIN}/web-app-manifest-192x192.png" alt="Hiro">
+          <span><span class="brand-name">Hiro</span><span class="brand-tagline">Local services</span></span>
+        </a>
+        <div class="store-links">
+          <a href="https://play.google.com/store/apps/details?id=com.hirehub.app" target="_blank" rel="noreferrer">Google Play</a>
+          <a href="https://apps.apple.com/us/app/hiro-%D7%94%D7%99%D7%A8%D7%95/id6763238120" target="_blank" rel="noreferrer">App Store</a>
+        </div>
+      </div>
+      <div class="footer-rule"></div>
+      <div class="footer-bottom">
+        <p class="copyright">Hiro Ltd. Copyright 2012–2026</p>
+        <nav class="footer-links" aria-label="קישורים משפטיים">
+          <a href="${PUBLIC_APP_ORIGIN}/contact">יצירת קשר</a>
+          <a href="${PUBLIC_APP_ORIGIN}/terms-of-service">תנאי שימוש</a>
+          <a href="${PUBLIC_APP_ORIGIN}/privacy-policy">מדיניות פרטיות</a>
+        </nav>
+      </div>
+    </div>
+  </footer>
   <script>
   const shareDocument=async()=>{const data={title:${JSON.stringify(title)},
     text:'מסמך חתום',url:location.href};if(navigator.share){await navigator.share(data)}
