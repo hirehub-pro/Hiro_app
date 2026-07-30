@@ -21,6 +21,7 @@ class AccountSettingsPage extends StatefulWidget {
 
 class _AccountSettingsPageState extends State<AccountSettingsPage> {
   late String _currentPhone;
+  late String _currentEmail;
   String _userRole = "customer";
   bool _isBusinessVerified = false;
 
@@ -31,11 +32,15 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
         widget.userData['phone'] ??
         FirebaseAuth.instance.currentUser?.phoneNumber ??
         'N/A';
+    _currentEmail =
+        widget.userData['email'] ??
+        FirebaseAuth.instance.currentUser?.email ??
+        'N/A';
     _userRole = widget.userData['role'] ?? "customer";
     _isBusinessVerified = widget.userData['isVerified'] ?? false;
   }
 
-  Map<String, String> _getLocalizedStrings(
+  static Map<String, String> _getLocalizedStrings(
     BuildContext context, {
     bool listen = true,
   }) {
@@ -57,6 +62,35 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
           'client': 'לקוח',
           'admin': 'מנהל',
           'change_phone': 'שנה מספר טלפון',
+          'change_email': 'שנה אימייל',
+          'change_password': 'שנה סיסמה',
+          'email_secure_link': 'נשלח קישור מאובטח לכתובת האימייל החדשה שלך.',
+          'confirm_current_email': 'אימות האימייל הנוכחי',
+          'open_email': 'פתח את האימייל',
+          'current_email_address': 'כתובת אימייל נוכחית',
+          'new_email_address': 'כתובת אימייל חדשה',
+          'send_verification_email': 'שלח אימייל אימות',
+          'email_change_help':
+              'נשלח קישור מאובטח לכתובת החדשה. האימייל ישתנה רק לאחר פתיחת הקישור.',
+          'email_confirm_help':
+              'אמת את האימייל שמחובר כעת לחשבון שלך לפני בחירת כתובת חדשה.',
+          'verification_sent': 'אימייל אימות נשלח אל ',
+          'enter_current_email': 'הזן את כתובת האימייל שמחוברת לחשבון שלך.',
+          'enter_different_email': 'הזן כתובת אימייל חדשה ושונה.',
+          'password_secure_link': 'נשלח לך קישור מאובטח להגדרת סיסמה חדשה.',
+          'reset_your_password': 'איפוס הסיסמה שלך',
+          'password_reset_help':
+              'נשלח את קישור האיפוס לאימייל שמחובר לחשבון שלך.',
+          'current_password': 'סיסמה נוכחית',
+          'enter_current_password': 'הזן את הסיסמה הנוכחית שלך',
+          'send_password_reset_email': 'שלח אימייל לאיפוס סיסמה',
+          'secure_reset_link': 'קישור איפוס מאובטח',
+          'secure_reset_help':
+              'למען אבטחתך, ניתן לשנות את הסיסמה רק דרך הקישור שנשלח לאימייל שלך.',
+          'password_reset_sent': 'אימייל לאיפוס סיסמה נשלח אל ',
+          'no_linked_email': 'אין כתובת אימייל מקושרת לחשבון זה.',
+          'password_required': 'הזן את הסיסמה הנוכחית כדי להמשיך.',
+          'sending': 'שולח…',
           'phone_updated': 'מספר הטלפון עודכן בהצלחה',
           'change_phone_verify_title': 'אמת את המספר הנוכחי',
           'change_phone_verify_body':
@@ -91,7 +125,8 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
           'delete_invoices_download': 'הבנתי, המשך',
           'delete_losses_next': 'הבא: חשבוניות',
           'delete_verify_title': 'אימות טלפוני למחיקה',
-          'delete_verify_body': 'הקלד את מספר הטלפון שלך ולאחר מכן נשלח אליו קוד SMS.',
+          'delete_verify_body':
+              'הקלד את מספר הטלפון שלך ולאחר מכן נשלח אליו קוד SMS.',
           'delete_phone_label': 'מספר טלפון',
           'delete_phone_hint': 'לדוגמה: 0501234567',
           'delete_code_label': 'קוד SMS',
@@ -127,6 +162,37 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
           'client': 'عميل',
           'admin': 'مسؤول',
           'change_phone': 'تغيير رقم الهاتف',
+          'change_email': 'تغيير البريد الإلكتروني',
+          'change_password': 'تغيير كلمة المرور',
+          'email_secure_link':
+              'سنرسل رابطًا آمنًا إلى عنوان بريدك الإلكتروني الجديد.',
+          'confirm_current_email': 'تأكيد البريد الإلكتروني الحالي',
+          'open_email': 'افتح البريد الإلكتروني',
+          'current_email_address': 'عنوان البريد الإلكتروني الحالي',
+          'new_email_address': 'عنوان البريد الإلكتروني الجديد',
+          'send_verification_email': 'إرسال بريد التحقق',
+          'email_change_help':
+              'سنرسل رابطًا آمنًا إلى العنوان الجديد. لن يتغير بريدك إلا بعد فتح الرابط.',
+          'email_confirm_help':
+              'أكد البريد الإلكتروني المرتبط حاليًا بحسابك قبل اختيار بريد جديد.',
+          'verification_sent': 'تم إرسال بريد تحقق إلى ',
+          'enter_current_email': 'أدخل عنوان البريد الإلكتروني المرتبط بحسابك.',
+          'enter_different_email': 'أدخل عنوان بريد إلكتروني جديدًا ومختلفًا.',
+          'password_secure_link':
+              'سنرسل إليك رابطًا آمنًا لتعيين كلمة مرور جديدة.',
+          'reset_your_password': 'إعادة تعيين كلمة المرور',
+          'password_reset_help':
+              'سنرسل رابط إعادة التعيين إلى البريد الإلكتروني المرتبط بحسابك.',
+          'current_password': 'كلمة المرور الحالية',
+          'enter_current_password': 'أدخل كلمة المرور الحالية',
+          'send_password_reset_email': 'إرسال بريد إعادة تعيين كلمة المرور',
+          'secure_reset_link': 'رابط إعادة تعيين آمن',
+          'secure_reset_help':
+              'لحمايتك، لا يمكن تغيير كلمة المرور إلا عبر الرابط المرسل إلى بريدك الإلكتروني.',
+          'password_reset_sent': 'تم إرسال بريد إعادة تعيين كلمة المرور إلى ',
+          'no_linked_email': 'لا يوجد بريد إلكتروني مرتبط بهذا الحساب.',
+          'password_required': 'أدخل كلمة المرور الحالية للمتابعة.',
+          'sending': 'جارٍ الإرسال…',
           'phone_updated': 'تم تحديث رقم الهاتف بنجاح',
           'change_phone_verify_title': 'تحقق من الرقم الحالي',
           'change_phone_verify_body':
@@ -200,6 +266,36 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
           'client': 'ደንበኛ',
           'admin': 'አስተዳዳሪ',
           'change_phone': 'የስልክ ቁጥር ቀይር',
+          'change_email': 'ኢሜይል ቀይር',
+          'change_password': 'የይለፍ ቃል ቀይር',
+          'email_secure_link': 'ወደ አዲሱ የኢሜይል አድራሻዎ ደህንነቱ የተጠበቀ ሊንክ እንልካለን።',
+          'confirm_current_email': 'አሁን ያለውን ኢሜይል ያረጋግጡ',
+          'open_email': 'ኢሜይሉን ይክፈቱ',
+          'current_email_address': 'አሁን ያለው የኢሜይል አድራሻ',
+          'new_email_address': 'አዲስ የኢሜይል አድራሻ',
+          'send_verification_email': 'የማረጋገጫ ኢሜይል ላክ',
+          'email_change_help':
+              'ወደ አዲሱ አድራሻ ደህንነቱ የተጠበቀ ሊንክ እንልካለን። ሊንኩን ከከፈቱ በኋላ ብቻ ኢሜይሉ ይቀየራል።',
+          'email_confirm_help':
+              'አዲስ ከመምረጥዎ በፊት በአሁኑ ጊዜ ከመለያዎ ጋር የተገናኘውን ኢሜይል ያረጋግጡ።',
+          'verification_sent': 'የማረጋገጫ ኢሜይል ተልኳል ወደ ',
+          'enter_current_email': 'ከመለያዎ ጋር የተገናኘውን ኢሜይል ያስገቡ።',
+          'enter_different_email': 'የተለየ አዲስ የኢሜይል አድራሻ ያስገቡ።',
+          'password_secure_link':
+              'አዲስ የይለፍ ቃል ለማዘጋጀት ደህንነቱ የተጠበቀ ሊንክ በኢሜይል እንልክልዎታለን።',
+          'reset_your_password': 'የይለፍ ቃልዎን ዳግም ያስጀምሩ',
+          'password_reset_help':
+              'የዳግም ማስጀመሪያ ሊንኩን ከመለያዎ ጋር ወደተገናኘው ኢሜይል እንልካለን።',
+          'current_password': 'የአሁኑ የይለፍ ቃል',
+          'enter_current_password': 'የአሁኑን የይለፍ ቃል ያስገቡ',
+          'send_password_reset_email': 'የይለፍ ቃል ዳግም ማስጀመሪያ ኢሜይል ላክ',
+          'secure_reset_link': 'ደህንነቱ የተጠበቀ የዳግም ማስጀመሪያ ሊንክ',
+          'secure_reset_help':
+              'ለደህንነትዎ የይለፍ ቃሉ መቀየር የሚችለው ወደ ኢሜይልዎ በተላከው ሊንክ ብቻ ነው።',
+          'password_reset_sent': 'የይለፍ ቃል ዳግም ማስጀመሪያ ኢሜይል ተልኳል ወደ ',
+          'no_linked_email': 'ከዚህ መለያ ጋር የተገናኘ ኢሜይል የለም።',
+          'password_required': 'ለመቀጠል የአሁኑን የይለፍ ቃል ያስገቡ።',
+          'sending': 'በመላክ ላይ…',
           'phone_updated': 'የስልክ ቁጥር በተሳካ ሁኔታ ተዘምኗል',
           'change_phone_verify_title': 'ያለውን ቁጥር ያረጋግጡ',
           'change_phone_verify_body':
@@ -248,8 +344,7 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
           'delete_code_failed': 'ማረጋገጫው አልተሳካም',
           'delete_phone_invalid':
               'እባክዎ ትክክለኛ የእስራኤል የስልክ ቁጥር ያስገቡ (05XXXXXXXX)',
-          'delete_phone_mismatch':
-              'የስልክ ቁጥሩ ከዚህ መለያ ጋር ከተገናኘው ቁጥር ጋር አይዛመድም',
+          'delete_phone_mismatch': 'የስልክ ቁጥሩ ከዚህ መለያ ጋር ከተገናኘው ቁጥር ጋር አይዛመድም',
           'delete_customer_loss_1': 'መገለጫዎ እና የመለያ መረጃዎ ይሰረዛሉ',
           'delete_customer_loss_2': 'መልዕክቶች እና ጥያቄዎች አይገኙም',
           'delete_customer_loss_3': 'የተቀመጡ ነገሮች ይወገዳሉ',
@@ -270,6 +365,38 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
           'client': 'Клиент',
           'admin': 'Администратор',
           'change_phone': 'Изменить номер телефона',
+          'change_email': 'Изменить email',
+          'change_password': 'Изменить пароль',
+          'email_secure_link':
+              'Мы отправим защищенную ссылку на ваш новый адрес электронной почты.',
+          'confirm_current_email': 'Подтвердите текущий email',
+          'open_email': 'Откройте email',
+          'current_email_address': 'Текущий адрес email',
+          'new_email_address': 'Новый адрес email',
+          'send_verification_email': 'Отправить письмо для подтверждения',
+          'email_change_help':
+              'Мы отправим защищенную ссылку на новый адрес. Email изменится только после открытия ссылки.',
+          'email_confirm_help':
+              'Подтвердите email, который сейчас привязан к аккаунту, прежде чем выбрать новый.',
+          'verification_sent': 'Письмо для подтверждения отправлено на ',
+          'enter_current_email':
+              'Введите адрес email, привязанный к вашему аккаунту.',
+          'enter_different_email': 'Введите другой новый адрес email.',
+          'password_secure_link':
+              'Мы отправим вам защищенную ссылку для установки нового пароля.',
+          'reset_your_password': 'Сброс пароля',
+          'password_reset_help':
+              'Мы отправим ссылку для сброса на email, привязанный к вашему аккаунту.',
+          'current_password': 'Текущий пароль',
+          'enter_current_password': 'Введите текущий пароль',
+          'send_password_reset_email': 'Отправить письмо для сброса пароля',
+          'secure_reset_link': 'Защищенная ссылка для сброса',
+          'secure_reset_help':
+              'Для вашей безопасности пароль можно изменить только по ссылке, отправленной на ваш email.',
+          'password_reset_sent': 'Письмо для сброса пароля отправлено на ',
+          'no_linked_email': 'К этому аккаунту не привязан адрес email.',
+          'password_required': 'Введите текущий пароль, чтобы продолжить.',
+          'sending': 'Отправка…',
           'phone_updated': 'Номер телефона успешно обновлен',
           'change_phone_verify_title': 'Подтвердите текущий номер',
           'change_phone_verify_body':
@@ -346,6 +473,38 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
           'client': 'Client',
           'admin': 'Admin',
           'change_phone': 'Change Phone Number',
+          'change_email': 'Change Email',
+          'change_password': 'Change Password',
+          'email_secure_link':
+              'We will send a secure link to your new email address.',
+          'confirm_current_email': 'Confirm current email',
+          'open_email': 'Open the email',
+          'current_email_address': 'Current email address',
+          'new_email_address': 'New email address',
+          'send_verification_email': 'Send verification email',
+          'email_change_help':
+              'We will send a secure link to the new address. Your email changes only after you open the link.',
+          'email_confirm_help':
+              'Confirm the email currently connected to your account before choosing a new one.',
+          'verification_sent': 'A verification email was sent to ',
+          'enter_current_email':
+              'Enter the email address currently linked to your account.',
+          'enter_different_email': 'Enter a different new email address.',
+          'password_secure_link':
+              'We will email you a secure link to set a new password.',
+          'reset_your_password': 'Reset your password',
+          'password_reset_help':
+              'We will send the reset link to the email connected to your account.',
+          'current_password': 'Current password',
+          'enter_current_password': 'Enter your current password',
+          'send_password_reset_email': 'Send password reset email',
+          'secure_reset_link': 'A secure reset link',
+          'secure_reset_help':
+              'For your security, the password can only be changed through the link sent to your email.',
+          'password_reset_sent': 'A password reset email was sent to ',
+          'no_linked_email': 'No email address is linked to this account.',
+          'password_required': 'Enter your current password to continue.',
+          'sending': 'Sending…',
           'phone_updated': 'Phone number updated successfully',
           'change_phone_verify_title': 'Verify your current number',
           'change_phone_verify_body':
@@ -478,6 +637,28 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
         ),
       );
     });
+  }
+
+  Future<void> _onChangeEmail() async {
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => _ChangeEmailPage(
+          strings: _getLocalizedStrings(context, listen: false),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _onChangePassword() async {
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => _ChangePasswordPage(
+          strings: _getLocalizedStrings(context, listen: false),
+        ),
+      ),
+    );
   }
 
   Future<void> _startDeleteAccountFlow() async {
@@ -891,7 +1072,7 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
         Provider.of<LanguageProvider>(context).locale.languageCode == 'he' ||
         Provider.of<LanguageProvider>(context).locale.languageCode == 'ar';
 
-    final email = widget.userData['email'] ?? strings['na'];
+    final email = _currentEmail;
     final town = widget.userData['town'] ?? strings['na'];
 
     String userType = strings['client']!;
@@ -941,6 +1122,24 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
                     title: Text(strings['change_phone']!),
                     trailing: const CupertinoListTileChevron(),
                     onTap: _onChangePhone,
+                  ),
+                  CupertinoListTile(
+                    leading: const Icon(
+                      CupertinoIcons.envelope,
+                      color: CupertinoColors.systemBlue,
+                    ),
+                    title: Text(strings['change_email']!),
+                    trailing: const CupertinoListTileChevron(),
+                    onTap: _onChangeEmail,
+                  ),
+                  CupertinoListTile(
+                    leading: const Icon(
+                      CupertinoIcons.lock,
+                      color: CupertinoColors.systemBlue,
+                    ),
+                    title: Text(strings['change_password']!),
+                    trailing: const CupertinoListTileChevron(),
+                    onTap: _onChangePassword,
                   ),
                   if (_userRole == 'worker' && _isBusinessVerified)
                     CupertinoListTile(
@@ -1033,6 +1232,18 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
                 Icons.phone_android_outlined,
                 strings['change_phone']!,
                 _onChangePhone,
+              ),
+              const Divider(height: 1, indent: 50),
+              _buildTile(
+                Icons.email_outlined,
+                strings['change_email']!,
+                _onChangeEmail,
+              ),
+              const Divider(height: 1, indent: 50),
+              _buildTile(
+                Icons.lock_outline,
+                strings['change_password']!,
+                _onChangePassword,
               ),
               if (_userRole == 'worker' && _isBusinessVerified) ...[
                 const Divider(height: 1, indent: 50),
@@ -1142,6 +1353,580 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
       ),
     );
   }
+}
+
+class _ChangeEmailPage extends StatefulWidget {
+  final Map<String, String> strings;
+  const _ChangeEmailPage({required this.strings});
+
+  @override
+  State<_ChangeEmailPage> createState() => _ChangeEmailPageState();
+}
+
+class _ChangeEmailPageState extends State<_ChangeEmailPage> {
+  final _currentEmailController = TextEditingController();
+  final _newEmailController = TextEditingController();
+  bool _isLoading = false;
+  String _t(String key) => widget.strings[key]!;
+
+  @override
+  void dispose() {
+    _currentEmailController.dispose();
+    _newEmailController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _sendVerificationEmail() async {
+    final user = FirebaseAuth.instance.currentUser;
+    final accountEmail = user?.email;
+    final currentEmail = _currentEmailController.text.trim();
+    final newEmail = _newEmailController.text.trim();
+    if (user == null || accountEmail == null || accountEmail.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_t('no_linked_email'))));
+      return;
+    }
+    if (currentEmail.toLowerCase() != accountEmail.toLowerCase()) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_t('enter_current_email'))));
+      return;
+    }
+    if (newEmail.isEmpty ||
+        newEmail.toLowerCase() == accountEmail.toLowerCase()) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_t('enter_different_email'))));
+      return;
+    }
+
+    setState(() => _isLoading = true);
+    try {
+      await user.verifyBeforeUpdateEmail(newEmail);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${_t('verification_sent')}$newEmail')),
+      );
+    } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.message ?? e.code)));
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF4F4FA),
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        foregroundColor: const Color(0xFF111827),
+        elevation: 0,
+        title: Text(_t('change_email')),
+      ),
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 760),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _t('change_email'),
+                    style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _t('email_secure_link'),
+                    style: TextStyle(fontSize: 16, color: Color(0xFF6B7280)),
+                  ),
+                  const SizedBox(height: 28),
+                  _progressIndicator(),
+                  const SizedBox(height: 28),
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final changeCard = _buildChangeCard();
+                      final infoCard = _buildInfoCard();
+                      return constraints.maxWidth >= 620
+                          ? Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(child: changeCard),
+                                const SizedBox(width: 20),
+                                Expanded(child: infoCard),
+                              ],
+                            )
+                          : Column(
+                              children: [
+                                changeCard,
+                                const SizedBox(height: 20),
+                                infoCard,
+                              ],
+                            );
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _progressIndicator() => Container(
+    padding: const EdgeInsets.all(10),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(28),
+    ),
+    child: Row(
+      children: [
+        Expanded(
+          child: _ProgressStep(
+            icon: Icons.shield_outlined,
+            label: _t('confirm_current_email'),
+            active: true,
+          ),
+        ),
+        SizedBox(width: 8),
+        Expanded(
+          child: _ProgressStep(
+            icon: Icons.email_outlined,
+            label: _t('change_email'),
+            active: true,
+          ),
+        ),
+        SizedBox(width: 8),
+        Expanded(
+          child: _ProgressStep(
+            icon: Icons.check_circle_outline,
+            label: _t('open_email'),
+          ),
+        ),
+      ],
+    ),
+  );
+
+  Widget _buildChangeCard() => _emailCard(
+    Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            _CardIcon(icon: Icons.email_outlined),
+            SizedBox(width: 14),
+            Text(
+              _t('change_email'),
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        Text(
+          _t('email_change_help'),
+          style: TextStyle(
+            fontSize: 16,
+            height: 1.45,
+            color: Color(0xFF6B7280),
+          ),
+        ),
+        const SizedBox(height: 24),
+        Text(
+          _t('current_email_address'),
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 8),
+        _emailField(_currentEmailController, 'current@example.com'),
+        const SizedBox(height: 20),
+        Text(
+          _t('new_email_address'),
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 8),
+        _emailField(_newEmailController, 'new@example.com'),
+        const SizedBox(height: 24),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            onPressed: _isLoading ? null : _sendVerificationEmail,
+            icon: _isLoading
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Icon(Icons.send_outlined),
+            label: Text(
+              _isLoading ? _t('sending') : _t('send_verification_email'),
+            ),
+            style: FilledButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 17),
+              backgroundColor: const Color(0xFF1976D2),
+              textStyle: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+
+  Widget _emailField(TextEditingController controller, String hint) =>
+      TextField(
+        controller: controller,
+        keyboardType: TextInputType.emailAddress,
+        autofillHints: const [AutofillHints.email],
+        decoration: InputDecoration(
+          hintText: hint,
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+        ),
+      );
+
+  Widget _buildInfoCard() => _emailCard(
+    Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _CardIcon(icon: Icons.shield_outlined),
+        SizedBox(height: 24),
+        Text(
+          _t('confirm_current_email'),
+          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+        ),
+        SizedBox(height: 14),
+        Text(
+          _t('email_confirm_help'),
+          style: TextStyle(fontSize: 16, height: 1.5, color: Color(0xFF6B7280)),
+        ),
+      ],
+    ),
+  );
+
+  Widget _emailCard(Widget child) => Container(
+    padding: const EdgeInsets.all(32),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(26),
+    ),
+    child: child,
+  );
+}
+
+class _ProgressStep extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool active;
+  const _ProgressStep({
+    required this.icon,
+    required this.label,
+    this.active = false,
+  });
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 13),
+    decoration: BoxDecoration(
+      color: active ? const Color(0xFFE3F2FD) : const Color(0xFFF8FAFC),
+      borderRadius: BorderRadius.circular(22),
+    ),
+    child: Row(
+      children: [
+        Icon(
+          icon,
+          color: active ? const Color(0xFF1976D2) : const Color(0xFF94A3B8),
+          size: 21,
+        ),
+        const SizedBox(width: 7),
+        Expanded(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: active ? const Color(0xFF1976D2) : const Color(0xFF94A3B8),
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _ChangePasswordPage extends StatefulWidget {
+  final Map<String, String> strings;
+  const _ChangePasswordPage({required this.strings});
+
+  @override
+  State<_ChangePasswordPage> createState() => _ChangePasswordPageState();
+}
+
+class _ChangePasswordPageState extends State<_ChangePasswordPage> {
+  final _passwordController = TextEditingController();
+  bool _isLoading = false;
+  bool _obscurePassword = true;
+  String _t(String key) => widget.strings[key]!;
+
+  @override
+  void dispose() {
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _sendPasswordResetEmail() async {
+    final user = FirebaseAuth.instance.currentUser;
+    final email = user?.email;
+    final password = _passwordController.text;
+    if (user == null || email == null || email.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_t('no_linked_email'))));
+      return;
+    }
+    if (password.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_t('password_required'))));
+      return;
+    }
+
+    setState(() => _isLoading = true);
+    try {
+      await user.reauthenticateWithCredential(
+        EmailAuthProvider.credential(email: email, password: password),
+      );
+      await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${_t('password_reset_sent')}$email')),
+      );
+      Navigator.pop(context);
+    } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.message ?? e.code)));
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final email =
+        FirebaseAuth.instance.currentUser?.email ?? _t('no_linked_email');
+    return Scaffold(
+      backgroundColor: const Color(0xFFF4F4FA),
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        foregroundColor: const Color(0xFF111827),
+        elevation: 0,
+        title: Text(_t('change_password')),
+      ),
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 760),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _t('change_password'),
+                    style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _t('password_secure_link'),
+                    style: TextStyle(fontSize: 16, color: Color(0xFF6B7280)),
+                  ),
+                  const SizedBox(height: 28),
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final isWide = constraints.maxWidth >= 620;
+                      final resetCard = _buildResetCard(email);
+                      final infoCard = _buildInfoCard();
+                      return isWide
+                          ? Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(child: resetCard),
+                                const SizedBox(width: 20),
+                                Expanded(child: infoCard),
+                              ],
+                            )
+                          : Column(
+                              children: [
+                                resetCard,
+                                const SizedBox(height: 20),
+                                infoCard,
+                              ],
+                            );
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildResetCard(String email) {
+    return _card(
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              _CardIcon(icon: Icons.key_outlined),
+              SizedBox(width: 14),
+              Expanded(
+                child: Text(
+                  _t('reset_your_password'),
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Text(
+            _t('password_reset_help'),
+            style: TextStyle(
+              fontSize: 16,
+              height: 1.45,
+              color: Color(0xFF6B7280),
+            ),
+          ),
+          const SizedBox(height: 20),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF6F8FC),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Text(
+              email,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            ),
+          ),
+          const SizedBox(height: 20),
+          Text(
+            _t('current_password'),
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _passwordController,
+            obscureText: _obscurePassword,
+            autocorrect: false,
+            enableSuggestions: false,
+            decoration: InputDecoration(
+              hintText: _t('enter_current_password'),
+              suffixIcon: IconButton(
+                onPressed: () =>
+                    setState(() => _obscurePassword = !_obscurePassword),
+                icon: Icon(
+                  _obscurePassword
+                      ? Icons.visibility_outlined
+                      : Icons.visibility_off_outlined,
+                ),
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: _isLoading ? null : _sendPasswordResetEmail,
+              icon: _isLoading
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.send_outlined),
+              label: Text(
+                _isLoading ? _t('sending') : _t('send_password_reset_email'),
+              ),
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 17),
+                backgroundColor: const Color(0xFF1976D2),
+                textStyle: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoCard() => _card(
+    Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _CardIcon(icon: Icons.email_outlined),
+        SizedBox(height: 24),
+        Text(
+          _t('secure_reset_link'),
+          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+        ),
+        SizedBox(height: 14),
+        Text(
+          _t('secure_reset_help'),
+          style: TextStyle(fontSize: 16, height: 1.5, color: Color(0xFF6B7280)),
+        ),
+      ],
+    ),
+  );
+
+  Widget _card(Widget child) => Container(
+    padding: const EdgeInsets.all(32),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(26),
+    ),
+    child: child,
+  );
+}
+
+class _CardIcon extends StatelessWidget {
+  final IconData icon;
+  const _CardIcon({required this.icon});
+
+  @override
+  Widget build(BuildContext context) => Container(
+    height: 64,
+    width: 64,
+    decoration: BoxDecoration(
+      color: const Color(0xFFE3F2FD),
+      borderRadius: BorderRadius.circular(18),
+    ),
+    child: Icon(icon, color: const Color(0xFF1976D2), size: 30),
+  );
 }
 
 class _DeletePhoneVerificationPage extends StatefulWidget {
