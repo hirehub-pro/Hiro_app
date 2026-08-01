@@ -320,6 +320,10 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       case 'credit':
       case 'transfer':
       case 'check':
+      case 'bit':
+      case 'paybox':
+      case 'other':
+      case 'withholding_tax':
         return raw!;
       default:
         return 'cash';
@@ -1044,6 +1048,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   double get _discountAmount => _manualDiscountAmount;
 
   double get _subtotalAmount {
+    if (_selectedDocType == 'receipt' && _items.isEmpty) {
+      return _paymentMethodsAmountTotal();
+    }
     final subtotal = _itemsSubtotalBeforeTax - _discountAmount;
     return subtotal < 0 ? 0 : subtotal;
   }
@@ -1053,6 +1060,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   double get _totalBeforeRoundingAmount => _subtotalAmount + _vatAmount;
 
   double get _roundingAmount {
+    if (_selectedDocType == 'receipt' && _items.isEmpty) return 0.0;
     if (!_roundTotalEnabled) return 0.0;
     final roundedTotal = _totalBeforeRoundingAmount.floorToDouble();
     final reductionNeeded = _totalBeforeRoundingAmount - roundedTotal;
@@ -2809,7 +2817,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   }
 
   Future<Uint8List?> _getGeneratedPdfBytes({String? allocationNumber}) async {
-    if (_items.isEmpty) return null;
+    if (_items.isEmpty && _selectedDocType != 'receipt') return null;
 
     try {
       if (_cachedFont == null) await _loadAssets();
@@ -3029,6 +3037,14 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         return isRtl ? 'העברה בנקאית' : 'Bank Transfer';
       case 'check':
         return isRtl ? 'צ׳ק' : 'Check';
+      case 'bit':
+        return 'Bit';
+      case 'paybox':
+        return 'PayBox';
+      case 'other':
+        return isRtl ? 'אחר' : 'Other';
+      case 'withholding_tax':
+        return isRtl ? 'ניכוי מס במקור' : 'Withholding Tax';
       case 'cash':
       default:
         return isRtl ? 'מזומן' : 'Cash';
@@ -3239,7 +3255,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   }
 
   Future<void> _openPreviewPage() async {
-    if (_items.isEmpty) {
+    if (_items.isEmpty && _selectedDocType != 'receipt') {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -3581,7 +3597,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   Future<void> _showContactPickerAndSend({
     InvoiceBuilderDraftResult? savedInvoice,
   }) async {
-    if (_items.isEmpty) {
+    if (_items.isEmpty && _selectedDocType != 'receipt') {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -4522,46 +4538,48 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                   ),
                   pw.SizedBox(height: 18),
                 ],
-                // Items Table
-                pw.TableHelper.fromTextArray(
-                  headers: [
-                    strings['desc']!,
-                    strings['qty']!,
-                    strings['price']!,
-                    strings['total']!,
-                  ],
-                  data: _items
-                      .map(
-                        (item) => [
-                          item.description,
-                          item.quantity.toString(),
-                          "${_unitPriceAfterTax(item).toStringAsFixed(2)} ₪",
-                          "${_signedItemTotal(item).toStringAsFixed(2)} ₪",
-                        ],
-                      )
-                      .toList(),
-                  headerStyle: pw.TextStyle(
-                    fontWeight: pw.FontWeight.bold,
-                    color: pdf.PdfColors.white,
-                    fontSize: 12,
+                if (_selectedDocType != 'receipt') ...[
+                  // Items Table
+                  pw.TableHelper.fromTextArray(
+                    headers: [
+                      strings['desc']!,
+                      strings['qty']!,
+                      strings['price']!,
+                      strings['total']!,
+                    ],
+                    data: _items
+                        .map(
+                          (item) => [
+                            item.description,
+                            item.quantity.toString(),
+                            "${_unitPriceAfterTax(item).toStringAsFixed(2)} ₪",
+                            "${_signedItemTotal(item).toStringAsFixed(2)} ₪",
+                          ],
+                        )
+                        .toList(),
+                    headerStyle: pw.TextStyle(
+                      fontWeight: pw.FontWeight.bold,
+                      color: pdf.PdfColors.white,
+                      fontSize: 12,
+                    ),
+                    headerDecoration: const pw.BoxDecoration(
+                      color: pdf.PdfColors.blue,
+                    ),
+                    cellAlignment: pw.Alignment.centerRight,
+                    cellStyle: const pw.TextStyle(fontSize: 11),
+                    columnWidths: {
+                      0: const pw.FlexColumnWidth(4),
+                      1: const pw.FixedColumnWidth(60),
+                      2: const pw.FixedColumnWidth(100),
+                      3: const pw.FixedColumnWidth(100),
+                    },
+                    border: pw.TableBorder.all(
+                      color: pdf.PdfColors.grey400,
+                      width: 0.5,
+                    ),
                   ),
-                  headerDecoration: const pw.BoxDecoration(
-                    color: pdf.PdfColors.blue,
-                  ),
-                  cellAlignment: pw.Alignment.centerRight,
-                  cellStyle: const pw.TextStyle(fontSize: 11),
-                  columnWidths: {
-                    0: const pw.FlexColumnWidth(4),
-                    1: const pw.FixedColumnWidth(60),
-                    2: const pw.FixedColumnWidth(100),
-                    3: const pw.FixedColumnWidth(100),
-                  },
-                  border: pw.TableBorder.all(
-                    color: pdf.PdfColors.grey400,
-                    width: 0.5,
-                  ),
-                ),
-                pw.SizedBox(height: 18),
+                  pw.SizedBox(height: 18),
+                ],
                 // Summary Box
                 pw.Align(
                   alignment: pw.Alignment.centerRight,
@@ -4702,7 +4720,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                     ),
                   ),
                 ),
-                if (_showsPaymentMethodSection) ...[
+                if (_showsPaymentMethodSection &&
+                    _selectedDocType != 'receipt') ...[
                   pw.SizedBox(height: 24),
                   pw.Text(
                     strings['payment_method']!,
@@ -5106,7 +5125,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                           const SizedBox(height: 20),
                         ],
 
-                        // Payment Method Section
+                        // Client information
                         const SizedBox(height: 20),
                         _buildSectionCard(
                           title: strings['client_info']!,
@@ -5194,112 +5213,114 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                           ],
                         ),
 
-                        const SizedBox(height: 20),
-                        _buildSectionCard(
-                          title: strings['items']!,
-                          icon: Icons.list_alt_rounded,
-                          children: [
-                            _buildTextField(
-                              _itemDescController,
-                              strings['desc']!,
-                              Icons.description_outlined,
-                              required: true,
-                            ),
-                            const SizedBox(height: 12),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: _buildTextField(
-                                    _itemQtyController,
-                                    strings['qty']!,
-                                    Icons.numbers_rounded,
-                                    keyboardType: TextInputType.number,
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: _buildTextField(
-                                    _itemPriceController,
-                                    strings['price']!,
-                                    Icons.sell_outlined,
-                                    required: true,
-                                    keyboardType: TextInputType.number,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 12),
-                            DropdownButtonFormField<String>(
-                              isExpanded: true,
-                              initialValue: _selectedPriceTaxMode,
-                              decoration: _inputStyle(
-                                strings['price_tax_mode']!,
-                                Icons.percent_rounded,
-                              ),
-                              items: [
-                                DropdownMenuItem(
-                                  value: 'after_tax',
-                                  child: Text(strings['price_after_tax']!),
-                                ),
-                                DropdownMenuItem(
-                                  value: 'before_tax',
-                                  child: Text(strings['price_before_tax']!),
-                                ),
-                              ],
-                              onChanged: (value) {
-                                if (value == null) return;
-                                setState(() => _selectedPriceTaxMode = value);
-                              },
-                            ),
-                            const SizedBox(height: 12),
-                            SwitchListTile.adaptive(
-                              contentPadding: EdgeInsets.zero,
-                              title: Text(strings['has_discount']!),
-                              value: _hasDiscount,
-                              onChanged: (value) {
-                                setState(() {
-                                  _hasDiscount = value;
-                                  if (!value) {
-                                    _discountController.clear();
-                                  }
-                                });
-                              },
-                            ),
-                            if (_hasDiscount) ...[
-                              const SizedBox(height: 8),
+                        if (_selectedDocType != 'receipt') ...[
+                          const SizedBox(height: 20),
+                          _buildSectionCard(
+                            title: strings['items']!,
+                            icon: Icons.list_alt_rounded,
+                            children: [
                               _buildTextField(
-                                _discountController,
-                                strings['discount_amount']!,
-                                Icons.discount_outlined,
+                                _itemDescController,
+                                strings['desc']!,
+                                Icons.description_outlined,
                                 required: true,
-                                keyboardType:
-                                    const TextInputType.numberWithOptions(
-                                      decimal: true,
+                              ),
+                              const SizedBox(height: 12),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: _buildTextField(
+                                      _itemQtyController,
+                                      strings['qty']!,
+                                      Icons.numbers_rounded,
+                                      keyboardType: TextInputType.number,
                                     ),
-                                onChanged: (_) => setState(() {}),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: _buildTextField(
+                                      _itemPriceController,
+                                      strings['price']!,
+                                      Icons.sell_outlined,
+                                      required: true,
+                                      keyboardType: TextInputType.number,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              DropdownButtonFormField<String>(
+                                isExpanded: true,
+                                initialValue: _selectedPriceTaxMode,
+                                decoration: _inputStyle(
+                                  strings['price_tax_mode']!,
+                                  Icons.percent_rounded,
+                                ),
+                                items: [
+                                  DropdownMenuItem(
+                                    value: 'after_tax',
+                                    child: Text(strings['price_after_tax']!),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'before_tax',
+                                    child: Text(strings['price_before_tax']!),
+                                  ),
+                                ],
+                                onChanged: (value) {
+                                  if (value == null) return;
+                                  setState(() => _selectedPriceTaxMode = value);
+                                },
+                              ),
+                              const SizedBox(height: 12),
+                              SwitchListTile.adaptive(
+                                contentPadding: EdgeInsets.zero,
+                                title: Text(strings['has_discount']!),
+                                value: _hasDiscount,
+                                onChanged: (value) {
+                                  setState(() {
+                                    _hasDiscount = value;
+                                    if (!value) {
+                                      _discountController.clear();
+                                    }
+                                  });
+                                },
+                              ),
+                              if (_hasDiscount) ...[
+                                const SizedBox(height: 8),
+                                _buildTextField(
+                                  _discountController,
+                                  strings['discount_amount']!,
+                                  Icons.discount_outlined,
+                                  required: true,
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                        decimal: true,
+                                      ),
+                                  onChanged: (_) => setState(() {}),
+                                ),
+                              ],
+                              const SizedBox(height: 16),
+                              SizedBox(
+                                width: double.infinity,
+                                child: ElevatedButton.icon(
+                                  onPressed: _addItem,
+                                  icon: const Icon(Icons.add_rounded),
+                                  label: Text(strings['add_item']!),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(
+                                      0xFF1976D2,
+                                    ).withValues(alpha: 0.1),
+                                    foregroundColor: const Color(0xFF1976D2),
+                                    elevation: 0,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                ),
                               ),
                             ],
-                            const SizedBox(height: 16),
-                            SizedBox(
-                              width: double.infinity,
-                              child: ElevatedButton.icon(
-                                onPressed: _addItem,
-                                icon: const Icon(Icons.add_rounded),
-                                label: Text(strings['add_item']!),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(
-                                    0xFF1976D2,
-                                  ).withValues(alpha: 0.1),
-                                  foregroundColor: const Color(0xFF1976D2),
-                                  elevation: 0,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
+                          ),
+                        ],
 
                         if (_showsPaymentMethodSection)
                           _buildSectionCard(
@@ -5339,7 +5360,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                               ),
                             ],
                           ),
-                        if (_items.isNotEmpty) ...[
+                        if (_selectedDocType != 'receipt' &&
+                            _items.isNotEmpty) ...[
                           const SizedBox(height: 16),
                           ListView.builder(
                             shrinkWrap: true,
@@ -5428,7 +5450,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                         ),
 
                         const SizedBox(height: 32),
-                        if (_items.isNotEmpty) ...[
+                        if (_items.isNotEmpty ||
+                            (_selectedDocType == 'receipt' &&
+                                _paymentMethodsAmountTotal() > 0)) ...[
                           Container(
                             padding: const EdgeInsets.all(20),
                             decoration: BoxDecoration(
@@ -5704,6 +5728,19 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                       value: 'transfer',
                       child: Text(isRtl ? 'העברה בנקאית' : 'Bank Transfer'),
                     ),
+                    const DropdownMenuItem(value: 'bit', child: Text('Bit')),
+                    const DropdownMenuItem(
+                      value: 'paybox',
+                      child: Text('PayBox'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'other',
+                      child: Text(isRtl ? 'אחר' : 'Other'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'withholding_tax',
+                      child: Text(isRtl ? 'ניכוי מס במקור' : 'Withholding Tax'),
+                    ),
                     DropdownMenuItem(
                       value: 'check',
                       child: Text(isRtl ? 'צ׳ק' : 'Check'),
@@ -5842,6 +5879,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
             Icons.payments_outlined,
             required: true,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            onChanged: (_) => setState(() {}),
             textInputAction: TextInputAction.done,
             onSubmitted: (_) {
               FocusScope.of(context).unfocus();
@@ -5949,6 +5987,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         if (!hasFocus) _clearInvalidBranch(entry);
       },
       child: Autocomplete<_BankBranch>(
+        key: ValueKey('branch-autocomplete-$bankId'),
         textEditingController: entry.transferBranchController,
         focusNode: entry.transferBranchFocusNode,
         displayStringForOption: (branch) => branch.label,
