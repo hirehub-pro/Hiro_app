@@ -21,6 +21,16 @@ import 'package:untitled1/services/bkmv_export_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:untitled1/services/invoice_builder_lock_service.dart';
+import 'package:xml/xml.dart';
+
+class _BankBranch {
+  const _BankBranch({required this.name, required this.code});
+
+  final String name;
+  final String code;
+
+  String get label => '$name - $code';
+}
 
 class _SavedInvoiceResult {
   final String url;
@@ -112,7 +122,9 @@ class _PaymentMethodEntry {
   final checkBranchController = TextEditingController();
   final checkAccountController = TextEditingController();
   final transferBankController = TextEditingController();
+  final transferBankFocusNode = FocusNode();
   final transferBranchController = TextEditingController();
+  final transferBranchFocusNode = FocusNode();
   final transferAccountController = TextEditingController();
 
   Map<String, dynamic> toMap() {
@@ -150,9 +162,15 @@ class _PaymentMethodEntry {
         }
         break;
       case 'transfer':
-        data['bank'] = transferBankController.text.trim();
-        data['branch'] = transferBranchController.text.trim();
-        data['account'] = transferAccountController.text.trim();
+        if (transferBankController.text.trim().isNotEmpty) {
+          data['bank'] = transferBankController.text.trim();
+        }
+        if (transferBranchController.text.trim().isNotEmpty) {
+          data['branch'] = transferBranchController.text.trim();
+        }
+        if (transferAccountController.text.trim().isNotEmpty) {
+          data['account'] = transferAccountController.text.trim();
+        }
         break;
       case 'cash':
       default:
@@ -171,7 +189,9 @@ class _PaymentMethodEntry {
     checkBranchController.dispose();
     checkAccountController.dispose();
     transferBankController.dispose();
+    transferBankFocusNode.dispose();
     transferBranchController.dispose();
+    transferBranchFocusNode.dispose();
     transferAccountController.dispose();
   }
 }
@@ -236,6 +256,26 @@ class InvoiceBuilderPage extends StatefulWidget {
 
 class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   static const int _sandboxAccountingSoftwareNumber = 987654321;
+  static const List<String> _bankNames = [
+    'יהב - 4',
+    'U-Bank - 26',
+    'בנק פאגי - 52',
+    'בנק אוצר החייל - 14',
+    'בנק וואן זירו - 18',
+    'מזרחי-טפחות - 20',
+    'מרכנתיל - 17',
+    'בנק מסד - 46',
+    'לאומי - 10',
+    'בנק ירושלים - 54',
+    'הפועלים - 12',
+    'דיסקונט - 11',
+    'הבינלאומי - 31',
+    'בנק הדואר - 9',
+    'סיטי בנק - 22',
+    'בנק ישראל - 99',
+  ];
+  final Map<String, List<_BankBranch>> _branchesByBankId = {};
+  bool _isLoadingBankBranches = true;
 
   final InvoiceBuilderLockService _invoiceBuilderLock =
       InvoiceBuilderLockService();
@@ -1168,6 +1208,50 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     _fetchWorkerInfo();
     _loadVatRate();
     _loadAssets();
+    _loadBankBranches();
+  }
+
+  Future<void> _loadBankBranches() async {
+    try {
+      final xmlText = await rootBundle.loadString('assets/snifim_he.xml');
+      final document = XmlDocument.parse(xmlText);
+      final branchesByBankId = <String, List<_BankBranch>>{};
+
+      for (final branch in document.findAllElements('branch')) {
+        final bankId = branch.getElement('id')?.innerText.trim() ?? '';
+        final branchName =
+            branch.getElement('branch_name')?.innerText.trim() ?? '';
+        final branchCode =
+            branch.getElement('branch_code')?.innerText.trim() ?? '';
+        if (bankId.isEmpty || branchName.isEmpty || branchCode.isEmpty) {
+          continue;
+        }
+
+        branchesByBankId
+            .putIfAbsent(bankId, () => [])
+            .add(_BankBranch(name: branchName, code: branchCode));
+      }
+
+      for (final branches in branchesByBankId.values) {
+        branches.sort((a, b) => a.label.compareTo(b.label));
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _branchesByBankId
+          ..clear()
+          ..addAll(branchesByBankId);
+        _isLoadingBankBranches = false;
+      });
+    } catch (error, stackTrace) {
+      dev.log(
+        'Unable to load bank branches',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (!mounted) return;
+      setState(() => _isLoadingBankBranches = false);
+    }
   }
 
   Future<void> _acquireInvoiceBuilderLock() async {
@@ -3025,24 +3109,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                 isRtl
                     ? 'באשראי מסוג תשלומים חובה לרשום מספר תשלומים תקין (שורה ${i + 1}).'
                     : 'Installments count is required for installment credit payments (row ${i + 1}).',
-              ),
-            ),
-          );
-          return false;
-        }
-      }
-
-      if (methodEntry.method == 'transfer') {
-        final bank = methodEntry.transferBankController.text.trim();
-        final branch = methodEntry.transferBranchController.text.trim();
-        final account = methodEntry.transferAccountController.text.trim();
-        if (bank.isEmpty || branch.isEmpty || account.isEmpty) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                isRtl
-                    ? 'בהעברה בנקאית חובה למלא בנק, סניף ומספר חשבון (שורה ${i + 1}).'
-                    : 'Bank transfer requires bank name, branch, and account number (row ${i + 1}).',
               ),
             ),
           );
@@ -5755,25 +5821,14 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           ],
           if (entry.method == 'transfer') ...[
             const SizedBox(height: 12),
-            _buildTextField(
-              entry.transferBankController,
-              isRtl ? 'בנק (חובה)' : 'Bank Name (Required)',
-              Icons.account_balance,
-              required: true,
-            ),
+            _buildBankAutocomplete(entry, isRtl),
             const SizedBox(height: 12),
-            _buildTextField(
-              entry.transferBranchController,
-              isRtl ? 'סניף (חובה)' : 'Branch (Required)',
-              Icons.store_mall_directory_outlined,
-              required: true,
-            ),
+            _buildBranchAutocomplete(entry, isRtl),
             const SizedBox(height: 12),
             _buildTextField(
               entry.transferAccountController,
-              isRtl ? 'מספר חשבון (חובה)' : 'Account Number (Required)',
+              isRtl ? 'מספר חשבון (אופציונלי)' : 'Account Number (Optional)',
               Icons.account_balance,
-              required: true,
             ),
           ],
           const SizedBox(height: 12),
@@ -5792,6 +5847,183 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         ],
       ),
     );
+  }
+
+  Widget _buildBankAutocomplete(_PaymentMethodEntry entry, bool isRtl) {
+    return Focus(
+      onFocusChange: (hasFocus) {
+        if (!hasFocus) _clearInvalidBank(entry);
+      },
+      child: Autocomplete<String>(
+        textEditingController: entry.transferBankController,
+        focusNode: entry.transferBankFocusNode,
+        displayStringForOption: (bank) => bank,
+        optionsBuilder: (textEditingValue) {
+          final query = textEditingValue.text.trim().toLowerCase();
+          if (query.isEmpty) return _bankNames;
+          return _bankNames.where((bank) => bank.toLowerCase().contains(query));
+        },
+        fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
+          return TextField(
+            controller: controller,
+            focusNode: focusNode,
+            textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
+            decoration: _inputStyle(
+              isRtl ? 'בנק (אופציונלי)' : 'Bank Name (Optional)',
+              Icons.account_balance,
+            ),
+          );
+        },
+        optionsViewBuilder: (context, onSelected, options) {
+          final bankOptions = options.toList();
+          return Align(
+            alignment: Alignment.topLeft,
+            child: Material(
+              elevation: 4,
+              borderRadius: BorderRadius.circular(12),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(
+                  maxHeight: 280,
+                  maxWidth: 420,
+                ),
+                child: ListView.builder(
+                  padding: EdgeInsets.zero,
+                  shrinkWrap: true,
+                  itemCount: bankOptions.length,
+                  itemBuilder: (context, index) {
+                    final bank = bankOptions[index];
+                    return ListTile(
+                      dense: true,
+                      title: Text(
+                        bank,
+                        textAlign: isRtl ? TextAlign.right : TextAlign.left,
+                        textDirection: isRtl
+                            ? TextDirection.rtl
+                            : TextDirection.ltr,
+                      ),
+                      onTap: () => onSelected(bank),
+                    );
+                  },
+                ),
+              ),
+            ),
+          );
+        },
+        onSelected: (_) {
+          setState(() => entry.transferBranchController.clear());
+        },
+      ),
+    );
+  }
+
+  void _clearInvalidBank(_PaymentMethodEntry entry) {
+    final bank = entry.transferBankController.text.trim();
+    if (bank.isEmpty || _bankNames.contains(bank)) return;
+    setState(() {
+      entry.transferBankController.clear();
+      entry.transferBranchController.clear();
+    });
+  }
+
+  String? _bankIdFromSelection(String bankName) {
+    final matches = RegExp(r'\d+').allMatches(bankName).toList();
+    return matches.isEmpty ? null : matches.last.group(0);
+  }
+
+  Widget _buildBranchAutocomplete(_PaymentMethodEntry entry, bool isRtl) {
+    final bankId = _bankIdFromSelection(entry.transferBankController.text);
+    final branches = bankId == null
+        ? const <_BankBranch>[]
+        : _branchesByBankId[bankId] ?? const <_BankBranch>[];
+    final isBankSelected = bankId != null;
+
+    return Focus(
+      onFocusChange: (hasFocus) {
+        if (!hasFocus) _clearInvalidBranch(entry);
+      },
+      child: Autocomplete<_BankBranch>(
+        textEditingController: entry.transferBranchController,
+        focusNode: entry.transferBranchFocusNode,
+        displayStringForOption: (branch) => branch.label,
+        optionsBuilder: (textEditingValue) {
+          if (!isBankSelected) return const Iterable<_BankBranch>.empty();
+          final query = textEditingValue.text.trim().toLowerCase();
+          if (query.isEmpty) return branches;
+          return branches.where(
+            (branch) => branch.label.toLowerCase().contains(query),
+          );
+        },
+        fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
+          return TextField(
+            controller: controller,
+            focusNode: focusNode,
+            enabled: isBankSelected,
+            textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
+            decoration:
+                _inputStyle(
+                  isRtl ? 'סניף (אופציונלי)' : 'Branch (Optional)',
+                  Icons.store_mall_directory_outlined,
+                ).copyWith(
+                  hintText: _isLoadingBankBranches
+                      ? (isRtl ? 'טוען סניפים...' : 'Loading branches...')
+                      : !isBankSelected
+                      ? (isRtl ? 'בחר בנק תחילה' : 'Select a bank first')
+                      : branches.isEmpty
+                      ? (isRtl ? 'לא נמצאו סניפים' : 'No branches found')
+                      : null,
+                ),
+          );
+        },
+        optionsViewBuilder: (context, onSelected, options) {
+          final branchOptions = options.toList();
+          return Align(
+            alignment: Alignment.topLeft,
+            child: Material(
+              elevation: 4,
+              borderRadius: BorderRadius.circular(12),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(
+                  maxHeight: 280,
+                  maxWidth: 420,
+                ),
+                child: ListView.builder(
+                  padding: EdgeInsets.zero,
+                  shrinkWrap: true,
+                  itemCount: branchOptions.length,
+                  itemBuilder: (context, index) {
+                    final branch = branchOptions[index];
+                    return ListTile(
+                      dense: true,
+                      title: Text(
+                        branch.label,
+                        textAlign: isRtl ? TextAlign.right : TextAlign.left,
+                        textDirection: isRtl
+                            ? TextDirection.rtl
+                            : TextDirection.ltr,
+                      ),
+                      onTap: () => onSelected(branch),
+                    );
+                  },
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  void _clearInvalidBranch(_PaymentMethodEntry entry) {
+    final branch = entry.transferBranchController.text.trim();
+    if (branch.isEmpty) return;
+    final bankId = _bankIdFromSelection(entry.transferBankController.text);
+    final branches = bankId == null
+        ? const <_BankBranch>[]
+        : _branchesByBankId[bankId] ?? const <_BankBranch>[];
+    if (branches.any((availableBranch) => availableBranch.label == branch)) {
+      return;
+    }
+    setState(entry.transferBranchController.clear);
   }
 
   Widget _buildTextField(
