@@ -143,7 +143,9 @@ class _PaymentMethodEntry {
   final installmentsController = TextEditingController();
   final checkNumberController = TextEditingController();
   final checkBankController = TextEditingController();
+  final checkBankFocusNode = FocusNode();
   final checkBranchController = TextEditingController();
+  final checkBranchFocusNode = FocusNode();
   final checkAccountController = TextEditingController();
   final transferBankController = TextEditingController();
   final transferBankFocusNode = FocusNode();
@@ -210,7 +212,9 @@ class _PaymentMethodEntry {
     installmentsController.dispose();
     checkNumberController.dispose();
     checkBankController.dispose();
+    checkBankFocusNode.dispose();
     checkBranchController.dispose();
+    checkBranchFocusNode.dispose();
     checkAccountController.dispose();
     transferBankController.dispose();
     transferBankFocusNode.dispose();
@@ -4831,7 +4835,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                           mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                           children: [
                             pw.Text(
-                              strings['total']!,
+                              _selectedDocType == 'receipt'
+                                  ? 'סה״כ שולם'
+                                  : strings['total']!,
                               style: pw.TextStyle(
                                 fontSize: 15,
                                 fontWeight: pw.FontWeight.bold,
@@ -5609,7 +5615,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                       MainAxisAlignment.spaceBetween,
                                   children: [
                                     Text(
-                                      strings['total']!,
+                                      _selectedDocType == 'receipt'
+                                          ? (isRtl ? 'סה״כ שולם' : 'Total Paid')
+                                          : strings['total']!,
                                       style: const TextStyle(
                                         color: Colors.white,
                                         fontSize: 16,
@@ -5976,17 +5984,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
               keyboardType: TextInputType.number,
             ),
             const SizedBox(height: 12),
-            _buildTextField(
-              entry.checkBankController,
-              isRtl ? 'בנק (אופציונלי)' : 'Bank (Optional)',
-              Icons.account_balance,
-            ),
+            _buildBankAutocomplete(entry, isRtl, isCheck: true),
             const SizedBox(height: 12),
-            _buildTextField(
-              entry.checkBranchController,
-              isRtl ? 'סניף (אופציונלי)' : 'Branch (Optional)',
-              Icons.store_mall_directory_outlined,
-            ),
+            _buildBranchAutocomplete(entry, isRtl, isCheck: true),
             const SizedBox(height: 12),
             _buildTextField(
               entry.checkAccountController,
@@ -6025,14 +6025,27 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     );
   }
 
-  Widget _buildBankAutocomplete(_PaymentMethodEntry entry, bool isRtl) {
+  Widget _buildBankAutocomplete(
+    _PaymentMethodEntry entry,
+    bool isRtl, {
+    bool isCheck = false,
+  }) {
+    final bankController = isCheck
+        ? entry.checkBankController
+        : entry.transferBankController;
+    final bankFocusNode = isCheck
+        ? entry.checkBankFocusNode
+        : entry.transferBankFocusNode;
+    final branchController = isCheck
+        ? entry.checkBranchController
+        : entry.transferBranchController;
     return Focus(
       onFocusChange: (hasFocus) {
-        if (!hasFocus) _clearInvalidBank(entry);
+        if (!hasFocus) _clearInvalidBank(entry, isCheck: isCheck);
       },
       child: Autocomplete<String>(
-        textEditingController: entry.transferBankController,
-        focusNode: entry.transferBankFocusNode,
+        textEditingController: bankController,
+        focusNode: bankFocusNode,
         displayStringForOption: (bank) => bank,
         optionsBuilder: (textEditingValue) {
           final query = textEditingValue.text.trim().toLowerCase();
@@ -6044,7 +6057,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
             controller: controller,
             focusNode: focusNode,
             onChanged: (_) {
-              setState(() => entry.transferBranchController.clear());
+              setState(branchController.clear);
             },
             textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
             decoration: _inputStyle(
@@ -6089,18 +6102,24 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           );
         },
         onSelected: (_) {
-          setState(() => entry.transferBranchController.clear());
+          setState(branchController.clear);
         },
       ),
     );
   }
 
-  void _clearInvalidBank(_PaymentMethodEntry entry) {
-    final bank = entry.transferBankController.text.trim();
+  void _clearInvalidBank(_PaymentMethodEntry entry, {bool isCheck = false}) {
+    final bankController = isCheck
+        ? entry.checkBankController
+        : entry.transferBankController;
+    final branchController = isCheck
+        ? entry.checkBranchController
+        : entry.transferBranchController;
+    final bank = bankController.text.trim();
     if (bank.isEmpty || _bankNames.contains(bank)) return;
     setState(() {
-      entry.transferBankController.clear();
-      entry.transferBranchController.clear();
+      bankController.clear();
+      branchController.clear();
     });
   }
 
@@ -6109,8 +6128,21 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     return matches.isEmpty ? null : matches.last.group(0);
   }
 
-  Widget _buildBranchAutocomplete(_PaymentMethodEntry entry, bool isRtl) {
-    final bankId = _bankIdFromSelection(entry.transferBankController.text);
+  Widget _buildBranchAutocomplete(
+    _PaymentMethodEntry entry,
+    bool isRtl, {
+    bool isCheck = false,
+  }) {
+    final bankController = isCheck
+        ? entry.checkBankController
+        : entry.transferBankController;
+    final branchController = isCheck
+        ? entry.checkBranchController
+        : entry.transferBranchController;
+    final branchFocusNode = isCheck
+        ? entry.checkBranchFocusNode
+        : entry.transferBranchFocusNode;
+    final bankId = _bankIdFromSelection(bankController.text);
     final branches = bankId == null
         ? const <_BankBranch>[]
         : _branchesByBankId[bankId] ?? const <_BankBranch>[];
@@ -6118,12 +6150,12 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
 
     return Focus(
       onFocusChange: (hasFocus) {
-        if (!hasFocus) _clearInvalidBranch(entry);
+        if (!hasFocus) _clearInvalidBranch(entry, isCheck: isCheck);
       },
       child: Autocomplete<_BankBranch>(
-        key: ValueKey('branch-autocomplete-$bankId'),
-        textEditingController: entry.transferBranchController,
-        focusNode: entry.transferBranchFocusNode,
+        key: ValueKey('${isCheck ? 'check' : 'transfer'}-branch-$bankId'),
+        textEditingController: branchController,
+        focusNode: branchFocusNode,
         displayStringForOption: (branch) => branch.label,
         optionsBuilder: (textEditingValue) {
           if (!isBankSelected) return const Iterable<_BankBranch>.empty();
@@ -6193,17 +6225,23 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     );
   }
 
-  void _clearInvalidBranch(_PaymentMethodEntry entry) {
-    final branch = entry.transferBranchController.text.trim();
+  void _clearInvalidBranch(_PaymentMethodEntry entry, {bool isCheck = false}) {
+    final bankController = isCheck
+        ? entry.checkBankController
+        : entry.transferBankController;
+    final branchController = isCheck
+        ? entry.checkBranchController
+        : entry.transferBranchController;
+    final branch = branchController.text.trim();
     if (branch.isEmpty) return;
-    final bankId = _bankIdFromSelection(entry.transferBankController.text);
+    final bankId = _bankIdFromSelection(bankController.text);
     final branches = bankId == null
         ? const <_BankBranch>[]
         : _branchesByBankId[bankId] ?? const <_BankBranch>[];
     if (branches.any((availableBranch) => availableBranch.label == branch)) {
       return;
     }
-    setState(entry.transferBranchController.clear);
+    setState(branchController.clear);
   }
 
   Widget _buildTextField(
