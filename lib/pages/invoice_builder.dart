@@ -3169,74 +3169,133 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     return true;
   }
 
-  String _paymentMethodsSummaryText(bool isRtl) {
-    if (_paymentMethods.isEmpty) {
-      return _paymentMethodLabel(isRtl, 'cash');
+  List<pw.Widget> _buildPaymentTablesPdf() {
+    final grouped = <String, List<_PaymentMethodEntry>>{};
+    for (final payment in _paymentMethods) {
+      grouped.putIfAbsent(payment.method, () => []).add(payment);
     }
-    final sections = <String>[];
-    for (final methodEntry in _paymentMethods) {
-      final parts = <String>[_paymentMethodLabel(isRtl, methodEntry.method)];
-      final amount = _parsePaymentAmount(methodEntry.amountController.text);
-      if (amount != null) {
-        parts.add(
-          '${isRtl ? 'סכום ששולם: ' : 'Amount Paid: '}${amount.toStringAsFixed(2)} ₪',
-        );
+    if (grouped.isEmpty) return const [];
+
+    String valueOrDash(String value) =>
+        value.trim().isEmpty ? '-' : value.trim();
+    final tables = <pw.Widget>[
+      pw.Text(
+        'אמצעי תשלום',
+        style: pw.TextStyle(
+          fontSize: 13,
+          fontWeight: pw.FontWeight.bold,
+          color: pdf.PdfColors.blue900,
+        ),
+      ),
+      pw.SizedBox(height: 6),
+    ];
+
+    for (final group in grouped.entries) {
+      final isTransfer = group.key == 'transfer';
+      final isCheck = group.key == 'check';
+      final isCredit = group.key == 'credit';
+      final headers = <String>['תאריך', 'סכום'];
+      if (isTransfer || isCheck) {
+        headers.addAll(['שם הבנק', 'סניף', 'מספר חשבון']);
       }
-      if (methodEntry.method == 'credit') {
-        final cardNumber = methodEntry.cardNumberController.text.trim();
-        final cardName = methodEntry.cardNameController.text.trim();
-        if (cardNumber.isNotEmpty) {
-          parts.add((isRtl ? 'מספר כרטיס: ' : 'Card Number: ') + cardNumber);
-        }
-        if (cardName.isNotEmpty) {
-          parts.add((isRtl ? 'שם כרטיס: ' : 'Card Name: ') + cardName);
-        }
-        parts.add(
-          (isRtl ? 'סוג העסקה: ' : 'Deal Type: ') +
-              _creditDealTypeLabel(isRtl, methodEntry.creditDealType),
-        );
-        if (methodEntry.creditDealType == 'installments') {
-          final installments = methodEntry.installmentsController.text.trim();
-          if (installments.isNotEmpty) {
-            parts.add(
-              (isRtl ? 'מספר תשלומים: ' : 'Installments: ') + installments,
-            );
-          }
-        }
-      } else if (methodEntry.method == 'check') {
-        final checkNumber = methodEntry.checkNumberController.text.trim();
-        if (checkNumber.isNotEmpty) {
-          parts.add((isRtl ? 'מספר צ׳ק: ' : 'Check Number: ') + checkNumber);
-        }
-        final bank = methodEntry.checkBankController.text.trim();
-        final branch = methodEntry.checkBranchController.text.trim();
-        final account = methodEntry.checkAccountController.text.trim();
-        if (bank.isNotEmpty) {
-          parts.add((isRtl ? 'בנק: ' : 'Bank: ') + bank);
-        }
-        if (branch.isNotEmpty) {
-          parts.add((isRtl ? 'סניף: ' : 'Branch: ') + branch);
-        }
-        if (account.isNotEmpty) {
-          parts.add((isRtl ? 'חשבון בנק: ' : 'Bank Account: ') + account);
-        }
-      } else if (methodEntry.method == 'transfer') {
-        final bank = methodEntry.transferBankController.text.trim();
-        final branch = methodEntry.transferBranchController.text.trim();
-        final account = methodEntry.transferAccountController.text.trim();
-        if (bank.isNotEmpty) {
-          parts.add((isRtl ? 'בנק: ' : 'Bank: ') + bank);
-        }
-        if (branch.isNotEmpty) {
-          parts.add((isRtl ? 'סניף: ' : 'Branch: ') + branch);
-        }
-        if (account.isNotEmpty) {
-          parts.add((isRtl ? 'חשבון בנק: ' : 'Bank Account: ') + account);
-        }
+      if (isCheck) headers.add('מספר צ׳ק');
+      if (isCredit) {
+        headers.addAll(['סוג כרטיס', 'מספר כרטיס', 'תוקף', 'מספר תשלומים']);
       }
-      sections.add(parts.join(' | '));
+      headers.add('פרטים נוספים');
+
+      final rows = group.value.map((payment) {
+        final row = <String>[
+          _formattedInvoiceDate(),
+          valueOrDash(payment.amountController.text),
+        ];
+        if (isTransfer || isCheck) {
+          final bank = isTransfer
+              ? payment.transferBankController.text
+              : payment.checkBankController.text;
+          final branch = isTransfer
+              ? payment.transferBranchController.text
+              : payment.checkBranchController.text;
+          final account = isTransfer
+              ? payment.transferAccountController.text
+              : payment.checkAccountController.text;
+          row.addAll([
+            valueOrDash(bank),
+            valueOrDash(branch),
+            valueOrDash(account),
+          ]);
+        }
+        if (isCheck) row.add(valueOrDash(payment.checkNumberController.text));
+        if (isCredit) {
+          row.addAll([
+            valueOrDash(payment.cardNameController.text),
+            valueOrDash(payment.cardNumberController.text),
+            '-',
+            payment.creditDealType == 'installments'
+                ? valueOrDash(payment.installmentsController.text)
+                : '1',
+          ]);
+        }
+        row.add(
+          isCredit ? _creditDealTypeLabel(true, payment.creditDealType) : '-',
+        );
+        return row;
+      }).toList();
+
+      tables.add(
+        pw.Container(
+          width: double.infinity,
+          decoration: pw.BoxDecoration(
+            color: pdf.PdfColors.white,
+            borderRadius: pw.BorderRadius.circular(7),
+            border: pw.Border.all(color: pdf.PdfColors.blue100),
+          ),
+          child: pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+            children: [
+              pw.Container(
+                padding: const pw.EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 5,
+                ),
+                decoration: const pw.BoxDecoration(color: pdf.PdfColors.blue50),
+                child: pw.Text(
+                  'אמצעי תשלום: ${_paymentMethodLabel(true, group.key)}',
+                  textAlign: pw.TextAlign.right,
+                  style: pw.TextStyle(
+                    fontSize: 10,
+                    fontWeight: pw.FontWeight.bold,
+                    color: pdf.PdfColors.blue900,
+                  ),
+                ),
+              ),
+              pw.TableHelper.fromTextArray(
+                // pdf tables lay out list entries left-to-right. Reverse the
+                // logical Hebrew columns so Date and Amount begin on the right.
+                headers: headers.reversed.toList(),
+                data: rows.map((row) => row.reversed.toList()).toList(),
+                headerStyle: pw.TextStyle(
+                  fontSize: 8,
+                  fontWeight: pw.FontWeight.bold,
+                  color: pdf.PdfColors.grey700,
+                ),
+                cellStyle: const pw.TextStyle(fontSize: 8),
+                headerDecoration: const pw.BoxDecoration(
+                  color: pdf.PdfColors.blue50,
+                ),
+                cellAlignment: pw.Alignment.centerRight,
+                border: pw.TableBorder.all(
+                  color: pdf.PdfColors.blue100,
+                  width: 0.35,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+      tables.add(pw.SizedBox(height: 10));
     }
-    return sections.join('\n--------------------\n');
+    return tables;
   }
 
   Future<void> _pickCreditOriginalInvoiceDate() async {
@@ -4492,6 +4551,10 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                   ],
                 ),
                 pw.SizedBox(height: 28),
+                if (_selectedDocType == 'receipt') ...[
+                  ..._buildPaymentTablesPdf(),
+                  pw.SizedBox(height: 8),
+                ],
                 if (creditNoteLegalData != null) ...[
                   pw.Container(
                     width: double.infinity,
@@ -4720,32 +4783,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                     ),
                   ),
                 ),
-                if (_showsPaymentMethodSection &&
-                    _selectedDocType != 'receipt') ...[
-                  pw.SizedBox(height: 24),
-                  pw.Text(
-                    strings['payment_method']!,
-                    style: pw.TextStyle(
-                      fontWeight: pw.FontWeight.bold,
-                      fontSize: 11,
-                      color: pdf.PdfColors.blue900,
-                    ),
-                  ),
-                  pw.Container(
-                    width: double.infinity,
-                    padding: const pw.EdgeInsets.all(10),
-                    decoration: pw.BoxDecoration(
-                      border: pw.Border.all(color: pdf.PdfColors.grey300),
-                      borderRadius: const pw.BorderRadius.all(
-                        pw.Radius.circular(5),
-                      ),
-                    ),
-                    child: pw.Text(
-                      _paymentMethodsSummaryText(true),
-                      style: const pw.TextStyle(fontSize: 11),
-                    ),
-                  ),
-                  pw.SizedBox(height: 16),
+                if (_selectedDocType == 'invoice_receipt') ...[
+                  pw.SizedBox(height: 18),
+                  ..._buildPaymentTablesPdf(),
                 ],
                 if (_notesController.text.isNotEmpty) ...[
                   pw.Text(
