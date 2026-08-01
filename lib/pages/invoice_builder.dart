@@ -1657,8 +1657,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       final fontData = await rootBundle.load(
         "assets/fonts/Rubik-VariableFont_wght.ttf",
       );
+      final fontBoldData = await rootBundle.load("assets/fonts/Rubik-Bold.ttf");
       _cachedFont = pw.Font.ttf(fontData);
-      _cachedFontBold = pw.Font.ttf(fontData);
+      _cachedFontBold = pw.Font.ttf(fontBoldData);
       final appIconData = await rootBundle.load('assets/icon/app_icon.jpg');
       _cachedAppIcon = pw.MemoryImage(appIconData.buffer.asUint8List());
     } catch (e) {
@@ -3179,16 +3180,56 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     String valueOrDash(String value) =>
         value.trim().isEmpty ? '-' : value.trim();
     final tables = <pw.Widget>[
-      pw.Text(
-        'אמצעי תשלום',
-        style: pw.TextStyle(
-          fontSize: 13,
-          fontWeight: pw.FontWeight.bold,
-          color: pdf.PdfColors.blue900,
+      pw.Padding(
+        padding: const pw.EdgeInsets.symmetric(horizontal: 14),
+        child: pw.Align(
+          alignment: pw.Alignment.centerRight,
+          child: pw.Text(
+            'אמצעי תשלום',
+            textAlign: pw.TextAlign.right,
+            style: pw.TextStyle(
+              fontSize: 14,
+              fontWeight: pw.FontWeight.bold,
+              color: pdf.PdfColors.grey900,
+            ),
+          ),
         ),
       ),
-      pw.SizedBox(height: 6),
+      pw.SizedBox(height: 7),
     ];
+    const titleBackground = pdf.PdfColor(0.922, 0.961, 0.996);
+    const headerBackground = pdf.PdfColor(0.973, 0.984, 0.996);
+    const darkBlue = pdf.PdfColor(0.078, 0.329, 0.698);
+    const headerTextColor = pdf.PdfColor(0.22, 0.25, 0.30);
+    const bodyTextColor = pdf.PdfColor(0.18, 0.20, 0.23);
+    const borderColor = pdf.PdfColor(0.82, 0.88, 0.94);
+
+    String amountLabel(String raw) {
+      final amount = _parsePaymentAmount(raw);
+      if (amount == null) return '-';
+      return '₪ ${intl.NumberFormat('#,##0.00').format(amount)}';
+    }
+
+    pw.Widget cell(
+      String text, {
+      bool bold = false,
+      pdf.PdfColor color = bodyTextColor,
+    }) {
+      return pw.Container(
+        alignment: pw.Alignment.center,
+        padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+        child: pw.Text(
+          text,
+          maxLines: 2,
+          textAlign: pw.TextAlign.center,
+          style: pw.TextStyle(
+            fontSize: 9,
+            fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
+            color: color,
+          ),
+        ),
+      );
+    }
 
     for (final group in grouped.entries) {
       final isTransfer = group.key == 'transfer';
@@ -3207,7 +3248,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       final rows = group.value.map((payment) {
         final row = <String>[
           _formattedInvoiceDate(),
-          valueOrDash(payment.amountController.text),
+          amountLabel(payment.amountController.text),
         ];
         if (isTransfer || isCheck) {
           final bank = isTransfer
@@ -3242,54 +3283,107 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         return row;
       }).toList();
 
+      final renderedHeaders = headers.reversed.toList();
+      final renderedRows = rows.map((row) => row.reversed.toList()).toList();
+      final amountColumnIndex = renderedHeaders.indexOf('סכום');
+      final columnWidths = <int, pw.TableColumnWidth>{};
+      for (var index = 0; index < renderedHeaders.length; index++) {
+        columnWidths[index] = const pw.FlexColumnWidth();
+      }
+
       tables.add(
-        pw.Container(
-          width: double.infinity,
-          decoration: pw.BoxDecoration(
-            color: pdf.PdfColors.white,
-            borderRadius: pw.BorderRadius.circular(7),
-            border: pw.Border.all(color: pdf.PdfColors.blue100),
-          ),
-          child: pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-            children: [
-              pw.Container(
-                padding: const pw.EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 5,
+        pw.Padding(
+          padding: const pw.EdgeInsets.symmetric(horizontal: 14),
+          child: pw.Container(
+            width: double.infinity,
+            decoration: pw.BoxDecoration(
+              color: pdf.PdfColors.white,
+              borderRadius: pw.BorderRadius.circular(7),
+              border: pw.Border.all(color: borderColor, width: 0.6),
+            ),
+            child: pw.Stack(
+              children: [
+                pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+                  children: [
+                    pw.Container(
+                      padding: const pw.EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 7,
+                      ),
+                      decoration: const pw.BoxDecoration(
+                        color: titleBackground,
+                        borderRadius: pw.BorderRadius.only(
+                          topLeft: pw.Radius.circular(7),
+                          topRight: pw.Radius.circular(7),
+                        ),
+                      ),
+                      child: pw.Text(
+                        'אמצעי תשלום: ${_paymentMethodLabel(true, group.key)}',
+                        textAlign: pw.TextAlign.right,
+                        style: pw.TextStyle(
+                          fontSize: 12,
+                          fontWeight: pw.FontWeight.bold,
+                          color: darkBlue,
+                        ),
+                      ),
+                    ),
+                    pw.Table(
+                      columnWidths: columnWidths,
+                      border: const pw.TableBorder(
+                        horizontalInside: pw.BorderSide(
+                          color: borderColor,
+                          width: 0.45,
+                        ),
+                      ),
+                      children: [
+                        pw.TableRow(
+                          decoration: const pw.BoxDecoration(
+                            color: headerBackground,
+                          ),
+                          children: renderedHeaders
+                              .map(
+                                (header) => cell(
+                                  header,
+                                  bold: true,
+                                  color: headerTextColor,
+                                ),
+                              )
+                              .toList(),
+                        ),
+                        ...renderedRows.map(
+                          (row) => pw.TableRow(
+                            decoration: const pw.BoxDecoration(
+                              color: pdf.PdfColors.white,
+                            ),
+                            children: List.generate(
+                              row.length,
+                              (index) => cell(
+                                row[index],
+                                bold: index == amountColumnIndex,
+                                color: bodyTextColor,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
-                decoration: const pw.BoxDecoration(color: pdf.PdfColors.blue50),
-                child: pw.Text(
-                  'אמצעי תשלום: ${_paymentMethodLabel(true, group.key)}',
-                  textAlign: pw.TextAlign.right,
-                  style: pw.TextStyle(
-                    fontSize: 10,
-                    fontWeight: pw.FontWeight.bold,
-                    color: pdf.PdfColors.blue900,
+                pw.Positioned(
+                  left: 0,
+                  top: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: pw.Container(
+                    decoration: pw.BoxDecoration(
+                      borderRadius: pw.BorderRadius.circular(7),
+                      border: pw.Border.all(color: borderColor, width: 0.8),
+                    ),
                   ),
                 ),
-              ),
-              pw.TableHelper.fromTextArray(
-                // pdf tables lay out list entries left-to-right. Reverse the
-                // logical Hebrew columns so Date and Amount begin on the right.
-                headers: headers.reversed.toList(),
-                data: rows.map((row) => row.reversed.toList()).toList(),
-                headerStyle: pw.TextStyle(
-                  fontSize: 8,
-                  fontWeight: pw.FontWeight.bold,
-                  color: pdf.PdfColors.grey700,
-                ),
-                cellStyle: const pw.TextStyle(fontSize: 8),
-                headerDecoration: const pw.BoxDecoration(
-                  color: pdf.PdfColors.blue50,
-                ),
-                cellAlignment: pw.Alignment.centerRight,
-                border: pw.TableBorder.all(
-                  color: pdf.PdfColors.blue100,
-                  width: 0.35,
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       );
@@ -4199,10 +4293,10 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     final generatedAt = intl.DateFormat(
       'dd/MM/yyyy HH:mm',
     ).format(DateTime.now());
+    final pdfInvoiceNumber = _invoiceNumberForPdf(_invoiceNumber);
     final signingDocumentLabel = _invoiceNumber.isEmpty
         ? docTitle
-        : '$docTitle $_invoiceNumber';
-    final pdfInvoiceNumber = _invoiceNumberForPdf(_invoiceNumber);
+        : '$docTitle $pdfInvoiceNumber';
 
     doc.addPage(
       pw.MultiPage(
