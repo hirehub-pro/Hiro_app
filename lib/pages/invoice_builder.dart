@@ -1,5 +1,6 @@
 import 'dart:developer' as dev;
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:pdf/pdf.dart' as pdf;
@@ -30,6 +31,29 @@ class _BankBranch {
   final String code;
 
   String get label => '$name - $code';
+}
+
+Map<String, List<_BankBranch>> _parseBankBranches(String xmlText) {
+  final document = XmlDocument.parse(xmlText);
+  final branchesByBankId = <String, List<_BankBranch>>{};
+
+  for (final branch in document.findAllElements('branch')) {
+    final bankId = branch.getElement('id')?.innerText.trim() ?? '';
+    final branchName = branch.getElement('branch_name')?.innerText.trim() ?? '';
+    final branchCode = branch.getElement('branch_code')?.innerText.trim() ?? '';
+    if (bankId.isEmpty || branchName.isEmpty || branchCode.isEmpty) {
+      continue;
+    }
+
+    branchesByBankId
+        .putIfAbsent(bankId, () => [])
+        .add(_BankBranch(name: branchName, code: branchCode));
+  }
+
+  for (final branches in branchesByBankId.values) {
+    branches.sort((a, b) => a.label.compareTo(b.label));
+  }
+  return branchesByBankId;
 }
 
 class _SavedInvoiceResult {
@@ -1214,27 +1238,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   Future<void> _loadBankBranches() async {
     try {
       final xmlText = await rootBundle.loadString('assets/snifim_he.xml');
-      final document = XmlDocument.parse(xmlText);
-      final branchesByBankId = <String, List<_BankBranch>>{};
-
-      for (final branch in document.findAllElements('branch')) {
-        final bankId = branch.getElement('id')?.innerText.trim() ?? '';
-        final branchName =
-            branch.getElement('branch_name')?.innerText.trim() ?? '';
-        final branchCode =
-            branch.getElement('branch_code')?.innerText.trim() ?? '';
-        if (bankId.isEmpty || branchName.isEmpty || branchCode.isEmpty) {
-          continue;
-        }
-
-        branchesByBankId
-            .putIfAbsent(bankId, () => [])
-            .add(_BankBranch(name: branchName, code: branchCode));
-      }
-
-      for (final branches in branchesByBankId.values) {
-        branches.sort((a, b) => a.label.compareTo(b.label));
-      }
+      final branchesByBankId = await compute(_parseBankBranches, xmlText);
 
       if (!mounted) return;
       setState(() {
@@ -5867,6 +5871,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           return TextField(
             controller: controller,
             focusNode: focusNode,
+            onChanged: (_) {
+              setState(() => entry.transferBranchController.clear());
+            },
             textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
             decoration: _inputStyle(
               isRtl ? 'בנק (אופציונלי)' : 'Bank Name (Optional)',
