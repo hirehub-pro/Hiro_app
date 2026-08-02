@@ -160,6 +160,8 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
         return isRtl ? 'הצעת מחיר' : 'Quote';
       case 'work_order':
         return isRtl ? 'הזמנת עבודה' : 'Work Order';
+      case 'transaction_account':
+        return isRtl ? 'חשבון עסקה' : 'Pro Forma Invoice';
       case 'invoice':
         return isRtl ? 'חשבונית' : 'Invoice';
       case 'invoice_receipt':
@@ -179,6 +181,8 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
         return const Color(0xFF00897B);
       case 'work_order':
         return const Color(0xFF6D4C41);
+      case 'transaction_account':
+        return const Color(0xFF5E35B1);
       case 'invoice':
         return const Color(0xFF1565C0);
       case 'invoice_receipt':
@@ -941,6 +945,10 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                             _buildFilterChip(
                               'work_order',
                               _docTypeLabel('work_order', isRtl),
+                            ),
+                            _buildFilterChip(
+                              'transaction_account',
+                              _docTypeLabel('transaction_account', isRtl),
                             ),
                             _buildFilterChip(
                               'invoice',

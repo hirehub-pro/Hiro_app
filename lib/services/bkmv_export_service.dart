@@ -162,7 +162,12 @@ class _InvoiceItemRecord {
 }
 
 class BkmvExportService {
-  static const _bucketNames = ['invoices', 'receipts', 'credit_notes'];
+  static const _bucketNames = [
+    'invoices',
+    'transaction_account',
+    'receipts',
+    'credit_notes',
+  ];
   static const List<(String, String)> _annex4Rows = [
     ('A100', 'רשומת פתיחה'),
     ('B110', 'חשבון בהנהלת חשבונות'),
@@ -575,6 +580,7 @@ class BkmvExportService {
 
       final includesHeader =
           bucket == 'invoices' ||
+          bucket == 'transaction_account' ||
           bucket == 'credit_notes' ||
           (bucket == 'receipts' && docType == 'receipt');
 
@@ -606,7 +612,9 @@ class BkmvExportService {
         );
       }
 
-      if (bucket == 'invoices' || bucket == 'credit_notes') {
+      if (bucket == 'invoices' ||
+          bucket == 'transaction_account' ||
+          bucket == 'credit_notes') {
         final items = _extractItems(logData, invoiceData, subtotal, vatAmount);
         var detailLine = 1;
         for (final item in items) {
@@ -800,6 +808,7 @@ class BkmvExportService {
 
       final includesHeader =
           bucket == 'invoices' ||
+          bucket == 'transaction_account' ||
           bucket == 'credit_notes' ||
           (bucket == 'receipts' && docType == 'receipt');
       if (!includesHeader) {
@@ -1451,6 +1460,8 @@ class BkmvExportService {
 
   static int? _mapDocumentType(String docType) {
     switch (docType) {
+      case 'transaction_account':
+        return 300;
       case 'invoice':
         return 305;
       case 'invoice_receipt':

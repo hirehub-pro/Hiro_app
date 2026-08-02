@@ -348,6 +348,10 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       case 'quote':
       case 'work_order':
         return const [];
+      case 'transaction_account':
+        return [
+          {'bucket': 'transaction_account'},
+        ];
       case 'receipt':
         return [
           {'bucket': 'receipts'},
@@ -369,7 +373,10 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     }
   }
 
-  String _counterDocIdForType(String docType) => 'document_counter_$docType';
+  String _counterDocIdForType(String docType) =>
+      docType == 'transaction_account'
+      ? 'document_counter_transaction_account'
+      : 'document_counter_$docType';
 
   DocumentReference<Map<String, dynamic>>? _counterRefForDocType(
     String docType,
@@ -853,7 +860,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       if (allocationNumber != null && allocationNumber.isNotEmpty)
         'taxAuthorityAllocationNumber': allocationNumber,
     });
-    if (docType != 'quote' && docType != 'work_order') {
+    if (docType != 'quote' &&
+        docType != 'work_order' &&
+        docType != 'transaction_account') {
       await _addToTotalEarned(userId: userId, amount: totalEarnedDelta);
     }
     await Future.wait(
@@ -957,6 +966,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         return 'Quote';
       case 'work_order':
         return 'Work Order';
+      case 'transaction_account':
+        return 'Pro Forma Invoice';
       case 'invoice':
         return 'Invoice';
       case 'invoice_receipt':
@@ -1009,10 +1020,14 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   bool get _isQuoteLike =>
       _selectedDocType == 'quote' || _selectedDocType == 'work_order';
   bool get _showsDueDateSection =>
-      _selectedDocType == 'quote' || _selectedDocType == 'invoice';
+      _selectedDocType == 'quote' ||
+      _selectedDocType == 'transaction_account' ||
+      _selectedDocType == 'invoice';
   bool get _requiresSequentialDocumentNumber => !_isQuoteLike;
   bool get _showsPaymentMethodSection =>
-      !_isQuoteLike && _selectedDocType != 'invoice';
+      !_isQuoteLike &&
+      _selectedDocType != 'invoice' &&
+      _selectedDocType != 'transaction_account';
   bool get _usesVat => _isLicensedDealerType && _selectedDocType != 'receipt';
   bool get _isTaxInvoiceDocType =>
       _selectedDocType == 'invoice' || _selectedDocType == 'invoice_receipt';
@@ -1981,6 +1996,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'doc_type': 'סוג המסמך',
           'quote': 'הצעת מחיר',
           'work_order': 'הזמנת עבודה',
+          'transaction_account': 'חשבון עסקה',
           'receipt': 'קבלה',
           'invoice': 'חשבונית מס',
           'invoice_receipt': 'חשבונית מס / קבלה',
@@ -2101,6 +2117,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'doc_type': 'نوع المستند',
           'quote': 'عرض سعر',
           'work_order': 'أمر عمل',
+          'transaction_account': 'فاتورة مبدئية',
           'receipt': 'إيصال',
           'invoice': 'فاتورة ضريبية',
           'invoice_receipt': 'فاتورة ضريبية / إيصال',
@@ -2209,6 +2226,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'doc_type': 'Тип документа',
           'quote': 'Коммерческое предложение',
           'work_order': 'Заказ-наряд',
+          'transaction_account': 'Счёт-проформа',
           'receipt': 'Квитанция',
           'invoice': 'Налоговый счет',
           'invoice_receipt': 'Налоговый счет / квитанция',
@@ -2316,6 +2334,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'doc_type': 'የሰነድ አይነት',
           'quote': 'የዋጋ ቅናሽ ጥያቄ',
           'work_order': 'የስራ ትዕዛዝ',
+          'transaction_account': 'ፕሮፎርማ ደረሰኝ',
           'receipt': 'ደረሰኝ',
           'invoice': 'የግብር ደረሰኝ',
           'invoice_receipt': 'የግብር ደረሰኝ / ደረሰኝ',
@@ -2423,6 +2442,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'doc_type': 'Document Type',
           'quote': 'Quote',
           'work_order': 'Work Order',
+          'transaction_account': 'Pro Forma Invoice',
           'receipt': 'Receipt',
           'invoice': 'Tax Invoice',
           'invoice_receipt': 'Tax Invoice / Receipt',
@@ -2495,6 +2515,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'doc_type': 'Document Type',
       'quote': 'Quote',
       'work_order': 'Work Order',
+      'transaction_account': 'Pro Forma Invoice',
       'receipt': 'Receipt',
       'invoice': 'Tax Invoice',
       'invoice_receipt': 'Tax Invoice / Receipt',
@@ -2818,6 +2839,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         return strings['quote']!;
       case 'work_order':
         return strings['work_order']!;
+      case 'transaction_account':
+        return strings['transaction_account']!;
       case 'invoice':
         return strings['invoice']!;
       case 'invoice_receipt':
@@ -4319,6 +4342,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         ? strings['quote']!
         : _selectedDocType == 'work_order'
         ? strings['work_order']!
+        : _selectedDocType == 'transaction_account'
+        ? strings['transaction_account']!
         : _selectedDocType == 'receipt'
         ? strings['receipt']!
         : _selectedDocType == 'invoice'
@@ -5115,6 +5140,10 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                 DropdownMenuItem(
                                   value: 'work_order',
                                   child: Text(strings['work_order']!),
+                                ),
+                                DropdownMenuItem(
+                                  value: 'transaction_account',
+                                  child: Text(strings['transaction_account']!),
                                 ),
                                 DropdownMenuItem(
                                   value: 'receipt',
