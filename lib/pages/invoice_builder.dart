@@ -139,6 +139,7 @@ class _PaymentMethodEntry {
 
   final cardNumberController = TextEditingController();
   final cardNameController = TextEditingController();
+  final cardExpirationController = TextEditingController();
   final installmentsController = TextEditingController(text: '1');
   final checkNumberController = TextEditingController();
   final checkBankController = TextEditingController();
@@ -167,6 +168,9 @@ class _PaymentMethodEntry {
         }
         if (cardNameController.text.trim().isNotEmpty) {
           data['cardName'] = cardNameController.text.trim();
+        }
+        if (cardExpirationController.text.trim().isNotEmpty) {
+          data['cardExpiration'] = cardExpirationController.text.trim();
         }
         if (installmentsController.text.trim().isNotEmpty) {
           data['installments'] = installmentsController.text.trim();
@@ -206,6 +210,7 @@ class _PaymentMethodEntry {
     amountController.dispose();
     cardNumberController.dispose();
     cardNameController.dispose();
+    cardExpirationController.dispose();
     installmentsController.dispose();
     checkNumberController.dispose();
     checkBankController.dispose();
@@ -3078,6 +3083,32 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     }
   }
 
+  TextEditingValue _formatCardExpiration(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    var digits = newValue.text.replaceAll(RegExp(r'[^0-9]'), '');
+    if (digits.isEmpty) return const TextEditingValue();
+
+    if (digits[0].compareTo('1') > 0) {
+      digits = '0$digits';
+    } else if (digits.length >= 2) {
+      final month = int.tryParse(digits.substring(0, 2)) ?? 0;
+      if (month > 12) {
+        digits = '01${digits.substring(1)}';
+      }
+    }
+
+    if (digits.length > 4) digits = digits.substring(0, 4);
+    final text = digits.length >= 2
+        ? '${digits.substring(0, 2)}/${digits.substring(2)}'
+        : digits;
+    return TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
+  }
+
   double? _parsePaymentAmount(String raw) {
     final normalized = raw.trim().replaceAll(',', '.');
     return double.tryParse(normalized);
@@ -3282,7 +3313,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           row.addAll([
             valueOrDash(payment.cardNameController.text),
             valueOrDash(payment.cardNumberController.text),
-            '-',
+            valueOrDash(payment.cardExpirationController.text),
             payment.installmentsController.text.trim().isEmpty
                 ? '1'
                 : valueOrDash(payment.installmentsController.text),
@@ -5964,6 +5995,16 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
               isRtl ? 'מספר כרטיס (אופציונלי)' : 'Card Number (Optional)',
               Icons.credit_card,
               keyboardType: TextInputType.number,
+            ),
+            const SizedBox(height: 12),
+            _buildTextField(
+              entry.cardExpirationController,
+              isRtl ? 'תוקף (MM/YY)' : 'Expiry Date (MM/YY)',
+              Icons.date_range_outlined,
+              keyboardType: TextInputType.number,
+              inputFormatters: [
+                TextInputFormatter.withFunction(_formatCardExpiration),
+              ],
             ),
             const SizedBox(height: 12),
             Focus(
