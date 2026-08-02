@@ -134,13 +134,12 @@ class _PaymentMethodEntry {
   _PaymentMethodEntry();
 
   String method = 'cash';
-  String creditDealType = 'regular';
   bool isExpanded = true;
   final amountController = TextEditingController();
 
   final cardNumberController = TextEditingController();
   final cardNameController = TextEditingController();
-  final installmentsController = TextEditingController();
+  final installmentsController = TextEditingController(text: '1');
   final checkNumberController = TextEditingController();
   final checkBankController = TextEditingController();
   final checkBankFocusNode = FocusNode();
@@ -163,15 +162,13 @@ class _PaymentMethodEntry {
     }
     switch (method) {
       case 'credit':
-        data['dealType'] = creditDealType;
         if (cardNumberController.text.trim().isNotEmpty) {
           data['cardNumber'] = cardNumberController.text.trim();
         }
         if (cardNameController.text.trim().isNotEmpty) {
           data['cardName'] = cardNameController.text.trim();
         }
-        if (creditDealType == 'installments' &&
-            installmentsController.text.trim().isNotEmpty) {
+        if (installmentsController.text.trim().isNotEmpty) {
           data['installments'] = installmentsController.text.trim();
         }
         break;
@@ -301,6 +298,13 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     'בנק הדואר - 9',
     'סיטי בנק - 22',
     'בנק ישראל - 99',
+  ];
+  static const List<String> _cardTypes = [
+    'Diners',
+    'Mastercard',
+    'Visa',
+    'American Express',
+    'Isracard',
   ];
   final Map<String, List<_BankBranch>> _branchesByBankId = {};
   bool _isLoadingBankBranches = true;
@@ -3056,17 +3060,21 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     }
   }
 
-  String _creditDealTypeLabel(bool isRtl, String dealType) {
-    switch (dealType) {
-      case 'installments':
-        return isRtl ? 'תשלומים' : 'Installments';
-      case 'credit':
-        return isRtl ? 'קרדיט' : 'Credit';
-      case 'other':
-        return isRtl ? 'אחר' : 'Other';
-      case 'regular':
+  String _cardTypeLabel(String cardType, bool isRtl) {
+    if (!isRtl) return cardType;
+    switch (cardType) {
+      case 'Diners':
+        return 'דיינרס';
+      case 'Mastercard':
+        return 'מאסטרקארד';
+      case 'Visa':
+        return 'ויזה';
+      case 'American Express':
+        return 'אמריקן אקספרס';
+      case 'Isracard':
+        return 'ישראכרט';
       default:
-        return isRtl ? 'רגיל' : 'Regular';
+        return cardType;
     }
   }
 
@@ -3123,17 +3131,16 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         return false;
       }
 
-      if (methodEntry.method == 'credit' &&
-          methodEntry.creditDealType == 'installments') {
+      if (methodEntry.method == 'credit') {
         final installments = methodEntry.installmentsController.text.trim();
         final parsed = int.tryParse(installments);
-        if (installments.isEmpty || parsed == null || parsed < 1) {
+        if (installments.isNotEmpty && (parsed == null || parsed < 1)) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
                 isRtl
-                    ? 'באשראי מסוג תשלומים חובה לרשום מספר תשלומים תקין (שורה ${i + 1}).'
-                    : 'Installments count is required for installment credit payments (row ${i + 1}).',
+                    ? 'מספר התשלומים חייב להיות מספר תקין (שורה ${i + 1}).'
+                    : 'Number of payments must be valid (row ${i + 1}).',
               ),
             ),
           );
@@ -3276,14 +3283,12 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
             valueOrDash(payment.cardNameController.text),
             valueOrDash(payment.cardNumberController.text),
             '-',
-            payment.creditDealType == 'installments'
-                ? valueOrDash(payment.installmentsController.text)
-                : '1',
+            payment.installmentsController.text.trim().isEmpty
+                ? '1'
+                : valueOrDash(payment.installmentsController.text),
           ]);
         }
-        row.add(
-          isCredit ? _creditDealTypeLabel(true, payment.creditDealType) : '-',
-        );
+        row.add('-');
         return row;
       }).toList();
 
@@ -5890,7 +5895,13 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                   ],
                   onChanged: (val) {
                     if (val == null) return;
-                    setState(() => entry.method = val);
+                    setState(() {
+                      entry.method = val;
+                      if (val == 'credit' &&
+                          entry.installmentsController.text.isEmpty) {
+                        entry.installmentsController.text = '1';
+                      }
+                    });
                   },
                 ),
               ),
@@ -5918,6 +5929,36 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           ),
           if (entry.method == 'credit') ...[
             const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              key: ValueKey('card-type-${entry.cardNameController.text}'),
+              isExpanded: true,
+              initialValue: _cardTypes.contains(entry.cardNameController.text)
+                  ? entry.cardNameController.text
+                  : null,
+              decoration: _inputStyle(
+                isRtl ? 'סוג כרטיס (אופציונלי)' : 'Card Type (Optional)',
+                Icons.badge_outlined,
+              ),
+              hint: Text(isRtl ? 'בחר סוג כרטיס' : 'Select card type'),
+              items: _cardTypes
+                  .map(
+                    (cardType) => DropdownMenuItem(
+                      value: cardType,
+                      child: Text(
+                        _cardTypeLabel(cardType, isRtl),
+                        textDirection: isRtl
+                            ? TextDirection.rtl
+                            : TextDirection.ltr,
+                      ),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (cardType) {
+                if (cardType == null) return;
+                setState(() => entry.cardNameController.text = cardType);
+              },
+            ),
+            const SizedBox(height: 12),
             _buildTextField(
               entry.cardNumberController,
               isRtl ? 'מספר כרטיס (אופציונלי)' : 'Card Number (Optional)',
@@ -5925,54 +5966,36 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
               keyboardType: TextInputType.number,
             ),
             const SizedBox(height: 12),
-            _buildTextField(
-              entry.cardNameController,
-              isRtl
-                  ? 'שם הכרטיס (Visa, MasterCard וכו׳) - אופציונלי'
-                  : 'Card Name (Visa, MasterCard, etc.) - Optional',
-              Icons.badge_outlined,
-            ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              isExpanded: true,
-              initialValue: entry.creditDealType,
-              decoration: _inputStyle(
-                isRtl ? 'סוג העסקה' : 'Deal Type',
-                Icons.receipt_long_outlined,
-              ),
-              items: [
-                DropdownMenuItem(
-                  value: 'regular',
-                  child: Text(isRtl ? 'רגיל' : 'Regular'),
-                ),
-                DropdownMenuItem(
-                  value: 'installments',
-                  child: Text(isRtl ? 'תשלומים' : 'Installments'),
-                ),
-                DropdownMenuItem(
-                  value: 'credit',
-                  child: Text(isRtl ? 'קרדיט' : 'Credit'),
-                ),
-                DropdownMenuItem(
-                  value: 'other',
-                  child: Text(isRtl ? 'אחר' : 'Other'),
-                ),
-              ],
-              onChanged: (val) {
-                if (val == null) return;
-                setState(() => entry.creditDealType = val);
+            Focus(
+              onFocusChange: (hasFocus) {
+                if (!hasFocus &&
+                    entry.installmentsController.text.trim().isEmpty) {
+                  setState(() => entry.installmentsController.text = '1');
+                }
               },
-            ),
-            if (entry.creditDealType == 'installments') ...[
-              const SizedBox(height: 12),
-              _buildTextField(
+              child: _buildTextField(
                 entry.installmentsController,
-                isRtl ? 'מספר תשלומים (חובה)' : 'Installments Count (Required)',
+                isRtl
+                    ? 'מספר תשלומים (אופציונלי)'
+                    : 'Number of Payments (Optional)',
                 Icons.format_list_numbered,
-                required: true,
                 keyboardType: TextInputType.number,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  TextInputFormatter.withFunction((oldValue, newValue) {
+                    final value = int.tryParse(newValue.text);
+                    if (newValue.text.isNotEmpty &&
+                        (value == null || value < 1)) {
+                      return const TextEditingValue(
+                        text: '1',
+                        selection: TextSelection.collapsed(offset: 1),
+                      );
+                    }
+                    return newValue;
+                  }),
+                ],
               ),
-            ],
+            ),
           ],
           if (entry.method == 'check') ...[
             const SizedBox(height: 12),
