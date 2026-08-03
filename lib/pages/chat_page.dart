@@ -164,24 +164,6 @@ class _ChatPageState extends State<ChatPage> {
     return doc.exists ? doc : null;
   }
 
-  String _normalizedPhone(String value) => value.replaceAll(RegExp(r'\D'), '');
-
-  List<String> _savedContactValues(
-    Map<String, dynamic> data,
-    String pluralKey,
-    String singularKey,
-  ) {
-    final values = data[pluralKey] is List
-        ? (data[pluralKey] as List)
-              .map((value) => value.toString().trim())
-              .where((value) => value.isNotEmpty)
-              .toList()
-        : <String>[];
-    final primary = (data[singularKey] ?? '').toString().trim();
-    if (primary.isNotEmpty && !values.contains(primary)) values.add(primary);
-    return values;
-  }
-
   Future<void> _openInvoiceForChatContact() async {
     final currentUser = _auth.currentUser;
     if (currentUser == null || _isOpeningInvoice) return;
@@ -233,42 +215,31 @@ class _ChatPageState extends State<ChatPage> {
                   '')
               .toString()
               .trim();
-      final normalizedEmail = email.toLowerCase();
-      final normalizedPhone = _normalizedPhone(phone);
-
       String? savedClientId;
       Map<String, dynamic>? savedClientData;
+
+      // Prefer the stable chat-user link over every other identifier.
       for (final document in clientsSnapshot.docs) {
         final data = document.data();
         final linkedUserId = (data['linkedUserId'] ?? '').toString().trim();
-        final savedTaxId = (data['taxId'] ?? '').toString().trim();
-        final savedEmails = _savedContactValues(
-          data,
-          'emails',
-          'email',
-        ).map((value) => value.toLowerCase());
-        final savedPhones = _savedContactValues(
-          data,
-          'phones',
-          'phone',
-        ).map(_normalizedPhone);
-        final hasStrongContactMatch =
-            (taxId.isNotEmpty && savedTaxId == taxId) ||
-            (normalizedEmail.isNotEmpty &&
-                savedEmails.contains(normalizedEmail)) ||
-            (normalizedPhone.isNotEmpty &&
-                savedPhones.contains(normalizedPhone));
-        final hasOnlyNameToMatch =
-            taxId.isEmpty && normalizedEmail.isEmpty && normalizedPhone.isEmpty;
-        final sameName =
-            (data['name'] ?? '').toString().trim().toLowerCase() ==
-            receiverName.toLowerCase();
-
-        if (linkedUserId == widget.receiverId ||
-            hasStrongContactMatch ||
-            (hasOnlyNameToMatch && sameName)) {
+        if (linkedUserId == widget.receiverId) {
           savedClientId = document.id;
           savedClientData = data;
+          break;
+        }
+      }
+
+      // An older/manual client may have the same ID but no user link yet.
+      // Attach only the UID and leave every other saved field untouched.
+      if (savedClientId == null && taxId.isNotEmpty) {
+        for (final document in clientsSnapshot.docs) {
+          final data = document.data();
+          final savedTaxId = (data['taxId'] ?? '').toString().trim();
+          if (savedTaxId != taxId) continue;
+
+          await document.reference.update({'linkedUserId': widget.receiverId});
+          savedClientId = document.id;
+          savedClientData = {...data, 'linkedUserId': widget.receiverId};
           break;
         }
       }
