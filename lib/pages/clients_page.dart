@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:untitled1/pages/client_details_page.dart';
+import 'package:untitled1/pages/invoice_builder.dart';
+import 'package:untitled1/pages/verify_business.dart';
 import 'package:untitled1/services/client_service.dart';
 import 'package:untitled1/services/language_provider.dart';
 import 'package:untitled1/utils/israeli_id_validator.dart';
@@ -22,6 +24,7 @@ class _ClientsPageState extends State<ClientsPage> {
 
   final _searchController = TextEditingController();
   String _searchQuery = '';
+  bool _isOpeningDocument = false;
 
   User? get _user => FirebaseAuth.instance.currentUser;
 
@@ -512,6 +515,59 @@ class _ClientsPageState extends State<ClientsPage> {
     await _showClientEditor(strings, client: client);
   }
 
+  Future<void> _createDocument(
+    _ClientRecord client,
+    _ClientStrings strings,
+  ) async {
+    final user = _user;
+    if (user == null || _isOpeningDocument) return;
+
+    setState(() => _isOpeningDocument = true);
+    try {
+      final userSnapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
+      final userData = userSnapshot.data() ?? <String, dynamic>{};
+      final workerName = (userData['name'] ?? user.displayName ?? '')
+          .toString()
+          .trim();
+      final workerPhone = (userData['phone'] ?? '').toString().trim();
+      final workerEmail = (userData['email'] ?? user.email ?? '')
+          .toString()
+          .trim();
+      final isBusinessVerified = userData['isVerified'] == true;
+
+      if (!mounted) return;
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => isBusinessVerified
+              ? InvoiceBuilderPage(
+                  workerName: workerName.isEmpty ? 'Worker' : workerName,
+                  workerPhone: workerPhone.isEmpty ? null : workerPhone,
+                  workerEmail: workerEmail.isEmpty ? null : workerEmail,
+                  initialDocType: 'quote',
+                  initialSavedClientId: client.id,
+                  initialClientTaxId: client.taxId,
+                  receiverName: client.name,
+                  receiverPhone: client.phone,
+                  receiverEmail: client.email,
+                  receiverAddress: client.address,
+                )
+              : const VerifyBusinessPage(),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(strings.createDocumentFailed)));
+    } finally {
+      if (mounted) setState(() => _isOpeningDocument = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final locale = context.watch<LanguageProvider>().locale.languageCode;
@@ -622,7 +678,7 @@ class _ClientsPageState extends State<ClientsPage> {
                                     crossAxisCount: columns,
                                     mainAxisSpacing: 14,
                                     crossAxisSpacing: 14,
-                                    mainAxisExtent: 190,
+                                    mainAxisExtent: 250,
                                   ),
                               delegate: SliverChildBuilderDelegate(
                                 (context, index) => _ClientCard(
@@ -632,6 +688,8 @@ class _ClientsPageState extends State<ClientsPage> {
                                     clients[index],
                                     strings,
                                   ),
+                                  onCreateDocument: () =>
+                                      _createDocument(clients[index], strings),
                                   onEdit: () => _showClientEditor(
                                     strings,
                                     client: clients[index],
@@ -766,6 +824,7 @@ class _ClientCard extends StatelessWidget {
     required this.client,
     required this.strings,
     required this.onOpen,
+    required this.onCreateDocument,
     required this.onEdit,
     required this.onDelete,
   });
@@ -773,6 +832,7 @@ class _ClientCard extends StatelessWidget {
   final _ClientRecord client;
   final _ClientStrings strings;
   final VoidCallback onOpen;
+  final VoidCallback onCreateDocument;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
 
@@ -906,6 +966,25 @@ class _ClientCard extends StatelessWidget {
                   icon: Icons.info_outline_rounded,
                   text: strings.noContactDetails,
                 ),
+              const Spacer(),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: onCreateDocument,
+                  icon: const Icon(Icons.note_add_outlined, size: 19),
+                  label: Text(strings.createDocument),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFFEAF4FF),
+                    foregroundColor: const Color(0xFF1976D2),
+                    elevation: 0,
+                    minimumSize: const Size.fromHeight(42),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(13),
+                    ),
+                    textStyle: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ),
+              ),
             ],
           ),
         ),
@@ -1265,6 +1344,8 @@ class _ClientStrings {
   String get deleteFailed => values['deleteFailed']!;
   String get moreActions => values['moreActions']!;
   String get noContactDetails => values['noContactDetails']!;
+  String get createDocument => values['createDocument']!;
+  String get createDocumentFailed => values['createDocumentFailed']!;
   String get noClients => values['noClients']!;
   String get noClientsMessage => values['noClientsMessage']!;
   String get addFirstClient => values['addFirstClient']!;
@@ -1331,6 +1412,8 @@ class _ClientStrings {
       'deleteFailed': 'Could not delete the client.',
       'moreActions': 'More actions',
       'noContactDetails': 'No contact details added',
+      'createDocument': 'Create document',
+      'createDocumentFailed': 'Could not open the document builder.',
       'noClients': 'No clients yet',
       'noClientsMessage':
           'Add your clients once, then keep their contact and billing details organized in one place.',
@@ -1389,6 +1472,8 @@ class _ClientStrings {
       'deleteFailed': 'לא ניתן למחוק את הלקוח.',
       'moreActions': 'פעולות נוספות',
       'noContactDetails': 'לא נוספו פרטי קשר',
+      'createDocument': 'יצירת מסמך',
+      'createDocumentFailed': 'לא ניתן לפתוח את יוצר המסמכים.',
       'noClients': 'עדיין אין לקוחות',
       'noClientsMessage':
           'הוסף לקוחות פעם אחת ושמור את פרטי הקשר והחיוב שלהם מסודרים במקום אחד.',
@@ -1447,6 +1532,8 @@ class _ClientStrings {
       'deleteFailed': 'تعذر حذف العميل.',
       'moreActions': 'المزيد من الإجراءات',
       'noContactDetails': 'لم تتم إضافة بيانات اتصال',
+      'createDocument': 'إنشاء مستند',
+      'createDocumentFailed': 'تعذر فتح منشئ المستندات.',
       'noClients': 'لا يوجد عملاء بعد',
       'noClientsMessage':
           'أضف عملاءك مرة واحدة واحتفظ ببيانات الاتصال والفوترة منظمة في مكان واحد.',
@@ -1506,6 +1593,8 @@ class _ClientStrings {
       'deleteFailed': 'Не удалось удалить клиента.',
       'moreActions': 'Другие действия',
       'noContactDetails': 'Контактные данные не добавлены',
+      'createDocument': 'Создать документ',
+      'createDocumentFailed': 'Не удалось открыть конструктор документов.',
       'noClients': 'Клиентов пока нет',
       'noClientsMessage':
           'Храните контакты и платежные данные клиентов в одном месте.',
@@ -1564,6 +1653,8 @@ class _ClientStrings {
       'deleteFailed': 'ደንበኛውን መሰረዝ አልተቻለም።',
       'moreActions': 'ተጨማሪ እርምጃዎች',
       'noContactDetails': 'የመገናኛ መረጃ አልተጨመረም',
+      'createDocument': 'ሰነድ ፍጠር',
+      'createDocumentFailed': 'የሰነድ አዘጋጁን መክፈት አልተቻለም።',
       'noClients': 'እስካሁን ደንበኞች የሉም',
       'noClientsMessage': 'የደንበኞችን መገናኛ እና የክፍያ መረጃ በአንድ ቦታ ያደራጁ።',
       'addFirstClient': 'የመጀመሪያ ደንበኛ ጨምር',

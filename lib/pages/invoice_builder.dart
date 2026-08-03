@@ -286,6 +286,8 @@ class InvoiceBuilderPage extends StatefulWidget {
   final String? receiverPhone;
   final String? receiverEmail;
   final String? receiverAddress;
+  final String? initialSavedClientId;
+  final String? initialClientTaxId;
   final String? initialDocType;
   final List<Map<String, dynamic>>? initialItems;
   final String? initialNotes;
@@ -313,6 +315,8 @@ class InvoiceBuilderPage extends StatefulWidget {
     this.receiverPhone,
     this.receiverEmail,
     this.receiverAddress,
+    this.initialSavedClientId,
+    this.initialClientTaxId,
     this.initialDocType,
     this.initialItems,
     this.initialNotes,
@@ -1322,6 +1326,12 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     }
     if (widget.receiverAddress != null) {
       _clientAddressController.text = widget.receiverAddress!;
+    }
+    if (widget.initialClientTaxId != null) {
+      _clientIdController.text = widget.initialClientTaxId!;
+    }
+    if (widget.initialSavedClientId?.trim().isNotEmpty == true) {
+      _selectedSavedClientId = widget.initialSavedClientId!.trim();
     }
     _invoiceDateController.text = _formattedInvoiceDate();
     _selectedPaymentDueDate = _defaultPaymentDueDate();
