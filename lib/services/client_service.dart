@@ -82,6 +82,34 @@ class ClientService {
     });
   }
 
+  static Future<String> saveClientWithGeneratedExternalNumber({
+    required String userId,
+    required Map<String, dynamic> clientData,
+    String? clientId,
+    FirebaseFirestore? firestore,
+    int maxAttempts = 8,
+  }) async {
+    if (maxAttempts < 1) {
+      throw RangeError.range(maxAttempts, 1, null, 'maxAttempts');
+    }
+
+    for (var attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        return await saveClient(
+          userId: userId,
+          clientData: clientData,
+          externalClientNumber: generateExternalClientNumber(),
+          clientId: clientId,
+          firestore: firestore,
+        );
+      } on ClientNumberConflictException {
+        if (attempt == maxAttempts - 1) rethrow;
+      }
+    }
+
+    throw StateError('Could not reserve an external client number.');
+  }
+
   static Future<void> deleteClient({
     required String userId,
     required String clientId,

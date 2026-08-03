@@ -100,54 +100,7 @@ class ClientDetailsPage extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          _ClientHero(
-                            client: client,
-                            strings: strings,
-                            onEdit: () => Navigator.pop(
-                              context,
-                              ClientDetailsAction.edit,
-                            ),
-                          ),
-                          if (client.primaryPhone.isNotEmpty ||
-                              client.primaryEmail.isNotEmpty) ...[
-                            const SizedBox(height: 16),
-                            Row(
-                              children: [
-                                if (client.primaryPhone.isNotEmpty)
-                                  Expanded(
-                                    child: _QuickAction(
-                                      icon: Icons.phone_rounded,
-                                      label: strings.call,
-                                      color: const Color(0xFF0F766E),
-                                      onTap: () => _launchContact(
-                                        context,
-                                        Uri.parse('tel:${client.primaryPhone}'),
-                                        strings,
-                                      ),
-                                    ),
-                                  ),
-                                if (client.primaryPhone.isNotEmpty &&
-                                    client.primaryEmail.isNotEmpty)
-                                  const SizedBox(width: 12),
-                                if (client.primaryEmail.isNotEmpty)
-                                  Expanded(
-                                    child: _QuickAction(
-                                      icon: Icons.email_rounded,
-                                      label: strings.email,
-                                      color: const Color(0xFF7C3AED),
-                                      onTap: () => _launchContact(
-                                        context,
-                                        Uri(
-                                          scheme: 'mailto',
-                                          path: client.primaryEmail,
-                                        ),
-                                        strings,
-                                      ),
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ],
+                          _ClientHero(client: client, strings: strings),
                           if (client.phones.isNotEmpty ||
                               client.emails.isNotEmpty) ...[
                             const SizedBox(height: 28),
@@ -196,7 +149,8 @@ class ClientDetailsPage extends StatelessWidget {
                               ],
                             ),
                           ],
-                          if (client.taxId.isNotEmpty ||
+                          if (client.externalClientNumber.isNotEmpty ||
+                              client.taxId.isNotEmpty ||
                               client.address.isNotEmpty) ...[
                             const SizedBox(height: 28),
                             _SectionTitle(
@@ -206,6 +160,12 @@ class ClientDetailsPage extends StatelessWidget {
                             const SizedBox(height: 12),
                             _DetailsCard(
                               children: [
+                                if (client.externalClientNumber.isNotEmpty)
+                                  _InfoRow(
+                                    icon: Icons.tag_rounded,
+                                    label: strings.externalNumber,
+                                    value: client.externalClientNumber,
+                                  ),
                                 if (client.taxId.isNotEmpty)
                                   _InfoRow(
                                     icon: Icons.badge_outlined,
@@ -260,15 +220,10 @@ class ClientDetailsPage extends StatelessWidget {
 }
 
 class _ClientHero extends StatelessWidget {
-  const _ClientHero({
-    required this.client,
-    required this.strings,
-    required this.onEdit,
-  });
+  const _ClientHero({required this.client, required this.strings});
 
   final _ClientDetails client;
   final _ClientDetailsStrings strings;
-  final VoidCallback onEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -335,116 +290,7 @@ class _ClientHero extends StatelessWidget {
               ),
             ],
           ),
-          if (client.externalClientNumber.isNotEmpty) ...[
-            const SizedBox(height: 20),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 13),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.14),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.tag_rounded, color: Colors.white, size: 21),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          strings.externalNumber,
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.72),
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        SelectableText(
-                          client.externalClientNumber,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 1.2,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-          const SizedBox(height: 18),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton.icon(
-              onPressed: onEdit,
-              icon: const Icon(Icons.edit_outlined, size: 19),
-              label: Text(strings.editClient),
-              style: FilledButton.styleFrom(
-                backgroundColor: Colors.white,
-                foregroundColor: const Color(0xFF1565C0),
-                minimumSize: const Size.fromHeight(48),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(15),
-                ),
-                textStyle: const TextStyle(fontWeight: FontWeight.w800),
-              ),
-            ),
-          ),
         ],
-      ),
-    );
-  }
-}
-
-class _QuickAction extends StatelessWidget {
-  const _QuickAction({
-    required this.icon,
-    required this.label,
-    required this.color,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final Color color;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: color.withValues(alpha: 0.09),
-      borderRadius: BorderRadius.circular(18),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(18),
-        child: Container(
-          height: 58,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: color.withValues(alpha: 0.18)),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, color: color, size: 20),
-              const SizedBox(width: 9),
-              Flexible(
-                child: Text(
-                  label,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: color, fontWeight: FontWeight.w800),
-                ),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }
@@ -674,8 +520,6 @@ class _ClientDetails {
   final String address;
   final String notes;
 
-  String get primaryPhone => phones.isEmpty ? '' : phones.first;
-  String get primaryEmail => emails.isEmpty ? '' : emails.first;
   String get initial =>
       name.isEmpty ? '?' : name.characters.first.toUpperCase();
 
@@ -702,10 +546,7 @@ class _ClientDetailsStrings {
   String get title => values['title']!;
   String get client => values['client']!;
   String get edit => values['edit']!;
-  String get editClient => values['editClient']!;
   String get externalNumber => values['externalNumber']!;
-  String get call => values['call']!;
-  String get email => values['email']!;
   String get contactDetails => values['contactDetails']!;
   String get primary => values['primary']!;
   String get businessDetails => values['businessDetails']!;
@@ -725,10 +566,7 @@ class _ClientDetailsStrings {
       'title': 'Client details',
       'client': 'Client',
       'edit': 'Edit',
-      'editClient': 'Edit client',
       'externalNumber': 'Client number in external accountancy',
-      'call': 'Call primary',
-      'email': 'Email primary',
       'contactDetails': 'Contact details',
       'primary': 'Primary • used in documents',
       'businessDetails': 'Business details',
@@ -747,10 +585,7 @@ class _ClientDetailsStrings {
       'title': 'פרטי לקוח',
       'client': 'לקוח',
       'edit': 'ערוך',
-      'editClient': 'ערוך לקוח',
       'externalNumber': 'מס׳ לקוח בהנה״ח חיצונית',
-      'call': 'התקשר לראשי',
-      'email': 'אימייל ראשי',
       'contactDetails': 'פרטי קשר',
       'primary': 'ראשי • משמש במסמכים',
       'businessDetails': 'פרטי העסק',
@@ -769,10 +604,7 @@ class _ClientDetailsStrings {
       'title': 'تفاصيل العميل',
       'client': 'عميل',
       'edit': 'تعديل',
-      'editClient': 'تعديل العميل',
       'externalNumber': 'رقم العميل في المحاسبة الخارجية',
-      'call': 'اتصال بالرئيسي',
-      'email': 'البريد الرئيسي',
       'contactDetails': 'بيانات الاتصال',
       'primary': 'رئيسي • يُستخدم في المستندات',
       'businessDetails': 'بيانات العمل',
@@ -791,10 +623,7 @@ class _ClientDetailsStrings {
       'title': 'Данные клиента',
       'client': 'Клиент',
       'edit': 'Изменить',
-      'editClient': 'Изменить клиента',
       'externalNumber': 'Номер клиента во внешней бухгалтерии',
-      'call': 'Позвонить',
-      'email': 'Написать',
       'contactDetails': 'Контактные данные',
       'primary': 'Основной • используется в документах',
       'businessDetails': 'Деловые данные',
@@ -813,10 +642,7 @@ class _ClientDetailsStrings {
       'title': 'የደንበኛ ዝርዝሮች',
       'client': 'ደንበኛ',
       'edit': 'አርትዕ',
-      'editClient': 'ደንበኛ አርትዕ',
       'externalNumber': 'የውጭ ሂሳብ የደንበኛ ቁጥር',
-      'call': 'ዋናውን ይደውሉ',
-      'email': 'ዋና ኢሜይል',
       'contactDetails': 'የመገናኛ መረጃ',
       'primary': 'ዋና • በሰነዶች ውስጥ ይጠቀማል',
       'businessDetails': 'የንግድ ዝርዝሮች',

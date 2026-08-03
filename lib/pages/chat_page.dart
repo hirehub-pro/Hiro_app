@@ -21,6 +21,7 @@ import 'package:http/http.dart' as http;
 import 'package:untitled1/ptofile.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:untitled1/services/app_permission_service.dart';
+import 'package:untitled1/services/client_service.dart';
 import 'package:untitled1/services/subscription_access_service.dart';
 import 'package:untitled1/pages/my_request_details_page.dart';
 import 'package:untitled1/pages/request_details.dart';
@@ -91,6 +92,7 @@ class _ChatPageState extends State<ChatPage> {
   String? _currentUserName;
   String? _currentUserPhone;
   String? _currentUserEmail;
+  bool _isOpeningInvoice = false;
 
   String _t({
     required String en,
@@ -160,6 +162,195 @@ class _ChatPageState extends State<ChatPage> {
   Future<DocumentSnapshot?> _getUserDoc(String uid) async {
     final doc = await _firestore.collection('users').doc(uid).get();
     return doc.exists ? doc : null;
+  }
+
+  String _normalizedPhone(String value) => value.replaceAll(RegExp(r'\D'), '');
+
+  List<String> _savedContactValues(
+    Map<String, dynamic> data,
+    String pluralKey,
+    String singularKey,
+  ) {
+    final values = data[pluralKey] is List
+        ? (data[pluralKey] as List)
+              .map((value) => value.toString().trim())
+              .where((value) => value.isNotEmpty)
+              .toList()
+        : <String>[];
+    final primary = (data[singularKey] ?? '').toString().trim();
+    if (primary.isNotEmpty && !values.contains(primary)) values.add(primary);
+    return values;
+  }
+
+  Future<void> _openInvoiceForChatContact() async {
+    final currentUser = _auth.currentUser;
+    if (currentUser == null || _isOpeningInvoice) return;
+
+    setState(() => _isOpeningInvoice = true);
+    try {
+      final receiverFuture = _getUserDoc(widget.receiverId);
+      final verificationFuture = _firestore
+          .collection('users')
+          .doc(widget.receiverId)
+          .collection('verification_info')
+          .doc('latest')
+          .get();
+      final clientsFuture = _firestore
+          .collection('users')
+          .doc(currentUser.uid)
+          .collection('clients')
+          .get();
+
+      final receiverDoc = await receiverFuture;
+      final clientsSnapshot = await clientsFuture;
+      final receiverData = receiverDoc?.data() is Map<String, dynamic>
+          ? receiverDoc!.data() as Map<String, dynamic>
+          : <String, dynamic>{};
+      var verificationData = <String, dynamic>{};
+      try {
+        final verificationDoc = await verificationFuture;
+        verificationData = verificationDoc.data() ?? <String, dynamic>{};
+      } catch (error) {
+        debugPrint('Could not load receiver verification details: $error');
+      }
+
+      final receiverName = (receiverData['name'] ?? widget.receiverName)
+          .toString()
+          .trim();
+      final phone = (receiverData['phone'] ?? '').toString().trim();
+      final email = (receiverData['email'] ?? '').toString().trim();
+      final address =
+          (verificationData['address'] ??
+                  receiverData['address'] ??
+                  receiverData['town'] ??
+                  '')
+              .toString()
+              .trim();
+      final taxId =
+          (verificationData['businessId'] ??
+                  receiverData['businessId'] ??
+                  receiverData['taxId'] ??
+                  '')
+              .toString()
+              .trim();
+      final normalizedEmail = email.toLowerCase();
+      final normalizedPhone = _normalizedPhone(phone);
+
+      String? savedClientId;
+      Map<String, dynamic>? savedClientData;
+      for (final document in clientsSnapshot.docs) {
+        final data = document.data();
+        final linkedUserId = (data['linkedUserId'] ?? '').toString().trim();
+        final savedTaxId = (data['taxId'] ?? '').toString().trim();
+        final savedEmails = _savedContactValues(
+          data,
+          'emails',
+          'email',
+        ).map((value) => value.toLowerCase());
+        final savedPhones = _savedContactValues(
+          data,
+          'phones',
+          'phone',
+        ).map(_normalizedPhone);
+        final hasStrongContactMatch =
+            (taxId.isNotEmpty && savedTaxId == taxId) ||
+            (normalizedEmail.isNotEmpty &&
+                savedEmails.contains(normalizedEmail)) ||
+            (normalizedPhone.isNotEmpty &&
+                savedPhones.contains(normalizedPhone));
+        final hasOnlyNameToMatch =
+            taxId.isEmpty && normalizedEmail.isEmpty && normalizedPhone.isEmpty;
+        final sameName =
+            (data['name'] ?? '').toString().trim().toLowerCase() ==
+            receiverName.toLowerCase();
+
+        if (linkedUserId == widget.receiverId ||
+            hasStrongContactMatch ||
+            (hasOnlyNameToMatch && sameName)) {
+          savedClientId = document.id;
+          savedClientData = data;
+          break;
+        }
+      }
+
+      if (savedClientId == null) {
+        savedClientData = <String, dynamic>{
+          'name': receiverName,
+          'nameLowercase': receiverName.toLowerCase(),
+          'taxId': taxId,
+          'phone': phone,
+          'phones': phone.isEmpty ? <String>[] : <String>[phone],
+          'email': email,
+          'emails': email.isEmpty ? <String>[] : <String>[email],
+          'address': address,
+          'notes': '',
+          'linkedUserId': widget.receiverId,
+          'clientSource': 'chat',
+        };
+        savedClientId =
+            await ClientService.saveClientWithGeneratedExternalNumber(
+              userId: currentUser.uid,
+              clientData: savedClientData,
+              firestore: _firestore,
+            );
+      }
+
+      final selectedClientData = savedClientData!;
+      final savedName = (selectedClientData['name'] ?? receiverName)
+          .toString()
+          .trim();
+      final savedPhone = (selectedClientData['phone'] ?? phone)
+          .toString()
+          .trim();
+      final savedEmail = (selectedClientData['email'] ?? email)
+          .toString()
+          .trim();
+      final savedAddress = (selectedClientData['address'] ?? address)
+          .toString()
+          .trim();
+      final savedTaxId = (selectedClientData['taxId'] ?? taxId)
+          .toString()
+          .trim();
+
+      if (!mounted) return;
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => InvoiceBuilderPage(
+            workerName: _currentUserName ?? 'Worker',
+            workerPhone: _currentUserPhone,
+            workerEmail: _currentUserEmail,
+            initialDocType: 'quote',
+            initialSavedClientId: savedClientId,
+            initialClientTaxId: savedTaxId,
+            receiverId: widget.receiverId,
+            receiverName: savedName.isEmpty ? widget.receiverName : savedName,
+            receiverPhone: savedPhone,
+            receiverEmail: savedEmail,
+            receiverAddress: savedAddress,
+          ),
+        ),
+      );
+    } catch (error) {
+      debugPrint('Error preparing invoice client: $error');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _t(
+              en: 'Could not add this contact to your clients. Try again.',
+              he: 'לא ניתן להוסיף את איש הקשר ללקוחות. נסה שוב.',
+              ar: 'تعذرت إضافة جهة الاتصال إلى العملاء. حاول مرة أخرى.',
+              am: 'ይህን እውቂያ ወደ ደንበኞችዎ ማከል አልተቻለም። እንደገና ይሞክሩ።',
+              ru: 'Не удалось добавить контакт в список клиентов. Повторите попытку.',
+            ),
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isOpeningInvoice = false);
+    }
   }
 
   void _checkUserType() async {
@@ -576,37 +767,7 @@ class _ChatPageState extends State<ChatPage> {
               padding: const EdgeInsetsDirectional.only(end: 8),
               child: InkWell(
                 borderRadius: BorderRadius.circular(12),
-                onTap: () async {
-                  final receiverDoc = await _getUserDoc(widget.receiverId);
-                  String? phone;
-                  String? email;
-                  String? address;
-                  if (receiverDoc != null && receiverDoc.exists) {
-                    final data = receiverDoc.data() as Map<String, dynamic>;
-                    phone = data['phone'];
-                    email = data['email'];
-                    address = data['address'] ?? data['town'];
-                  }
-
-                  if (!mounted) return;
-
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => InvoiceBuilderPage(
-                        workerName: _currentUserName ?? "Worker",
-                        workerPhone: _currentUserPhone,
-                        workerEmail: _currentUserEmail,
-                        initialDocType: 'quote',
-                        receiverId: widget.receiverId,
-                        receiverName: widget.receiverName,
-                        receiverPhone: phone,
-                        receiverEmail: email,
-                        receiverAddress: address,
-                      ),
-                    ),
-                  );
-                },
+                onTap: _isOpeningInvoice ? null : _openInvoiceForChatContact,
                 child: Tooltip(
                   message: _t(
                     en: "Create Invoice",
@@ -620,7 +781,13 @@ class _ChatPageState extends State<ChatPage> {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const Icon(Icons.receipt_long_rounded, size: 22),
+                        if (_isOpeningInvoice)
+                          const SizedBox.square(
+                            dimension: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        else
+                          const Icon(Icons.receipt_long_rounded, size: 22),
                         const SizedBox(height: 2),
                         Text(
                           _t(
