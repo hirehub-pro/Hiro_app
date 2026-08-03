@@ -3,8 +3,10 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:untitled1/pages/client_details_page.dart';
 import 'package:untitled1/services/client_service.dart';
 import 'package:untitled1/services/language_provider.dart';
+import 'package:untitled1/utils/israeli_id_validator.dart';
 
 class ClientsPage extends StatefulWidget {
   const ClientsPage({super.key});
@@ -66,13 +68,26 @@ class _ClientsPageState extends State<ClientsPage> {
           : ClientService.generateExternalClientNumber(),
     );
     final taxIdController = TextEditingController(text: client?.taxId ?? '');
-    final phoneController = TextEditingController(text: client?.phone ?? '');
-    final emailController = TextEditingController(text: client?.email ?? '');
+    final phoneControllers = (client?.phones ?? const <String>[''])
+        .map((phone) => TextEditingController(text: phone))
+        .toList();
+    final emailControllers = (client?.emails ?? const <String>[''])
+        .map((email) => TextEditingController(text: email))
+        .toList();
     final addressController = TextEditingController(
       text: client?.address ?? '',
     );
     final notesController = TextEditingController(text: client?.notes ?? '');
     final formKey = GlobalKey<FormState>();
+    final ownedControllers = <TextEditingController>[
+      nameController,
+      externalClientNumberController,
+      taxIdController,
+      ...phoneControllers,
+      ...emailControllers,
+      addressController,
+      notesController,
+    ];
 
     await showModalBottomSheet<void>(
       context: context,
@@ -82,15 +97,7 @@ class _ClientsPageState extends State<ClientsPage> {
       builder: (sheetContext) {
         var isSaving = false;
         return _ClientEditorControllerOwner(
-          controllers: [
-            nameController,
-            externalClientNumberController,
-            taxIdController,
-            phoneController,
-            emailController,
-            addressController,
-            notesController,
-          ],
+          controllers: ownedControllers,
           child: StatefulBuilder(
             builder: (context, setSheetState) {
               Future<void> save() async {
@@ -100,12 +107,22 @@ class _ClientsPageState extends State<ClientsPage> {
                 setSheetState(() => isSaving = true);
                 try {
                   final name = nameController.text.trim();
+                  final phones = phoneControllers
+                      .map((controller) => controller.text.trim())
+                      .where((phone) => phone.isNotEmpty)
+                      .toList();
+                  final emails = emailControllers
+                      .map((controller) => controller.text.trim())
+                      .where((email) => email.isNotEmpty)
+                      .toList();
                   final data = <String, dynamic>{
                     'name': name,
                     'nameLowercase': name.toLowerCase(),
                     'taxId': taxIdController.text.trim(),
-                    'phone': phoneController.text.trim(),
-                    'email': emailController.text.trim(),
+                    'phone': phones.isEmpty ? '' : phones.first,
+                    'phones': phones,
+                    'email': emails.isEmpty ? '' : emails.first,
+                    'emails': emails,
                     'address': addressController.text.trim(),
                     'notes': notesController.text.trim(),
                   };
@@ -235,31 +252,99 @@ class _ClientsPageState extends State<ClientsPage> {
                                 : null,
                           ),
                           const SizedBox(height: 12),
-                          _ClientTextField(
-                            controller: phoneController,
-                            label: strings.phone,
-                            icon: Icons.phone_outlined,
-                            keyboardType: TextInputType.phone,
-                            textInputAction: TextInputAction.next,
-                          ),
-                          const SizedBox(height: 12),
-                          _ClientTextField(
-                            controller: emailController,
-                            label: strings.email,
-                            icon: Icons.email_outlined,
-                            keyboardType: TextInputType.emailAddress,
-                            textInputAction: TextInputAction.next,
-                            validator: (value) {
-                              final email = value?.trim() ?? '';
-                              if (email.isEmpty) return null;
-                              return RegExp(
-                                    r'^[^@\s]+@[^@\s]+\.[^@\s]+$',
-                                  ).hasMatch(email)
-                                  ? null
-                                  : strings.invalidEmail;
-                            },
-                          ),
-                          const SizedBox(height: 12),
+                          ...List.generate(phoneControllers.length, (index) {
+                            final isPrimary = index == 0;
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: _ClientTextField(
+                                controller: phoneControllers[index],
+                                label: isPrimary
+                                    ? strings.primaryPhone
+                                    : '${strings.phone} ${index + 1}',
+                                icon: Icons.phone_outlined,
+                                keyboardType: TextInputType.phone,
+                                textInputAction: TextInputAction.next,
+                                helperText: isPrimary
+                                    ? strings.primaryContactHint
+                                    : null,
+                                suffixIcon: IconButton(
+                                  tooltip: isPrimary
+                                      ? strings.addPhone
+                                      : strings.removeField,
+                                  onPressed: () {
+                                    if (isPrimary) {
+                                      final controller =
+                                          TextEditingController();
+                                      setSheetState(() {
+                                        phoneControllers.add(controller);
+                                        ownedControllers.add(controller);
+                                      });
+                                    } else {
+                                      setSheetState(
+                                        () => phoneControllers.removeAt(index),
+                                      );
+                                    }
+                                  },
+                                  icon: Icon(
+                                    isPrimary
+                                        ? Icons.add_rounded
+                                        : Icons.remove_circle_outline_rounded,
+                                  ),
+                                ),
+                              ),
+                            );
+                          }),
+                          ...List.generate(emailControllers.length, (index) {
+                            final isPrimary = index == 0;
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: _ClientTextField(
+                                controller: emailControllers[index],
+                                label: isPrimary
+                                    ? strings.primaryEmail
+                                    : '${strings.email} ${index + 1}',
+                                icon: Icons.email_outlined,
+                                keyboardType: TextInputType.emailAddress,
+                                textInputAction: TextInputAction.next,
+                                helperText: isPrimary
+                                    ? strings.primaryContactHint
+                                    : null,
+                                suffixIcon: IconButton(
+                                  tooltip: isPrimary
+                                      ? strings.addEmail
+                                      : strings.removeField,
+                                  onPressed: () {
+                                    if (isPrimary) {
+                                      final controller =
+                                          TextEditingController();
+                                      setSheetState(() {
+                                        emailControllers.add(controller);
+                                        ownedControllers.add(controller);
+                                      });
+                                    } else {
+                                      setSheetState(
+                                        () => emailControllers.removeAt(index),
+                                      );
+                                    }
+                                  },
+                                  icon: Icon(
+                                    isPrimary
+                                        ? Icons.add_rounded
+                                        : Icons.remove_circle_outline_rounded,
+                                  ),
+                                ),
+                                validator: (value) {
+                                  final email = value?.trim() ?? '';
+                                  if (email.isEmpty) return null;
+                                  return RegExp(
+                                        r'^[^@\s]+@[^@\s]+\.[^@\s]+$',
+                                      ).hasMatch(email)
+                                      ? null
+                                      : strings.invalidEmail;
+                                },
+                              ),
+                            );
+                          }),
                           _ClientTextField(
                             controller: taxIdController,
                             label: strings.taxId,
@@ -270,6 +355,16 @@ class _ClientsPageState extends State<ClientsPage> {
                               FilteringTextInputFormatter.digitsOnly,
                               LengthLimitingTextInputFormatter(9),
                             ],
+                            validator: (value) {
+                              final id = value?.trim() ?? '';
+                              if (id.isEmpty) return null;
+                              if (id.length != 9) {
+                                return strings.taxIdInvalidLength;
+                              }
+                              return isValidIsraeliId(id)
+                                  ? null
+                                  : strings.taxIdInvalid;
+                            },
                           ),
                           const SizedBox(height: 12),
                           _ClientTextField(
@@ -405,6 +500,18 @@ class _ClientsPageState extends State<ClientsPage> {
     }
   }
 
+  Future<void> _openClientDetails(
+    _ClientRecord client,
+    _ClientStrings strings,
+  ) async {
+    final action = await Navigator.push<ClientDetailsAction>(
+      context,
+      MaterialPageRoute(builder: (_) => ClientDetailsPage(clientId: client.id)),
+    );
+    if (!mounted || action != ClientDetailsAction.edit) return;
+    await _showClientEditor(strings, client: client);
+  }
+
   @override
   Widget build(BuildContext context) {
     final locale = context.watch<LanguageProvider>().locale.languageCode;
@@ -521,6 +628,10 @@ class _ClientsPageState extends State<ClientsPage> {
                                 (context, index) => _ClientCard(
                                   client: clients[index],
                                   strings: strings,
+                                  onOpen: () => _openClientDetails(
+                                    clients[index],
+                                    strings,
+                                  ),
                                   onEdit: () => _showClientEditor(
                                     strings,
                                     client: clients[index],
@@ -654,12 +765,14 @@ class _ClientCard extends StatelessWidget {
   const _ClientCard({
     required this.client,
     required this.strings,
+    required this.onOpen,
     required this.onEdit,
     required this.onDelete,
   });
 
   final _ClientRecord client;
   final _ClientStrings strings;
+  final VoidCallback onOpen;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
 
@@ -670,7 +783,7 @@ class _ClientCard extends StatelessWidget {
       borderRadius: BorderRadius.circular(22),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: onEdit,
+        onTap: onOpen,
         child: Container(
           padding: const EdgeInsets.all(17),
           decoration: BoxDecoration(
@@ -975,6 +1088,7 @@ class _ClientTextField extends StatelessWidget {
     this.validator,
     this.maxLines = 1,
     this.helperText,
+    this.suffixIcon,
   });
 
   final TextEditingController controller;
@@ -987,6 +1101,7 @@ class _ClientTextField extends StatelessWidget {
   final String? Function(String?)? validator;
   final int maxLines;
   final String? helperText;
+  final Widget? suffixIcon;
 
   @override
   Widget build(BuildContext context) {
@@ -1002,6 +1117,7 @@ class _ClientTextField extends StatelessWidget {
         labelText: required ? '$label *' : label,
         helperText: helperText,
         prefixIcon: Icon(icon, size: 20),
+        suffixIcon: suffixIcon,
         filled: true,
         fillColor: const Color(0xFFF8FAFC),
         border: OutlineInputBorder(
@@ -1023,6 +1139,17 @@ class _ClientTextField extends StatelessWidget {
 
 enum _ClientAction { edit, delete }
 
+List<String> _clientContactValues(dynamic rawValues, String fallback) {
+  final values = rawValues is List
+      ? rawValues
+            .map((value) => value.toString().trim())
+            .where((value) => value.isNotEmpty)
+            .toList()
+      : <String>[];
+  if (values.isNotEmpty) return values;
+  return [fallback.trim()];
+}
+
 class _ClientRecord {
   const _ClientRecord({
     required this.id,
@@ -1030,7 +1157,9 @@ class _ClientRecord {
     required this.externalClientNumber,
     required this.taxId,
     required this.phone,
+    required this.phones,
     required this.email,
+    required this.emails,
     required this.address,
     required this.notes,
   });
@@ -1039,6 +1168,8 @@ class _ClientRecord {
     QueryDocumentSnapshot<Map<String, dynamic>> document,
   ) {
     final data = document.data();
+    final phone = (data['phone'] ?? '').toString().trim();
+    final email = (data['email'] ?? '').toString().trim();
     return _ClientRecord(
       id: document.id,
       name: (data['name'] ?? '').toString().trim(),
@@ -1046,8 +1177,10 @@ class _ClientRecord {
           .toString()
           .trim(),
       taxId: (data['taxId'] ?? '').toString().trim(),
-      phone: (data['phone'] ?? '').toString().trim(),
-      email: (data['email'] ?? '').toString().trim(),
+      phone: phone,
+      phones: _clientContactValues(data['phones'], phone),
+      email: email,
+      emails: _clientContactValues(data['emails'], email),
       address: (data['address'] ?? '').toString().trim(),
       notes: (data['notes'] ?? '').toString().trim(),
     );
@@ -1058,7 +1191,9 @@ class _ClientRecord {
   final String externalClientNumber;
   final String taxId;
   final String phone;
+  final List<String> phones;
   final String email;
+  final List<String> emails;
   final String address;
   final String notes;
 
@@ -1073,7 +1208,7 @@ class _ClientRecord {
       phone.isNotEmpty || email.isNotEmpty || address.isNotEmpty;
 
   String get searchText =>
-      '$name $externalClientNumber $taxId $phone $email $address $notes'
+      '$name $externalClientNumber $taxId ${phones.join(' ')} ${emails.join(' ')} $address $notes'
           .toLowerCase();
 }
 
@@ -1095,9 +1230,17 @@ class _ClientStrings {
   String get formHint => values['formHint']!;
   String get name => values['name']!;
   String get phone => values['phone']!;
+  String get primaryPhone => values['primaryPhone']!;
   String get email => values['email']!;
+  String get primaryEmail => values['primaryEmail']!;
+  String get primaryContactHint => values['primaryContactHint']!;
+  String get addPhone => values['addPhone']!;
+  String get addEmail => values['addEmail']!;
+  String get removeField => values['removeField']!;
   String get taxId => values['taxId']!;
   String get taxIdShort => values['taxIdShort']!;
+  String get taxIdInvalidLength => values['taxIdInvalidLength']!;
+  String get taxIdInvalid => values['taxIdInvalid']!;
   String get externalClientNumber => values['externalClientNumber']!;
   String get externalClientNumberShort => values['externalClientNumberShort']!;
   String get externalClientNumberHint => values['externalClientNumberHint']!;
@@ -1150,9 +1293,17 @@ class _ClientStrings {
       'formHint': 'Keep client details ready for your business documents.',
       'name': 'Client name',
       'phone': 'Phone number',
+      'primaryPhone': 'Primary phone number',
       'email': 'Email address',
+      'primaryEmail': 'Primary email address',
+      'primaryContactHint': 'Used automatically in new documents',
+      'addPhone': 'Add another phone number',
+      'addEmail': 'Add another email address',
+      'removeField': 'Remove',
       'taxId': 'Business No. / ID / Tax ID',
       'taxIdShort': 'ID',
+      'taxIdInvalidLength': 'Client ID must be exactly 9 digits.',
+      'taxIdInvalid': 'Enter a valid Israeli ID number.',
       'externalClientNumber': 'Client number in external accountancy',
       'externalClientNumberShort': 'Accountancy No.',
       'externalClientNumberHint': '1–10 digits',
@@ -1202,9 +1353,17 @@ class _ClientStrings {
       'formHint': 'שמור את פרטי הלקוח מוכנים למסמכי העסק שלך.',
       'name': 'שם הלקוח',
       'phone': 'מספר טלפון',
+      'primaryPhone': 'מספר טלפון ראשי',
       'email': 'כתובת אימייל',
+      'primaryEmail': 'כתובת אימייל ראשית',
+      'primaryContactHint': 'ישמש אוטומטית במסמכים חדשים',
+      'addPhone': 'הוסף מספר טלפון נוסף',
+      'addEmail': 'הוסף כתובת אימייל נוספת',
+      'removeField': 'הסר',
       'taxId': 'מס׳ עוסק / ת.ז. / ח.פ.',
       'taxIdShort': 'מזהה',
+      'taxIdInvalidLength': 'מספר הזיהוי חייב להכיל בדיוק 9 ספרות.',
+      'taxIdInvalid': 'יש להזין מספר זיהוי ישראלי תקין.',
       'externalClientNumber': 'מס׳ לקוח בהנה״ח חיצונית',
       'externalClientNumberShort': 'מס׳ הנה״ח',
       'externalClientNumberHint': '1–10 ספרות',
@@ -1252,9 +1411,17 @@ class _ClientStrings {
       'formHint': 'احتفظ ببيانات العميل جاهزة لمستندات عملك.',
       'name': 'اسم العميل',
       'phone': 'رقم الهاتف',
+      'primaryPhone': 'رقم الهاتف الرئيسي',
       'email': 'البريد الإلكتروني',
+      'primaryEmail': 'البريد الإلكتروني الرئيسي',
+      'primaryContactHint': 'يُستخدم تلقائيًا في المستندات الجديدة',
+      'addPhone': 'إضافة رقم هاتف آخر',
+      'addEmail': 'إضافة بريد إلكتروني آخر',
+      'removeField': 'إزالة',
       'taxId': 'رقم النشاط / الهوية / الضريبة',
       'taxIdShort': 'المعرّف',
+      'taxIdInvalidLength': 'يجب أن يتكون رقم الهوية من 9 أرقام بالضبط.',
+      'taxIdInvalid': 'أدخل رقم هوية إسرائيليًا صالحًا.',
       'externalClientNumber': 'رقم العميل في المحاسبة الخارجية',
       'externalClientNumberShort': 'رقم المحاسبة',
       'externalClientNumberHint': 'من 1 إلى 10 أرقام',
@@ -1302,9 +1469,17 @@ class _ClientStrings {
       'formHint': 'Храните данные клиентов для деловых документов.',
       'name': 'Имя клиента',
       'phone': 'Телефон',
+      'primaryPhone': 'Основной телефон',
       'email': 'Email',
+      'primaryEmail': 'Основной email',
+      'primaryContactHint': 'Автоматически используется в новых документах',
+      'addPhone': 'Добавить другой телефон',
+      'addEmail': 'Добавить другой email',
+      'removeField': 'Удалить',
       'taxId': 'Рег. номер / ID / налоговый номер',
       'taxIdShort': 'ID',
+      'taxIdInvalidLength': 'ID клиента должен содержать ровно 9 цифр.',
+      'taxIdInvalid': 'Введите действительный израильский ID.',
       'externalClientNumber': 'Номер клиента во внешней бухгалтерии',
       'externalClientNumberShort': 'Бух. №',
       'externalClientNumberHint': 'От 1 до 10 цифр',
@@ -1353,9 +1528,17 @@ class _ClientStrings {
       'formHint': 'የደንበኛ መረጃን ለንግድ ሰነዶችዎ ያዘጋጁ።',
       'name': 'የደንበኛ ስም',
       'phone': 'ስልክ ቁጥር',
+      'primaryPhone': 'ዋና ስልክ ቁጥር',
       'email': 'ኢሜይል',
+      'primaryEmail': 'ዋና ኢሜይል',
+      'primaryContactHint': 'በአዲስ ሰነዶች ውስጥ በራስ-ሰር ይጠቀማል',
+      'addPhone': 'ሌላ ስልክ ቁጥር ጨምር',
+      'addEmail': 'ሌላ ኢሜይል ጨምር',
+      'removeField': 'አስወግድ',
       'taxId': 'የንግድ / መታወቂያ / ግብር ቁጥር',
       'taxIdShort': 'መታወቂያ',
+      'taxIdInvalidLength': 'የደንበኛ መታወቂያ በትክክል 9 አሃዞች መሆን አለበት።',
+      'taxIdInvalid': 'ትክክለኛ የእስራኤል መታወቂያ ቁጥር ያስገቡ።',
       'externalClientNumber': 'የውጭ ሂሳብ የደንበኛ ቁጥር',
       'externalClientNumberShort': 'የሂሳብ ቁጥር',
       'externalClientNumberHint': 'ከ1–10 ቁጥሮች',

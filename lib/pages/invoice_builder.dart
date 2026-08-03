@@ -7059,6 +7059,16 @@ class _AddInvoiceClientDialogState extends State<_AddInvoiceClientDialog> {
                           strings['client_id']!,
                           Icons.badge_outlined,
                         ),
+                        validator: (value) {
+                          final id = value?.trim() ?? '';
+                          if (id.isEmpty) return null;
+                          if (id.length != 9) {
+                            return strings['client_id_invalid_length'];
+                          }
+                          return isValidIsraeliId(id)
+                              ? null
+                              : strings['client_id_invalid'];
+                        },
                       ),
                       const SizedBox(height: 13),
                       TextFormField(
