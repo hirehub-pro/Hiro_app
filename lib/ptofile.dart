@@ -20,6 +20,7 @@ import 'package:untitled1/pages/schedule.dart';
 import 'package:untitled1/pages/settings.dart';
 import 'package:untitled1/pages/invoice_builder.dart';
 import 'package:untitled1/pages/saved_invoices_page.dart';
+import 'package:untitled1/pages/clients_page.dart';
 import 'package:untitled1/pages/verify_business.dart';
 import 'package:untitled1/pages/chat_page.dart';
 import 'package:untitled1/pages/analytics_page.dart';
@@ -2853,6 +2854,17 @@ class _ProfileState extends State<Profile>
                       );
                     },
                   ),
+                  _buildModernToolCard(
+                    Icons.groups_2_outlined,
+                    strings['clients']!,
+                    Colors.blue,
+                    () async {
+                      await Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const ClientsPage()),
+                      );
+                    },
+                  ),
                 ],
               )
             else
@@ -4182,6 +4194,7 @@ class _ProfileState extends State<Profile>
           'analytics': 'אנליטיקה',
           'invoice_builder': 'יוצר חשבוניות',
           'saved_invoices': 'חשבוניות שמורות',
+          'clients': 'לקוחות',
           'tax_authority_connect_title': 'חיבור לרשות המסים',
           'tax_authority_connect_body':
               'אפשר קבלת מספרי הקצאה לחשבוניות מס מתוך האפליקציה.',
@@ -4300,6 +4313,7 @@ class _ProfileState extends State<Profile>
           'analytics': 'التحليلات',
           'invoice_builder': 'منشئ الفواتير',
           'saved_invoices': 'الفواتير المحفوظة',
+          'clients': 'العملاء',
           'verify_business': 'توثيق العمل',
           'change_business': 'تحديث بيانات العمل',
           'renew_subscription': 'تجديد الاشتراك',
@@ -4414,6 +4428,7 @@ class _ProfileState extends State<Profile>
           'analytics': 'ትንታኔ',
           'invoice_builder': 'ደረሰኝ ፈጣሪ',
           'saved_invoices': 'የተቀመጡ ደረሰኞች',
+          'clients': 'ደንበኞች',
           'verify_business': 'ንግድ ያረጋግጡ',
           'change_business': 'የንግድ መረጃ አዘምን',
           'renew_subscription': 'ምዝገባን እንደገና አድስ',
@@ -4525,6 +4540,7 @@ class _ProfileState extends State<Profile>
           'analytics': 'Аналитика',
           'invoice_builder': 'Создание счетов',
           'saved_invoices': 'Сохраненные счета',
+          'clients': 'Клиенты',
           'verify_business': 'Подтвердить бизнес',
           'change_business': 'Обновить данные бизнеса',
           'renew_subscription': 'Продлить подписку',
@@ -4638,6 +4654,7 @@ class _ProfileState extends State<Profile>
           'analytics': 'Analytics',
           'invoice_builder': 'Invoice Builder',
           'saved_invoices': 'Saved Invoices',
+          'clients': 'Clients',
           'tax_authority_connect_title': 'Connect to Israel Tax Authority',
           'tax_authority_connect_body':
               'Authorize invoice allocation numbers for tax invoices from the app.',

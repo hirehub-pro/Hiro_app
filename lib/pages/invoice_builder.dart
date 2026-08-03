@@ -22,6 +22,7 @@ import 'package:untitled1/services/bkmv_export_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:untitled1/services/invoice_builder_lock_service.dart';
+import 'package:untitled1/services/client_service.dart';
 import 'package:xml/xml.dart';
 
 class _BankBranch {
@@ -31,6 +32,56 @@ class _BankBranch {
   final String code;
 
   String get label => '$name - $code';
+}
+
+class _InvoiceClient {
+  const _InvoiceClient({
+    required this.id,
+    required this.name,
+    required this.externalClientNumber,
+    required this.taxId,
+    required this.phone,
+    required this.email,
+    required this.address,
+  });
+
+  factory _InvoiceClient.fromDocument(
+    QueryDocumentSnapshot<Map<String, dynamic>> document,
+  ) {
+    final data = document.data();
+    return _InvoiceClient(
+      id: document.id,
+      name: (data['name'] ?? '').toString().trim(),
+      externalClientNumber: (data['externalClientNumber'] ?? '')
+          .toString()
+          .trim(),
+      taxId: (data['taxId'] ?? '').toString().trim(),
+      phone: (data['phone'] ?? '').toString().trim(),
+      email: (data['email'] ?? '').toString().trim(),
+      address: (data['address'] ?? '').toString().trim(),
+    );
+  }
+
+  final String id;
+  final String name;
+  final String externalClientNumber;
+  final String taxId;
+  final String phone;
+  final String email;
+  final String address;
+
+  String get searchText =>
+      '$name $externalClientNumber $taxId $phone $email $address'.toLowerCase();
+
+  String get subtitle {
+    final details = [
+      externalClientNumber,
+      phone,
+      email,
+    ].where((value) => value.isNotEmpty).toList();
+    if (details.isNotEmpty) return details.join(' • ');
+    return address;
+  }
 }
 
 Map<String, List<_BankBranch>> _parseBankBranches(String xmlText) {
@@ -981,6 +1032,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   }
 
   final _clientNameController = TextEditingController();
+  final _clientNameFocusNode = FocusNode();
   final _clientAddressController = TextEditingController();
   final _clientPhoneController = TextEditingController();
   final _clientEmailController = TextEditingController();
@@ -997,6 +1049,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   final _creditOriginalInvoiceDateController = TextEditingController();
   final _creditReceiptConfirmationController = TextEditingController();
   final ImagePicker _imagePicker = ImagePicker();
+  String? _selectedSavedClientId;
+  bool _isAddingClient = false;
 
   // Payment method state
   final List<_PaymentMethodEntry> _paymentMethods = [_PaymentMethodEntry()];
@@ -1238,6 +1292,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   Map<String, String>? _cachedStrings;
   String? _lastLocale;
   late final Future<SubscriptionAccessState> _accessFuture;
+  Stream<QuerySnapshot<Map<String, dynamic>>>? _savedClientsStream;
 
   @override
   void initState() {
@@ -1245,6 +1300,15 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     _acquireInvoiceBuilderLock();
     _accessFuture = SubscriptionAccessService.getCurrentUserState();
     _invoiceNumber = "";
+    _clientNameFocusNode.addListener(_handleClientNameFocusChanged);
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser != null) {
+      _savedClientsStream = FirebaseFirestore.instance
+          .collection('users')
+          .doc(currentUser.uid)
+          .collection('clients')
+          .snapshots();
+    }
 
     // Auto-fill from widget parameters
     if (widget.receiverName != null) {
@@ -1658,7 +1722,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   @override
   void dispose() {
     unawaited(_invoiceBuilderLock.release());
+    _clientNameFocusNode.removeListener(_handleClientNameFocusChanged);
     _clientNameController.dispose();
+    _clientNameFocusNode.dispose();
     _clientAddressController.dispose();
     _clientPhoneController.dispose();
     _clientEmailController.dispose();
@@ -1946,6 +2012,17 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'client_address': 'כתובת הלקוח',
           'client_phone': 'טלפון הלקוח',
           'client_email': 'דוא״ל הלקוח',
+          'add_client': 'הוסף לקוח',
+          'save_client': 'שמור לקוח',
+          'client_added': 'הלקוח נוסף ונבחר.',
+          'client_save_failed': 'לא ניתן לשמור את הלקוח. נסה שוב.',
+          'invalid_email': 'יש להזין כתובת דוא״ל תקינה.',
+          'external_client_number': 'מס׳ לקוח בהנה״ח חיצונית',
+          'external_client_number_hint': '1–10 ספרות',
+          'external_client_number_invalid':
+              'יש להזין 1–10 ספרות. שדה זה הוא חובה.',
+          'client_number_duplicate': 'מספר לקוח זה כבר משויך ללקוח אחר.',
+          'generate_client_number': 'צור מספר לקוח חדש',
           'client_details_required': 'יש למלא לפחות את שם הלקוח.',
           'client_id_invalid_length': 'מספר הלקוח חייב להיות בן 9 ספרות.',
           'client_id_invalid': 'מספר הלקוח אינו תקין.',
@@ -2067,6 +2144,17 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'client_address': 'عنوان العميل',
           'client_phone': 'هاتف العميل',
           'client_email': 'البريد الإلكتروني للعميل',
+          'add_client': 'إضافة عميل',
+          'save_client': 'حفظ العميل',
+          'client_added': 'تمت إضافة العميل واختياره.',
+          'client_save_failed': 'تعذر حفظ العميل. حاول مرة أخرى.',
+          'invalid_email': 'يرجى إدخال بريد إلكتروني صحيح.',
+          'external_client_number': 'رقم العميل في المحاسبة الخارجية',
+          'external_client_number_hint': 'من 1 إلى 10 أرقام',
+          'external_client_number_invalid':
+              'أدخل من 1 إلى 10 أرقام. هذا الحقل مطلوب.',
+          'client_number_duplicate': 'رقم العميل مستخدم بالفعل لعميل آخر.',
+          'generate_client_number': 'إنشاء رقم عميل جديد',
           'client_details_required': 'يرجى إدخال اسم العميل على الأقل.',
           'client_id_invalid_length': 'يجب أن يتكون رقم العميل من 9 أرقام.',
           'client_id_invalid': 'رقم العميل غير صالح.',
@@ -2175,6 +2263,18 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'client_address': 'Адрес клиента',
           'client_phone': 'Телефон клиента',
           'client_email': 'Электронная почта клиента',
+          'add_client': 'Добавить клиента',
+          'save_client': 'Сохранить клиента',
+          'client_added': 'Клиент добавлен и выбран.',
+          'client_save_failed': 'Не удалось сохранить клиента.',
+          'invalid_email': 'Введите действительный адрес электронной почты.',
+          'external_client_number': 'Номер клиента во внешней бухгалтерии',
+          'external_client_number_hint': 'От 1 до 10 цифр',
+          'external_client_number_invalid':
+              'Введите от 1 до 10 цифр. Поле обязательно.',
+          'client_number_duplicate':
+              'Этот номер уже используется другим клиентом.',
+          'generate_client_number': 'Создать новый номер клиента',
           'client_details_required':
               'Пожалуйста, укажите как минимум имя клиента.',
           'client_id_invalid_length': 'ID клиента должен состоять из 9 цифр.',
@@ -2285,6 +2385,16 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'client_address': 'የደንበኛ አድራሻ',
           'client_phone': 'የደንበኛ ስልክ',
           'client_email': 'የደንበኛ ኢሜይል',
+          'add_client': 'ደንበኛ ጨምር',
+          'save_client': 'ደንበኛ አስቀምጥ',
+          'client_added': 'ደንበኛው ተጨምሮ ተመርጧል።',
+          'client_save_failed': 'ደንበኛውን ማስቀመጥ አልተቻለም።',
+          'invalid_email': 'ትክክለኛ ኢሜይል ያስገቡ።',
+          'external_client_number': 'የውጭ ሂሳብ የደንበኛ ቁጥር',
+          'external_client_number_hint': 'ከ1–10 ቁጥሮች',
+          'external_client_number_invalid': 'ከ1–10 ቁጥሮች ያስገቡ። ይህ መስክ ያስፈልጋል።',
+          'client_number_duplicate': 'ይህ የደንበኛ ቁጥር በሌላ ደንበኛ ጥቅም ላይ ነው።',
+          'generate_client_number': 'አዲስ የደንበኛ ቁጥር ፍጠር',
           'client_details_required': 'ቢያንስ የደንበኛውን ስም ያስገቡ።',
           'client_id_invalid_length': 'የደንበኛ መታወቂያ 9 አሃዞች መሆን አለበት።',
           'client_id_invalid': 'የደንበኛ መታወቂያው ትክክል አይደለም።',
@@ -2392,6 +2502,18 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'client_address': 'Client Address',
           'client_phone': 'Client Phone',
           'client_email': 'Client Email',
+          'add_client': 'Add Client',
+          'save_client': 'Save Client',
+          'client_added': 'Client added and selected.',
+          'client_save_failed': 'Could not save the client. Please try again.',
+          'invalid_email': 'Please enter a valid email address.',
+          'external_client_number': 'Client number in external accountancy',
+          'external_client_number_hint': '1–10 digits',
+          'external_client_number_invalid':
+              'Enter 1–10 digits. This field is required.',
+          'client_number_duplicate':
+              'This client number is already used by another client.',
+          'generate_client_number': 'Generate a new client number',
           'client_details_required': 'Please fill at least the client name.',
           'client_id_invalid_length': 'Client ID must be 9 digits.',
           'client_id_invalid': 'Client ID is not valid.',
@@ -2528,6 +2650,18 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'client_phone': 'Client Phone',
       'client_email': 'Client Email',
       'client_address': 'Client Address',
+      'add_client': 'Add Client',
+      'save_client': 'Save Client',
+      'client_added': 'Client added and selected.',
+      'client_save_failed': 'Could not save the client. Please try again.',
+      'invalid_email': 'Please enter a valid email address.',
+      'external_client_number': 'Client number in external accountancy',
+      'external_client_number_hint': '1–10 digits',
+      'external_client_number_invalid':
+          'Enter 1–10 digits. This field is required.',
+      'client_number_duplicate':
+          'This client number is already used by another client.',
+      'generate_client_number': 'Generate a new client number',
       'client_details_required': 'Please fill at least the client name.',
       'client_id_invalid_length': 'Client ID must be 9 digits.',
       'client_id_invalid': 'Client ID is not valid.',
@@ -5336,12 +5470,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                           title: strings['client_info']!,
                           icon: Icons.person_add_alt_1_rounded,
                           children: [
-                            _buildTextField(
-                              _clientNameController,
-                              strings['client_name']!,
-                              Icons.person_outline,
-                              required: true,
-                            ),
+                            _buildClientPicker(strings),
                             const SizedBox(height: 12),
                             _buildTextField(
                               _clientIdController,
@@ -5352,6 +5481,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                 FilteringTextInputFormatter.digitsOnly,
                                 LengthLimitingTextInputFormatter(9),
                               ],
+                              enabled: false,
                             ),
                             const SizedBox(height: 12),
                             _buildTextField(
@@ -5359,6 +5489,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                               strings['client_phone']!,
                               Icons.phone_outlined,
                               keyboardType: TextInputType.phone,
+                              enabled: false,
                             ),
                             const SizedBox(height: 12),
                             _buildTextField(
@@ -5366,12 +5497,14 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                               strings['client_email']!,
                               Icons.email_outlined,
                               keyboardType: TextInputType.emailAddress,
+                              enabled: false,
                             ),
                             const SizedBox(height: 12),
                             _buildTextField(
                               _clientAddressController,
                               strings['client_address']!,
                               Icons.location_on_outlined,
+                              enabled: false,
                             ),
                           ],
                         ),
@@ -6337,6 +6470,222 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     setState(branchController.clear);
   }
 
+  void _applySavedClient(_InvoiceClient client) {
+    setState(() {
+      _selectedSavedClientId = client.id;
+      _clientNameController.text = client.name;
+      _clientIdController.text = client.taxId;
+      _clientPhoneController.text = client.phone;
+      _clientEmailController.text = client.email;
+      _clientAddressController.text = client.address;
+    });
+    _clientNameFocusNode.unfocus();
+  }
+
+  Future<void> _showAddClientPopup(Map<String, String> strings) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || _isAddingClient) return;
+
+    _isAddingClient = true;
+    final initialName = _clientNameController.text.trim();
+    _clientNameFocusNode.unfocus();
+
+    final client = await showDialog<_InvoiceClient>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => _AddInvoiceClientDialog(
+        strings: strings,
+        initialName: initialName,
+        userId: user.uid,
+      ),
+    );
+
+    _isAddingClient = false;
+    if (!mounted) return;
+    if (client != null) {
+      _applySavedClient(client);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(strings['client_added']!),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } else if (_selectedSavedClientId == null) {
+      setState(() {
+        _clientNameController.clear();
+        _clientIdController.clear();
+        _clientPhoneController.clear();
+        _clientEmailController.clear();
+        _clientAddressController.clear();
+      });
+    }
+  }
+
+  void _handleClientNameChanged(String _) {
+    if (_selectedSavedClientId == null) return;
+    setState(() {
+      _selectedSavedClientId = null;
+      _clientIdController.clear();
+      _clientPhoneController.clear();
+      _clientEmailController.clear();
+      _clientAddressController.clear();
+    });
+  }
+
+  void _handleClientNameFocusChanged() {
+    if (_clientNameFocusNode.hasFocus ||
+        _selectedSavedClientId != null ||
+        _isAddingClient) {
+      return;
+    }
+    if (_clientNameController.text.isEmpty) return;
+
+    setState(() {
+      _clientNameController.clear();
+      _clientIdController.clear();
+      _clientPhoneController.clear();
+      _clientEmailController.clear();
+      _clientAddressController.clear();
+    });
+  }
+
+  Widget _buildClientPicker(Map<String, String> strings) {
+    final clientsStream = _savedClientsStream;
+    if (clientsStream == null) {
+      return _buildTextField(
+        _clientNameController,
+        strings['client_name']!,
+        Icons.person_outline,
+        required: true,
+        focusNode: _clientNameFocusNode,
+        onChanged: _handleClientNameChanged,
+        suffixIcon: IconButton(
+          tooltip: strings['add_client'],
+          onPressed: () => _showAddClientPopup(strings),
+          icon: const Icon(Icons.add_rounded),
+        ),
+      );
+    }
+
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: clientsStream,
+      builder: (context, snapshot) {
+        final clients =
+            snapshot.data?.docs
+                .map(_InvoiceClient.fromDocument)
+                .where((client) => client.name.isNotEmpty)
+                .toList() ??
+            <_InvoiceClient>[];
+        clients.sort(
+          (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+        );
+
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            return RawAutocomplete<_InvoiceClient>(
+              textEditingController: _clientNameController,
+              focusNode: _clientNameFocusNode,
+              displayStringForOption: (client) => client.name,
+              optionsBuilder: (textEditingValue) {
+                final query = textEditingValue.text.trim().toLowerCase();
+                if (query.isEmpty) return const <_InvoiceClient>[];
+                return clients
+                    .where((client) => client.searchText.contains(query))
+                    .take(6);
+              },
+              onSelected: _applySavedClient,
+              fieldViewBuilder:
+                  (context, controller, focusNode, onFieldSubmitted) {
+                    return _buildTextField(
+                      controller,
+                      strings['client_name']!,
+                      Icons.person_outline,
+                      required: true,
+                      focusNode: focusNode,
+                      textInputAction: TextInputAction.search,
+                      onChanged: _handleClientNameChanged,
+                      onSubmitted: (_) => onFieldSubmitted(),
+                      suffixIcon: IconButton(
+                        tooltip: strings['add_client'],
+                        onPressed: () => _showAddClientPopup(strings),
+                        icon: const Icon(Icons.add_rounded),
+                      ),
+                    );
+                  },
+              optionsViewBuilder: (context, onSelected, options) {
+                final matches = options.toList();
+                return Align(
+                  alignment: AlignmentDirectional.topStart,
+                  child: Material(
+                    color: Colors.white,
+                    elevation: 10,
+                    shadowColor: const Color(0xFF0F172A).withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(16),
+                    clipBehavior: Clip.antiAlias,
+                    child: SizedBox(
+                      width: constraints.maxWidth,
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxHeight: 300),
+                        child: ListView.separated(
+                          padding: const EdgeInsets.symmetric(vertical: 6),
+                          shrinkWrap: true,
+                          itemCount: matches.length,
+                          separatorBuilder: (_, _) => const Divider(
+                            height: 1,
+                            indent: 64,
+                            endIndent: 12,
+                          ),
+                          itemBuilder: (context, index) {
+                            final client = matches[index];
+                            return ListTile(
+                              onTap: () => onSelected(client),
+                              leading: CircleAvatar(
+                                radius: 19,
+                                backgroundColor: const Color(0xFFEAF4FF),
+                                child: Text(
+                                  client.name.characters.first.toUpperCase(),
+                                  style: const TextStyle(
+                                    color: Color(0xFF1976D2),
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                              title: Text(
+                                client.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFF0F172A),
+                                ),
+                              ),
+                              subtitle: client.subtitle.isEmpty
+                                  ? null
+                                  : Text(
+                                      client.subtitle,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                              trailing: const Icon(
+                                Icons.north_west_rounded,
+                                size: 18,
+                                color: Color(0xFF64748B),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
   Widget _buildTextField(
     TextEditingController controller,
     String label,
@@ -6347,15 +6696,24 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     List<TextInputFormatter>? inputFormatters,
     ValueChanged<String>? onChanged,
     ValueChanged<String>? onSubmitted,
+    bool enabled = true,
+    Widget? suffixIcon,
+    FocusNode? focusNode,
   }) {
     return TextField(
       controller: controller,
+      enabled: enabled,
+      focusNode: focusNode,
       keyboardType: keyboardType,
       textInputAction: textInputAction,
       inputFormatters: inputFormatters,
       onChanged: onChanged,
       onSubmitted: onSubmitted,
-      decoration: _inputStyle(label, icon, required: required),
+      decoration: _inputStyle(
+        label,
+        icon,
+        required: required,
+      ).copyWith(suffixIcon: suffixIcon),
     );
   }
 
@@ -6402,6 +6760,462 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       filled: true,
       fillColor: const Color(0xFFF8FAFC),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+    );
+  }
+}
+
+class _AddInvoiceClientDialog extends StatefulWidget {
+  const _AddInvoiceClientDialog({
+    required this.strings,
+    required this.initialName,
+    required this.userId,
+  });
+
+  final Map<String, String> strings;
+  final String initialName;
+  final String userId;
+
+  @override
+  State<_AddInvoiceClientDialog> createState() =>
+      _AddInvoiceClientDialogState();
+}
+
+class _AddInvoiceClientDialogState extends State<_AddInvoiceClientDialog> {
+  final _formKey = GlobalKey<FormState>();
+  late final TextEditingController _nameController;
+  late final TextEditingController _externalClientNumberController;
+  final _taxIdController = TextEditingController();
+  final _phoneController = TextEditingController();
+  final _emailController = TextEditingController();
+  final _addressController = TextEditingController();
+  bool _isSaving = false;
+  String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: widget.initialName);
+    _externalClientNumberController = TextEditingController(
+      text: ClientService.generateExternalClientNumber(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _externalClientNumberController.dispose();
+    _taxIdController.dispose();
+    _phoneController.dispose();
+    _emailController.dispose();
+    _addressController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (_isSaving || !(_formKey.currentState?.validate() ?? false)) return;
+
+    setState(() {
+      _isSaving = true;
+      _errorMessage = null;
+    });
+
+    final name = _nameController.text.trim();
+    final taxId = _taxIdController.text.trim();
+    final phone = _phoneController.text.trim();
+    final email = _emailController.text.trim();
+    final address = _addressController.text.trim();
+    final externalClientNumber = ClientService.normalizeExternalClientNumber(
+      _externalClientNumberController.text,
+    );
+
+    try {
+      final clientId = await ClientService.saveClient(
+        userId: widget.userId,
+        externalClientNumber: externalClientNumber,
+        clientData: {
+          'name': name,
+          'nameLowercase': name.toLowerCase(),
+          'taxId': taxId,
+          'phone': phone,
+          'email': email,
+          'address': address,
+          'notes': '',
+        },
+      );
+      if (!mounted) return;
+      Navigator.pop(
+        context,
+        _InvoiceClient(
+          id: clientId,
+          name: name,
+          externalClientNumber: externalClientNumber,
+          taxId: taxId,
+          phone: phone,
+          email: email,
+          address: address,
+        ),
+      );
+    } on ClientNumberConflictException {
+      if (!mounted) return;
+      setState(() {
+        _isSaving = false;
+        _errorMessage = widget.strings['client_number_duplicate'];
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isSaving = false;
+        _errorMessage = widget.strings['client_save_failed'];
+      });
+    }
+  }
+
+  InputDecoration _decoration(
+    String label,
+    IconData icon, {
+    String? helperText,
+  }) {
+    return InputDecoration(
+      labelText: label,
+      helperText: helperText,
+      prefixIcon: Icon(icon, size: 20),
+      filled: true,
+      fillColor: const Color(0xFFF8FAFC),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: Color(0xFF1976D2), width: 1.5),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = widget.strings;
+    final availableHeight = (MediaQuery.sizeOf(context).height - 48).clamp(
+      360.0,
+      720.0,
+    );
+
+    return Dialog(
+      elevation: 0,
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      child: Container(
+        width: 520,
+        height: availableHeight,
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(28),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF0F172A).withValues(alpha: 0.2),
+              blurRadius: 36,
+              offset: const Offset(0, 18),
+            ),
+          ],
+        ),
+        child: Column(
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(22, 20, 14, 20),
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Color(0xFF1565C0), Color(0xFF42A5F5)],
+                  begin: AlignmentDirectional.topStart,
+                  end: AlignmentDirectional.bottomEnd,
+                ),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 52,
+                    height: 52,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.18),
+                      borderRadius: BorderRadius.circular(17),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.25),
+                      ),
+                    ),
+                    child: const Icon(
+                      Icons.person_add_alt_1_rounded,
+                      color: Colors.white,
+                      size: 27,
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          strings['add_client']!,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 21,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          strings['client_info']!,
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.8),
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: strings['cancel'],
+                    onPressed: _isSaving ? null : () => Navigator.pop(context),
+                    style: IconButton.styleFrom(
+                      backgroundColor: Colors.white.withValues(alpha: 0.14),
+                      disabledBackgroundColor: Colors.white.withValues(
+                        alpha: 0.08,
+                      ),
+                    ),
+                    icon: const Icon(Icons.close_rounded, color: Colors.white),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(13),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEFF6FF),
+                          borderRadius: BorderRadius.circular(15),
+                          border: Border.all(color: const Color(0xFFBFDBFE)),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Icon(
+                              Icons.info_outline_rounded,
+                              color: Color(0xFF1976D2),
+                              size: 20,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                strings['client_details_required']!,
+                                style: const TextStyle(
+                                  color: Color(0xFF1E40AF),
+                                  fontSize: 13,
+                                  height: 1.4,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      TextFormField(
+                        controller: _nameController,
+                        autofocus: widget.initialName.isEmpty,
+                        textInputAction: TextInputAction.next,
+                        decoration: _decoration(
+                          '${strings['client_name']!} *',
+                          Icons.person_outline_rounded,
+                        ),
+                        validator: (value) =>
+                            value == null || value.trim().isEmpty
+                            ? strings['client_details_required']
+                            : null,
+                      ),
+                      const SizedBox(height: 13),
+                      TextFormField(
+                        controller: _taxIdController,
+                        keyboardType: TextInputType.number,
+                        textInputAction: TextInputAction.next,
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                          LengthLimitingTextInputFormatter(9),
+                        ],
+                        decoration: _decoration(
+                          strings['client_id']!,
+                          Icons.badge_outlined,
+                        ),
+                      ),
+                      const SizedBox(height: 13),
+                      TextFormField(
+                        controller: _phoneController,
+                        keyboardType: TextInputType.phone,
+                        textInputAction: TextInputAction.next,
+                        decoration: _decoration(
+                          strings['client_phone']!,
+                          Icons.phone_outlined,
+                        ),
+                      ),
+                      const SizedBox(height: 13),
+                      TextFormField(
+                        controller: _emailController,
+                        keyboardType: TextInputType.emailAddress,
+                        textInputAction: TextInputAction.next,
+                        decoration: _decoration(
+                          strings['client_email']!,
+                          Icons.email_outlined,
+                        ),
+                        validator: (value) {
+                          final email = value?.trim() ?? '';
+                          if (email.isEmpty) return null;
+                          return RegExp(
+                                r'^[^@\s]+@[^@\s]+\.[^@\s]+$',
+                              ).hasMatch(email)
+                              ? null
+                              : strings['invalid_email'];
+                        },
+                      ),
+                      const SizedBox(height: 13),
+                      TextFormField(
+                        controller: _addressController,
+                        textInputAction: TextInputAction.next,
+                        decoration: _decoration(
+                          strings['client_address']!,
+                          Icons.location_on_outlined,
+                        ),
+                      ),
+                      const SizedBox(height: 13),
+                      TextFormField(
+                        controller: _externalClientNumberController,
+                        keyboardType: TextInputType.number,
+                        textInputAction: TextInputAction.done,
+                        onFieldSubmitted: (_) => _save(),
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                          LengthLimitingTextInputFormatter(10),
+                        ],
+                        decoration: _decoration(
+                          '${strings['external_client_number']!} *',
+                          Icons.tag_rounded,
+                          helperText: strings['external_client_number_hint'],
+                        ),
+                        validator: (value) =>
+                            ClientService.isValidExternalClientNumber(
+                              value ?? '',
+                            )
+                            ? null
+                            : strings['external_client_number_invalid'],
+                      ),
+                      if (_errorMessage != null) ...[
+                        const SizedBox(height: 14),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFEF2F2),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: const Color(0xFFFECACA)),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.error_outline_rounded,
+                                color: Color(0xFFDC2626),
+                                size: 19,
+                              ),
+                              const SizedBox(width: 9),
+                              Expanded(
+                                child: Text(
+                                  _errorMessage!,
+                                  style: const TextStyle(
+                                    color: Color(0xFFB91C1C),
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.fromLTRB(20, 14, 20, 18),
+              decoration: const BoxDecoration(
+                color: Color(0xFFFAFCFF),
+                border: Border(top: BorderSide(color: Color(0xFFE2E8F0))),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: _isSaving
+                          ? null
+                          : () => Navigator.pop(context),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF475569),
+                        minimumSize: const Size.fromHeight(50),
+                        side: const BorderSide(color: Color(0xFFCBD5E1)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(15),
+                        ),
+                        textStyle: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                      child: Text(strings['cancel']!),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    flex: 2,
+                    child: FilledButton.icon(
+                      onPressed: _isSaving ? null : _save,
+                      icon: _isSaving
+                          ? const SizedBox.square(
+                              dimension: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(Icons.check_rounded),
+                      label: Text(strings['save_client']!),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFF1976D2),
+                        foregroundColor: Colors.white,
+                        disabledBackgroundColor: const Color(
+                          0xFF1976D2,
+                        ).withValues(alpha: 0.6),
+                        minimumSize: const Size.fromHeight(50),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(15),
+                        ),
+                        textStyle: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
