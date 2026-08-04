@@ -28,6 +28,7 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
   Stream<QuerySnapshot<Map<String, dynamic>>>? _receivedInvoicesStream;
   bool _isLoadingReceivedInvoices = true;
   bool _hasReceivedInvoicePhone = false;
+  bool _canCreateTaxDocuments = false;
   String _searchQuery = '';
   String _selectedDocType = 'all';
   DateTimeRange? _selectedDateRange;
@@ -86,8 +87,30 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
           .orderBy('createdAt', descending: true)
           .snapshots();
       _loadReceivedInvoicesStream(user);
+      _loadTaxDocumentEligibility(user.uid);
     }
     _searchController.addListener(_handleSearchChanged);
+  }
+
+  Future<void> _loadTaxDocumentEligibility(String userId) async {
+    try {
+      final verification = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .collection('verification_info')
+          .doc('latest')
+          .get();
+      final dealerType = (verification.data()?['dealerType'] ?? '')
+          .toString()
+          .trim();
+      if (!mounted) return;
+      setState(() {
+        _canCreateTaxDocuments =
+            dealerType == 'licensed' || dealerType == 'company';
+      });
+    } catch (_) {
+      // Tax-document actions stay hidden until the business type is known.
+    }
   }
 
   Future<void> _loadReceivedInvoicesStream(User user) async {
@@ -165,7 +188,7 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
       case 'work_order':
         return isRtl ? 'הזמנת עבודה' : 'Work Order';
       case 'transaction_account':
-        return isRtl ? 'חשבון עסקה' : 'Pro Forma Invoice';
+        return isRtl ? 'חשבון עסקה' : 'Proforma Invoice';
       case 'invoice':
         return isRtl ? 'חשבונית' : 'Invoice';
       case 'invoice_receipt':
@@ -517,6 +540,84 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
     }
   }
 
+  Future<void> _openTaxDocumentFromProforma({
+    required String proformaDocId,
+    required Map<String, dynamic> savedData,
+    required String docType,
+    required bool isRtl,
+  }) async {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) return;
+
+    try {
+      final navigator = Navigator.of(context);
+      final userRef = FirebaseFirestore.instance
+          .collection('users')
+          .doc(currentUser.uid);
+      final detailRef = userRef.collection('invoices').doc(proformaDocId);
+      final results = await Future.wait([userRef.get(), detailRef.get()]);
+      final userData = results[0].data() ?? <String, dynamic>{};
+      final detailData = results[1].data() ?? savedData;
+      final items = ((detailData['items'] as List?) ?? const [])
+          .map((item) => Map<String, dynamic>.from(item as Map))
+          .toList();
+      final amount = (detailData['amount'] as num?)?.toDouble() ?? 0.0;
+
+      _ReceiptPaymentDraft? paymentDraft;
+      if (docType == 'invoice_receipt') {
+        paymentDraft = await _showReceiptPaymentDialog(
+          isRtl: isRtl,
+          remainingAmount: amount.abs(),
+        );
+        if (paymentDraft == null || !mounted) return;
+      }
+
+      final workerName =
+          (userData['name'] ?? currentUser.displayName ?? 'Worker').toString();
+      final workerPhone = (userData['phone'] ?? userData['phoneNumber'] ?? '')
+          .toString();
+      final workerEmail = (userData['email'] ?? currentUser.email ?? '')
+          .toString();
+      final clientName = (detailData['clientName'] ?? '').toString();
+      final clientPhone = (detailData['clientPhone'] ?? '').toString();
+      final clientAddress = (detailData['clientAddress'] ?? '').toString();
+
+      if (!mounted) return;
+      await navigator.push(
+        MaterialPageRoute(
+          builder: (_) => InvoiceBuilderPage(
+            workerName: workerName,
+            workerPhone: workerPhone.isEmpty ? null : workerPhone,
+            workerEmail: workerEmail.isEmpty ? null : workerEmail,
+            receiverName: clientName.isEmpty ? null : clientName,
+            receiverPhone: clientPhone.isEmpty ? null : clientPhone,
+            receiverAddress: clientAddress.isEmpty ? null : clientAddress,
+            initialSavedClientId: (detailData['clientUid'] ?? '').toString(),
+            initialClientTaxId: (detailData['clientTaxId'] ?? '').toString(),
+            initialClientExternalNumber:
+                (detailData['externalClientNumber'] ?? '').toString(),
+            initialDocType: docType,
+            initialItems: items,
+            initialNotes: (detailData['notes'] ?? '').toString(),
+            initialPaymentMethod: paymentDraft?.method,
+            initialPaymentAmount: paymentDraft?.amount,
+          ),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            isRtl
+                ? 'לא הצלחנו ליצור מסמך מס מתוך חשבון העסקה.'
+                : 'Could not create a tax document from this proforma invoice.',
+          ),
+        ),
+      );
+    }
+  }
+
   Future<_ReceiptPaymentDraft?> _showReceiptPaymentDialog({
     required bool isRtl,
     required double remainingAmount,
@@ -853,8 +954,8 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                               controller: _searchController,
                               decoration: InputDecoration(
                                 hintText: isRtl
-                                    ? 'חפש לקוח, מספר או מסמך'
-                                    : 'Search client, number, or document',
+                                    ? 'חפש לקוח, מספר לקוח, מספר מסמך או מסמך'
+                                    : 'Search client, client number, document number, or document',
                                 prefixIcon: const Icon(Icons.search_rounded),
                                 suffixIcon: _searchController.text.isEmpty
                                     ? null
@@ -1026,6 +1127,11 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                     docType == 'invoice_receipt');
                             final canCreateReceipt =
                                 !isReceivedScope && docType == 'invoice';
+                            final isProformaInvoice =
+                                !isReceivedScope &&
+                                docType == 'transaction_account';
+                            final canCreateTaxDocuments =
+                                isProformaInvoice && _canCreateTaxDocuments;
                             final canBeSigned =
                                 !isReceivedScope &&
                                 (docType == 'quote' || docType == 'work_order');
@@ -1382,6 +1488,96 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                                   ),
                                             ),
                                           ),
+                                        ],
+                                      ),
+                                    ],
+                                    if (isProformaInvoice) ...[
+                                      const SizedBox(height: 12),
+                                      Wrap(
+                                        spacing: 12,
+                                        runSpacing: 4,
+                                        children: [
+                                          TextButton.icon(
+                                            onPressed: () =>
+                                                _openReceiptFromInvoice(
+                                                  invoiceDoc.id,
+                                                  data,
+                                                  isRtl,
+                                                ),
+                                            icon: const Icon(
+                                              Icons.receipt_long_outlined,
+                                              size: 18,
+                                            ),
+                                            label: Text(
+                                              isRtl
+                                                  ? 'צור קבלה'
+                                                  : 'Create Receipt',
+                                            ),
+                                            style: TextButton.styleFrom(
+                                              foregroundColor: accent,
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 0,
+                                                    vertical: 4,
+                                                  ),
+                                            ),
+                                          ),
+                                          if (canCreateTaxDocuments)
+                                            TextButton.icon(
+                                              onPressed: () =>
+                                                  _openTaxDocumentFromProforma(
+                                                    proformaDocId:
+                                                        invoiceDoc.id,
+                                                    savedData: data,
+                                                    docType: 'invoice',
+                                                    isRtl: isRtl,
+                                                  ),
+                                              icon: const Icon(
+                                                Icons.request_quote_outlined,
+                                                size: 18,
+                                              ),
+                                              label: Text(
+                                                isRtl
+                                                    ? 'צור חשבונית מס'
+                                                    : 'Create Tax Invoice',
+                                              ),
+                                              style: TextButton.styleFrom(
+                                                foregroundColor: accent,
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 0,
+                                                      vertical: 4,
+                                                    ),
+                                              ),
+                                            ),
+                                          if (canCreateTaxDocuments)
+                                            TextButton.icon(
+                                              onPressed: () =>
+                                                  _openTaxDocumentFromProforma(
+                                                    proformaDocId:
+                                                        invoiceDoc.id,
+                                                    savedData: data,
+                                                    docType: 'invoice_receipt',
+                                                    isRtl: isRtl,
+                                                  ),
+                                              icon: const Icon(
+                                                Icons.receipt_rounded,
+                                                size: 18,
+                                              ),
+                                              label: Text(
+                                                isRtl
+                                                    ? 'צור חשבונית מס / קבלה'
+                                                    : 'Create Tax Invoice / Receipt',
+                                              ),
+                                              style: TextButton.styleFrom(
+                                                foregroundColor: accent,
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 0,
+                                                      vertical: 4,
+                                                    ),
+                                              ),
+                                            ),
                                         ],
                                       ),
                                     ],

@@ -1027,7 +1027,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       case 'work_order':
         return 'Work Order';
       case 'transaction_account':
-        return 'Pro Forma Invoice';
+        return 'Proforma Invoice';
       case 'invoice':
         return 'Invoice';
       case 'invoice_receipt':
@@ -2589,7 +2589,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'doc_type': 'Document Type',
           'quote': 'Quote',
           'work_order': 'Work Order',
-          'transaction_account': 'Pro Forma Invoice',
+          'transaction_account': 'Proforma Invoice',
           'receipt': 'Receipt',
           'invoice': 'Tax Invoice',
           'invoice_receipt': 'Tax Invoice / Receipt',
@@ -2662,7 +2662,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'doc_type': 'Document Type',
       'quote': 'Quote',
       'work_order': 'Work Order',
-      'transaction_account': 'Pro Forma Invoice',
+      'transaction_account': 'Proforma Invoice',
       'receipt': 'Receipt',
       'invoice': 'Tax Invoice',
       'invoice_receipt': 'Tax Invoice / Receipt',
