@@ -6,6 +6,10 @@ class ClientNumberConflictException implements Exception {
   const ClientNumberConflictException();
 }
 
+class ClientTaxIdConflictException implements Exception {
+  const ClientTaxIdConflictException();
+}
+
 class ClientService {
   ClientService._();
 
@@ -49,21 +53,62 @@ class ClientService {
     final clientRef = clientId == null
         ? clientsRef.doc()
         : clientsRef.doc(clientId);
+    final normalizedTaxId = (clientData['taxId'] ?? '').toString().trim();
+    final normalizedClientData = <String, dynamic>{
+      ...clientData,
+      'taxId': normalizedTaxId,
+    };
+
+    // Older clients may predate tax-ID reservations, so check their stored
+    // values before relying on the atomic reservation below.
+    if (normalizedTaxId.isNotEmpty) {
+      final existingClients = await clientsRef
+          .where('taxId', isEqualTo: normalizedTaxId)
+          .get();
+      if (existingClients.docs.any((document) => document.id != clientRef.id)) {
+        throw const ClientTaxIdConflictException();
+      }
+    }
+
     final newReservationRef = userRef
         .collection('clientNumbers')
         .doc(normalizedNumber);
+    final newTaxIdReservationRef = normalizedTaxId.isEmpty
+        ? null
+        : userRef
+              .collection('clientTaxIds')
+              .doc(Uri.encodeComponent(normalizedTaxId));
 
     return database.runTransaction<String>((transaction) async {
       final clientSnapshot = await transaction.get(clientRef);
       final newReservationSnapshot = await transaction.get(newReservationRef);
+      final oldTaxId = (clientSnapshot.data()?['taxId'] ?? '')
+          .toString()
+          .trim();
+      final oldTaxIdReservationRef =
+          oldTaxId.isNotEmpty && oldTaxId != normalizedTaxId
+          ? userRef
+                .collection('clientTaxIds')
+                .doc(Uri.encodeComponent(oldTaxId))
+          : null;
+      final newTaxIdReservationSnapshot = newTaxIdReservationRef == null
+          ? null
+          : await transaction.get(newTaxIdReservationRef);
+      final oldTaxIdReservationSnapshot = oldTaxIdReservationRef == null
+          ? null
+          : await transaction.get(oldTaxIdReservationRef);
 
       if (newReservationSnapshot.exists &&
           newReservationSnapshot.data()?['clientId'] != clientRef.id) {
         throw const ClientNumberConflictException();
       }
+      if (newTaxIdReservationSnapshot?.exists == true &&
+          newTaxIdReservationSnapshot?.data()?['clientId'] != clientRef.id) {
+        throw const ClientTaxIdConflictException();
+      }
 
       final savedData = <String, dynamic>{
-        ...clientData,
+        ...normalizedClientData,
         'externalClientNumber': normalizedNumber,
         'updatedAt': FieldValue.serverTimestamp(),
         if (!clientSnapshot.exists) 'createdAt': FieldValue.serverTimestamp(),
@@ -77,6 +122,20 @@ class ClientService {
         if (!newReservationSnapshot.exists)
           'createdAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
+
+      if (newTaxIdReservationRef != null) {
+        transaction.set(newTaxIdReservationRef, {
+          'clientId': clientRef.id,
+          'taxId': normalizedTaxId,
+          'updatedAt': FieldValue.serverTimestamp(),
+          if (newTaxIdReservationSnapshot?.exists != true)
+            'createdAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
+      if (oldTaxIdReservationRef != null &&
+          oldTaxIdReservationSnapshot?.data()?['clientId'] == clientRef.id) {
+        transaction.delete(oldTaxIdReservationRef);
+      }
 
       return clientRef.id;
     });
@@ -118,11 +177,30 @@ class ClientService {
     final database = firestore ?? FirebaseFirestore.instance;
     // The client-number reservation is intentionally retained so a number
     // that was assigned once can never be reused by another client.
-    await database
+    final clientRef = database
         .collection('users')
         .doc(userId)
         .collection('clients')
-        .doc(clientId)
-        .delete();
+        .doc(clientId);
+    await database.runTransaction((transaction) async {
+      final clientSnapshot = await transaction.get(clientRef);
+      final taxId = (clientSnapshot.data()?['taxId'] ?? '').toString().trim();
+      final taxIdReservationRef = taxId.isEmpty
+          ? null
+          : database
+                .collection('users')
+                .doc(userId)
+                .collection('clientTaxIds')
+                .doc(Uri.encodeComponent(taxId));
+      final taxIdReservationSnapshot = taxIdReservationRef == null
+          ? null
+          : await transaction.get(taxIdReservationRef);
+
+      transaction.delete(clientRef);
+      if (taxIdReservationRef != null &&
+          taxIdReservationSnapshot?.data()?['clientId'] == clientId) {
+        transaction.delete(taxIdReservationRef);
+      }
+    });
   }
 }

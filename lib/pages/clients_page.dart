@@ -155,6 +155,12 @@ class _ClientsPageState extends State<ClientsPage> {
                   ScaffoldMessenger.of(sheetContext).showSnackBar(
                     SnackBar(content: Text(strings.clientNumberDuplicate)),
                   );
+                } on ClientTaxIdConflictException {
+                  if (!sheetContext.mounted) return;
+                  setSheetState(() => isSaving = false);
+                  ScaffoldMessenger.of(sheetContext).showSnackBar(
+                    SnackBar(content: Text(strings.taxIdDuplicate)),
+                  );
                 } catch (_) {
                   if (!sheetContext.mounted) return;
                   setSheetState(() => isSaving = false);
@@ -1320,6 +1326,7 @@ class _ClientStrings {
   String get taxIdShort => values['taxIdShort']!;
   String get taxIdInvalidLength => values['taxIdInvalidLength']!;
   String get taxIdInvalid => values['taxIdInvalid']!;
+  String get taxIdDuplicate => values['taxIdDuplicate']!;
   String get externalClientNumber => values['externalClientNumber']!;
   String get externalClientNumberShort => values['externalClientNumberShort']!;
   String get externalClientNumberHint => values['externalClientNumberHint']!;
@@ -1385,6 +1392,7 @@ class _ClientStrings {
       'taxIdShort': 'ID',
       'taxIdInvalidLength': 'Client ID must be exactly 9 digits.',
       'taxIdInvalid': 'Enter a valid Israeli ID number.',
+      'taxIdDuplicate': 'This ID is already used by another client.',
       'externalClientNumber': 'Client number in external accountancy',
       'externalClientNumberShort': 'Accountancy No.',
       'externalClientNumberHint': '1–10 digits',
@@ -1447,6 +1455,7 @@ class _ClientStrings {
       'taxIdShort': 'מזהה',
       'taxIdInvalidLength': 'מספר הזיהוי חייב להכיל בדיוק 9 ספרות.',
       'taxIdInvalid': 'יש להזין מספר זיהוי ישראלי תקין.',
+      'taxIdDuplicate': 'מספר זיהוי זה כבר משויך ללקוח אחר.',
       'externalClientNumber': 'מס׳ לקוח בהנה״ח חיצונית',
       'externalClientNumberShort': 'מס׳ הנה״ח',
       'externalClientNumberHint': '1–10 ספרות',
@@ -1507,6 +1516,7 @@ class _ClientStrings {
       'taxIdShort': 'المعرّف',
       'taxIdInvalidLength': 'يجب أن يتكون رقم الهوية من 9 أرقام بالضبط.',
       'taxIdInvalid': 'أدخل رقم هوية إسرائيليًا صالحًا.',
+      'taxIdDuplicate': 'رقم الهوية هذا مستخدم بالفعل لعميل آخر.',
       'externalClientNumber': 'رقم العميل في المحاسبة الخارجية',
       'externalClientNumberShort': 'رقم المحاسبة',
       'externalClientNumberHint': 'من 1 إلى 10 أرقام',
@@ -1567,6 +1577,7 @@ class _ClientStrings {
       'taxIdShort': 'ID',
       'taxIdInvalidLength': 'ID клиента должен содержать ровно 9 цифр.',
       'taxIdInvalid': 'Введите действительный израильский ID.',
+      'taxIdDuplicate': 'Этот ID уже используется другим клиентом.',
       'externalClientNumber': 'Номер клиента во внешней бухгалтерии',
       'externalClientNumberShort': 'Бух. №',
       'externalClientNumberHint': 'От 1 до 10 цифр',
@@ -1628,6 +1639,7 @@ class _ClientStrings {
       'taxIdShort': 'መታወቂያ',
       'taxIdInvalidLength': 'የደንበኛ መታወቂያ በትክክል 9 አሃዞች መሆን አለበት።',
       'taxIdInvalid': 'ትክክለኛ የእስራኤል መታወቂያ ቁጥር ያስገቡ።',
+      'taxIdDuplicate': 'ይህ መታወቂያ በሌላ ደንበኛ ጥቅም ላይ ነው።',
       'externalClientNumber': 'የውጭ ሂሳብ የደንበኛ ቁጥር',
       'externalClientNumberShort': 'የሂሳብ ቁጥር',
       'externalClientNumberHint': 'ከ1–10 ቁጥሮች',

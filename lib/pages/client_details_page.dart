@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:untitled1/pages/chat_page.dart';
 import 'package:untitled1/services/language_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -101,6 +102,39 @@ class ClientDetailsPage extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           _ClientHero(client: client, strings: strings),
+                          if (client.linkedUserId.isNotEmpty) ...[
+                            const SizedBox(height: 16),
+                            SizedBox(
+                              width: double.infinity,
+                              child: FilledButton.icon(
+                                onPressed: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => ChatPage(
+                                      receiverId: client.linkedUserId,
+                                      receiverName: client.name,
+                                    ),
+                                  ),
+                                ),
+                                icon: const Icon(
+                                  Icons.chat_bubble_outline_rounded,
+                                ),
+                                label: Text(strings.openChat),
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: const Color(0xFF1976D2),
+                                  foregroundColor: Colors.white,
+                                  minimumSize: const Size.fromHeight(52),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                  textStyle: const TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
                           if (client.phones.isNotEmpty ||
                               client.emails.isNotEmpty) ...[
                             const SizedBox(height: 28),
@@ -488,6 +522,7 @@ class _DetailsMessage extends StatelessWidget {
 class _ClientDetails {
   const _ClientDetails({
     required this.name,
+    required this.linkedUserId,
     required this.externalClientNumber,
     required this.taxId,
     required this.phones,
@@ -501,6 +536,7 @@ class _ClientDetails {
     final fallbackEmail = (data['email'] ?? '').toString().trim();
     return _ClientDetails(
       name: (data['name'] ?? '').toString().trim(),
+      linkedUserId: (data['linkedUserId'] ?? '').toString().trim(),
       externalClientNumber: (data['externalClientNumber'] ?? '')
           .toString()
           .trim(),
@@ -513,6 +549,7 @@ class _ClientDetails {
   }
 
   final String name;
+  final String linkedUserId;
   final String externalClientNumber;
   final String taxId;
   final List<String> phones;
@@ -546,6 +583,7 @@ class _ClientDetailsStrings {
   String get title => values['title']!;
   String get client => values['client']!;
   String get edit => values['edit']!;
+  String get openChat => values['openChat']!;
   String get externalNumber => values['externalNumber']!;
   String get contactDetails => values['contactDetails']!;
   String get primary => values['primary']!;
@@ -566,6 +604,7 @@ class _ClientDetailsStrings {
       'title': 'Client details',
       'client': 'Client',
       'edit': 'Edit',
+      'openChat': 'Open chat',
       'externalNumber': 'Client number in external accountancy',
       'contactDetails': 'Contact details',
       'primary': 'Primary • used in documents',
@@ -585,6 +624,7 @@ class _ClientDetailsStrings {
       'title': 'פרטי לקוח',
       'client': 'לקוח',
       'edit': 'ערוך',
+      'openChat': 'פתח צ׳אט',
       'externalNumber': 'מס׳ לקוח בהנה״ח חיצונית',
       'contactDetails': 'פרטי קשר',
       'primary': 'ראשי • משמש במסמכים',
@@ -604,6 +644,7 @@ class _ClientDetailsStrings {
       'title': 'تفاصيل العميل',
       'client': 'عميل',
       'edit': 'تعديل',
+      'openChat': 'فتح المحادثة',
       'externalNumber': 'رقم العميل في المحاسبة الخارجية',
       'contactDetails': 'بيانات الاتصال',
       'primary': 'رئيسي • يُستخدم في المستندات',
@@ -623,6 +664,7 @@ class _ClientDetailsStrings {
       'title': 'Данные клиента',
       'client': 'Клиент',
       'edit': 'Изменить',
+      'openChat': 'Открыть чат',
       'externalNumber': 'Номер клиента во внешней бухгалтерии',
       'contactDetails': 'Контактные данные',
       'primary': 'Основной • используется в документах',
@@ -642,6 +684,7 @@ class _ClientDetailsStrings {
       'title': 'የደንበኛ ዝርዝሮች',
       'client': 'ደንበኛ',
       'edit': 'አርትዕ',
+      'openChat': 'ውይይት ክፈት',
       'externalNumber': 'የውጭ ሂሳብ የደንበኛ ቁጥር',
       'contactDetails': 'የመገናኛ መረጃ',
       'primary': 'ዋና • በሰነዶች ውስጥ ይጠቀማል',

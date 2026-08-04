@@ -2036,6 +2036,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'client_details_required': 'יש למלא לפחות את שם הלקוח.',
           'client_id_invalid_length': 'מספר הלקוח חייב להיות בן 9 ספרות.',
           'client_id_invalid': 'מספר הלקוח אינו תקין.',
+          'client_id_duplicate': 'מספר זיהוי זה כבר משויך ללקוח אחר.',
           'items': 'פירוט פריטים ושירותים',
           'desc': 'תיאור השירות/מוצר',
           'qty': 'כמות',
@@ -2168,6 +2169,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'client_details_required': 'يرجى إدخال اسم العميل على الأقل.',
           'client_id_invalid_length': 'يجب أن يتكون رقم العميل من 9 أرقام.',
           'client_id_invalid': 'رقم العميل غير صالح.',
+          'client_id_duplicate': 'رقم الهوية هذا مستخدم بالفعل لعميل آخر.',
           'items': 'تفاصيل الخدمات والمنتجات',
           'desc': 'الوصف',
           'qty': 'الكمية',
@@ -2289,6 +2291,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
               'Пожалуйста, укажите как минимум имя клиента.',
           'client_id_invalid_length': 'ID клиента должен состоять из 9 цифр.',
           'client_id_invalid': 'ID клиента недействителен.',
+          'client_id_duplicate': 'Этот ID уже используется другим клиентом.',
           'items': 'Товары и услуги',
           'desc': 'Описание',
           'qty': 'Кол-во',
@@ -2408,6 +2411,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'client_details_required': 'ቢያንስ የደንበኛውን ስም ያስገቡ።',
           'client_id_invalid_length': 'የደንበኛ መታወቂያ 9 አሃዞች መሆን አለበት።',
           'client_id_invalid': 'የደንበኛ መታወቂያው ትክክል አይደለም።',
+          'client_id_duplicate': 'ይህ መታወቂያ በሌላ ደንበኛ ጥቅም ላይ ነው።',
           'items': 'የአገልግሎት እና የእቃ ዝርዝሮች',
           'desc': 'መግለጫ',
           'qty': 'ብዛት',
@@ -2527,6 +2531,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'client_details_required': 'Please fill at least the client name.',
           'client_id_invalid_length': 'Client ID must be 9 digits.',
           'client_id_invalid': 'Client ID is not valid.',
+          'client_id_duplicate': 'This ID is already used by another client.',
           'items': 'Service Items & Details',
           'desc': 'Description',
           'qty': 'Qty',
@@ -2675,6 +2680,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'client_details_required': 'Please fill at least the client name.',
       'client_id_invalid_length': 'Client ID must be 9 digits.',
       'client_id_invalid': 'Client ID is not valid.',
+      'client_id_duplicate': 'This ID is already used by another client.',
       'items': 'Service Items & Details',
       'desc': 'Description',
       'qty': 'Qty',
@@ -6870,6 +6876,12 @@ class _AddInvoiceClientDialogState extends State<_AddInvoiceClientDialog> {
       setState(() {
         _isSaving = false;
         _errorMessage = widget.strings['client_number_duplicate'];
+      });
+    } on ClientTaxIdConflictException {
+      if (!mounted) return;
+      setState(() {
+        _isSaving = false;
+        _errorMessage = widget.strings['client_id_duplicate'];
       });
     } catch (_) {
       if (!mounted) return;

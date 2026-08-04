@@ -237,6 +237,11 @@ class _ChatPageState extends State<ChatPage> {
           final savedTaxId = (data['taxId'] ?? '').toString().trim();
           if (savedTaxId != taxId) continue;
 
+          final linkedUserId = (data['linkedUserId'] ?? '').toString().trim();
+          if (linkedUserId.isNotEmpty && linkedUserId != widget.receiverId) {
+            throw const ClientTaxIdConflictException();
+          }
+
           await document.reference.update({'linkedUserId': widget.receiverId});
           savedClientId = document.id;
           savedClientData = {...data, 'linkedUserId': widget.receiverId};
@@ -300,6 +305,22 @@ class _ChatPageState extends State<ChatPage> {
             receiverEmail: savedEmail,
             receiverAddress: savedAddress,
           ),
+        ),
+      );
+    } on ClientTaxIdConflictException {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _t(
+              en: 'This ID is already used by another client.',
+              he: 'מספר זיהוי זה כבר משויך ללקוח אחר.',
+              ar: 'رقم الهوية هذا مستخدم بالفعل لعميل آخر.',
+              am: 'ይህ መታወቂያ በሌላ ደንበኛ ጥቅም ላይ ነው።',
+              ru: 'Этот ID уже используется другим клиентом.',
+            ),
+          ),
+          behavior: SnackBarBehavior.floating,
         ),
       );
     } catch (error) {
