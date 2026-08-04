@@ -556,6 +556,7 @@ class _ClientsPageState extends State<ClientsPage> {
                   initialDocType: 'quote',
                   initialSavedClientId: client.id,
                   initialClientTaxId: client.taxId,
+                  initialClientExternalNumber: client.externalClientNumber,
                   receiverName: client.name,
                   receiverPhone: client.phone,
                   receiverEmail: client.email,

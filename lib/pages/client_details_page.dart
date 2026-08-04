@@ -3,6 +3,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:untitled1/pages/chat_page.dart';
+import 'package:untitled1/pages/invoice_builder.dart';
+import 'package:untitled1/pages/saved_invoices_page.dart';
+import 'package:untitled1/pages/verify_business.dart';
 import 'package:untitled1/services/language_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -12,6 +15,56 @@ class ClientDetailsPage extends StatelessWidget {
   const ClientDetailsPage({super.key, required this.clientId});
 
   final String clientId;
+
+  Future<void> _createDocument(
+    BuildContext context,
+    User user,
+    _ClientDetails client,
+    _ClientDetailsStrings strings,
+  ) async {
+    try {
+      final userSnapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
+      final userData = userSnapshot.data() ?? <String, dynamic>{};
+      final workerName = (userData['name'] ?? user.displayName ?? '')
+          .toString()
+          .trim();
+      final workerPhone = (userData['phone'] ?? '').toString().trim();
+      final workerEmail = (userData['email'] ?? user.email ?? '')
+          .toString()
+          .trim();
+      final isBusinessVerified = userData['isVerified'] == true;
+
+      if (!context.mounted) return;
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => isBusinessVerified
+              ? InvoiceBuilderPage(
+                  workerName: workerName.isEmpty ? 'Worker' : workerName,
+                  workerPhone: workerPhone.isEmpty ? null : workerPhone,
+                  workerEmail: workerEmail.isEmpty ? null : workerEmail,
+                  initialDocType: 'quote',
+                  initialSavedClientId: clientId,
+                  initialClientTaxId: client.taxId,
+                  initialClientExternalNumber: client.externalClientNumber,
+                  receiverName: client.name,
+                  receiverPhone: client.primaryPhone,
+                  receiverEmail: client.primaryEmail,
+                  receiverAddress: client.address,
+                )
+              : const VerifyBusinessPage(),
+        ),
+      );
+    } catch (_) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(strings.documentOpenFailed)));
+    }
+  }
 
   Future<void> _launchContact(
     BuildContext context,
@@ -135,6 +188,93 @@ class ClientDetailsPage extends StatelessWidget {
                               ),
                             ),
                           ],
+                          SizedBox(
+                            height: client.linkedUserId.isNotEmpty ? 10 : 16,
+                          ),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: FilledButton.icon(
+                                  onPressed: () => _createDocument(
+                                    context,
+                                    user,
+                                    client,
+                                    strings,
+                                  ),
+                                  icon: const Icon(
+                                    Icons.note_add_outlined,
+                                    size: 19,
+                                  ),
+                                  label: Text(
+                                    strings.createDocument,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: const Color(0xFFEAF4FF),
+                                    foregroundColor: const Color(0xFF1565C0),
+                                    elevation: 0,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                    ),
+                                    minimumSize: const Size.fromHeight(58),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                    ),
+                                    textStyle: const TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  onPressed: client.externalClientNumber.isEmpty
+                                      ? null
+                                      : () => Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (_) => SavedInvoicesPage(
+                                              initialSearchQuery:
+                                                  client.externalClientNumber,
+                                            ),
+                                          ),
+                                        ),
+                                  icon: const Icon(
+                                    Icons.folder_copy_outlined,
+                                    size: 19,
+                                  ),
+                                  label: Text(
+                                    strings.savedInvoices,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: const Color(0xFF0F766E),
+                                    side: const BorderSide(
+                                      color: Color(0xFF99D5CE),
+                                    ),
+                                    backgroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                    ),
+                                    minimumSize: const Size.fromHeight(58),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                    ),
+                                    textStyle: const TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                           if (client.phones.isNotEmpty ||
                               client.emails.isNotEmpty) ...[
                             const SizedBox(height: 28),
@@ -557,6 +697,8 @@ class _ClientDetails {
   final String address;
   final String notes;
 
+  String get primaryPhone => phones.isEmpty ? '' : phones.first;
+  String get primaryEmail => emails.isEmpty ? '' : emails.first;
   String get initial =>
       name.isEmpty ? '?' : name.characters.first.toUpperCase();
 
@@ -584,6 +726,9 @@ class _ClientDetailsStrings {
   String get client => values['client']!;
   String get edit => values['edit']!;
   String get openChat => values['openChat']!;
+  String get createDocument => values['createDocument']!;
+  String get savedInvoices => values['savedInvoices']!;
+  String get documentOpenFailed => values['documentOpenFailed']!;
   String get externalNumber => values['externalNumber']!;
   String get contactDetails => values['contactDetails']!;
   String get primary => values['primary']!;
@@ -605,6 +750,9 @@ class _ClientDetailsStrings {
       'client': 'Client',
       'edit': 'Edit',
       'openChat': 'Open chat',
+      'createDocument': 'Create another document',
+      'savedInvoices': 'Saved documents for this client',
+      'documentOpenFailed': 'Could not open the document builder.',
       'externalNumber': 'Client number in external accountancy',
       'contactDetails': 'Contact details',
       'primary': 'Primary • used in documents',
@@ -625,6 +773,9 @@ class _ClientDetailsStrings {
       'client': 'לקוח',
       'edit': 'ערוך',
       'openChat': 'פתח צ׳אט',
+      'createDocument': 'צור מסמך נוסף',
+      'savedInvoices': 'מסמכים שמורים של הלקוח',
+      'documentOpenFailed': 'לא ניתן לפתוח את יוצר המסמכים.',
       'externalNumber': 'מס׳ לקוח בהנה״ח חיצונית',
       'contactDetails': 'פרטי קשר',
       'primary': 'ראשי • משמש במסמכים',
@@ -645,6 +796,9 @@ class _ClientDetailsStrings {
       'client': 'عميل',
       'edit': 'تعديل',
       'openChat': 'فتح المحادثة',
+      'createDocument': 'إنشاء مستند آخر',
+      'savedInvoices': 'مستندات العميل المحفوظة',
+      'documentOpenFailed': 'تعذر فتح منشئ المستندات.',
       'externalNumber': 'رقم العميل في المحاسبة الخارجية',
       'contactDetails': 'بيانات الاتصال',
       'primary': 'رئيسي • يُستخدم في المستندات',
@@ -665,6 +819,9 @@ class _ClientDetailsStrings {
       'client': 'Клиент',
       'edit': 'Изменить',
       'openChat': 'Открыть чат',
+      'createDocument': 'Создать другой документ',
+      'savedInvoices': 'Сохраненные документы клиента',
+      'documentOpenFailed': 'Не удалось открыть конструктор документов.',
       'externalNumber': 'Номер клиента во внешней бухгалтерии',
       'contactDetails': 'Контактные данные',
       'primary': 'Основной • используется в документах',
@@ -685,6 +842,9 @@ class _ClientDetailsStrings {
       'client': 'ደንበኛ',
       'edit': 'አርትዕ',
       'openChat': 'ውይይት ክፈት',
+      'createDocument': 'ሌላ ሰነድ ፍጠር',
+      'savedInvoices': 'የደንበኛው የተቀመጡ ሰነዶች',
+      'documentOpenFailed': 'የሰነድ አዘጋጁን መክፈት አልተቻለም።',
       'externalNumber': 'የውጭ ሂሳብ የደንበኛ ቁጥር',
       'contactDetails': 'የመገናኛ መረጃ',
       'primary': 'ዋና • በሰነዶች ውስጥ ይጠቀማል',

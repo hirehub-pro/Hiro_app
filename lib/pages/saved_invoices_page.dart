@@ -13,14 +13,16 @@ import 'package:untitled1/pages/invoice_builder.dart';
 import 'package:untitled1/services/language_provider.dart';
 
 class SavedInvoicesPage extends StatefulWidget {
-  const SavedInvoicesPage({super.key});
+  const SavedInvoicesPage({super.key, this.initialSearchQuery = ''});
+
+  final String initialSearchQuery;
 
   @override
   State<SavedInvoicesPage> createState() => _SavedInvoicesPageState();
 }
 
 class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
-  final TextEditingController _searchController = TextEditingController();
+  late final TextEditingController _searchController;
   final FocusNode _searchFocusNode = FocusNode();
   Stream<QuerySnapshot<Map<String, dynamic>>>? _invoicesStream;
   Stream<QuerySnapshot<Map<String, dynamic>>>? _receivedInvoicesStream;
@@ -73,6 +75,8 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
   @override
   void initState() {
     super.initState();
+    _searchQuery = widget.initialSearchQuery.trim();
+    _searchController = TextEditingController(text: _searchQuery);
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
       _invoicesStream = FirebaseFirestore.instance
@@ -697,6 +701,7 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
       data['fileName'],
       data['clientName'],
       data['clientPhone'],
+      data['externalClientNumber'],
       data['invoiceNumber'],
       data['docType'],
       data['amount'],

@@ -288,6 +288,7 @@ class InvoiceBuilderPage extends StatefulWidget {
   final String? receiverAddress;
   final String? initialSavedClientId;
   final String? initialClientTaxId;
+  final String? initialClientExternalNumber;
   final String? initialDocType;
   final List<Map<String, dynamic>>? initialItems;
   final String? initialNotes;
@@ -317,6 +318,7 @@ class InvoiceBuilderPage extends StatefulWidget {
     this.receiverAddress,
     this.initialSavedClientId,
     this.initialClientTaxId,
+    this.initialClientExternalNumber,
     this.initialDocType,
     this.initialItems,
     this.initialNotes,
@@ -628,6 +630,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         'clientPhone': _clientPhoneController.text,
         'clientEmail': _clientEmailController.text.trim(),
         'clientTaxId': _clientIdController.text.trim(),
+        'externalClientNumber': _selectedSavedClientExternalNumber ?? '',
         'items': _items
             .map(
               (item) => {
@@ -741,6 +744,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         'clientPhone': _clientPhoneController.text,
         'clientEmail': _clientEmailController.text.trim(),
         'clientTaxId': _clientIdController.text.trim(),
+        'externalClientNumber': _selectedSavedClientExternalNumber ?? '',
         'items': _items
             .map(
               (item) => {
@@ -843,6 +847,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'clientPhone': _clientPhoneController.text,
           'clientEmail': _clientEmailController.text.trim(),
           'clientTaxId': _clientIdController.text.trim(),
+          'externalClientNumber': _selectedSavedClientExternalNumber ?? '',
           'paymentMethod': _paymentMethods.isNotEmpty
               ? _paymentMethods.first.method
               : 'cash',
@@ -1054,6 +1059,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   final _creditReceiptConfirmationController = TextEditingController();
   final ImagePicker _imagePicker = ImagePicker();
   String? _selectedSavedClientId;
+  String? _selectedSavedClientExternalNumber;
   bool _isAddingClient = false;
 
   // Payment method state
@@ -1332,6 +1338,10 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     }
     if (widget.initialSavedClientId?.trim().isNotEmpty == true) {
       _selectedSavedClientId = widget.initialSavedClientId!.trim();
+    }
+    if (widget.initialClientExternalNumber?.trim().isNotEmpty == true) {
+      _selectedSavedClientExternalNumber = widget.initialClientExternalNumber!
+          .trim();
     }
     _invoiceDateController.text = _formattedInvoiceDate();
     _selectedPaymentDueDate = _defaultPaymentDueDate();
@@ -3862,6 +3872,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         'clientPhone': _clientPhoneController.text,
         'clientEmail': _clientEmailController.text.trim(),
         'clientTaxId': _clientIdController.text.trim(),
+        'externalClientNumber': _selectedSavedClientExternalNumber ?? '',
         'paymentMethod': _paymentMethods.isNotEmpty
             ? _paymentMethods.first.method
             : 'cash',
@@ -6489,6 +6500,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   void _applySavedClient(_InvoiceClient client) {
     setState(() {
       _selectedSavedClientId = client.id;
+      _selectedSavedClientExternalNumber = client.externalClientNumber;
       _clientNameController.text = client.name;
       _clientIdController.text = client.taxId;
       _clientPhoneController.text = client.phone;
@@ -6541,6 +6553,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     if (_selectedSavedClientId == null) return;
     setState(() {
       _selectedSavedClientId = null;
+      _selectedSavedClientExternalNumber = null;
       _clientIdController.clear();
       _clientPhoneController.clear();
       _clientEmailController.clear();

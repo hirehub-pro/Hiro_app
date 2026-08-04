@@ -269,6 +269,13 @@ class _ChatPageState extends State<ChatPage> {
               clientData: savedClientData,
               firestore: _firestore,
             );
+        final createdClientSnapshot = await _firestore
+            .collection('users')
+            .doc(currentUser.uid)
+            .collection('clients')
+            .doc(savedClientId)
+            .get();
+        savedClientData = createdClientSnapshot.data() ?? savedClientData;
       }
 
       final selectedClientData = savedClientData!;
@@ -287,6 +294,8 @@ class _ChatPageState extends State<ChatPage> {
       final savedTaxId = (selectedClientData['taxId'] ?? taxId)
           .toString()
           .trim();
+      final savedExternalClientNumber =
+          (selectedClientData['externalClientNumber'] ?? '').toString().trim();
 
       if (!mounted) return;
       await Navigator.push(
@@ -299,6 +308,7 @@ class _ChatPageState extends State<ChatPage> {
             initialDocType: 'quote',
             initialSavedClientId: savedClientId,
             initialClientTaxId: savedTaxId,
+            initialClientExternalNumber: savedExternalClientNumber,
             receiverId: widget.receiverId,
             receiverName: savedName.isEmpty ? widget.receiverName : savedName,
             receiverPhone: savedPhone,
