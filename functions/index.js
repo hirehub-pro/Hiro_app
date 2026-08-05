@@ -15,6 +15,7 @@ const {onMessagePublished} = require("firebase-functions/v2/pubsub");
 const {onSchedule} = require("firebase-functions/v2/scheduler");
 const logger = require("firebase-functions/logger");
 const {google} = require("googleapis");
+const {Resend} = require("resend");
 const {
   AppStoreServerAPIClient,
   AutoRenewStatus,
@@ -27,6 +28,8 @@ admin.initializeApp();
 
 const TAX_AUTH_CLIENT_ID = defineSecret("TAX_AUTH_CLIENT_ID");
 const TAX_AUTH_CLIENT_SECRET = defineSecret("TAX_AUTH_CLIENT_SECRET");
+const RESEND_API_KEY = defineSecret("RESEND_API_KEY");
+const RESEND_FROM_EMAIL = defineSecret("RESEND_FROM_EMAIL");
 
 const GOOGLE_PLAY_PACKAGE_NAME = "com.hirehub.app";
 const APPLE_BUNDLE_ID = "com.hiro.hiroapp";
@@ -917,6 +920,101 @@ exports.mirrorReceivedInvoice = onDocumentWritten(
 
       if (writeCount > 0) {
         await batch.commit();
+      }
+    },
+);
+
+// Sends an invoice only after its PDF has been uploaded and its Storage path
+// has been written to Firestore. The delivery state acts as a lease so retries
+// and later document updates do not create duplicate emails.
+exports.emailSavedInvoice = onDocumentWritten(
+    {
+      document: "users/{userId}/invoices/{invoiceId}",
+      region: "us-central1",
+      secrets: [RESEND_API_KEY, RESEND_FROM_EMAIL],
+    },
+    async (event) => {
+      const invoice = event.data?.after?.data();
+      if (!invoice) return;
+
+      const storagePath = normalizeString(invoice.storagePath).trim();
+      if (!storagePath) return;
+
+      const db = admin.firestore();
+      const invoiceRef = event.data.after.ref;
+      const claimed = await db.runTransaction(async (transaction) => {
+        const latest = await transaction.get(invoiceRef);
+        const status = normalizeString(
+            latest.data()?.invoiceEmailStatus,
+        ).trim();
+        if (status === "sending" || status === "sent" ||
+            status === "skipped" || status === "failed") {
+          return false;
+        }
+        transaction.update(invoiceRef, {
+          invoiceEmailStatus: "sending",
+          invoiceEmailAttemptedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        return true;
+      });
+      if (!claimed) return;
+
+      try {
+        const userId = event.params.userId;
+        const userSnap = await db.collection("users").doc(userId).get();
+        let ownerEmail = normalizeEmail(userSnap.get("email"));
+        if (!ownerEmail) {
+          const authUser = await admin.auth().getUser(userId);
+          ownerEmail = normalizeEmail(authUser.email);
+        }
+        const clientEmail = normalizeEmail(invoice.clientEmail);
+        const recipients = [...new Set(
+          [ownerEmail, clientEmail].filter(Boolean),
+        )];
+
+        if (recipients.length === 0) {
+          await invoiceRef.update({
+            invoiceEmailStatus: "skipped",
+            invoiceEmailError: "No valid recipient email address.",
+          });
+          return;
+        }
+
+        const [pdfBytes] = await admin.storage().bucket()
+            .file(storagePath).download();
+        const documentName = normalizeString(invoice.name).trim() || "Invoice";
+        const fileName = normalizeString(invoice.fileName).trim() || "invoice.pdf";
+        const resend = new Resend(RESEND_API_KEY.value());
+        const {data, error} = await resend.emails.send({
+          from: RESEND_FROM_EMAIL.value(),
+          to: recipients,
+          subject: `${documentName} from Hiro`,
+          text: `Attached is ${documentName}.`,
+          attachments: [{filename: fileName, content: pdfBytes}],
+        }, {
+          idempotencyKey: `invoice-email/${userId}/${event.params.invoiceId}`,
+        });
+        if (error) throw new Error(error.message || "Resend rejected the email.");
+
+        await invoiceRef.update({
+          invoiceEmailStatus: "sent",
+          invoiceEmailSentAt: admin.firestore.FieldValue.serverTimestamp(),
+          invoiceEmailId: data?.id || null,
+          invoiceEmailError: admin.firestore.FieldValue.delete(),
+        });
+        logger.info("Invoice email sent", {
+          invoiceId: event.params.invoiceId,
+          recipientCount: recipients.length,
+        });
+      } catch (error) {
+        logger.error("Could not send saved invoice email", {
+          invoiceId: event.params.invoiceId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        await invoiceRef.update({
+          invoiceEmailStatus: "failed",
+          invoiceEmailError: error instanceof Error ? error.message : String(error),
+        });
       }
     },
 );
@@ -2360,6 +2458,11 @@ class BatchWriter {
 
 function normalizeString(value) {
   return value == null ? "" : String(value);
+}
+
+function normalizeEmail(value) {
+  const email = normalizeString(value).trim().toLowerCase();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : null;
 }
 
 function normalizeBusinessId(value) {
