@@ -419,8 +419,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         ];
       case 'invoice_receipt':
         return [
-          {'bucket': 'invoices'},
-          {'bucket': 'receipts'},
+          {'bucket': 'invoice_tax_receipt'},
         ];
       case 'invoice':
       default:
@@ -590,7 +589,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'address': _clientAddressController.text,
       'phone': _clientPhoneController.text,
       'email': _clientEmailController.text.trim(),
-      'taxId': _clientIdController.text.trim(),
     };
     final businessDetails = {
       'businessId': _businessId,
@@ -841,12 +839,10 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'grandTotal': signedTotalAmount,
           'discountAmount': signedDiscountAmount,
           'roundingAmount': signedRoundingAmount,
-          'customerId': customerId,
           'clientName': _clientNameController.text,
           'clientAddress': _clientAddressController.text,
           'clientPhone': _clientPhoneController.text,
           'clientEmail': _clientEmailController.text.trim(),
-          'clientTaxId': _clientIdController.text.trim(),
           'externalClientNumber': _selectedSavedClientExternalNumber ?? '',
           'paymentMethod': _paymentMethods.isNotEmpty
               ? _paymentMethods.first.method
@@ -1091,7 +1087,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   bool get _showsPaymentMethodSection =>
       !_isQuoteLike &&
       _selectedDocType != 'invoice' &&
-      _selectedDocType != 'transaction_account';
+      _selectedDocType != 'transaction_account' &&
+      _selectedDocType != 'credit_note';
   bool get _usesVat => _isLicensedDealerType && _selectedDocType != 'receipt';
   bool get _isTaxInvoiceDocType =>
       _selectedDocType == 'invoice' || _selectedDocType == 'invoice_receipt';
@@ -1251,23 +1248,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
 
   DateTime _defaultPaymentDueDate() {
     return _selectedInvoiceDate.add(const Duration(days: 30));
-  }
-
-  String _creditDeliveryMethodLabel(
-    Map<String, String> strings,
-    String method,
-  ) {
-    switch (method) {
-      case 'registered_mail':
-        return strings['delivery_registered_mail']!;
-      case 'customer_signature':
-        return strings['delivery_customer_signature']!;
-      case 'manual_delivery':
-        return strings['delivery_manual']!;
-      case 'email_confirmation':
-      default:
-        return strings['delivery_email_confirmation']!;
-    }
   }
 
   Map<String, dynamic>? get _creditNoteLegalData {
@@ -3155,21 +3135,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   }
 
   bool _validateCreditNoteLegalFields() {
-    if (!_isCreditNote) return true;
-
-    final strings = _getLocalizedStrings(context, listen: false);
-    final missing =
-        _creditOriginalInvoiceNumberController.text.trim().isEmpty ||
-        _creditOriginalInvoiceDateController.text.trim().isEmpty ||
-        _creditReasonController.text.trim().isEmpty ||
-        _creditReceiptConfirmationController.text.trim().isEmpty;
-
-    if (!missing) return true;
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(strings['credit_note_missing_fields']!)),
-    );
-    return false;
+    return true;
   }
 
   bool _validateClientDetails() {
@@ -3613,21 +3579,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       tables.add(pw.SizedBox(height: 10));
     }
     return tables;
-  }
-
-  Future<void> _pickCreditOriginalInvoiceDate() async {
-    final now = DateTime.now();
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: now,
-      firstDate: DateTime(now.year - 10),
-      lastDate: DateTime(now.year + 1),
-    );
-
-    if (picked == null || !mounted) return;
-    _creditOriginalInvoiceDateController.text = intl.DateFormat(
-      'dd/MM/yyyy',
-    ).format(picked);
   }
 
   Future<void> _openPreviewPage() async {
@@ -4514,7 +4465,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         : _selectedDocType == 'credit_note'
         ? strings['credit_note']!
         : strings['doc_type']!;
-    final creditNoteLegalData = _creditNoteLegalData;
     final cleanAllocationNumber = allocationNumber?.trim();
     final generatedAt = intl.DateFormat(
       'dd/MM/yyyy HH:mm',
@@ -4874,52 +4824,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                 if (_selectedDocType == 'receipt') ...[
                   ..._buildPaymentTablesPdf(),
                   pw.SizedBox(height: 8),
-                ],
-                if (creditNoteLegalData != null) ...[
-                  pw.Container(
-                    width: double.infinity,
-                    padding: const pw.EdgeInsets.all(10),
-                    decoration: pw.BoxDecoration(
-                      color: pdf.PdfColors.amber50,
-                      borderRadius: pw.BorderRadius.circular(8),
-                      border: pw.Border.all(color: pdf.PdfColors.amber200),
-                    ),
-                    child: pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.start,
-                      children: [
-                        pw.Text(
-                          strings['credit_note_legal']!,
-                          style: pw.TextStyle(
-                            fontWeight: pw.FontWeight.bold,
-                            fontSize: 13,
-                            color: pdf.PdfColors.orange900,
-                          ),
-                        ),
-                        pw.SizedBox(height: 6),
-                        pw.Text(
-                          "${strings['original_invoice_number']!}: ${creditNoteLegalData['originalInvoiceNumber']}",
-                          style: const pw.TextStyle(fontSize: 11),
-                        ),
-                        pw.Text(
-                          "${strings['original_invoice_date']!}: ${creditNoteLegalData['originalInvoiceDate']}",
-                          style: const pw.TextStyle(fontSize: 11),
-                        ),
-                        pw.Text(
-                          "${strings['credit_reason']!}: ${creditNoteLegalData['creditReason']}",
-                          style: const pw.TextStyle(fontSize: 11),
-                        ),
-                        pw.Text(
-                          "${strings['delivery_method']!}: ${_creditDeliveryMethodLabel(strings, creditNoteLegalData['deliveryMethod'] as String)}",
-                          style: const pw.TextStyle(fontSize: 11),
-                        ),
-                        pw.Text(
-                          "${strings['receipt_confirmation']!}: ${creditNoteLegalData['receiptConfirmation']}",
-                          style: const pw.TextStyle(fontSize: 11),
-                        ),
-                      ],
-                    ),
-                  ),
-                  pw.SizedBox(height: 18),
                 ],
                 if (_selectedDocType != 'receipt') ...[
                   // Items Table
@@ -5369,128 +5273,11 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                 );
                               },
                             ),
-                            if (_isCreditNote) ...[
-                              const SizedBox(height: 12),
-                              Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFFFF7ED),
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(
-                                    color: const Color(0xFFFDBA74),
-                                  ),
-                                ),
-                                child: Text(
-                                  strings['credit_note_legal_hint']!,
-                                  style: const TextStyle(
-                                    color: Color(0xFF9A3412),
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ),
-                            ],
                           ],
                         ),
                         const SizedBox(height: 20),
                         _buildBusinessLogoSection(strings),
                         const SizedBox(height: 20),
-                        if (_isCreditNote) ...[
-                          _buildSectionCard(
-                            title: strings['credit_note_legal']!,
-                            icon: Icons.gavel_rounded,
-                            children: [
-                              _buildTextField(
-                                _creditOriginalInvoiceNumberController,
-                                strings['original_invoice_number']!,
-                                Icons.receipt_long_outlined,
-                                required: true,
-                              ),
-                              const SizedBox(height: 12),
-                              TextField(
-                                controller:
-                                    _creditOriginalInvoiceDateController,
-                                readOnly: true,
-                                onTap: _pickCreditOriginalInvoiceDate,
-                                decoration:
-                                    _inputStyle(
-                                      strings['original_invoice_date']!,
-                                      Icons.event_outlined,
-                                      required: true,
-                                    ).copyWith(
-                                      suffixIcon: TextButton(
-                                        onPressed:
-                                            _pickCreditOriginalInvoiceDate,
-                                        child: Text(strings['pick_date']!),
-                                      ),
-                                    ),
-                              ),
-                              const SizedBox(height: 12),
-                              TextField(
-                                controller: _creditReasonController,
-                                maxLines: 3,
-                                decoration: _inputStyle(
-                                  strings['credit_reason']!,
-                                  Icons.rule_folder_outlined,
-                                  required: true,
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              DropdownButtonFormField<String>(
-                                key: ValueKey(_selectedCreditDeliveryMethod),
-                                initialValue: _selectedCreditDeliveryMethod,
-                                decoration: _inputStyle(
-                                  strings['delivery_method']!,
-                                  Icons.local_shipping_outlined,
-                                ),
-                                items: [
-                                  DropdownMenuItem(
-                                    value: 'email_confirmation',
-                                    child: Text(
-                                      strings['delivery_email_confirmation']!,
-                                    ),
-                                  ),
-                                  DropdownMenuItem(
-                                    value: 'registered_mail',
-                                    child: Text(
-                                      strings['delivery_registered_mail']!,
-                                    ),
-                                  ),
-                                  DropdownMenuItem(
-                                    value: 'customer_signature',
-                                    child: Text(
-                                      strings['delivery_customer_signature']!,
-                                    ),
-                                  ),
-                                  DropdownMenuItem(
-                                    value: 'manual_delivery',
-                                    child: Text(strings['delivery_manual']!),
-                                  ),
-                                ],
-                                onChanged: (val) {
-                                  if (val == null) return;
-                                  setState(() {
-                                    _selectedCreditDeliveryMethod = val;
-                                  });
-                                },
-                              ),
-                              const SizedBox(height: 12),
-                              TextField(
-                                controller:
-                                    _creditReceiptConfirmationController,
-                                maxLines: 2,
-                                decoration: _inputStyle(
-                                  strings['receipt_confirmation']!,
-                                  Icons.verified_outlined,
-                                  required: true,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 20),
-                        ],
-
                         // Client information
                         const SizedBox(height: 20),
                         _buildSectionCard(

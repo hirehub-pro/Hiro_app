@@ -164,6 +164,7 @@ class _InvoiceItemRecord {
 class BkmvExportService {
   static const _bucketNames = [
     'invoices',
+    'invoice_tax_receipt',
     'transaction_account',
     'receipts',
     'credit_notes',
@@ -569,17 +570,13 @@ class BkmvExportService {
             .toString(),
       );
 
-      final customerKey =
-          (clientDetails['id'] ??
-                  logData['customerId'] ??
-                  invoiceData['customerId'] ??
-                  clientName)
-              .toString();
+      final customerKey = (logData['externalClientNumber'] ?? '').toString();
       final linkKey = '$documentNumber|$documentDate';
       final linkId = documentLinkIds.putIfAbsent(linkKey, () => linkNumber++);
 
       final includesHeader =
           bucket == 'invoices' ||
+          bucket == 'invoice_tax_receipt' ||
           bucket == 'transaction_account' ||
           bucket == 'credit_notes' ||
           (bucket == 'receipts' && docType == 'receipt');
@@ -613,6 +610,7 @@ class BkmvExportService {
       }
 
       if (bucket == 'invoices' ||
+          bucket == 'invoice_tax_receipt' ||
           bucket == 'transaction_account' ||
           bucket == 'credit_notes') {
         final items = _extractItems(logData, invoiceData, subtotal, vatAmount);
@@ -642,7 +640,7 @@ class BkmvExportService {
         }
       }
 
-      if (bucket == 'receipts') {
+      if (bucket == 'receipts' || bucket == 'invoice_tax_receipt') {
         final paymentDetailsList = _paymentDetails(
           logData,
           invoiceData,
@@ -808,6 +806,7 @@ class BkmvExportService {
 
       final includesHeader =
           bucket == 'invoices' ||
+          bucket == 'invoice_tax_receipt' ||
           bucket == 'transaction_account' ||
           bucket == 'credit_notes' ||
           (bucket == 'receipts' && docType == 'receipt');
@@ -1211,7 +1210,7 @@ class BkmvExportService {
       _fitAlpha(description, 30),
       _fitAlpha('', 50),
       _fitAlpha('', 30),
-      _fitAlpha('UNIT', 20),
+      _fitAlpha('יחידה', 20),
       _fitSignedAmount(quantity, wholeDigits: 12, decimalDigits: 4),
       _fitSignedAmount(unitPrice, wholeDigits: 12, decimalDigits: 2),
       _fitSignedAmount(discountAmount, wholeDigits: 12, decimalDigits: 2),

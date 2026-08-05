@@ -94,19 +94,32 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
 
   Future<void> _loadTaxDocumentEligibility(String userId) async {
     try {
-      final verification = await FirebaseFirestore.instance
+      final userRef = FirebaseFirestore.instance
           .collection('users')
-          .doc(userId)
-          .collection('verification_info')
-          .doc('latest')
-          .get();
-      final dealerType = (verification.data()?['dealerType'] ?? '')
-          .toString()
-          .trim();
+          .doc(userId);
+      final results = await Future.wait([
+        userRef.get(),
+        userRef.collection('verification_info').doc('latest').get(),
+      ]);
+      final userData = results[0].data() ?? <String, dynamic>{};
+      final verificationData = results[1].data() ?? <String, dynamic>{};
+      final dealerType =
+          (verificationData['dealerType'] ??
+                  userData['dealerType'] ??
+                  userData['businessType'] ??
+                  '')
+              .toString()
+              .trim()
+              .toLowerCase();
       if (!mounted) return;
       setState(() {
         _canCreateTaxDocuments =
-            dealerType == 'licensed' || dealerType == 'company';
+            dealerType == 'licensed' ||
+            dealerType == 'company' ||
+            dealerType.contains('licensed') ||
+            dealerType.contains('company') ||
+            dealerType.contains('מורשה') ||
+            dealerType.contains('חברה');
       });
     } catch (_) {
       // Tax-document actions stay hidden until the business type is known.
@@ -540,8 +553,8 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
     }
   }
 
-  Future<void> _openTaxDocumentFromProforma({
-    required String proformaDocId,
+  Future<void> _openDocumentFromSavedDocument({
+    required String sourceDocId,
     required Map<String, dynamic> savedData,
     required String docType,
     required bool isRtl,
@@ -554,7 +567,7 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
       final userRef = FirebaseFirestore.instance
           .collection('users')
           .doc(currentUser.uid);
-      final detailRef = userRef.collection('invoices').doc(proformaDocId);
+      final detailRef = userRef.collection('invoices').doc(sourceDocId);
       final results = await Future.wait([userRef.get(), detailRef.get()]);
       final userData = results[0].data() ?? <String, dynamic>{};
       final detailData = results[1].data() ?? savedData;
@@ -611,7 +624,7 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
           content: Text(
             isRtl
                 ? 'לא הצלחנו ליצור מסמך מס מתוך חשבון העסקה.'
-                : 'Could not create a tax document from this proforma invoice.',
+                : 'Could not create a document from this saved document.',
           ),
         ),
       );
@@ -1132,6 +1145,14 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                 docType == 'transaction_account';
                             final canCreateTaxDocuments =
                                 isProformaInvoice && _canCreateTaxDocuments;
+                            final isWorkOrder =
+                                !isReceivedScope && docType == 'work_order';
+                            final canCreateTaxDocumentsFromWorkOrder =
+                                isWorkOrder && _canCreateTaxDocuments;
+                            final isQuote =
+                                !isReceivedScope && docType == 'quote';
+                            final canCreateTaxDocumentsFromQuote =
+                                isQuote && _canCreateTaxDocuments;
                             final canBeSigned =
                                 !isReceivedScope &&
                                 (docType == 'quote' || docType == 'work_order');
@@ -1525,9 +1546,8 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                           if (canCreateTaxDocuments)
                                             TextButton.icon(
                                               onPressed: () =>
-                                                  _openTaxDocumentFromProforma(
-                                                    proformaDocId:
-                                                        invoiceDoc.id,
+                                                  _openDocumentFromSavedDocument(
+                                                    sourceDocId: invoiceDoc.id,
                                                     savedData: data,
                                                     docType: 'invoice',
                                                     isRtl: isRtl,
@@ -1553,9 +1573,8 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                           if (canCreateTaxDocuments)
                                             TextButton.icon(
                                               onPressed: () =>
-                                                  _openTaxDocumentFromProforma(
-                                                    proformaDocId:
-                                                        invoiceDoc.id,
+                                                  _openDocumentFromSavedDocument(
+                                                    sourceDocId: invoiceDoc.id,
                                                     savedData: data,
                                                     docType: 'invoice_receipt',
                                                     isRtl: isRtl,
@@ -1619,6 +1638,185 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                             vertical: 4,
                                           ),
                                         ),
+                                      ),
+                                    ],
+                                    if (isWorkOrder) ...[
+                                      const SizedBox(height: 8),
+                                      Wrap(
+                                        spacing: 12,
+                                        runSpacing: 4,
+                                        children: [
+                                          TextButton.icon(
+                                            onPressed: () =>
+                                                _openDocumentFromSavedDocument(
+                                                  sourceDocId: invoiceDoc.id,
+                                                  savedData: data,
+                                                  docType:
+                                                      'transaction_account',
+                                                  isRtl: isRtl,
+                                                ),
+                                            icon: const Icon(
+                                              Icons.description_outlined,
+                                              size: 18,
+                                            ),
+                                            label: Text(
+                                              isRtl
+                                                  ? 'צור חשבון עסקה'
+                                                  : 'Create Proforma Invoice',
+                                            ),
+                                            style: TextButton.styleFrom(
+                                              foregroundColor: accent,
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 0,
+                                                    vertical: 4,
+                                                  ),
+                                            ),
+                                          ),
+                                          if (canCreateTaxDocumentsFromWorkOrder)
+                                            TextButton.icon(
+                                              onPressed: () =>
+                                                  _openDocumentFromSavedDocument(
+                                                    sourceDocId: invoiceDoc.id,
+                                                    savedData: data,
+                                                    docType: 'invoice',
+                                                    isRtl: isRtl,
+                                                  ),
+                                              icon: const Icon(
+                                                Icons.request_quote_outlined,
+                                                size: 18,
+                                              ),
+                                              label: Text(
+                                                isRtl
+                                                    ? 'צור חשבונית מס'
+                                                    : 'Create Tax Invoice',
+                                              ),
+                                              style: TextButton.styleFrom(
+                                                foregroundColor: accent,
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 0,
+                                                      vertical: 4,
+                                                    ),
+                                              ),
+                                            ),
+                                          if (canCreateTaxDocumentsFromWorkOrder)
+                                            TextButton.icon(
+                                              onPressed: () =>
+                                                  _openDocumentFromSavedDocument(
+                                                    sourceDocId: invoiceDoc.id,
+                                                    savedData: data,
+                                                    docType: 'invoice_receipt',
+                                                    isRtl: isRtl,
+                                                  ),
+                                              icon: const Icon(
+                                                Icons.receipt_rounded,
+                                                size: 18,
+                                              ),
+                                              label: Text(
+                                                isRtl
+                                                    ? 'צור חשבונית מס / קבלה'
+                                                    : 'Create Tax Invoice / Receipt',
+                                              ),
+                                              style: TextButton.styleFrom(
+                                                foregroundColor: accent,
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 0,
+                                                      vertical: 4,
+                                                    ),
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                    ],
+                                    if (isQuote) ...[
+                                      const SizedBox(height: 8),
+                                      Wrap(
+                                        spacing: 12,
+                                        runSpacing: 4,
+                                        children: [
+                                          TextButton.icon(
+                                            onPressed: () =>
+                                                _openDocumentFromSavedDocument(
+                                                  sourceDocId: invoiceDoc.id,
+                                                  savedData: data,
+                                                  docType: 'work_order',
+                                                  isRtl: isRtl,
+                                                ),
+                                            icon: const Icon(
+                                              Icons.assignment_outlined,
+                                              size: 18,
+                                            ),
+                                            label: Text(
+                                              isRtl
+                                                  ? 'צור הזמנת עבודה'
+                                                  : 'Create Work Order',
+                                            ),
+                                            style: TextButton.styleFrom(
+                                              foregroundColor: accent,
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 0,
+                                                    vertical: 4,
+                                                  ),
+                                            ),
+                                          ),
+                                          if (canCreateTaxDocumentsFromQuote)
+                                            TextButton.icon(
+                                              onPressed: () =>
+                                                  _openDocumentFromSavedDocument(
+                                                    sourceDocId: invoiceDoc.id,
+                                                    savedData: data,
+                                                    docType: 'invoice',
+                                                    isRtl: isRtl,
+                                                  ),
+                                              icon: const Icon(
+                                                Icons.request_quote_outlined,
+                                                size: 18,
+                                              ),
+                                              label: Text(
+                                                isRtl
+                                                    ? 'צור חשבונית מס'
+                                                    : 'Create Tax Invoice',
+                                              ),
+                                              style: TextButton.styleFrom(
+                                                foregroundColor: accent,
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 0,
+                                                      vertical: 4,
+                                                    ),
+                                              ),
+                                            ),
+                                          if (canCreateTaxDocumentsFromQuote)
+                                            TextButton.icon(
+                                              onPressed: () =>
+                                                  _openDocumentFromSavedDocument(
+                                                    sourceDocId: invoiceDoc.id,
+                                                    savedData: data,
+                                                    docType: 'invoice_receipt',
+                                                    isRtl: isRtl,
+                                                  ),
+                                              icon: const Icon(
+                                                Icons.receipt_rounded,
+                                                size: 18,
+                                              ),
+                                              label: Text(
+                                                isRtl
+                                                    ? 'צור חשבונית מס / קבלה'
+                                                    : 'Create Tax Invoice / Receipt',
+                                              ),
+                                              style: TextButton.styleFrom(
+                                                foregroundColor: accent,
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 0,
+                                                      vertical: 4,
+                                                    ),
+                                              ),
+                                            ),
+                                        ],
                                       ),
                                     ],
                                     if (docType == 'invoice') ...[
