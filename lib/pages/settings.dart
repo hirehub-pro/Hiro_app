@@ -435,9 +435,6 @@ class _SettingsPageState extends State<SettingsPage>
         ? 'לאיזה אימייל לשלוח?'
         : 'Which email should receive the files?';
     final hint = isRtl ? 'name@example.com' : 'name@example.com';
-    final helper = isRtl
-        ? 'נעתיק את הכתובת, נפתח שיתוף קבצים, ואז נפתח מייל מוכן לכתובת הזו.'
-        : 'We will copy the address, open file sharing, then open an email draft to this address.';
     final invalid = isRtl
         ? 'יש להזין כתובת אימייל תקינה.'
         : 'Enter a valid email address.';
@@ -447,50 +444,159 @@ class _SettingsPageState extends State<SettingsPage>
       builder: (dialogContext) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
-            return AlertDialog(
-              title: Text(title),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextFormField(
-                    initialValue: initialEmail,
-                    autofocus: true,
-                    keyboardType: TextInputType.emailAddress,
-                    onChanged: (value) {
-                      emailValue = value;
-                      if (validationMessage != null) {
-                        setDialogState(() => validationMessage = null);
-                      }
-                    },
-                    decoration: InputDecoration(
-                      labelText: label,
-                      hintText: hint,
-                      helperText: helper,
-                      errorText: validationMessage,
-                    ),
+            return Dialog(
+              insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+              backgroundColor: Colors.transparent,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 440),
+                child: Container(
+                  padding: const EdgeInsets.fromLTRB(24, 24, 24, 20),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(28),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x260F172A),
+                        blurRadius: 28,
+                        offset: Offset(0, 12),
+                      ),
+                    ],
                   ),
-                ],
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            width: 44,
+                            height: 44,
+                            decoration: BoxDecoration(
+                              color: const Color(
+                                0xFF1976D2,
+                              ).withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: const Icon(
+                              Icons.file_present_rounded,
+                              color: Color(0xFF1976D2),
+                            ),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Text(
+                              title,
+                              style: const TextStyle(
+                                fontSize: 22,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF111827),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 24),
+                      Text(
+                        label,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF374151),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextFormField(
+                        initialValue: initialEmail,
+                        autofocus: true,
+                        keyboardType: TextInputType.emailAddress,
+                        textDirection: TextDirection.ltr,
+                        onChanged: (value) {
+                          emailValue = value;
+                          if (validationMessage != null) {
+                            setDialogState(() => validationMessage = null);
+                          }
+                        },
+                        decoration: InputDecoration(
+                          hintText: hint,
+                          errorText: validationMessage,
+                          prefixIcon: const Icon(Icons.email_outlined),
+                          filled: true,
+                          fillColor: const Color(0xFFF8FAFC),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 16,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: const BorderSide(
+                              color: Color(0xFFE2E8F0),
+                            ),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: const BorderSide(
+                              color: Color(0xFFE2E8F0),
+                            ),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: const BorderSide(
+                              color: Color(0xFF1976D2),
+                              width: 2,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextButton(
+                              onPressed: () => Navigator.pop(dialogContext),
+                              style: TextButton.styleFrom(
+                                foregroundColor: const Color(0xFF1976D2),
+                                minimumSize: const Size.fromHeight(52),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                              ),
+                              child: Text(isRtl ? 'ביטול' : 'Cancel'),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            flex: 2,
+                            child: FilledButton(
+                              onPressed: () {
+                                final email = emailValue.trim();
+                                final isValid = RegExp(
+                                  r'^[^\s@]+@[^\s@]+\.[^\s@]+$',
+                                ).hasMatch(email);
+                                if (!isValid) {
+                                  setDialogState(
+                                    () => validationMessage = invalid,
+                                  );
+                                  return;
+                                }
+                                Navigator.pop(dialogContext, email);
+                              },
+                              style: FilledButton.styleFrom(
+                                backgroundColor: const Color(0xFF1976D2),
+                                foregroundColor: Colors.white,
+                                minimumSize: const Size.fromHeight(52),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                              ),
+                              child: Text(isRtl ? 'המשך' : 'Continue'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
               ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(dialogContext),
-                  child: Text(isRtl ? 'ביטול' : 'Cancel'),
-                ),
-                FilledButton(
-                  onPressed: () {
-                    final email = emailValue.trim();
-                    final isValid = RegExp(
-                      r'^[^\s@]+@[^\s@]+\.[^\s@]+$',
-                    ).hasMatch(email);
-                    if (!isValid) {
-                      setDialogState(() => validationMessage = invalid);
-                      return;
-                    }
-                    Navigator.pop(dialogContext, email);
-                  },
-                  child: Text(isRtl ? 'המשך' : 'Continue'),
-                ),
-              ],
             );
           },
         );
@@ -1389,11 +1495,6 @@ class _SettingsPageState extends State<SettingsPage>
             color: _isGeneratingUniformFiles ? const Color(0xFF94A3B8) : null,
           ),
         ),
-        subtitle: Text(
-          isRtl
-              ? 'הפקת BKMVDATA, סעיף 2.6 וסעיף 5.4 בפעולה אחת'
-              : 'Generate BKMVDATA, section 2.6, and section 5.4 in one action',
-        ),
         trailing: _isGeneratingUniformFiles
             ? const SizedBox(
                 width: 20,
@@ -1810,11 +1911,6 @@ class _SettingsPageState extends State<SettingsPage>
                           : CupertinoColors.systemBlue,
                     ),
                     title: Text(strings['uniform_export']!),
-                    subtitle: Text(
-                      isRtl
-                          ? 'הפקת BKMVDATA, סעיף 2.6 וסעיף 5.4 בפעולה אחת'
-                          : 'Generate BKMVDATA, section 2.6, and section 5.4 in one action',
-                    ),
                     trailing: _isGeneratingUniformFiles
                         ? const CupertinoActivityIndicator()
                         : const CupertinoListTileChevron(),
