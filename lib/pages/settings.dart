@@ -5,12 +5,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_email_sender/flutter_email_sender.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+import 'package:firebase_storage/firebase_storage.dart' as firebase_storage;
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:pdf/pdf.dart' as pdf;
@@ -1128,21 +1129,32 @@ class _SettingsPageState extends State<SettingsPage>
         packages: result.packages,
         stamp: stamp,
       );
-      final attachmentPaths = <String>[
-        openFrmtZip.path,
-        printedSummaryFile.path,
-        annex4File.path,
-      ];
-
-      final email = Email(
-        recipients: [recipientEmail],
-        subject: 'קובץ במבנה אחיד הופק על ידי הירו',
-        body:
-            'BKMV export files are attached.\n\nAttached ZIP:\n${openFrmtZip.uri.pathSegments.last}\n\nExport folder:\n${directory.path}',
-        attachmentPaths: attachmentPaths,
-        isHTML: false,
+      final exportFiles = <File>[openFrmtZip, printedSummaryFile, annex4File];
+      final exportFolder =
+          'users/${user.uid}/uniform_exports/$stamp-${DateTime.now().microsecondsSinceEpoch}';
+      final storage = firebase_storage.FirebaseStorage.instance;
+      final uploadedPaths = await Future.wait(
+        exportFiles.map((file) async {
+          final fileName = file.uri.pathSegments.last;
+          final ref = storage.ref().child('$exportFolder/$fileName');
+          await ref.putFile(file);
+          return ref.fullPath;
+        }),
       );
-      await FlutterEmailSender.send(email);
+      // Refresh the Firebase Auth token before the callable request. This makes
+      // the function receive request.auth even after a long export operation.
+      await user.reload();
+      final refreshedUser = FirebaseAuth.instance.currentUser;
+      final idToken = await refreshedUser?.getIdToken(true);
+      if (idToken == null || idToken.isEmpty) {
+        throw StateError('יש להתחבר מחדש כדי לשלוח את קובצי הייצוא.');
+      }
+      await FirebaseFunctions.instanceFor(
+        region: 'us-central1',
+      ).httpsCallable('sendUniformFilesEmail').call(<String, dynamic>{
+        'recipientEmail': recipientEmail,
+        'filePaths': uploadedPaths,
+      });
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

@@ -1105,6 +1105,93 @@ exports.emailSavedInvoice = onDocumentWritten(
     },
 );
 
+// Receives short-lived BKMV export files uploaded by the signed-in worker and
+// sends them through Resend. The files are removed after a successful send.
+exports.sendUniformFilesEmail = onCall(
+    {
+      region: "us-central1",
+      secrets: [RESEND_API_KEY, RESEND_FROM_EMAIL],
+    },
+    async (request) => {
+      const userId = request.auth?.uid;
+      if (!userId) {
+        throw new HttpsError("unauthenticated", "Authentication required.");
+      }
+
+      const recipientEmail = normalizeEmail(request.data?.recipientEmail);
+      const filePaths = request.data?.filePaths;
+      if (!recipientEmail || !Array.isArray(filePaths) ||
+          filePaths.length === 0 || filePaths.length > 3) {
+        throw new HttpsError(
+            "invalid-argument",
+            "A recipient email and one to three export files are required.",
+        );
+      }
+
+      const allowedPrefix = `users/${userId}/uniform_exports/`;
+      const paths = filePaths.map((value) => normalizeString(value).trim());
+      if (paths.some((value) => !value.startsWith(allowedPrefix))) {
+        throw new HttpsError(
+            "permission-denied",
+            "Export files must belong to the signed-in user.",
+        );
+      }
+
+      const bucket = admin.storage().bucket();
+      const files = paths.map((filePath) => bucket.file(filePath));
+      const metadata = await Promise.all(files.map(async (file) => {
+        const [exists] = await file.exists();
+        if (!exists) {
+          throw new HttpsError("not-found", "An export file was not found.");
+        }
+        const [fileMetadata] = await file.getMetadata();
+        return fileMetadata;
+      }));
+      const totalSize = metadata.reduce(
+          (total, item) => total + (Number(item.size) || 0), 0,
+      );
+      // Resend's 40 MB attachment limit is measured after Base64 encoding.
+      if (totalSize > 28 * 1024 * 1024) {
+        throw new HttpsError(
+            "resource-exhausted",
+            "The generated files are too large to send by email.",
+        );
+      }
+
+      const contents = await Promise.all(files.map(async (file) => {
+        const [content] = await file.download();
+        return content;
+      }));
+      const attachments = contents.map((content, index) => ({
+        filename: paths[index].split("/").pop() || `uniform-export-${index + 1}`,
+        content,
+      }));
+      const {data, error} = await new Resend(RESEND_API_KEY.value())
+          .emails.send({
+            from: RESEND_FROM_EMAIL.value(),
+            to: [recipientEmail],
+            subject: "קבצים במבנה אחיד מהירו",
+            text: "שלום,\n\nמצורפים קבצי המבנה האחיד שהופקו באמצעות הירו.\n\nבברכה,\nצוות הירו",
+            attachments,
+          });
+      if (error) {
+        throw new HttpsError(
+            "internal", error.message || "Resend rejected the email.",
+        );
+      }
+
+      await Promise.all(files.map(async (file) => {
+        await file.delete().catch((error) => {
+          logger.warn("Unable to delete emailed uniform export", {
+            path: file.name,
+            error: error.message,
+          });
+        });
+      }));
+      return {sent: true, emailId: data?.id || null};
+    },
+);
+
 async function getUserFcmTokens(userDoc) {
   const tokens = new Set();
   const tokenSnap = await userDoc.ref.collection("deviceTokens").limit(100).get();
