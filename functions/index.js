@@ -65,6 +65,11 @@ const SIGNING_FONT_PATH = path.join(
     "fonts",
     "Rubik-VariableFont_wght.ttf",
 );
+const EMAIL_APP_ICON_STORAGE_PATH = "email-assets/app_icon-Photoroom.png";
+const EMAIL_APP_STORE_BADGE_STORAGE_PATH =
+  "email-assets/Download_on_the_App_Store_Badge_US-UK_RGB_blk_092917.svg";
+const EMAIL_GOOGLE_PLAY_BADGE_STORAGE_PATH =
+  "email-assets/Google_Play_Store_badge_EN.svg.png";
 
 const REQUEST_EXPIRY_TIME_ZONE = "Asia/Jerusalem";
 
@@ -962,17 +967,42 @@ exports.emailSavedInvoice = onDocumentWritten(
       try {
         const userId = event.params.userId;
         const userSnap = await db.collection("users").doc(userId).get();
+        const verificationSnap = await userSnap.ref
+            .collection("verification_info").doc("latest").get();
         let ownerEmail = normalizeEmail(userSnap.get("email"));
-        if (!ownerEmail) {
+        let userName = normalizeString(userSnap.get("name")).trim();
+        if (!ownerEmail || !userName) {
           const authUser = await admin.auth().getUser(userId);
-          ownerEmail = normalizeEmail(authUser.email);
+          ownerEmail = ownerEmail || normalizeEmail(authUser.email);
+          userName = userName || normalizeString(authUser.displayName).trim();
         }
+        userName = userName || "משתמש יקר";
         const clientEmail = normalizeEmail(invoice.clientEmail);
-        const recipients = [...new Set(
-          [ownerEmail, clientEmail].filter(Boolean),
-        )];
-
-        if (recipients.length === 0) {
+        const businessName = normalizeString(
+            verificationSnap.get("businessName") ||
+            userSnap.get("businessName") ||
+            userSnap.get("name"),
+        ).trim() || "הירו";
+        const clientName =
+          normalizeString(invoice.clientName).trim() || "לקוח";
+        const deliveries = [];
+        if (ownerEmail) {
+          deliveries.push({
+            email: ownerEmail,
+            subjectName: clientName,
+            subjectPreposition: "ל",
+            type: "owner",
+          });
+        }
+        if (clientEmail && clientEmail !== ownerEmail) {
+          deliveries.push({
+            email: clientEmail,
+            subjectName: businessName,
+            subjectPreposition: "מ",
+            type: "client",
+          });
+        }
+        if (deliveries.length === 0) {
           await invoiceRef.update({
             invoiceEmailStatus: "skipped",
             invoiceEmailError: "No valid recipient email address.",
@@ -980,31 +1010,87 @@ exports.emailSavedInvoice = onDocumentWritten(
           return;
         }
 
-        const [pdfBytes] = await admin.storage().bucket()
-            .file(storagePath).download();
-        const documentName = normalizeString(invoice.name).trim() || "Invoice";
+        const bucket = admin.storage().bucket();
         const fileName = normalizeString(invoice.fileName).trim() || "invoice.pdf";
-        const resend = new Resend(RESEND_API_KEY.value());
-        const {data, error} = await resend.emails.send({
-          from: RESEND_FROM_EMAIL.value(),
-          to: recipients,
-          subject: `${documentName} from Hiro`,
-          text: `Attached is ${documentName}.`,
-          attachments: [{filename: fileName, content: pdfBytes}],
-        }, {
-          idempotencyKey: `invoice-email/${userId}/${event.params.invoiceId}`,
+        const pdfFile = bucket.file(storagePath);
+        await pdfFile.setMetadata({
+          contentDisposition: `attachment; filename="${downloadFileName(fileName)}"`,
         });
-        if (error) throw new Error(error.message || "Resend rejected the email.");
+        const [pdfBytes] = await pdfFile.download();
+        const [[appIconBytes], [appStoreBadgeBytes], [googlePlayBadgeBytes]] =
+          await Promise.all([
+            bucket.file(EMAIL_APP_ICON_STORAGE_PATH).download(),
+            bucket.file(EMAIL_APP_STORE_BADGE_STORAGE_PATH).download(),
+            bucket.file(EMAIL_GOOGLE_PLAY_BADGE_STORAGE_PATH).download(),
+          ]);
+        const documentName = normalizeString(invoice.name).trim() || "Invoice";
+        const downloadUrl = normalizeString(invoice.url).trim();
+        const resend = new Resend(RESEND_API_KEY.value());
+        const emailIds = [];
+        for (const delivery of deliveries) {
+          const emailText = delivery.type === "client" ?
+            buildClientInvoiceEmailText(invoice, clientName, businessName) :
+            clientEmail ?
+              buildOwnerInvoiceEmailText(
+                  invoice, userName, clientName, clientEmail,
+              ) :
+              buildOwnerInvoiceWithoutClientEmailText(invoice, userName);
+          const emailHtml = delivery.type === "client" ?
+            buildClientInvoiceEmailHtml(
+                invoice, clientName, businessName, downloadUrl, fileName,
+            ) :
+            clientEmail ?
+              buildOwnerInvoiceEmailHtml(
+                  invoice, userName, clientName, clientEmail,
+                  downloadUrl, fileName,
+              ) :
+              buildOwnerInvoiceWithoutClientEmailHtml(
+                  invoice, userName, downloadUrl, fileName,
+              );
+          const {data, error} = await resend.emails.send({
+            from: RESEND_FROM_EMAIL.value(),
+            to: [delivery.email],
+            subject: buildInvoiceEmailSubject(
+                invoice, delivery.subjectName, delivery.subjectPreposition,
+            ),
+            text: emailText,
+            html: emailHtml,
+            attachments: [
+              {filename: fileName, content: pdfBytes},
+              {
+                filename: "hiro-app-icon.png",
+                content: appIconBytes,
+                contentId: "hiro-app-icon",
+              },
+              {
+                filename: "app-store-badge.svg",
+                content: appStoreBadgeBytes,
+                contentId: "app-store-badge",
+              },
+              {
+                filename: "google-play-badge.png",
+                content: googlePlayBadgeBytes,
+                contentId: "google-play-badge",
+              },
+            ],
+          }, {
+            idempotencyKey:
+              `invoice-email/${userId}/${event.params.invoiceId}/${delivery.type}`,
+          });
+          if (error) throw new Error(error.message || "Resend rejected the email.");
+          if (data?.id) emailIds.push(data.id);
+        }
 
         await invoiceRef.update({
           invoiceEmailStatus: "sent",
           invoiceEmailSentAt: admin.firestore.FieldValue.serverTimestamp(),
-          invoiceEmailId: data?.id || null,
+          invoiceEmailId: emailIds[0] || null,
+          invoiceEmailIds: emailIds,
           invoiceEmailError: admin.firestore.FieldValue.delete(),
         });
         logger.info("Invoice email sent", {
           invoiceId: event.params.invoiceId,
-          recipientCount: recipients.length,
+          recipientCount: deliveries.length,
         });
       } catch (error) {
         logger.error("Could not send saved invoice email", {
@@ -2463,6 +2549,185 @@ function normalizeString(value) {
 function normalizeEmail(value) {
   const email = normalizeString(value).trim().toLowerCase();
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : null;
+}
+
+function downloadFileName(fileName) {
+  return normalizeString(fileName).replace(/[\\"\r\n]/g, "_") || "document.pdf";
+}
+
+function buildInvoiceEmailSubject(invoice, name, preposition = "ל") {
+  const documentType = hebrewDocumentType(invoice.docType || invoice.type);
+  const documentNumber = normalizeString(
+      invoice.sequenceNumber || invoice.invoiceNumber || invoice.documentNumber,
+  ).trim();
+  const introduction = `${documentType} חדשה ${preposition}${name}`;
+  return documentNumber ?
+    `${introduction}: ${documentType} מספר ${documentNumber}` : introduction;
+}
+
+function buildClientInvoiceEmailText(invoice, clientName, businessName) {
+  const documentType = hebrewDocumentType(invoice.docType || invoice.type);
+  const documentNumber = normalizeString(
+      invoice.sequenceNumber || invoice.invoiceNumber || invoice.documentNumber,
+  ).trim();
+  const documentReference = documentNumber ?
+    `${documentType} מספר ${documentNumber}` : documentType;
+  return `שלום ${clientName},\n\n` +
+    `מצורף ${documentReference} שהופק עבורכם.\n\n` +
+    "תודה שבחרתם לעבוד איתנו.\n\n" +
+    `בברכה,\n${businessName}\n\n` +
+    "מסמך זה נשלח באופן אוטומטי באמצעות מערכת הירו.\n" +
+    "נא לא להשיב להודעה זו.";
+}
+
+function buildOwnerInvoiceEmailText(
+    invoice, userName, clientName, clientEmail,
+) {
+  const documentType = hebrewDocumentType(invoice.docType || invoice.type);
+  const documentNumber = normalizeString(
+      invoice.sequenceNumber || invoice.invoiceNumber || invoice.documentNumber,
+  ).trim();
+  const documentReference = documentNumber ?
+    `${documentType} מספר ${documentNumber}` : documentType;
+  const recipient = clientEmail || "לא הוזנה כתובת דוא״ל ללקוח";
+  return `שלום ${userName},\n\n` +
+    `זהו אישור כי ${documentReference} נשלח בהצלחה ל${clientName} לכתובת:\n` +
+    `${recipient}\n\n` +
+    "המסמך מצורף להודעה זו.\n\n" +
+    "בברכה,\nצוות הירו";
+}
+
+function buildOwnerInvoiceWithoutClientEmailText(invoice, userName) {
+  const documentType = hebrewDocumentType(invoice.docType || invoice.type);
+  const documentNumber = normalizeString(
+      invoice.sequenceNumber || invoice.invoiceNumber || invoice.documentNumber,
+  ).trim();
+  const documentReference = documentNumber ?
+    `${documentType} מספר ${documentNumber}` : documentType;
+  return `שלום ${userName},\n\n` +
+    `מצורף ${documentReference}.\n\n` +
+    "תודה שבחרתם ב-הירו.\n\n" +
+    "בברכה,\nצוות הירו";
+}
+
+function invoiceDocumentReference(invoice) {
+  const documentType = hebrewDocumentType(invoice.docType || invoice.type);
+  const documentNumber = normalizeString(
+      invoice.sequenceNumber || invoice.invoiceNumber || invoice.documentNumber,
+  ).trim();
+  return documentNumber ? `${documentType} מספר ${documentNumber}` : documentType;
+}
+
+function escapeHtml(value) {
+  return normalizeString(value).replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  }[character]));
+}
+
+function buildInvoiceEmailHtml({name, heading, content, footer}) {
+  return `<!doctype html>
+<html lang="he" dir="rtl">
+  <body style="margin:0;padding:0;background:#f4f7fb;font-family:Arial,Helvetica,sans-serif;color:#182230;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f7fb;padding:32px 12px;">
+      <tr><td align="center">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:600px;background:#ffffff;border:1px solid #d9e3ef;border-radius:24px;overflow:hidden;">
+          <tr><td style="padding:32px 32px 18px;text-align:center;">
+            ${hiroBrandLogo()}
+            <div style="margin-top:8px;font-size:13px;color:#718096;">ניהול עסק פשוט</div>
+          </td></tr>
+          <tr><td style="padding:12px 32px 32px;text-align:right;">
+            <p style="margin:0 0 18px;font-size:17px;font-weight:700;">שלום ${escapeHtml(name)},</p>
+            <h1 style="margin:0 0 20px;font-size:25px;line-height:1.35;color:#162f65;">${escapeHtml(heading)}</h1>
+            ${content}
+          </td></tr>
+          <tr><td style="padding:22px 32px;background:#f8fafc;border-top:1px solid #e7edf4;text-align:center;font-size:12px;line-height:1.7;color:#758194;">
+            ${footer}
+            <p style="margin:0 0 14px;">הודעה זו נשלחה באופן אוטומטי באמצעות מערכת הירו. נא לא להשיב להודעה זו.</p>
+            ${hiroBrandLogo()}
+            <div style="margin:8px 0 18px;font-size:12px;color:#718096;">ניהול עסק פשוט</div>
+            <table role="presentation" align="center" cellspacing="0" cellpadding="0"><tr>
+              <td style="padding:0 4px 8px;"><a href="https://apps.apple.com/us/app/hiro-%D7%94%D7%99%D7%A8%D7%95/id6763238120" target="_blank" style="display:inline-block;text-decoration:none;"><img src="cid:app-store-badge" width="150" height="50" alt="Download on the App Store" style="display:block;border:0;width:150px;height:50px;"></a></td>
+              <td style="padding:0 4px 8px;"><a href="https://play.google.com/store/apps/details?id=com.hirehub.app" target="_blank" style="display:inline-block;text-decoration:none;"><img src="cid:google-play-badge" width="167" height="50" alt="Get it on Google Play" style="display:block;border:0;width:167px;height:50px;"></a></td>
+            </tr></table>
+          </td></tr>
+        </table>
+      </td></tr>
+    </table>
+  </body>
+</html>`;
+}
+
+function documentCard(documentReference, downloadUrl, fileName) {
+  const downloadButton = downloadUrl ?
+    `<a href="${escapeHtml(downloadUrl)}" target="_blank" download="${escapeHtml(fileName)}" style="display:inline-block;margin-top:12px;padding:8px 18px;background:#27caaa;border-radius:999px;color:#073b34;font-size:14px;font-weight:700;text-decoration:none;">להורדת המסמך</a>` :
+    '<div style="display:inline-block;margin-top:12px;padding:8px 18px;background:#27caaa;border-radius:999px;color:#073b34;font-size:14px;font-weight:700;">המסמך מצורף למייל</div>';
+  return `<div style="margin:22px 0;padding:18px 20px;background:#eefbf8;border:1px solid #b7eee1;border-radius:14px;text-align:center;">
+    <div style="font-size:13px;color:#39746b;margin-bottom:5px;">המסמך שלך</div>
+    <div style="font-size:20px;font-weight:700;color:#123d38;">${escapeHtml(documentReference)}</div>
+    ${downloadButton}
+  </div>`;
+}
+
+function hiroBrandLogo() {
+  return `<a href="https://hiro-services.com/" target="_blank" style="display:inline-block;text-decoration:none;direction:ltr;">
+    <img src="cid:hiro-app-icon" width="32" height="32" alt="Hiro" style="display:inline-block;width:32px;height:32px;margin-right:7px;border-radius:9px;object-fit:cover;vertical-align:middle;">
+    <span style="color:#111111;font-family:Arial,Helvetica,sans-serif;font-size:31px;font-weight:800;letter-spacing:-1.5px;line-height:32px;vertical-align:middle;">hiro</span>
+  </a>`;
+}
+
+function buildClientInvoiceEmailHtml(
+    invoice, clientName, businessName, downloadUrl, fileName,
+) {
+  const documentReference = invoiceDocumentReference(invoice);
+  return buildInvoiceEmailHtml({
+    name: clientName,
+    heading: "מסמך חדש הופק עבורך",
+    content: `<p style="margin:0;font-size:16px;line-height:1.7;">מצורף ${escapeHtml(documentReference)} שהופק עבורכם.</p>` +
+      documentCard(documentReference, downloadUrl, fileName) +
+      `<p style="margin:0;font-size:16px;line-height:1.7;">תודה שבחרתם לעבוד איתנו.</p><p style="margin:20px 0 0;font-size:16px;font-weight:700;">בברכה,<br>${escapeHtml(businessName)}</p>`,
+    footer: "",
+  });
+}
+
+function buildOwnerInvoiceEmailHtml(
+    invoice, userName, clientName, clientEmail, downloadUrl, fileName,
+) {
+  const documentReference = invoiceDocumentReference(invoice);
+  return buildInvoiceEmailHtml({
+    name: userName,
+    heading: "המסמך נשלח בהצלחה",
+    content: `<p style="margin:0;font-size:16px;line-height:1.7;">${escapeHtml(documentReference)} נשלח בהצלחה ל${escapeHtml(clientName)}.</p>` +
+      documentCard(documentReference, downloadUrl, fileName) +
+      `<div style="padding:14px 16px;background:#f8fafc;border-radius:12px;font-size:14px;line-height:1.7;"><strong>כתובת הלקוח:</strong><br>${escapeHtml(clientEmail)}</div><p style="margin:20px 0 0;font-size:16px;font-weight:700;">בברכה,<br>צוות הירו</p>`,
+    footer: "",
+  });
+}
+
+function buildOwnerInvoiceWithoutClientEmailHtml(
+    invoice, userName, downloadUrl, fileName,
+) {
+  const documentReference = invoiceDocumentReference(invoice);
+  return buildInvoiceEmailHtml({
+    name: userName,
+    heading: "מסמך חדש נשמר בהצלחה",
+    content: `<p style="margin:0;font-size:16px;line-height:1.7;">מצורף ${escapeHtml(documentReference)}.</p>` +
+      documentCard(documentReference, downloadUrl, fileName) +
+      `<p style="margin:0;font-size:16px;line-height:1.7;">תודה שבחרתם ב-הירו.</p><p style="margin:20px 0 0;font-size:16px;font-weight:700;">בברכה,<br>צוות הירו</p>`,
+    footer: "",
+  });
+}
+
+function hebrewDocumentType(docType) {
+  switch (normalizeString(docType).trim()) {
+    case "invoice": return "חשבונית מס";
+    case "receipt": return "קבלה";
+    case "invoice_receipt": return "חשבונית מס קבלה";
+    case "credit_note": return "חשבונית זיכוי";
+    case "quote": return "הצעת מחיר";
+    case "work_order": return "הזמנת עבודה";
+    case "transaction_account": return "חשבון עסקה";
+    default: return "מסמך";
+  }
 }
 
 function normalizeBusinessId(value) {
