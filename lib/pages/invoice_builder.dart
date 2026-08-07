@@ -3670,6 +3670,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                 pdfBytes: finalPdfBytes,
                 taxAuthorityAllocation: taxAuthorityAllocation,
               );
+              if (savedDraftResult != null) {
+                _showInvoiceEmailDeliveryToast(savedDraftResult!);
+              }
               return finalPdfBytes;
             },
             onSendForSignature: _isQuoteLike
@@ -3727,6 +3730,60 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           context,
         ).showSnackBar(SnackBar(content: Text("Error: ${e.toString()}")));
       }
+    }
+  }
+
+  Future<void> _showInvoiceEmailDeliveryToast(
+    InvoiceBuilderDraftResult saved,
+  ) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    try {
+      final invoiceRef = FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('invoices')
+          .doc(saved.invoiceDocId);
+      final snapshot = await invoiceRef
+          .snapshots()
+          .firstWhere((document) {
+            final status = (document.data()?['invoiceEmailStatus'] ?? '')
+                .toString()
+                .trim();
+            return status == 'sent' ||
+                status == 'failed' ||
+                status == 'skipped';
+          })
+          .timeout(const Duration(seconds: 45));
+      if (!mounted) return;
+
+      final status = (snapshot.data()?['invoiceEmailStatus'] ?? '')
+          .toString()
+          .trim();
+      if (status == 'sent') {
+        final clientEmail = _clientEmailController.text.trim();
+        final sentToClient =
+            RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(clientEmail) &&
+            clientEmail.toLowerCase() != (user.email ?? '').toLowerCase();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              sentToClient
+                  ? 'Document was sent to your email and the client’s email.'
+                  : 'Document was sent to your email.',
+            ),
+          ),
+        );
+      } else if (status == 'failed') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not send the document email.')),
+        );
+      }
+    } on TimeoutException {
+      // The email may still be processing; do not show a false success toast.
+    } catch (error) {
+      dev.log('Unable to read invoice email status: $error');
     }
   }
 
