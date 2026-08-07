@@ -72,6 +72,13 @@ const EMAIL_GOOGLE_PLAY_BADGE_STORAGE_PATH =
   "email-assets/Google_Play_Store_badge_EN.svg.png";
 
 const REQUEST_EXPIRY_TIME_ZONE = "Asia/Jerusalem";
+const INVOICE_BUILDER_EMAIL_CODE_TTL_MS = 10 * 60 * 1000;
+const INVOICE_BUILDER_EMAIL_CODE_RESEND_DELAY_MS = 60 * 1000;
+const INVOICE_BUILDER_EMAIL_CODE_MAX_ATTEMPTS = 5;
+
+function invoiceBuilderEmailCodeHash(code) {
+  return crypto.createHash("sha256").update(code).digest("hex");
+}
 
 function isPendingRequestExpired(request, now = new Date()) {
   const status = normalizeString(request.status).trim().toLowerCase();
@@ -932,6 +939,137 @@ exports.mirrorReceivedInvoice = onDocumentWritten(
 // Sends an invoice only after its PDF has been uploaded and its Storage path
 // has been written to Firestore. The delivery state acts as a lease so retries
 // and later document updates do not create duplicate emails.
+exports.sendInvoiceBuilderEmailCode = onCall(
+    {
+      region: "me-west1",
+      secrets: [RESEND_API_KEY, RESEND_FROM_EMAIL],
+    },
+    async (request) => {
+      const userId = request.auth?.uid;
+      if (!userId) {
+        throw new HttpsError("unauthenticated", "Authentication required.");
+      }
+
+      const authUser = await admin.auth().getUser(userId);
+      const email = normalizeEmail(authUser.email);
+      if (!email || !authUser.emailVerified) {
+        throw new HttpsError(
+            "failed-precondition",
+            "A verified email address is required for this verification.",
+        );
+      }
+
+      const db = admin.firestore();
+      const verificationRef = db.collection("users").doc(userId)
+          .collection("invoiceBuilderVerifications").doc("emailCode");
+      const now = Date.now();
+      const code = crypto.randomInt(0, 1000000).toString().padStart(6, "0");
+      const requestId = crypto.randomUUID();
+      const expiresAt = new Date(now + INVOICE_BUILDER_EMAIL_CODE_TTL_MS);
+
+      await db.runTransaction(async (transaction) => {
+        const current = await transaction.get(verificationRef);
+        const lastSentAt = current.data()?.sentAt?.toDate?.();
+        if (lastSentAt &&
+            now - lastSentAt.getTime() <
+              INVOICE_BUILDER_EMAIL_CODE_RESEND_DELAY_MS) {
+          throw new HttpsError(
+              "resource-exhausted",
+              "Please wait one minute before requesting another code.",
+          );
+        }
+        transaction.set(verificationRef, {
+          codeHash: invoiceBuilderEmailCodeHash(code),
+          requestId,
+          attempts: 0,
+          sentAt: admin.firestore.Timestamp.fromMillis(now),
+          expiresAt: admin.firestore.Timestamp.fromDate(expiresAt),
+        });
+      });
+
+      try {
+        const {data, error} = await new Resend(RESEND_API_KEY.value())
+            .emails.send({
+              from: RESEND_FROM_EMAIL.value(),
+              to: [email],
+              subject: "Your Hiro invoice builder verification code",
+              text: `Your Hiro verification code is: ${code}\n\n` +
+                "It expires in 10 minutes. If you did not request this code, " +
+                "you can safely ignore this email.",
+              html: `<p>Your Hiro verification code is:</p>` +
+                `<p style="font-size:28px;font-weight:700;letter-spacing:4px">${code}</p>` +
+                "<p>It expires in 10 minutes. If you did not request this " +
+                "code, you can safely ignore this email.</p>",
+            }, {idempotencyKey: `invoice-builder-email-code/${userId}/${requestId}`});
+        if (error) {
+          throw new Error(error.message || "Resend rejected the email.");
+        }
+        return {sent: true, expiresAt: expiresAt.toISOString(), emailId: data?.id || null};
+      } catch (error) {
+        await verificationRef.delete().catch(() => undefined);
+        logger.error("Could not send invoice builder email code", {
+          userId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        throw new HttpsError("internal", "Unable to send the verification email.");
+      }
+    },
+);
+
+exports.verifyInvoiceBuilderEmailCode = onCall(
+    {region: "me-west1"},
+    async (request) => {
+      const userId = request.auth?.uid;
+      const code = normalizeString(request.data?.code).trim();
+      if (!userId) {
+        throw new HttpsError("unauthenticated", "Authentication required.");
+      }
+      if (!/^\d{6}$/.test(code)) {
+        throw new HttpsError("invalid-argument", "Enter the six-digit code.");
+      }
+
+      const db = admin.firestore();
+      const verificationRef = db.collection("users").doc(userId)
+          .collection("invoiceBuilderVerifications").doc("emailCode");
+      const result = await db.runTransaction(async (transaction) => {
+        const verification = await transaction.get(verificationRef);
+        const data = verification.data();
+        const expiresAt = data?.expiresAt?.toDate?.();
+        if (!verification.exists || !expiresAt || expiresAt.getTime() <= Date.now()) {
+          transaction.delete(verificationRef);
+          return "expired";
+        }
+        if ((Number(data.attempts) || 0) >= INVOICE_BUILDER_EMAIL_CODE_MAX_ATTEMPTS) {
+          transaction.delete(verificationRef);
+          return "locked";
+        }
+
+        const expected = Buffer.from(data.codeHash || "", "hex");
+        const actual = Buffer.from(invoiceBuilderEmailCodeHash(code), "hex");
+        const matches = expected.length === actual.length &&
+          crypto.timingSafeEqual(expected, actual);
+        if (!matches) {
+          transaction.update(verificationRef, {
+            attempts: admin.firestore.FieldValue.increment(1),
+          });
+          return "incorrect";
+        }
+        transaction.delete(verificationRef);
+        return "verified";
+      });
+      if (result === "expired") {
+        throw new HttpsError("deadline-exceeded", "This code has expired. Request a new one.");
+      }
+      if (result === "locked") {
+        throw new HttpsError("permission-denied", "Too many incorrect attempts. Request a new code.");
+      }
+      if (result !== "verified") {
+        throw new HttpsError("permission-denied", "That code is incorrect.");
+      }
+      return {verified: true};
+    },
+);
+
 exports.emailSavedInvoice = onDocumentWritten(
     {
       document: "users/{userId}/invoices/{invoiceId}",

@@ -382,8 +382,10 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   // identity again for this visit.
   final _identityPhoneController = TextEditingController();
   final _identityPasswordController = TextEditingController();
+  final _identityEmailCodeController = TextEditingController();
   bool _isIdentityVerified = false;
   bool _isVerifyingIdentity = false;
+  bool _isEmailCodeSent = false;
   bool _obscureIdentityPassword = true;
   String? _identityVerificationError;
 
@@ -1355,6 +1357,11 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   Future<void> _verifyIdentityForInvoiceBuilder() async {
     if (_isVerifyingIdentity) return;
 
+    if (_isEmailCodeSent) {
+      await _verifyInvoiceBuilderEmailCode();
+      return;
+    }
+
     final enteredPhone = _normalizedIsraeliPhone(
       _identityPhoneController.text.trim(),
     );
@@ -1407,13 +1414,15 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       await user.reauthenticateWithCredential(
         EmailAuthProvider.credential(email: email, password: password),
       );
+      await _functions
+          .httpsCallable('sendInvoiceBuilderEmailCode')
+          .call<void>();
       if (!mounted) return;
       _identityPasswordController.clear();
       setState(() {
-        _isIdentityVerified = true;
         _isVerifyingIdentity = false;
+        _isEmailCodeSent = true;
       });
-      unawaited(_acquireInvoiceBuilderLock());
     } on FirebaseAuthException catch (error) {
       if (!mounted) return;
       setState(() {
@@ -1431,6 +1440,47 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'Bad state: ',
           '',
         );
+      });
+    }
+  }
+
+  Future<void> _verifyInvoiceBuilderEmailCode() async {
+    final code = _identityEmailCodeController.text.trim();
+    if (!RegExp(r'^\d{6}$').hasMatch(code)) {
+      setState(() {
+        _identityVerificationError =
+            'Enter the six-digit code from your email.';
+      });
+      return;
+    }
+
+    setState(() {
+      _isVerifyingIdentity = true;
+      _identityVerificationError = null;
+    });
+    try {
+      await _functions
+          .httpsCallable('verifyInvoiceBuilderEmailCode')
+          .call<void>({'code': code});
+      if (!mounted) return;
+      _identityEmailCodeController.clear();
+      setState(() {
+        _isIdentityVerified = true;
+        _isVerifyingIdentity = false;
+      });
+      unawaited(_acquireInvoiceBuilderLock());
+    } on FirebaseFunctionsException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _isVerifyingIdentity = false;
+        _identityVerificationError =
+            error.message ?? 'We could not verify that code.';
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isVerifyingIdentity = false;
+        _identityVerificationError = 'We could not verify that code.';
       });
     }
   }
@@ -1497,7 +1547,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                       const SizedBox(height: 16),
                       TextField(
                         controller: _identityPasswordController,
-                        enabled: !_isVerifyingIdentity,
+                        enabled: !_isVerifyingIdentity && !_isEmailCodeSent,
                         obscureText: _obscureIdentityPassword,
                         onSubmitted: (_) => _verifyIdentityForInvoiceBuilder(),
                         decoration: InputDecoration(
@@ -1522,6 +1572,28 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                           ),
                         ),
                       ),
+                      if (_isEmailCodeSent) ...[
+                        const SizedBox(height: 16),
+                        const Text(
+                          'A verification code was sent to your email address.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Color(0xFF64748B)),
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: _identityEmailCodeController,
+                          enabled: !_isVerifyingIdentity,
+                          keyboardType: TextInputType.number,
+                          textInputAction: TextInputAction.done,
+                          maxLength: 6,
+                          onSubmitted: (_) => _verifyInvoiceBuilderEmailCode(),
+                          decoration: const InputDecoration(
+                            labelText: 'Email verification code',
+                            prefixIcon: Icon(Icons.mark_email_read_outlined),
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ],
                       if (_identityVerificationError != null) ...[
                         const SizedBox(height: 12),
                         Text(
@@ -1547,7 +1619,11 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                   color: Colors.white,
                                 ),
                               )
-                            : const Text('Verify and continue'),
+                            : Text(
+                                _isEmailCodeSent
+                                    ? 'Verify code and continue'
+                                    : 'Send email code',
+                              ),
                       ),
                     ],
                   ),
@@ -1949,6 +2025,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     unawaited(_invoiceBuilderLock.release());
     _identityPhoneController.dispose();
     _identityPasswordController.dispose();
+    _identityEmailCodeController.dispose();
     _clientNameFocusNode.removeListener(_handleClientNameFocusChanged);
     _clientNameController.dispose();
     _clientNameFocusNode.dispose();
