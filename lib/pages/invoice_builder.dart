@@ -377,6 +377,16 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   bool _hasInvoiceBuilderLock = false;
   bool _lockLostDialogShown = false;
 
+  // Opening the invoice builder is a sensitive action. Keep its contents and
+  // its single-device lock unavailable until the signed-in user proves their
+  // identity again for this visit.
+  final _identityPhoneController = TextEditingController();
+  final _identityPasswordController = TextEditingController();
+  bool _isIdentityVerified = false;
+  bool _isVerifyingIdentity = false;
+  bool _obscureIdentityPassword = true;
+  String? _identityVerificationError;
+
   final FirebaseFunctions _functions = FirebaseFunctions.instanceFor(
     region: 'me-west1',
   );
@@ -1287,7 +1297,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   @override
   void initState() {
     super.initState();
-    _acquireInvoiceBuilderLock();
     _accessFuture = SubscriptionAccessService.getCurrentUserState();
     _invoiceNumber = "";
     _clientNameFocusNode.addListener(_handleClientNameFocusChanged);
@@ -1333,6 +1342,222 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     _loadVatRate();
     _loadAssets();
     _loadBankBranches();
+  }
+
+  String _normalizedIsraeliPhone(String value) {
+    var digits = value.replaceAll(RegExp(r'[^0-9]'), '');
+    if (digits.startsWith('972')) {
+      digits = '0${digits.substring(3)}';
+    }
+    return digits;
+  }
+
+  Future<void> _verifyIdentityForInvoiceBuilder() async {
+    if (_isVerifyingIdentity) return;
+
+    final enteredPhone = _normalizedIsraeliPhone(
+      _identityPhoneController.text.trim(),
+    );
+    final password = _identityPasswordController.text;
+    if (enteredPhone.isEmpty || password.isEmpty) {
+      setState(() {
+        _identityVerificationError =
+            'Enter your phone number and password to continue.';
+      });
+      return;
+    }
+
+    final user = FirebaseAuth.instance.currentUser;
+    final email = user?.email?.trim();
+    final supportsPassword =
+        user?.providerData.any(
+          (provider) => provider.providerId == 'password',
+        ) ??
+        false;
+    if (user == null || email == null || email.isEmpty || !supportsPassword) {
+      setState(() {
+        _identityVerificationError =
+            'This account does not have password sign-in enabled.';
+      });
+      return;
+    }
+
+    setState(() {
+      _isVerifyingIdentity = true;
+      _identityVerificationError = null;
+    });
+
+    try {
+      final profile = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
+      final profileData = profile.data();
+      final registeredPhones = <String>{
+        user.phoneNumber ?? '',
+        (profileData?['phone'] ?? '').toString(),
+        (profileData?['phoneNumber'] ?? '').toString(),
+      }.map(_normalizedIsraeliPhone).where((phone) => phone.isNotEmpty).toSet();
+
+      if (registeredPhones.isEmpty ||
+          !registeredPhones.contains(enteredPhone)) {
+        throw StateError('The phone number does not match this account.');
+      }
+
+      await user.reauthenticateWithCredential(
+        EmailAuthProvider.credential(email: email, password: password),
+      );
+      if (!mounted) return;
+      _identityPasswordController.clear();
+      setState(() {
+        _isIdentityVerified = true;
+        _isVerifyingIdentity = false;
+      });
+      unawaited(_acquireInvoiceBuilderLock());
+    } on FirebaseAuthException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _isVerifyingIdentity = false;
+        _identityVerificationError =
+            error.code == 'wrong-password' || error.code == 'invalid-credential'
+            ? 'The password is incorrect. Please try again.'
+            : error.message ?? 'We could not verify your identity.';
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _isVerifyingIdentity = false;
+        _identityVerificationError = error.toString().replaceFirst(
+          'Bad state: ',
+          '',
+        );
+      });
+    }
+  }
+
+  Widget _buildIdentityVerificationGate(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF8FAFC),
+      appBar: AppBar(
+        title: const Text('Verify your identity'),
+        backgroundColor: Colors.white,
+        foregroundColor: const Color(0xFF1976D2),
+        elevation: 0,
+      ),
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: Card(
+                elevation: 0,
+                color: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                  side: const BorderSide(color: Color(0xFFE2E8F0)),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Icon(
+                        Icons.lock_person_outlined,
+                        color: Color(0xFF1976D2),
+                        size: 42,
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Verify it’s you',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'For your security, enter the phone number and password for this account before opening the invoice builder.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: Color(0xFF64748B)),
+                      ),
+                      const SizedBox(height: 24),
+                      TextField(
+                        controller: _identityPhoneController,
+                        enabled: !_isVerifyingIdentity,
+                        keyboardType: TextInputType.phone,
+                        textInputAction: TextInputAction.next,
+                        decoration: const InputDecoration(
+                          labelText: 'Phone number',
+                          prefixIcon: Icon(Icons.phone_outlined),
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: _identityPasswordController,
+                        enabled: !_isVerifyingIdentity,
+                        obscureText: _obscureIdentityPassword,
+                        onSubmitted: (_) => _verifyIdentityForInvoiceBuilder(),
+                        decoration: InputDecoration(
+                          labelText: 'Password',
+                          prefixIcon: const Icon(Icons.lock_outline),
+                          border: const OutlineInputBorder(),
+                          suffixIcon: IconButton(
+                            tooltip: _obscureIdentityPassword
+                                ? 'Show password'
+                                : 'Hide password',
+                            icon: Icon(
+                              _obscureIdentityPassword
+                                  ? Icons.visibility_outlined
+                                  : Icons.visibility_off_outlined,
+                            ),
+                            onPressed: _isVerifyingIdentity
+                                ? null
+                                : () => setState(
+                                    () => _obscureIdentityPassword =
+                                        !_obscureIdentityPassword,
+                                  ),
+                          ),
+                        ),
+                      ),
+                      if (_identityVerificationError != null) ...[
+                        const SizedBox(height: 12),
+                        Text(
+                          _identityVerificationError!,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(color: Colors.red),
+                        ),
+                      ],
+                      const SizedBox(height: 24),
+                      FilledButton(
+                        onPressed: _isVerifyingIdentity
+                            ? null
+                            : _verifyIdentityForInvoiceBuilder,
+                        style: FilledButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                        child: _isVerifyingIdentity
+                            ? const SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Text('Verify and continue'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _loadBankBranches() async {
@@ -1722,6 +1947,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   @override
   void dispose() {
     unawaited(_invoiceBuilderLock.release());
+    _identityPhoneController.dispose();
+    _identityPasswordController.dispose();
     _clientNameFocusNode.removeListener(_handleClientNameFocusChanged);
     _clientNameController.dispose();
     _clientNameFocusNode.dispose();
@@ -5140,6 +5367,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (!_isIdentityVerified) {
+      return _buildIdentityVerificationGate(context);
+    }
     if (_isAcquiringLock) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
