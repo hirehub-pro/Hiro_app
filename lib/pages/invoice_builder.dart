@@ -22,6 +22,7 @@ import 'package:untitled1/services/bkmv_export_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:untitled1/services/invoice_builder_lock_service.dart';
+import 'package:untitled1/services/invoice_builder_verification_session.dart';
 import 'package:untitled1/services/client_service.dart';
 import 'package:xml/xml.dart';
 
@@ -1299,10 +1300,14 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   @override
   void initState() {
     super.initState();
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (InvoiceBuilderVerificationSession.isVerifiedFor(currentUser?.uid)) {
+      _isIdentityVerified = true;
+      _acquireInvoiceBuilderLock();
+    }
     _accessFuture = SubscriptionAccessService.getCurrentUserState();
     _invoiceNumber = "";
     _clientNameFocusNode.addListener(_handleClientNameFocusChanged);
-    final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser != null) {
       _savedClientsStream = FirebaseFirestore.instance
           .collection('users')
@@ -1464,6 +1469,13 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           .call<void>({'code': code});
       if (!mounted) return;
       _identityEmailCodeController.clear();
+      final userId = FirebaseAuth.instance.currentUser?.uid;
+      if (userId == null) {
+        throw StateError(
+          'Your sign-in session has ended. Please sign in again.',
+        );
+      }
+      InvoiceBuilderVerificationSession.markVerified(userId);
       setState(() {
         _isIdentityVerified = true;
         _isVerifyingIdentity = false;

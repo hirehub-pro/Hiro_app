@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:untitled1/services/notification_service.dart';
+import 'package:untitled1/services/invoice_builder_verification_session.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -41,6 +42,7 @@ class AuthService {
   // Sign Out
   Future<void> signOut() async {
     await NotificationService.removeCurrentDeviceToken();
+    InvoiceBuilderVerificationSession.clear();
     await _auth.signOut();
   }
 }

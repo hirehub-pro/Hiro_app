@@ -992,14 +992,15 @@ exports.sendInvoiceBuilderEmailCode = onCall(
             .emails.send({
               from: RESEND_FROM_EMAIL.value(),
               to: [email],
-              subject: "Your Hiro invoice builder verification code",
-              text: `Your Hiro verification code is: ${code}\n\n` +
-                "It expires in 10 minutes. If you did not request this code, " +
-                "you can safely ignore this email.",
-              html: `<p>Your Hiro verification code is:</p>` +
-                `<p style="font-size:28px;font-weight:700;letter-spacing:4px">${code}</p>` +
-                "<p>It expires in 10 minutes. If you did not request this " +
-                "code, you can safely ignore this email.</p>",
+              subject: "קוד אימות ליוצר החשבוניות של הירו",
+              text: `קוד האימות שלך בהירו הוא: ${code}\n\n` +
+                "הקוד תקף ל-10 דקות. אם לא ביקשת את הקוד, אפשר להתעלם מהודעה זו.",
+              html: "<div dir=\"rtl\" style=\"font-family:Arial,sans-serif;" +
+                "color:#1f2937;line-height:1.6\">" +
+                "<p>קוד האימות שלך בהירו הוא:</p>" +
+                `<p dir="ltr" style="font-size:28px;font-weight:700;letter-spacing:4px">${code}</p>` +
+                "<p>הקוד תקף ל-10 דקות. אם לא ביקשת את הקוד, אפשר להתעלם מהודעה זו.</p>" +
+                "</div>",
             }, {idempotencyKey: `invoice-builder-email-code/${userId}/${requestId}`});
         if (error) {
           throw new Error(error.message || "Resend rejected the email.");
