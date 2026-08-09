@@ -70,16 +70,20 @@ class BlogPage extends StatefulWidget {
 class _BlogPageState extends State<BlogPage> {
   static const String _myProfessionFilterValue = '__my_profession__';
   static const double _myRadiusFilterValue = -1;
+  static const int _postsPageSize = 10;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final ScrollController _scrollController = ScrollController();
   final TextEditingController _searchController = TextEditingController();
-  StreamSubscription? _postsSubscription;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _postsSubscription;
   LatLng? _viewerLocation;
   List<Map<String, dynamic>> _professionItems = [];
   List<Map<String, dynamic>> _posts = [];
   bool _isLoading = true;
   bool _isMoreLoading = false;
-  int _postLimit = 10;
+  DocumentSnapshot<Map<String, dynamic>>? _nextPostsCursor;
+  bool _hasMorePosts = true;
+  bool _hasLoadedInitialPosts = false;
+  int _postsRequestGeneration = 0;
   final Set<String> _hiddenPostIds = {};
   final Set<String> _blockedUserIds = {};
   String _sortBy = 'newest';
@@ -117,18 +121,44 @@ class _BlogPageState extends State<BlogPage> {
   void _onScroll() {
     if (_scrollController.position.pixels >=
         _scrollController.position.maxScrollExtent - 200) {
-      if (!_isMoreLoading && !_isLoading && _posts.length >= _postLimit) {
-        _loadMorePosts();
+      if (_hasMorePosts && !_isMoreLoading && !_isLoading) {
+        unawaited(_loadMorePosts());
       }
     }
   }
 
-  void _loadMorePosts() {
+  Future<void> _loadMorePosts() async {
+    final cursor = _nextPostsCursor;
+    if (cursor == null || !_hasMorePosts || _isMoreLoading || _isLoading) {
+      return;
+    }
+
     setState(() {
       _isMoreLoading = true;
-      _postLimit += 10;
     });
-    _listenToPosts();
+
+    final requestGeneration = _postsRequestGeneration;
+    try {
+      final snapshot = await _buildPostsQuery()
+          .startAfterDocument(cursor)
+          .limit(_postsPageSize)
+          .get();
+      if (!mounted || requestGeneration != _postsRequestGeneration) return;
+
+      final page = _postsFromSnapshot(snapshot);
+      final existingIds = _posts.map((post) => post['id']).toSet();
+      setState(() {
+        _posts.addAll(page.where((post) => existingIds.add(post['id'])));
+        _nextPostsCursor = snapshot.docs.isEmpty ? cursor : snapshot.docs.last;
+        _hasMorePosts = snapshot.docs.length == _postsPageSize;
+        _isMoreLoading = false;
+      });
+    } catch (error) {
+      debugPrint('Failed to load more posts: $error');
+      if (mounted && requestGeneration == _postsRequestGeneration) {
+        setState(() => _isMoreLoading = false);
+      }
+    }
   }
 
   Future<void> _loadViewerLocation() async {
@@ -600,10 +630,8 @@ class _BlogPageState extends State<BlogPage> {
     );
   }
 
-  void _listenToPosts() {
-    _postsSubscription?.cancel();
-
-    Query query = _firestore.collection('blog_posts');
+  Query<Map<String, dynamic>> _buildPostsQuery() {
+    Query<Map<String, dynamic>> query = _firestore.collection('blog_posts');
     if (_selectedFilterIndex > 0 &&
         _selectedFilterIndex < _categoryAliases.length) {
       query = query.where(
@@ -620,30 +648,53 @@ class _BlogPageState extends State<BlogPage> {
       query = query.orderBy('likes', descending: true);
     }
 
-    _postsSubscription = query
-        .limit(_postLimit)
+    return query.orderBy(FieldPath.documentId);
+  }
+
+  List<Map<String, dynamic>> _postsFromSnapshot(
+    QuerySnapshot<Map<String, dynamic>> snapshot,
+  ) {
+    return snapshot.docs.map((doc) {
+      final post = Map<String, dynamic>.from(doc.data());
+      post['id'] = doc.id;
+      return post;
+    }).toList();
+  }
+
+  void _listenToPosts() {
+    _postsSubscription?.cancel();
+    final requestGeneration = _postsRequestGeneration;
+
+    _postsSubscription = _buildPostsQuery()
+        .limit(_postsPageSize)
         .snapshots()
         .listen(
-          (snapshot) async {
-            List<Map<String, dynamic>> loadedPosts = [];
-
-            for (var doc in snapshot.docs) {
-              final post = doc.data() as Map<String, dynamic>;
-              post['id'] = doc.id;
-              loadedPosts.add(post);
+          (snapshot) {
+            if (!mounted || requestGeneration != _postsRequestGeneration) {
+              return;
             }
+            final loadedPosts = _postsFromSnapshot(snapshot);
+            final firstPageIds = loadedPosts.map((post) => post['id']).toSet();
+            final pagedPosts = _hasLoadedInitialPosts
+                ? _posts.where((post) => !firstPageIds.contains(post['id']))
+                : const <Map<String, dynamic>>[];
 
-            if (mounted) {
-              setState(() {
-                _posts = loadedPosts;
-                _isLoading = false;
-                _isMoreLoading = false;
-              });
-            }
+            setState(() {
+              _posts = [...loadedPosts, ...pagedPosts];
+              if (!_hasLoadedInitialPosts) {
+                _nextPostsCursor = snapshot.docs.isEmpty
+                    ? null
+                    : snapshot.docs.last;
+                _hasMorePosts = snapshot.docs.length == _postsPageSize;
+                _hasLoadedInitialPosts = true;
+              }
+              _isLoading = false;
+              _isMoreLoading = false;
+            });
           },
           onError: (error) {
             debugPrint("FETCH ERROR: $error");
-            if (mounted) {
+            if (mounted && requestGeneration == _postsRequestGeneration) {
               setState(() {
                 _posts = [];
                 _isLoading = false;
@@ -1040,22 +1091,24 @@ class _BlogPageState extends State<BlogPage> {
   }
 
   Future<void> _onRefresh() async {
-    if (mounted) {
-      setState(() {
-        _isLoading = true;
-        _posts = [];
-        _postLimit = 10;
-      });
-    }
-    _listenToPosts();
+    _resetPostPagination();
     return Future.delayed(const Duration(milliseconds: 500));
   }
 
   void _sortPosts() {
+    _resetPostPagination();
+  }
+
+  void _resetPostPagination() {
+    _postsRequestGeneration++;
+    _postsSubscription?.cancel();
     setState(() {
       _isLoading = true;
       _posts = [];
-      _postLimit = 10;
+      _isMoreLoading = false;
+      _nextPostsCursor = null;
+      _hasMorePosts = true;
+      _hasLoadedInitialPosts = false;
     });
     _listenToPosts();
   }
@@ -2828,11 +2881,8 @@ class _BlogPageState extends State<BlogPage> {
                 onSelected: (val) {
                   setState(() {
                     _selectedFilterIndex = index;
-                    _isLoading = true;
-                    _posts = [];
-                    _postLimit = 10;
                   });
-                  _listenToPosts();
+                  _resetPostPagination();
                 },
                 label: Text(categories[index]),
                 selectedColor: _uiPrimaryBlue.withValues(alpha: 0.1),
@@ -2997,10 +3047,8 @@ class _BlogPageState extends State<BlogPage> {
             PopupMenuButton<String>(
               icon: const Icon(Icons.sort, color: _uiPrimaryBlue),
               onSelected: (value) {
-                setState(() {
-                  _sortBy = value;
-                  _sortPosts();
-                });
+                _sortBy = value;
+                _sortPosts();
               },
               itemBuilder: (context) => [
                 PopupMenuItem(
@@ -3188,11 +3236,8 @@ class _BlogPageState extends State<BlogPage> {
                           if (catIndex != -1) {
                             setState(() {
                               _selectedFilterIndex = catIndex;
-                              _isLoading = true;
-                              _posts = [];
-                              _postLimit = 10;
                             });
-                            _listenToPosts();
+                            _resetPostPagination();
                           }
                         },
                         localizedStrings: strings,
