@@ -84,6 +84,8 @@ class _ProfileState extends State<Profile>
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   StreamSubscription<User?>? _authSubscription;
   AnimationController? _backgroundController;
+  String? _lastAuthUserId;
+  int _profileLoadGeneration = 0;
 
   String _userName = "";
   String _bio = "";
@@ -165,12 +167,13 @@ class _ProfileState extends State<Profile>
     _initTabController();
     _loadProfessionTranslations();
 
+    _lastAuthUserId = FirebaseAuth.instance.currentUser?.uid;
     _authSubscription = FirebaseAuth.instance.authStateChanges().listen((user) {
-      if (user != null && widget.userId == null) {
-        _fetchUserData();
-      }
+      final authUserId = user?.uid;
+      if (authUserId == _lastAuthUserId) return;
+      _lastAuthUserId = authUserId;
+      unawaited(_fetchUserData());
     });
-
     _fetchUserData();
   }
 
@@ -460,6 +463,7 @@ class _ProfileState extends State<Profile>
   }
 
   Future<void> _fetchUserData() async {
+    final loadGeneration = ++_profileLoadGeneration;
     final currentUser = FirebaseAuth.instance.currentUser;
     final targetUid = widget.userId ?? currentUser?.uid;
 
@@ -531,76 +535,19 @@ class _ProfileState extends State<Profile>
           _initTabController();
         }
 
-        if (_isOwnProfile && _userRole == 'worker') {
-          final accessState =
-              await SubscriptionAccessService.getCurrentUserState();
-          if (mounted) {
-            setState(() {
-              _subscriptionStatus = accessState.subscriptionStatus;
-            });
-          }
-          await _loadTaxAuthorityConnectionStatus();
-        }
-
-        if (!_isOwnProfile) {
-          _calculateDistance();
-        }
-
-        final reviews = await _fetchSubcollection(targetUid, 'reviews');
-        final projects = await _fetchSubcollection(targetUid, 'projects');
-
-        if (mounted) {
-          setState(() {
-            _userReviews = reviews;
-            _projects = projects;
-          });
-        }
-
-        final int professionTotalViews = await _readTotalViewsFromProRatings(
-          targetUid,
-        );
-        if (mounted) {
-          setState(() {
-            _viewsCount = professionTotalViews;
-          });
-        }
-
-        if (currentUser != null && !_isOwnProfile) {
-          final favDoc = await _firestore
-              .collection('users')
-              .doc(currentUser.uid)
-              .collection('favorites')
-              .doc(targetUid)
-              .get();
-          if (mounted) setState(() => _isFavorite = favDoc.exists);
-        }
-
-        if (!_isOwnProfile) {
-          final viewedProfession = widget.viewedProfession?.trim() ?? '';
-          final fallbackProfession = _userProfessions.isNotEmpty
-              ? _userProfessions.first.trim()
-              : '';
-          final professionForViewCount = viewedProfession.isNotEmpty
-              ? viewedProfession
-              : (fallbackProfession.isNotEmpty
-                    ? fallbackProfession
-                    : 'General');
-
-          await _incrementProfessionWeeklyViews(
-            workerId: targetUid,
-            profession: professionForViewCount,
-          );
-
-          final int updatedTotalViews = await _readTotalViewsFromProRatings(
-            targetUid,
-          );
-          if (mounted) {
-            setState(() {
-              _viewsCount = updatedTotalViews;
-            });
-          }
-        }
+        // The primary profile is now ready to render. The remaining data is
+        // useful, but should never delay the first meaningful paint.
         if (mounted) setState(() => _isLoading = false);
+        if (_isOwnProfile && _userRole == 'worker') {
+          unawaited(_refreshWorkerProfileStatus(loadGeneration));
+        }
+        unawaited(
+          _loadSecondaryProfileData(
+            targetUid: targetUid,
+            currentUser: currentUser,
+            loadGeneration: loadGeneration,
+          ),
+        );
       } else {
         if (mounted) setState(() => _isLoading = false);
       }
@@ -608,6 +555,68 @@ class _ProfileState extends State<Profile>
       debugPrint("FETCH ERROR: $e");
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  Future<void> _loadSecondaryProfileData({
+    required String targetUid,
+    required User? currentUser,
+    required int loadGeneration,
+  }) async {
+    final isOwnProfile = _isOwnProfile;
+    final professions = List<String>.from(_userProfessions);
+
+    try {
+      final results = await Future.wait<dynamic>([
+        _fetchSubcollection(targetUid, 'reviews'),
+        _fetchSubcollection(targetUid, 'projects'),
+        _readTotalViewsFromProRatings(targetUid),
+        if (currentUser != null && !isOwnProfile)
+          _firestore
+              .collection('users')
+              .doc(currentUser.uid)
+              .collection('favorites')
+              .doc(targetUid)
+              .get(),
+      ]);
+
+      if (!mounted || loadGeneration != _profileLoadGeneration) return;
+      setState(() {
+        _userReviews = results[0] as List<Map<String, dynamic>>;
+        _projects = results[1] as List<Map<String, dynamic>>;
+        _viewsCount = results[2] as int;
+        if (currentUser != null && !isOwnProfile) {
+          _isFavorite = (results[3] as DocumentSnapshot).exists;
+        }
+      });
+
+      if (!isOwnProfile) {
+        unawaited(_calculateDistance());
+        final viewedProfession = widget.viewedProfession?.trim() ?? '';
+        final fallbackProfession = professions.isNotEmpty
+            ? professions.first.trim()
+            : '';
+        final professionForViewCount = viewedProfession.isNotEmpty
+            ? viewedProfession
+            : (fallbackProfession.isNotEmpty ? fallbackProfession : 'General');
+
+        await _incrementProfessionWeeklyViews(
+          workerId: targetUid,
+          profession: professionForViewCount,
+        );
+        if (mounted && loadGeneration == _profileLoadGeneration) {
+          setState(() => _viewsCount += 1);
+        }
+      }
+    } catch (e) {
+      debugPrint('Failed to load secondary profile data: $e');
+    }
+  }
+
+  Future<void> _refreshWorkerProfileStatus(int loadGeneration) async {
+    final accessState = await SubscriptionAccessService.getCurrentUserState();
+    if (!mounted || loadGeneration != _profileLoadGeneration) return;
+    setState(() => _subscriptionStatus = accessState.subscriptionStatus);
+    await _loadTaxAuthorityConnectionStatus();
   }
 
   Future<void> _loadTaxAuthorityConnectionStatus() async {

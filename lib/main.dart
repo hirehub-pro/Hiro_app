@@ -8,14 +8,12 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:untitled1/services/language_provider.dart';
 import 'package:untitled1/home.dart';
 import 'package:untitled1/search.dart';
 import 'package:untitled1/formu.dart';
 import 'package:untitled1/ptofile.dart';
 import 'package:untitled1/pages/admin_profile.dart';
-import 'package:untitled1/widgets/splash_screen.dart';
 import 'package:untitled1/pages/inbox_page.dart';
 import 'package:untitled1/pages/chat_page.dart';
 import 'package:untitled1/services/analytics_service.dart';
@@ -25,10 +23,7 @@ import 'package:untitled1/sign_in.dart';
 import 'services/firebase_options.dart';
 
 void main() async {
-  WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
-
-  // Preserve native splash while initializing Firebase and other services.
-  FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
+  WidgetsFlutterBinding.ensureInitialized();
 
   if (!kIsWeb) {
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
@@ -140,8 +135,6 @@ class _MyAppState extends State<MyApp> {
       initializationError = e;
       debugPrint("FATAL: Firebase initialization failed: $e");
       debugPrint(stack.toString());
-    } finally {
-      FlutterNativeSplash.remove();
     }
 
     if (!mounted) return;
@@ -383,7 +376,7 @@ class _StartupGate extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (isInitializing) {
-      return const SplashScreen();
+      return const ColoredBox(color: Color(0xFFF7FBFF));
     }
     if (isFirebaseInitialized) {
       return const AuthWrapper();
@@ -486,7 +479,7 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     if (!_hasAuthState) {
-      return const SplashScreen();
+      return const ColoredBox(color: Color(0xFFF7FBFF));
     }
 
     return _currentUser != null ? const MyHomePage() : const SignInPage();

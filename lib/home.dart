@@ -47,6 +47,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   StreamSubscription? _popupSubscription;
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _announcementsStream;
   AnimationController? _backgroundController;
   String? _lastPopupId;
   String? _lastPopupSignature;
@@ -196,7 +197,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
-    _backgroundAnimationController;
+    _announcementsStream = _firestore
+        .collection('system_announcements')
+        .orderBy('timestamp', descending: true)
+        .limit(20)
+        .snapshots()
+        .asBroadcastStream();
     _bannerPageController = PageController(initialPage: 1000);
     _initData();
     _listenForPopups();
@@ -205,9 +211,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   Future<void> _initData() async {
     final professionLoad = _loadProfessionMetadata();
-    _fetchCurrentUserName();
-    await professionLoad;
-    _fetchPopularCategories();
+    final userLoad = _fetchCurrentUserName();
+    final popularLoad = _fetchPopularCategories(professionLoad: professionLoad);
+    await Future.wait([professionLoad, userLoad, popularLoad]);
   }
 
   Future<void> _loadProfessionMetadata() async {
@@ -268,28 +274,23 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   void _listenForPopups() {
-    _popupSubscription = _firestore
-        .collection('system_announcements')
-        .where('isPopup', isEqualTo: true)
-        .orderBy('timestamp', descending: true)
-        .limit(10)
-        .snapshots()
-        .listen((snapshot) {
-          final activeDocs = snapshot.docs.where((doc) {
-            if (_hiddenPopupIds.contains(doc.id)) return false;
-            final data = doc.data();
-            return _isAnnouncementActive(data, fallbackHours: 24);
-          }).toList();
+    _popupSubscription = _announcementsStream.listen((snapshot) {
+      final activeDocs = snapshot.docs.where((doc) {
+        if (_hiddenPopupIds.contains(doc.id)) return false;
+        final data = doc.data();
+        return data['isPopup'] == true &&
+            _isAnnouncementActive(data, fallbackHours: 24);
+      }).toList();
 
-          if (activeDocs.isNotEmpty) {
-            final signature = activeDocs.map((doc) => doc.id).join('|');
-            if (_lastPopupSignature != signature) {
-              _lastPopupSignature = signature;
-              _lastPopupId = activeDocs.first.id;
-              _showAdPopup(activeDocs);
-            }
-          }
-        });
+      if (activeDocs.isNotEmpty) {
+        final signature = activeDocs.map((doc) => doc.id).join('|');
+        if (_lastPopupSignature != signature) {
+          _lastPopupSignature = signature;
+          _lastPopupId = activeDocs.first.id;
+          _showAdPopup(activeDocs);
+        }
+      }
+    });
   }
 
   void _showAdPopup(
@@ -921,27 +922,29 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     }
   }
 
-  Future<void> _fetchPopularCategories() async {
+  Future<void> _fetchPopularCategories({Future<void>? professionLoad}) async {
     if (!mounted) return;
     setState(() => _isPopularLoading = true);
 
     try {
+      final analyticsLoad = _firestore
+          .collection('metadata')
+          .doc('analytics')
+          .collection('professions')
+          .orderBy('searchCount', descending: true)
+          .limit(8)
+          .get();
+
       var allProfs = _professionItems;
       if (allProfs.isEmpty) {
-        await _loadProfessionMetadata();
+        await (professionLoad ?? _loadProfessionMetadata());
         allProfs = _professionItems;
       }
 
       List<Map<String, dynamic>> popular = [];
 
       try {
-        final snapshot = await _firestore
-            .collection('metadata')
-            .doc('analytics')
-            .collection('professions')
-            .orderBy('searchCount', descending: true)
-            .limit(8)
-            .get();
+        final snapshot = await analyticsLoad;
 
         if (snapshot.docs.isNotEmpty) {
           for (var doc in snapshot.docs) {
@@ -2269,8 +2272,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         ),
       ),
     );
-    final backgroundController = _backgroundAnimationController;
-
     return Directionality(
       textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
       child: Theme(
@@ -2280,16 +2281,29 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           body: Stack(
             children: [
               Positioned.fill(
-                child: AnimatedBuilder(
-                  animation: backgroundController,
-                  builder: (context, _) {
-                    return CustomPaint(
-                      painter: _HomeBackgroundPainter(
-                        backgroundController.value,
+                child: isDesktop
+                    ? AnimatedBuilder(
+                        animation: _backgroundAnimationController,
+                        builder: (context, _) => CustomPaint(
+                          painter: _HomeBackgroundPainter(
+                            _backgroundAnimationController.value,
+                          ),
+                        ),
+                      )
+                    : const DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              Color(0xFFFDFEFF),
+                              Color(0xFFEAF5FF),
+                              Color(0xFFF7FBFF),
+                            ],
+                            stops: [0, 0.5, 1],
+                          ),
+                        ),
                       ),
-                    );
-                  },
-                ),
               ),
               RefreshIndicator(
                 onRefresh: () async {
@@ -2352,11 +2366,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   Widget _buildBroadcastBanner(Map<String, dynamic> strings) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: _firestore
-          .collection('system_announcements')
-          .orderBy('timestamp', descending: true)
-          .limit(10)
-          .snapshots(),
+      stream: _announcementsStream,
       builder: (context, snapshot) {
         if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
           return const SliverToBoxAdapter(child: SizedBox.shrink());

@@ -3,12 +3,10 @@
     <style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar">
         <item name="android:windowBackground">@drawable/launch_background</item>
         <item name="android:windowSplashScreenAnimatedIcon">@android:color/transparent</item>
-        <item name="android:windowSplashScreenBackground">@android:color/white</item>
-        <!-- This disables the native splash screen entirely on Android 12+ -->
-        <item name="android:windowDisablePreview">true</item>
+        <item name="android:windowSplashScreenBackground">@color/app_window_background</item>
     </style>
 
     <style name="NormalTheme" parent="@android:style/Theme.Light.NoTitleBar">
-        <item name="android:windowBackground">?android:colorBackground</item>
+        <item name="android:windowBackground">@color/app_window_background</item>
     </style>
 </resources>
