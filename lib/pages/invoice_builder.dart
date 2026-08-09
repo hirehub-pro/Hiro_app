@@ -120,6 +120,96 @@ class _SavedInvoiceResult {
   });
 }
 
+class _PdfTypography {
+  const _PdfTypography({
+    required this.interLight,
+    required this.interRegular,
+    required this.interMedium,
+    required this.interSemiBold,
+    required this.interBold,
+    required this.rubikRegular,
+  });
+
+  final pw.Font interLight;
+  final pw.Font interRegular;
+  final pw.Font interMedium;
+  final pw.Font interSemiBold;
+  final pw.Font interBold;
+  final pw.Font rubikRegular;
+
+  pw.TextStyle _inter(
+    pw.Font font,
+    double fontSizePx,
+    double lineHeightPx, {
+    pdf.PdfColor? color,
+  }) => pw.TextStyle(
+    font: font,
+    // The design specification uses CSS pixels, while PDF dimensions use
+    // points. At 96 dpi, 1 px equals 0.75 pt.
+    fontSize: fontSizePx * 0.75,
+    height: lineHeightPx / fontSizePx,
+    color: color,
+    // Inter does not contain Hebrew glyphs. Rubik keeps Hebrew PDF content
+    // renderable, followed by the PDF package's generic sans-serif fallback.
+    fontFallback: [rubikRegular, pw.Font.helvetica()],
+  );
+
+  pw.TextStyle _rubik(
+    double fontSizePx,
+    double lineHeightPx, {
+    pdf.PdfColor? color,
+  }) => pw.TextStyle(
+    font: rubikRegular,
+    fontSize: fontSizePx * 0.75,
+    height: lineHeightPx / fontSizePx,
+    color: color,
+    fontFallback: [pw.Font.helvetica()],
+  );
+
+  pw.TextStyle documentTitle({pdf.PdfColor? color}) =>
+      _inter(interLight, 37, 42, color: color);
+  pw.TextStyle documentSubtitle({pdf.PdfColor? color}) =>
+      _inter(interLight, 21, 25, color: color);
+  pw.TextStyle issueDetails({pdf.PdfColor? color}) =>
+      _inter(interRegular, 16, 21, color: color);
+  pw.TextStyle cardHeading({pdf.PdfColor? color}) =>
+      _inter(interRegular, 17, 20, color: color);
+  pw.TextStyle cardName({pdf.PdfColor? color}) =>
+      _inter(interMedium, 20, 24, color: color);
+  pw.TextStyle cardDetails({pdf.PdfColor? color}) =>
+      _inter(interRegular, 15, 18, color: color);
+  pw.TextStyle itemHeader({pdf.PdfColor? color}) =>
+      _inter(interRegular, 16, 20, color: color);
+  pw.TextStyle itemRow({pdf.PdfColor? color}) =>
+      _inter(interRegular, 15, 18, color: color);
+  pw.TextStyle totalNormal({pdf.PdfColor? color}) =>
+      _inter(interRegular, 15, 18, color: color);
+  pw.TextStyle finalTotal({pdf.PdfColor? color}) =>
+      _inter(interBold, 20, 24, color: color);
+  pw.TextStyle dueDate({pdf.PdfColor? color}) =>
+      _inter(interRegular, 15, 18, color: color);
+  pw.TextStyle notesHeading({pdf.PdfColor? color}) =>
+      _inter(interSemiBold, 13, 20, color: color);
+  pw.TextStyle notesContent({pdf.PdfColor? color}) =>
+      _inter(interRegular, 13, 20, color: color);
+  pw.TextStyle paymentSectionHeading({pdf.PdfColor? color}) =>
+      _inter(interBold, 16, 20, color: color);
+  pw.TextStyle paymentTitle({pdf.PdfColor? color}) =>
+      _inter(interBold, 14, 18, color: color);
+  pw.TextStyle paymentHeader({pdf.PdfColor? color}) =>
+      _inter(interBold, 11, 14, color: color);
+  pw.TextStyle paymentValue({pdf.PdfColor? color}) =>
+      _inter(interRegular, 12, 16, color: color);
+  pw.TextStyle paymentAmount({pdf.PdfColor? color}) =>
+      _inter(interSemiBold, 12, 16, color: color);
+  pw.TextStyle footerTitle({pdf.PdfColor? color}) =>
+      _rubik(21, 24, color: color);
+  pw.TextStyle footerHelper({pdf.PdfColor? color}) =>
+      _rubik(11, 16, color: color);
+  pw.TextStyle footerPageNumber({pdf.PdfColor? color}) =>
+      _rubik(13, 20, color: color);
+}
+
 class InvoiceBuilderDraftResult {
   final String url;
   final String fileName;
@@ -1240,7 +1330,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   }
 
   String _formattedInvoiceDate() {
-    return intl.DateFormat('dd/MM/yyyy').format(_selectedInvoiceDate);
+    return intl.DateFormat('dd-MM-yyyy').format(_selectedInvoiceDate);
   }
 
   String _invoiceDateStorageValue() {
@@ -1256,7 +1346,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   String _formattedPaymentDueDate() {
     final dueDate = _selectedPaymentDueDate;
     if (dueDate == null) return '';
-    return intl.DateFormat('dd/MM/yyyy').format(dueDate);
+    return intl.DateFormat('dd-MM-yyyy').format(dueDate);
   }
 
   DateTime _defaultPaymentDueDate() {
@@ -1288,8 +1378,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   bool _invoiceLogoTouched = false;
   Uint8List? _businessLogoBytes;
 
-  pw.Font? _cachedFont;
-  pw.Font? _cachedFontBold;
+  _PdfTypography? _cachedPdfTypography;
   pw.MemoryImage? _cachedLogo;
   pw.MemoryImage? _cachedAppIcon;
   Map<String, String>? _cachedStrings;
@@ -2064,12 +2153,22 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
 
   Future<void> _loadAssets() async {
     try {
-      final fontData = await rootBundle.load(
-        "assets/fonts/Rubik-VariableFont_wght.ttf",
+      final fontAssets = await Future.wait([
+        rootBundle.load('assets/fonts/Inter-Light.ttf'),
+        rootBundle.load('assets/fonts/Inter-Regular.ttf'),
+        rootBundle.load('assets/fonts/Inter-Medium.ttf'),
+        rootBundle.load('assets/fonts/Inter-SemiBold.ttf'),
+        rootBundle.load('assets/fonts/Inter-Bold.ttf'),
+        rootBundle.load('assets/fonts/Rubik-VariableFont_wght.ttf'),
+      ]);
+      _cachedPdfTypography = _PdfTypography(
+        interLight: pw.Font.ttf(fontAssets[0]),
+        interRegular: pw.Font.ttf(fontAssets[1]),
+        interMedium: pw.Font.ttf(fontAssets[2]),
+        interSemiBold: pw.Font.ttf(fontAssets[3]),
+        interBold: pw.Font.ttf(fontAssets[4]),
+        rubikRegular: pw.Font.ttf(fontAssets[5]),
       );
-      final fontBoldData = await rootBundle.load("assets/fonts/Rubik-Bold.ttf");
-      _cachedFont = pw.Font.ttf(fontData);
-      _cachedFontBold = pw.Font.ttf(fontBoldData);
       final appIconData = await rootBundle.load('assets/icon/app_icon.jpg');
       _cachedAppIcon = pw.MemoryImage(appIconData.buffer.asUint8List());
     } catch (e) {
@@ -3313,11 +3412,10 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     if (_items.isEmpty && _selectedDocType != 'receipt') return null;
 
     try {
-      if (_cachedFont == null) await _loadAssets();
+      if (_cachedPdfTypography == null) await _loadAssets();
       return await _generatePdf(
         pdf.PdfPageFormat.a4,
-        _cachedFont!,
-        _cachedFontBold!,
+        _cachedPdfTypography!,
         _cachedLogo,
         appIcon: _cachedAppIcon,
         allocationNumber: allocationNumber,
@@ -3677,7 +3775,54 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     return true;
   }
 
-  List<pw.Widget> _buildPaymentTablesPdf() {
+  pw.Widget _pdfLabelValue({
+    required String label,
+    required String value,
+    required pw.TextStyle style,
+    pw.TextDirection valueDirection = pw.TextDirection.ltr,
+  }) {
+    final cleanLabel = label.trim().replaceFirst(RegExp(r':\s*$'), '');
+    return pw.Directionality(
+      textDirection: pw.TextDirection.rtl,
+      child: pw.Row(
+        mainAxisSize: pw.MainAxisSize.min,
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Text('$cleanLabel:', style: style),
+          pw.SizedBox(width: 3),
+          pw.Directionality(
+            textDirection: valueDirection,
+            child: pw.Text(value, style: style, textDirection: valueDirection),
+          ),
+        ],
+      ),
+    );
+  }
+
+  pw.Widget _pdfDocumentTitle({
+    required String documentType,
+    required String documentNumber,
+    required pw.TextStyle style,
+  }) => pw.Directionality(
+    textDirection: pw.TextDirection.rtl,
+    child: pw.Row(
+      mainAxisSize: pw.MainAxisSize.min,
+      children: [
+        pw.Text('$documentType מספר', style: style),
+        pw.SizedBox(width: 7),
+        pw.Directionality(
+          textDirection: pw.TextDirection.ltr,
+          child: pw.Text(
+            documentNumber.isEmpty ? '-' : documentNumber,
+            style: style,
+            textDirection: pw.TextDirection.ltr,
+          ),
+        ),
+      ],
+    ),
+  );
+
+  List<pw.Widget> _buildPaymentTablesPdf(_PdfTypography typography) {
     final grouped = <String, List<_PaymentMethodEntry>>{};
     for (final payment in _paymentMethods) {
       grouped.putIfAbsent(payment.method, () => []).add(payment);
@@ -3694,9 +3839,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           child: pw.Text(
             'אמצעי תשלום',
             textAlign: pw.TextAlign.right,
-            style: pw.TextStyle(
-              fontSize: 14,
-              fontWeight: pw.FontWeight.bold,
+            style: typography.paymentSectionHeading(
               color: pdf.PdfColors.grey900,
             ),
           ),
@@ -3719,7 +3862,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
 
     pw.Widget cell(
       String text, {
-      bool bold = false,
+      bool isHeader = false,
+      bool isAmount = false,
       pdf.PdfColor color = bodyTextColor,
     }) {
       return pw.Container(
@@ -3729,11 +3873,11 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           text,
           maxLines: 2,
           textAlign: pw.TextAlign.center,
-          style: pw.TextStyle(
-            fontSize: 9,
-            fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
-            color: color,
-          ),
+          style: isHeader
+              ? typography.paymentHeader(color: color)
+              : isAmount
+              ? typography.paymentAmount(color: color)
+              : typography.paymentValue(color: color),
         ),
       );
     }
@@ -3823,14 +3967,14 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                           topRight: pw.Radius.circular(7),
                         ),
                       ),
-                      child: pw.Text(
-                        'אמצעי תשלום: ${_paymentMethodLabel(true, group.key)}',
-                        textAlign: pw.TextAlign.right,
-                        style: pw.TextStyle(
-                          fontSize: 12,
-                          fontWeight: pw.FontWeight.bold,
-                          color: darkBlue,
-                        ),
+                      child: _pdfLabelValue(
+                        label: 'אמצעי תשלום',
+                        value: _paymentMethodLabel(true, group.key),
+                        valueDirection:
+                            group.key == 'bit' || group.key == 'paybox'
+                            ? pw.TextDirection.ltr
+                            : pw.TextDirection.rtl,
+                        style: typography.paymentTitle(color: darkBlue),
                       ),
                     ),
                     pw.Table(
@@ -3850,7 +3994,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                               .map(
                                 (header) => cell(
                                   header,
-                                  bold: true,
+                                  isHeader: true,
                                   color: headerTextColor,
                                 ),
                               )
@@ -3865,7 +4009,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                               row.length,
                               (index) => cell(
                                 row[index],
-                                bold: index == amountColumnIndex,
+                                isAmount: index == amountColumnIndex,
                                 color: bodyTextColor,
                               ),
                             ),
@@ -4812,8 +4956,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
 
   Future<Uint8List> _generatePdf(
     pdf.PdfPageFormat format,
-    pw.Font font,
-    pw.Font fontBold,
+    _PdfTypography typography,
     pw.MemoryImage? logo, {
     pw.MemoryImage? appIcon,
     String? allocationNumber,
@@ -4840,7 +4983,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         : strings['doc_type']!;
     final cleanAllocationNumber = allocationNumber?.trim();
     final generatedAt = intl.DateFormat(
-      'dd/MM/yyyy HH:mm',
+      'dd-MM-yyyy HH:mm',
     ).format(DateTime.now());
     final pdfInvoiceNumber = _invoiceNumberForPdf(_invoiceNumber);
     final signingDocumentLabel = _invoiceNumber.isEmpty
@@ -4855,7 +4998,11 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           marginLeft: 1.5 * pdf.PdfPageFormat.cm,
           marginRight: 1.5 * pdf.PdfPageFormat.cm,
         ),
-        theme: pw.ThemeData.withFont(base: font, bold: fontBold),
+        theme: pw.ThemeData.withFont(
+          base: typography.interRegular,
+          bold: typography.interBold,
+          fontFallback: [typography.rubikRegular, pw.Font.helvetica()],
+        ),
         header: (pw.Context context) => pw.Directionality(
           textDirection: pw.TextDirection.rtl,
           child: pw.Column(
@@ -4888,49 +5035,36 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                       child: pw.Column(
                         crossAxisAlignment: pw.CrossAxisAlignment.end,
                         children: [
-                          pw.Text(
-                            docTitle,
-                            style: pw.TextStyle(
-                              fontSize: 28,
-                              fontWeight: pw.FontWeight.bold,
+                          _pdfDocumentTitle(
+                            documentType: docTitle,
+                            documentNumber: pdfInvoiceNumber,
+                            style: typography.documentTitle(
                               color: pdf.PdfColors.blue900,
                             ),
                           ),
                           pw.Text(
                             strings['original']!,
-                            style: pw.TextStyle(
-                              fontSize: 16,
-                              fontWeight: pw.FontWeight.bold,
+                            style: typography.documentSubtitle(
                               color: pdf.PdfColors.blueGrey800,
                             ),
                           ),
                           pw.SizedBox(height: 8),
-                          if (_invoiceNumber.isNotEmpty)
-                            pw.Text(
-                              isInvoice
-                                  ? "${strings['tax_invoice_num']} $pdfInvoiceNumber"
-                                  : "${strings['inv_no']} $_invoiceNumber",
-                              style: pw.TextStyle(
-                                fontWeight: pw.FontWeight.bold,
-                                fontSize: 14,
-                                color: pdf.PdfColors.blueGrey800,
-                              ),
-                            ),
                           if (isInvoice &&
                               cleanAllocationNumber != null &&
                               cleanAllocationNumber.isNotEmpty)
-                            pw.Text(
-                              "${strings['allocation_number'] ?? 'מספר הקצאה מרשות המס'}: $cleanAllocationNumber",
-                              style: pw.TextStyle(
-                                fontWeight: pw.FontWeight.bold,
-                                fontSize: 12,
+                            _pdfLabelValue(
+                              label:
+                                  strings['allocation_number'] ??
+                                  'מספר הקצאה מרשות המס',
+                              value: cleanAllocationNumber,
+                              style: typography.issueDetails(
                                 color: pdf.PdfColors.blueGrey800,
                               ),
                             ),
-                          pw.Text(
-                            "${strings['date']} ${_formattedInvoiceDate()}",
-                            style: pw.TextStyle(
-                              fontSize: 12,
+                          _pdfLabelValue(
+                            label: strings['date']!,
+                            value: _formattedInvoiceDate(),
+                            style: typography.issueDetails(
                               color: pdf.PdfColors.blueGrey800,
                             ),
                           ),
@@ -4977,8 +5111,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                         child: pw.Text(
                                           'הופק ב $generatedAt | $signingDocumentLabel',
                                           textAlign: pw.TextAlign.left,
-                                          style: pw.TextStyle(
-                                            fontSize: 11,
+                                          style: typography.footerHelper(
                                             color: pdf.PdfColors.blueGrey900,
                                           ),
                                         ),
@@ -4994,8 +5127,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                         textDirection: pw.TextDirection.ltr,
                                         child: pw.Text(
                                           '${context.pageNumber} / ${context.pagesCount}',
-                                          style: pw.TextStyle(
-                                            fontSize: 13,
+                                          style: typography.footerPageNumber(
                                             color: pdf.PdfColors.blueGrey700,
                                           ),
                                         ),
@@ -5022,9 +5154,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                     child: pw.Text(
                                       'חתימה דיגיטלית מאובטחת',
                                       textAlign: pw.TextAlign.right,
-                                      style: pw.TextStyle(
-                                        fontSize: 21,
-                                        fontWeight: pw.FontWeight.bold,
+                                      style: typography.footerTitle(
                                         color: pdf.PdfColors.black,
                                       ),
                                     ),
@@ -5051,8 +5181,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                             textDirection: pw.TextDirection.rtl,
                                             child: pw.Text(
                                               'מסמך ממוחשב הופק על ידי הירו',
-                                              style: pw.TextStyle(
-                                                fontSize: 11,
+                                              style: typography.footerHelper(
                                                 color:
                                                     pdf.PdfColors.blueGrey900,
                                               ),
@@ -5098,9 +5227,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                           children: [
                             pw.Text(
                               'פרטי העסק',
-                              style: pw.TextStyle(
-                                fontSize: 16,
-                                fontWeight: pw.FontWeight.bold,
+                              style: typography.cardHeading(
                                 color: pdf.PdfColors.blue900,
                               ),
                             ),
@@ -5109,31 +5236,33 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                               (_businessName == null || _businessName!.isEmpty)
                                   ? widget.workerName
                                   : _businessName!,
-                              style: pw.TextStyle(
-                                fontSize: 15,
-                                fontWeight: pw.FontWeight.bold,
-                              ),
+                              style: typography.cardName(),
                             ),
                             pw.SizedBox(height: 4),
-                            pw.Text(
-                              '${_dealerType == 'company'
+                            _pdfLabelValue(
+                              label: _dealerType == 'company'
                                   ? 'חברה בע״מ'
                                   : _isLicensedDealerType
                                   ? 'עוסק מורשה'
-                                  : 'עוסק פטור'}: ${_businessId ?? ''}',
-                              style: pw.TextStyle(fontSize: 11),
+                                  : 'עוסק פטור',
+                              value: _businessId ?? '',
+                              style: typography.cardDetails(),
                             ),
-                            pw.Text(
-                              'כתובת העסק: ${_businessAddress ?? ''}',
-                              style: pw.TextStyle(fontSize: 11),
+                            _pdfLabelValue(
+                              label: 'כתובת העסק',
+                              value: _businessAddress ?? '',
+                              valueDirection: pw.TextDirection.rtl,
+                              style: typography.cardDetails(),
                             ),
-                            pw.Text(
-                              'טלפון: ${widget.workerPhone ?? ''}',
-                              style: pw.TextStyle(fontSize: 11),
+                            _pdfLabelValue(
+                              label: 'טלפון',
+                              value: widget.workerPhone ?? '',
+                              style: typography.cardDetails(),
                             ),
-                            pw.Text(
-                              'דוא״ל: ${widget.workerEmail ?? ''}',
-                              style: pw.TextStyle(fontSize: 11),
+                            _pdfLabelValue(
+                              label: 'דוא״ל',
+                              value: widget.workerEmail ?? '',
+                              style: typography.cardDetails(),
                             ),
                           ],
                         ),
@@ -5153,39 +5282,41 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                           children: [
                             pw.Text(
                               'פרטי לקוח',
-                              style: pw.TextStyle(
-                                fontSize: 16,
-                                fontWeight: pw.FontWeight.bold,
+                              style: typography.cardHeading(
                                 color: pdf.PdfColors.blue900,
                               ),
                             ),
                             pw.SizedBox(height: 6),
-                            pw.Text(
-                              'לכבוד: ${_clientNameController.text}',
-                              style: pw.TextStyle(
-                                fontSize: 15,
-                                fontWeight: pw.FontWeight.bold,
-                              ),
+                            _pdfLabelValue(
+                              label: 'לכבוד',
+                              value: _clientNameController.text,
+                              valueDirection: pw.TextDirection.rtl,
+                              style: typography.cardName(),
                             ),
                             if (_clientIdController.text.trim().isNotEmpty)
-                              pw.Text(
-                                "${strings['client_id']!}: ${_clientIdController.text.trim()}",
-                                style: pw.TextStyle(fontSize: 11),
+                              _pdfLabelValue(
+                                label: strings['client_id']!,
+                                value: _clientIdController.text.trim(),
+                                style: typography.cardDetails(),
                               ),
                             if (_clientPhoneController.text.isNotEmpty)
-                              pw.Text(
-                                'טלפון: ${_clientPhoneController.text}',
-                                style: pw.TextStyle(fontSize: 11),
+                              _pdfLabelValue(
+                                label: 'טלפון',
+                                value: _clientPhoneController.text,
+                                style: typography.cardDetails(),
                               ),
                             if (_clientEmailController.text.trim().isNotEmpty)
-                              pw.Text(
-                                'דוא״ל: ${_clientEmailController.text.trim()}',
-                                style: pw.TextStyle(fontSize: 11),
+                              _pdfLabelValue(
+                                label: 'דוא״ל',
+                                value: _clientEmailController.text.trim(),
+                                style: typography.cardDetails(),
                               ),
                             if (_clientAddressController.text.isNotEmpty)
-                              pw.Text(
-                                'כתובת: ${_clientAddressController.text}',
-                                style: pw.TextStyle(fontSize: 11),
+                              _pdfLabelValue(
+                                label: 'כתובת',
+                                value: _clientAddressController.text,
+                                valueDirection: pw.TextDirection.rtl,
+                                style: typography.cardDetails(),
                               ),
                           ],
                         ),
@@ -5195,7 +5326,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                 ),
                 pw.SizedBox(height: 28),
                 if (_selectedDocType == 'receipt') ...[
-                  ..._buildPaymentTablesPdf(),
+                  ..._buildPaymentTablesPdf(typography),
                   pw.SizedBox(height: 8),
                 ],
                 if (_selectedDocType != 'receipt') ...[
@@ -5217,16 +5348,14 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                           ],
                         )
                         .toList(),
-                    headerStyle: pw.TextStyle(
-                      fontWeight: pw.FontWeight.bold,
+                    headerStyle: typography.itemHeader(
                       color: pdf.PdfColors.white,
-                      fontSize: 12,
                     ),
                     headerDecoration: const pw.BoxDecoration(
                       color: pdf.PdfColors.blue,
                     ),
                     cellAlignment: pw.Alignment.centerRight,
-                    cellStyle: const pw.TextStyle(fontSize: 11),
+                    cellStyle: typography.itemRow(),
                     columnWidths: {
                       0: const pw.FlexColumnWidth(4),
                       1: const pw.FixedColumnWidth(60),
@@ -5262,11 +5391,11 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                             children: [
                               pw.Text(
                                 strings['subtotal']!,
-                                style: pw.TextStyle(fontSize: 11),
+                                style: typography.totalNormal(),
                               ),
                               pw.Text(
                                 "${_signedSubtotalAmount.toStringAsFixed(2)} ₪",
-                                style: pw.TextStyle(fontSize: 11),
+                                style: typography.totalNormal(),
                               ),
                             ],
                           ),
@@ -5277,11 +5406,11 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                             children: [
                               pw.Text(
                                 _vatLabel(true),
-                                style: pw.TextStyle(fontSize: 11),
+                                style: typography.totalNormal(),
                               ),
                               pw.Text(
                                 "${_signedVatAmount.toStringAsFixed(2)} ₪",
-                                style: pw.TextStyle(fontSize: 11),
+                                style: typography.totalNormal(),
                               ),
                             ],
                           ),
@@ -5297,11 +5426,11 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                             children: [
                               pw.Text(
                                 strings['discount']!,
-                                style: pw.TextStyle(fontSize: 11),
+                                style: typography.totalNormal(),
                               ),
                               pw.Text(
                                 "-${_discountAmount.toStringAsFixed(2)} ₪",
-                                style: pw.TextStyle(fontSize: 11),
+                                style: typography.totalNormal(),
                               ),
                             ],
                           ),
@@ -5317,11 +5446,11 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                             children: [
                               pw.Text(
                                 strings['rounding_amount']!,
-                                style: pw.TextStyle(fontSize: 11),
+                                style: typography.totalNormal(),
                               ),
                               pw.Text(
                                 "${_signedRoundingAmount.toStringAsFixed(2)} ₪",
-                                style: pw.TextStyle(fontSize: 11),
+                                style: typography.totalNormal(),
                               ),
                             ],
                           ),
@@ -5337,17 +5466,13 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                               _selectedDocType == 'receipt'
                                   ? 'סה״כ שולם'
                                   : strings['total']!,
-                              style: pw.TextStyle(
-                                fontSize: 15,
-                                fontWeight: pw.FontWeight.bold,
+                              style: typography.finalTotal(
                                 color: pdf.PdfColors.blue900,
                               ),
                             ),
                             pw.Text(
                               "${_signedTotalAmount.toStringAsFixed(2)} ₪",
-                              style: pw.TextStyle(
-                                fontSize: 15,
-                                fontWeight: pw.FontWeight.bold,
+                              style: typography.finalTotal(
                                 color: pdf.PdfColors.blue900,
                               ),
                             ),
@@ -5362,16 +5487,13 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                             children: [
                               pw.Text(
                                 strings['payment_due_date']!,
-                                style: pw.TextStyle(
-                                  fontSize: 11,
+                                style: typography.dueDate(
                                   color: pdf.PdfColors.blueGrey800,
                                 ),
                               ),
                               pw.Text(
                                 _formattedPaymentDueDate(),
-                                style: pw.TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: pw.FontWeight.bold,
+                                style: typography.dueDate(
                                   color: pdf.PdfColors.blueGrey800,
                                 ),
                               ),
@@ -5384,14 +5506,12 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                 ),
                 if (_selectedDocType == 'invoice_receipt') ...[
                   pw.SizedBox(height: 18),
-                  ..._buildPaymentTablesPdf(),
+                  ..._buildPaymentTablesPdf(typography),
                 ],
                 if (_notesController.text.isNotEmpty) ...[
                   pw.Text(
                     strings['notes']!,
-                    style: pw.TextStyle(
-                      fontWeight: pw.FontWeight.bold,
-                      fontSize: 11,
+                    style: typography.notesHeading(
                       color: pdf.PdfColors.blue900,
                     ),
                   ),
@@ -5406,7 +5526,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                     ),
                     child: pw.Text(
                       _notesController.text,
-                      style: const pw.TextStyle(fontSize: 11),
+                      style: typography.notesContent(),
                     ),
                   ),
                   pw.SizedBox(height: 16),
@@ -5426,8 +5546,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                   children: [
                     pw.Text(
                       'חתימה:',
-                      style: pw.TextStyle(
-                        fontSize: 10,
+                      style: typography.dueDate(
                         color: pdf.PdfColors.blueGrey800,
                       ),
                     ),
