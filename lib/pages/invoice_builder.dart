@@ -2613,7 +2613,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
               'חשוב להזין את המספר הנכון. אם תזין מספר שגוי, האחריות היא שלך ולא תוכל לשנות אותו אחר כך.',
           'doc_start_field': 'מספר פתיחה',
           'doc_start_invalid': 'יש להזין מספר תקין גדול מ-0',
-          'allocation_number': 'מספר הקצאה מרשות המס',
+          'allocation_number': 'מספר הקצאה',
           'tax_authority_connect_title': 'חיבור לרשות המסים',
           'tax_authority_connect_message':
               'הסכום לפני מע"מ מחייב מספר הקצאה מרשות המסים. כדי לקבל אותו יש להתחבר לרשות המסים.',
@@ -5138,8 +5138,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                               cleanAllocationNumber.isNotEmpty)
                             _pdfLabelValue(
                               label:
-                                  strings['allocation_number'] ??
-                                  'מספר הקצאה מרשות המס',
+                                  strings['allocation_number'] ?? 'מספר הקצאה',
                               value: cleanAllocationNumber,
                               style: typography.issueDetails(
                                 color: pdf.PdfColors.blueGrey800,
