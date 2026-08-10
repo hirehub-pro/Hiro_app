@@ -17,6 +17,13 @@ const logger = require("firebase-functions/logger");
 const {google} = require("googleapis");
 const {Resend} = require("resend");
 const {
+  buildFailedInvoiceEmailUpdate,
+  buildInvoiceEmailDeliveries,
+  buildSentInvoiceEmailUpdate,
+  isTerminalInvoiceEmailStatus,
+  sendInvoiceEmailDeliveries,
+} = require("./email_saved_invoice");
+const {
   AppStoreServerAPIClient,
   AutoRenewStatus,
   Environment,
@@ -567,22 +574,27 @@ exports.taxesOAuthCallback = onRequest(
             ip: normalizeString(req.ip).slice(0, 80),
           });
 
-      await db
-          .collection("taxAuthorityOAuthTokens")
-          .doc(userId)
-          .set({
-            ...tokenResponse,
-            userId,
-            businessId,
-            callbackId: docRef.id,
-            updatedAt: now,
-            environment: "sandbox",
-            expiresAt: tokenResponse.expires_in ?
-              admin.firestore.Timestamp.fromDate(
-                  addSeconds(new Date(), Number(tokenResponse.expires_in)),
-              ) :
-              null,
-          }, {merge: true});
+      const tokenRecord = {
+        ...tokenResponse,
+        connected: true,
+        userId,
+        businessId,
+        callbackId: docRef.id,
+        updatedAt: now,
+        environment: "sandbox",
+        disconnectedAt: admin.firestore.FieldValue.delete(),
+        disconnectReason: admin.firestore.FieldValue.delete(),
+        expiresAt: tokenResponse.expires_in ?
+          admin.firestore.Timestamp.fromDate(
+              addSeconds(new Date(), Number(tokenResponse.expires_in)),
+          ) :
+          null,
+      };
+      const tokenRefs = taxAuthorityTokenRefs(userId);
+      const tokenBatch = db.batch();
+      tokenBatch.set(tokenRefs.userOAuthRef, tokenRecord, {merge: true});
+      tokenBatch.set(tokenRefs.secureTokenRef, tokenRecord, {merge: true});
+      await tokenBatch.commit();
       await docRef.update({consumedAt: admin.firestore.Timestamp.now()});
 
       logger.info("Stored Tax Authority OAuth callback code", {
@@ -671,28 +683,78 @@ exports.getTaxAuthorityConnectionStatus = onCall(
         };
       }
 
-      const tokenSnap = await admin.firestore()
-          .collection("taxAuthorityOAuthTokens")
-          .doc(request.auth.uid)
-          .get();
+      const tokenDocuments = await loadTaxAuthorityTokenDocuments(
+          request.auth.uid,
+      );
+      const tokenSnap = tokenDocuments.activeSnap;
       const data = tokenSnap.data() || {};
       const hasAccessToken =
         normalizeString(data.access_token).trim().length > 0;
-      const hasRefreshToken =
-        normalizeString(data.refresh_token).trim().length > 0;
       const tokenBusinessId = normalizeBusinessId(data.businessId);
-      const expiresAt = toIsoString(data.expiresAt);
+      const expiresAtDate = toDate(data.expiresAt);
+      const expiresAt = expiresAtDate?.toISOString() || null;
+      const expiryMissing = !expiresAtDate;
+      const expired = expiresAtDate != null &&
+        expiresAtDate.getTime() <= Date.now();
+      const businessIdMismatch =
+        tokenSnap.exists && tokenBusinessId !== businessId;
+      const connected =
+        tokenSnap.exists &&
+        !businessIdMismatch &&
+        hasAccessToken &&
+        !expiryMissing &&
+        !expired;
+      const connectionFlagNeedsUpdate =
+        (tokenDocuments.userOAuthSnap.exists &&
+          tokenDocuments.userOAuthSnap.data()?.connected !== false) ||
+        (tokenDocuments.secureTokenSnap.exists &&
+          tokenDocuments.secureTokenSnap.data()?.connected !== false);
+
+      if (tokenSnap.exists && !connected && connectionFlagNeedsUpdate) {
+        const disconnectedUpdate = {
+          connected: false,
+          disconnectedAt: admin.firestore.FieldValue.serverTimestamp(),
+          disconnectReason: expired ?
+            "token-expired" :
+            expiryMissing ?
+              "token-expiry-missing" :
+              businessIdMismatch ?
+                "business-id-mismatch" :
+                "access-token-missing",
+        };
+        const batch = admin.firestore().batch();
+        if (tokenDocuments.userOAuthSnap.exists) {
+          batch.set(
+              tokenDocuments.userOAuthRef,
+              disconnectedUpdate,
+              {merge: true},
+          );
+        }
+        if (tokenDocuments.secureTokenSnap.exists) {
+          batch.set(
+              tokenDocuments.secureTokenRef,
+              disconnectedUpdate,
+              {merge: true},
+          );
+        }
+        await batch.commit();
+      }
 
       return {
-        connected:
-          tokenSnap.exists &&
-          tokenBusinessId === businessId &&
-          (hasAccessToken || hasRefreshToken),
+        connected,
         environment: "sandbox",
         expiresAt,
-        reason: tokenSnap.exists && tokenBusinessId !== businessId ?
-          "business-id-mismatch" :
-          null,
+        reason: !tokenSnap.exists ?
+          "not-connected" :
+          expired ?
+            "token-expired" :
+            expiryMissing ?
+              "token-expiry-missing" :
+              businessIdMismatch ?
+                "business-id-mismatch" :
+                !hasAccessToken ?
+                  "access-token-missing" :
+                  null,
       };
     },
 );
@@ -1091,8 +1153,7 @@ exports.emailSavedInvoice = onDocumentWritten(
         const status = normalizeString(
             latest.data()?.invoiceEmailStatus,
         ).trim();
-        if (status === "sending" || status === "sent" ||
-            status === "skipped" || status === "failed") {
+        if (isTerminalInvoiceEmailStatus(status)) {
           return false;
         }
         transaction.update(invoiceRef, {
@@ -1124,23 +1185,12 @@ exports.emailSavedInvoice = onDocumentWritten(
         ).trim() || "הירו";
         const clientName =
           normalizeString(invoice.clientName).trim() || "לקוח";
-        const deliveries = [];
-        if (ownerEmail) {
-          deliveries.push({
-            email: ownerEmail,
-            subjectName: clientName,
-            subjectPreposition: "ל",
-            type: "owner",
-          });
-        }
-        if (clientEmail && clientEmail !== ownerEmail) {
-          deliveries.push({
-            email: clientEmail,
-            subjectName: businessName,
-            subjectPreposition: "מ",
-            type: "client",
-          });
-        }
+        const deliveries = buildInvoiceEmailDeliveries({
+          ownerEmail,
+          clientEmail,
+          clientName,
+          businessName,
+        });
         if (deliveries.length === 0) {
           await invoiceRef.update({
             invoiceEmailStatus: "skipped",
@@ -1162,71 +1212,72 @@ exports.emailSavedInvoice = onDocumentWritten(
             bucket.file(EMAIL_APP_STORE_BADGE_STORAGE_PATH).download(),
             bucket.file(EMAIL_GOOGLE_PLAY_BADGE_STORAGE_PATH).download(),
           ]);
-        const documentName = normalizeString(invoice.name).trim() || "Invoice";
         const downloadUrl = normalizeString(invoice.url).trim();
         const resend = new Resend(RESEND_API_KEY.value());
-        const emailIds = [];
-        for (const delivery of deliveries) {
-          const emailText = delivery.type === "client" ?
-            buildClientInvoiceEmailText(invoice, clientName, businessName) :
-            clientEmail ?
-              buildOwnerInvoiceEmailText(
-                  invoice, userName, clientName, clientEmail,
-              ) :
-              buildOwnerInvoiceWithoutClientEmailText(invoice, userName);
-          const emailHtml = delivery.type === "client" ?
-            buildClientInvoiceEmailHtml(
-                invoice, clientName, businessName, downloadUrl, fileName,
-            ) :
-            clientEmail ?
-              buildOwnerInvoiceEmailHtml(
-                  invoice, userName, clientName, clientEmail,
-                  downloadUrl, fileName,
-              ) :
-              buildOwnerInvoiceWithoutClientEmailHtml(
-                  invoice, userName, downloadUrl, fileName,
-              );
-          const {data, error} = await resend.emails.send({
-            from: RESEND_FROM_EMAIL.value(),
-            to: [delivery.email],
-            subject: buildInvoiceEmailSubject(
-                invoice, delivery.subjectName, delivery.subjectPreposition,
-            ),
-            text: emailText,
-            html: emailHtml,
-            attachments: [
-              {filename: fileName, content: pdfBytes},
-              {
-                filename: "hiro-app-icon.png",
-                content: appIconBytes,
-                contentId: "hiro-app-icon",
-              },
-              {
-                filename: "app-store-badge.svg",
-                content: appStoreBadgeBytes,
-                contentId: "app-store-badge",
-              },
-              {
-                filename: "google-play-badge.png",
-                content: googlePlayBadgeBytes,
-                contentId: "google-play-badge",
-              },
-            ],
-          }, {
-            idempotencyKey:
-              `invoice-email/${userId}/${event.params.invoiceId}/${delivery.type}`,
-          });
-          if (error) throw new Error(error.message || "Resend rejected the email.");
-          if (data?.id) emailIds.push(data.id);
-        }
+        const emailIds = await sendInvoiceEmailDeliveries(
+            deliveries,
+            async (delivery) => {
+              const emailText = delivery.type === "client" ?
+                buildClientInvoiceEmailText(invoice, clientName, businessName) :
+                clientEmail ?
+                  buildOwnerInvoiceEmailText(
+                      invoice, userName, clientName, clientEmail,
+                  ) :
+                  buildOwnerInvoiceWithoutClientEmailText(invoice, userName);
+              const emailHtml = delivery.type === "client" ?
+                buildClientInvoiceEmailHtml(
+                    invoice, clientName, businessName, downloadUrl, fileName,
+                ) :
+                clientEmail ?
+                  buildOwnerInvoiceEmailHtml(
+                      invoice, userName, clientName, clientEmail,
+                      downloadUrl, fileName,
+                  ) :
+                  buildOwnerInvoiceWithoutClientEmailHtml(
+                      invoice, userName, downloadUrl, fileName,
+                  );
+              const {data, error} = await resend.emails.send({
+                from: RESEND_FROM_EMAIL.value(),
+                to: [delivery.email],
+                subject: buildInvoiceEmailSubject(
+                    invoice, delivery.subjectName, delivery.subjectPreposition,
+                ),
+                text: emailText,
+                html: emailHtml,
+                attachments: [
+                  {filename: fileName, content: pdfBytes},
+                  {
+                    filename: "hiro-app-icon.png",
+                    content: appIconBytes,
+                    contentId: "hiro-app-icon",
+                  },
+                  {
+                    filename: "app-store-badge.svg",
+                    content: appStoreBadgeBytes,
+                    contentId: "app-store-badge",
+                  },
+                  {
+                    filename: "google-play-badge.png",
+                    content: googlePlayBadgeBytes,
+                    contentId: "google-play-badge",
+                  },
+                ],
+              }, {
+                idempotencyKey:
+                  `invoice-email/${userId}/${event.params.invoiceId}/${delivery.type}`,
+              });
+              if (error) {
+                throw new Error(error.message || "Resend rejected the email.");
+              }
+              return data?.id || null;
+            },
+        );
 
-        await invoiceRef.update({
-          invoiceEmailStatus: "sent",
-          invoiceEmailSentAt: admin.firestore.FieldValue.serverTimestamp(),
-          invoiceEmailId: emailIds[0] || null,
-          invoiceEmailIds: emailIds,
-          invoiceEmailError: admin.firestore.FieldValue.delete(),
-        });
+        await invoiceRef.update(buildSentInvoiceEmailUpdate(
+            emailIds,
+            admin.firestore.FieldValue.serverTimestamp(),
+            admin.firestore.FieldValue.delete(),
+        ));
         logger.info("Invoice email sent", {
           invoiceId: event.params.invoiceId,
           recipientCount: deliveries.length,
@@ -1236,10 +1287,7 @@ exports.emailSavedInvoice = onDocumentWritten(
           invoiceId: event.params.invoiceId,
           error: error instanceof Error ? error.message : String(error),
         });
-        await invoiceRef.update({
-          invoiceEmailStatus: "failed",
-          invoiceEmailError: error instanceof Error ? error.message : String(error),
-        });
+        await invoiceRef.update(buildFailedInvoiceEmailUpdate(error));
       }
     },
 );
@@ -3069,28 +3117,9 @@ async function postTaxAuthorityTokenForm(params, operationName) {
   throw lastError || new Error(`Tax Authority ${operationName} failed.`);
 }
 
-async function refreshTaxAuthorityToken(refreshToken) {
-  const params = new URLSearchParams();
-  params.set("grant_type", "refresh_token");
-  params.set("client_id", TAX_AUTH_CLIENT_ID.value());
-  params.set("client_secret", TAX_AUTH_CLIENT_SECRET.value());
-  params.set("refresh_token", refreshToken);
-
-  try {
-    return await postTaxAuthorityTokenForm(params, "token refresh");
-  } catch (error) {
-    throw new HttpsError(
-        "failed-precondition",
-        "Tax Authority token refresh failed.",
-    );
-  }
-}
-
 async function getTaxAuthorityTokenData(userId, businessId) {
-  const tokenRef = admin.firestore()
-      .collection("taxAuthorityOAuthTokens")
-      .doc(userId);
-  const tokenSnap = await tokenRef.get();
+  const tokenDocuments = await loadTaxAuthorityTokenDocuments(userId);
+  const tokenSnap = tokenDocuments.activeSnap;
   if (!tokenSnap.exists) {
     throw new HttpsError(
         "failed-precondition",
@@ -3116,27 +3145,65 @@ async function getTaxAuthorityTokenData(userId, businessId) {
   }
 
   const expiresAt = toDate(tokenData.expiresAt);
-  const refreshToken = normalizeString(tokenData.refresh_token).trim();
-  const refreshWindow = addSeconds(new Date(), 60);
-  if (!expiresAt || expiresAt > refreshWindow || !refreshToken) {
-    return {accessToken, tokenData};
+  if (!expiresAt || expiresAt.getTime() <= Date.now()) {
+    const disconnectedUpdate = {
+      connected: false,
+      disconnectedAt: admin.firestore.FieldValue.serverTimestamp(),
+      disconnectReason: expiresAt ?
+        "token-expired" :
+        "token-expiry-missing",
+    };
+    const batch = admin.firestore().batch();
+    if (tokenDocuments.userOAuthSnap.exists) {
+      batch.set(
+          tokenDocuments.userOAuthRef,
+          disconnectedUpdate,
+          {merge: true},
+      );
+    }
+    if (tokenDocuments.secureTokenSnap.exists) {
+      batch.set(
+          tokenDocuments.secureTokenRef,
+          disconnectedUpdate,
+          {merge: true},
+      );
+    }
+    await batch.commit();
+    throw new HttpsError(
+        "failed-precondition",
+        "Tax Authority OAuth authorization has expired. " +
+        "Reconnect your account.",
+    );
   }
 
-  const refreshed = await refreshTaxAuthorityToken(refreshToken);
-  await tokenRef.set({
-    ...refreshed,
-    updatedAt: admin.firestore.Timestamp.now(),
-    environment: "sandbox",
-    expiresAt: refreshed.expires_in ?
-      admin.firestore.Timestamp.fromDate(
-          addSeconds(new Date(), Number(refreshed.expires_in)),
-      ) :
-      null,
-  }, {merge: true});
+  return {accessToken, tokenData};
+}
 
+function taxAuthorityTokenRefs(userId) {
+  const db = admin.firestore();
+  const userOAuthRef = db
+      .collection("users")
+      .doc(userId)
+      .collection("tax_authority")
+      .doc("oauth");
+  const secureTokenRef = db
+      .collection("taxAuthorityOAuthTokens")
+      .doc(userId);
+  return {userOAuthRef, secureTokenRef};
+}
+
+async function loadTaxAuthorityTokenDocuments(userId) {
+  const {userOAuthRef, secureTokenRef} = taxAuthorityTokenRefs(userId);
+  const [userOAuthSnap, secureTokenSnap] = await Promise.all([
+    userOAuthRef.get(),
+    secureTokenRef.get(),
+  ]);
   return {
-    accessToken: normalizeString(refreshed.access_token).trim(),
-    tokenData: refreshed,
+    userOAuthRef,
+    secureTokenRef,
+    userOAuthSnap,
+    secureTokenSnap,
+    activeSnap: userOAuthSnap.exists ? userOAuthSnap : secureTokenSnap,
   };
 }
 

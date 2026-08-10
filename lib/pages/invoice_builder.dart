@@ -1448,6 +1448,48 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     return digits;
   }
 
+  String _friendlyIdentityVerificationError(
+    Object error, {
+    required bool sendingCode,
+  }) {
+    if (error is FirebaseFunctionsException) {
+      switch (error.code) {
+        case 'resource-exhausted':
+          return sendingCode
+              ? 'A verification code was requested recently. Please wait one minute and try again.'
+              : 'Too many attempts. Please wait one minute and try again.';
+        case 'unauthenticated':
+          return 'Your sign-in session has expired. Please sign in again.';
+        case 'permission-denied':
+          return 'We could not confirm that this account belongs to you.';
+        case 'invalid-argument':
+          return sendingCode
+              ? 'Please check your details and try again.'
+              : 'Enter the six-digit code from your email.';
+        case 'failed-precondition':
+          return sendingCode
+              ? 'We cannot send a verification code right now. Please try again shortly.'
+              : 'This verification code is no longer valid. Request a new code.';
+        case 'unavailable':
+        case 'deadline-exceeded':
+        case 'internal':
+          return 'The verification service is temporarily unavailable. Please try again.';
+        default:
+          return sendingCode
+              ? 'We could not send the verification code. Please try again.'
+              : 'We could not verify that code. Please try again.';
+      }
+    }
+
+    if (error is StateError) {
+      return error.message.toString();
+    }
+
+    return sendingCode
+        ? 'We could not send the verification code. Please try again.'
+        : 'We could not verify that code. Please try again.';
+  }
+
   Future<void> _verifyIdentityForInvoiceBuilder() async {
     if (_isVerifyingIdentity) return;
 
@@ -1526,13 +1568,22 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
             ? 'The password is incorrect. Please try again.'
             : error.message ?? 'We could not verify your identity.';
       });
+    } on FirebaseFunctionsException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _isVerifyingIdentity = false;
+        _identityVerificationError = _friendlyIdentityVerificationError(
+          error,
+          sendingCode: true,
+        );
+      });
     } catch (error) {
       if (!mounted) return;
       setState(() {
         _isVerifyingIdentity = false;
-        _identityVerificationError = error.toString().replaceFirst(
-          'Bad state: ',
-          '',
+        _identityVerificationError = _friendlyIdentityVerificationError(
+          error,
+          sendingCode: true,
         );
       });
     }
@@ -1574,14 +1625,19 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       if (!mounted) return;
       setState(() {
         _isVerifyingIdentity = false;
-        _identityVerificationError =
-            error.message ?? 'We could not verify that code.';
+        _identityVerificationError = _friendlyIdentityVerificationError(
+          error,
+          sendingCode: false,
+        );
       });
-    } catch (_) {
+    } catch (error) {
       if (!mounted) return;
       setState(() {
         _isVerifyingIdentity = false;
-        _identityVerificationError = 'We could not verify that code.';
+        _identityVerificationError = _friendlyIdentityVerificationError(
+          error,
+          sendingCode: false,
+        );
       });
     }
   }
@@ -1696,11 +1752,39 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                         ),
                       ],
                       if (_identityVerificationError != null) ...[
-                        const SizedBox(height: 12),
-                        Text(
-                          _identityVerificationError!,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(color: Colors.red),
+                        const SizedBox(height: 16),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 12,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFEF2F2),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: const Color(0xFFFECACA)),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Icon(
+                                Icons.info_outline_rounded,
+                                color: Color(0xFFDC2626),
+                                size: 21,
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  _identityVerificationError!,
+                                  style: const TextStyle(
+                                    color: Color(0xFF991B1B),
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                    height: 1.35,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ],
                       const SizedBox(height: 24),
@@ -7604,6 +7688,163 @@ class _InvoicePreviewPageState extends State<InvoicePreviewPage> {
     }
   }
 
+  Widget _buildTaxAuthorityConnectionSheet(
+    BuildContext sheetContext, {
+    required bool isRtl,
+    required bool requiredForSave,
+  }) {
+    final title = isRtl ? 'חיבור לרשות המסים' : 'Connect to the Tax Authority';
+    final message = requiredForSave
+        ? (isRtl
+              ? 'כדי לשמור את החשבונית צריך לקבל מספר הקצאה. יש להשלים את החיבור לרשות המסים וללחוץ שוב על שמור.'
+              : 'To save this invoice, you need an allocation number. Complete the Tax Authority connection, then press Save again.')
+        : (isRtl
+              ? 'החשבונית הזו מחייבת מספר הקצאה מרשות המסים. התחברו כדי לקבל אותו ולהמשיך בתהליך.'
+              : 'This invoice requires a Tax Authority allocation number. Connect to receive it and continue.');
+    final secondaryLabel = requiredForSave
+        ? (isRtl ? 'לא עכשיו' : 'Not now')
+        : (isRtl ? 'להמשיך בלי חיבור' : 'Continue without connecting');
+
+    return SafeArea(
+      top: false,
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(24, 10, 24, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Align(
+              child: Container(
+                width: 42,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFCBD5E1),
+                  borderRadius: BorderRadius.circular(99),
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+            Align(
+              child: Container(
+                width: 68,
+                height: 68,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEFF6FF),
+                  borderRadius: BorderRadius.circular(22),
+                  border: Border.all(color: const Color(0xFFBFDBFE)),
+                ),
+                child: const Icon(
+                  Icons.account_balance_rounded,
+                  color: Color(0xFF1976D2),
+                  size: 34,
+                ),
+              ),
+            ),
+            const SizedBox(height: 18),
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Color(0xFF0F172A),
+                fontSize: 23,
+                fontWeight: FontWeight.w800,
+                height: 1.2,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Color(0xFF475569),
+                fontSize: 15,
+                fontWeight: FontWeight.w500,
+                height: 1.55,
+              ),
+            ),
+            const SizedBox(height: 20),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF0F9FF),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFFBAE6FD)),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 34,
+                    height: 34,
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.open_in_new_rounded,
+                      color: Color(0xFF0284C7),
+                      size: 18,
+                    ),
+                  ),
+                  const SizedBox(width: 11),
+                  Expanded(
+                    child: Text(
+                      isRtl
+                          ? 'ייפתח עמוד מאובטח של רשות המסים. לאחר השלמת החיבור חזרו ל-Hiro.'
+                          : 'A secure Tax Authority page will open. Return to Hiro after completing the connection.',
+                      style: const TextStyle(
+                        color: Color(0xFF075985),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        height: 1.45,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 22),
+            FilledButton.icon(
+              onPressed: () => Navigator.pop(sheetContext, true),
+              icon: const Icon(Icons.link_rounded, size: 21),
+              label: Text(
+                isRtl ? 'התחברות לרשות המסים' : 'Connect to Tax Authority',
+              ),
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFF1976D2),
+                foregroundColor: Colors.white,
+                minimumSize: const Size.fromHeight(54),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                textStyle: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            TextButton(
+              onPressed: () => Navigator.pop(sheetContext, false),
+              style: TextButton.styleFrom(
+                foregroundColor: const Color(0xFF64748B),
+                minimumSize: const Size.fromHeight(46),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                textStyle: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              child: Text(secondaryLabel),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<bool> _showTaxAuthorityConnectionPromptIfNeeded({
     bool requiredForSave = false,
   }) async {
@@ -7623,37 +7864,21 @@ class _InvoicePreviewPageState extends State<InvoicePreviewPage> {
             ).locale.languageCode ==
             'ar';
 
-    final shouldConnect = await showDialog<bool>(
+    final shouldConnect = await showModalBottomSheet<bool>(
       context: context,
-      builder: (dialogContext) => Directionality(
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      barrierColor: Colors.black.withValues(alpha: 0.48),
+      clipBehavior: Clip.antiAlias,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
+      ),
+      builder: (sheetContext) => Directionality(
         textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
-        child: AlertDialog(
-          title: Text(
-            isRtl ? 'חיבור לרשות המסים' : 'Connect to the Tax Authority',
-          ),
-          content: Text(
-            requiredForSave
-                ? (isRtl
-                      ? 'אי אפשר לשמור את החשבונית לפני קבלת מספר הקצאה. השלם חיבור לרשות המסים ואז לחץ שמור שוב.'
-                      : 'This invoice cannot be saved before receiving an allocation number. Complete the Tax Authority connection, then press Save again.')
-                : (isRtl
-                      ? 'הסכום לפני מע"מ מחייב מספר הקצאה מרשות המסים. כדי לקבל אותו יש להתחבר לרשות המסים.'
-                      : 'This amount before VAT requires a Tax Authority allocation number. Connect to request it.'),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: Text(
-                requiredForSave
-                    ? (isRtl ? 'ביטול' : 'Cancel')
-                    : (isRtl ? 'להמשיך בלי חיבור' : 'Continue without it'),
-              ),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: Text(isRtl ? 'התחבר לרשות המסים' : 'Connect'),
-            ),
-          ],
+        child: _buildTaxAuthorityConnectionSheet(
+          sheetContext,
+          isRtl: isRtl,
+          requiredForSave: requiredForSave,
         ),
       ),
     );
