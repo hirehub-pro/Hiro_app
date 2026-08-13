@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:archive/archive_io.dart';
@@ -691,26 +692,24 @@ class _SettingsPageState extends State<SettingsPage>
       child: pw.Column(
         crossAxisAlignment: pw.CrossAxisAlignment.stretch,
         children: [
-          pw.Align(
-            alignment: pw.Alignment.centerRight,
-            child: pw.Text(
-              'פלט מודפס לפי המבנה הנדרש בסעיף 2.6',
-              style: pw.TextStyle(
-                font: font,
-                fontSize: 14,
-                fontWeight: pw.FontWeight.bold,
-              ),
-            ),
+          pw.Text(
+            'מספר עוסק מורשה: ${summary.businessNumber}',
+            textAlign: pw.TextAlign.right,
+            style: pw.TextStyle(font: font, fontSize: 14),
           ),
           pw.SizedBox(height: 6),
-          pw.Align(
-            alignment: pw.Alignment.centerRight,
-            child: pw.Text(
-              '${summary.businessName} | ח.פ. ${summary.businessNumber} | $displayFromDate-$displayToDate',
-              style: pw.TextStyle(font: font, fontSize: 10),
-            ),
+          pw.Text(
+            'שם בית העסק: ${summary.businessName}',
+            textAlign: pw.TextAlign.right,
+            style: pw.TextStyle(font: font, fontSize: 14),
           ),
-          pw.SizedBox(height: 8),
+          pw.SizedBox(height: 6),
+          pw.Text(
+            'טווח תאריכי הנתונים: $displayFromDate-$displayToDate',
+            textAlign: pw.TextAlign.right,
+            style: pw.TextStyle(font: font, fontSize: 14),
+          ),
+          pw.SizedBox(height: 12),
           pw.Table(
             border: pw.TableBorder.all(width: 0.6),
             columnWidths: const {
@@ -1059,6 +1058,10 @@ class _SettingsPageState extends State<SettingsPage>
     final user = FirebaseAuth.instance.currentUser;
     if (user == null || _isGeneratingUniformFiles) return;
 
+    ValueNotifier<_UniformExportProgress>? exportProgress;
+    BuildContext? progressDialogContext;
+    Future<void>? progressDialogFuture;
+
     try {
       final recipientEmail = await _promptExportEmail();
       if (recipientEmail == null || !mounted) return;
@@ -1067,6 +1070,19 @@ class _SettingsPageState extends State<SettingsPage>
       if (selectedRange == null || !mounted) return;
 
       setState(() => _isGeneratingUniformFiles = true);
+      exportProgress = ValueNotifier(
+        const _UniformExportProgress(
+          value: 0.04,
+          status: 'Preparing your export…',
+        ),
+      );
+      progressDialogFuture = _showUniformExportProgressDialog(
+        exportProgress,
+        onDialogBuilt: (dialogContext) {
+          progressDialogContext = dialogContext;
+        },
+      );
+      await Future<void>.delayed(Duration.zero);
 
       final fromDate = _formatCompactDate(selectedRange.start);
       final toDate = _formatCompactDate(selectedRange.end);
@@ -1086,6 +1102,11 @@ class _SettingsPageState extends State<SettingsPage>
               : 'No BKMV files were generated for this range.',
         );
       }
+
+      exportProgress.value = const _UniformExportProgress(
+        value: 0.38,
+        status: 'Creating PDF reports…',
+      );
 
       final font = await _loadPdfFont();
       final timestamp = DateTime.now();
@@ -1125,6 +1146,10 @@ class _SettingsPageState extends State<SettingsPage>
         flush: true,
       );
       await annex4File.writeAsBytes(await annex4Doc.save(), flush: true);
+      exportProgress.value = const _UniformExportProgress(
+        value: 0.56,
+        status: 'Packaging BKMVDATA files…',
+      );
       final openFrmtZip = await _buildOpenFrmtZip(
         packages: result.packages,
         stamp: stamp,
@@ -1133,13 +1158,15 @@ class _SettingsPageState extends State<SettingsPage>
       final exportFolder =
           'users/${user.uid}/uniform_exports/$stamp-${DateTime.now().microsecondsSinceEpoch}';
       final storage = firebase_storage.FirebaseStorage.instance;
-      final uploadedPaths = await Future.wait(
-        exportFiles.map((file) async {
-          final fileName = file.uri.pathSegments.last;
-          final ref = storage.ref().child('$exportFolder/$fileName');
-          await ref.putFile(file);
-          return ref.fullPath;
-        }),
+      exportProgress.value = const _UniformExportProgress(
+        value: 0.62,
+        status: 'Uploading files securely…',
+      );
+      final uploadedPaths = await _uploadUniformExportFiles(
+        files: exportFiles,
+        storage: storage,
+        exportFolder: exportFolder,
+        progress: exportProgress,
       );
       // Refresh the Firebase Auth token before the callable request. This makes
       // the function receive request.auth even after a long export operation.
@@ -1149,12 +1176,22 @@ class _SettingsPageState extends State<SettingsPage>
       if (idToken == null || idToken.isEmpty) {
         throw StateError('יש להתחבר מחדש כדי לשלוח את קובצי הייצוא.');
       }
+      exportProgress.value = const _UniformExportProgress(
+        value: 0.93,
+        status: 'Sending the files to your email…',
+      );
       await FirebaseFunctions.instanceFor(
         region: 'us-central1',
       ).httpsCallable('sendUniformFilesEmail').call(<String, dynamic>{
         'recipientEmail': recipientEmail,
         'filePaths': uploadedPaths,
       });
+
+      exportProgress.value = const _UniformExportProgress(
+        value: 1,
+        status: 'Your export is ready!',
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 450));
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1168,10 +1205,201 @@ class _SettingsPageState extends State<SettingsPage>
         SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
       );
     } finally {
+      final dialogContext = progressDialogContext;
+      if (dialogContext != null && dialogContext.mounted) {
+        Navigator.of(dialogContext).pop();
+      }
+      if (progressDialogFuture != null) {
+        await progressDialogFuture;
+      }
+      exportProgress?.dispose();
       if (mounted) {
         setState(() => _isGeneratingUniformFiles = false);
       }
     }
+  }
+
+  Future<List<String>> _uploadUniformExportFiles({
+    required List<File> files,
+    required firebase_storage.FirebaseStorage storage,
+    required String exportFolder,
+    required ValueNotifier<_UniformExportProgress> progress,
+  }) async {
+    final uploadedPaths = <String>[];
+    final fileSizes = await Future.wait(files.map((file) => file.length()));
+    final totalBytes = fileSizes.fold<int>(0, (total, size) => total + size);
+    var completedBytes = 0;
+
+    for (var index = 0; index < files.length; index++) {
+      final file = files[index];
+      final fileName = file.uri.pathSegments.last;
+      final ref = storage.ref().child('$exportFolder/$fileName');
+      final task = ref.putFile(file);
+      final subscription = task.snapshotEvents.listen((snapshot) {
+        final transferredBytes = completedBytes + snapshot.bytesTransferred;
+        final uploadFraction = totalBytes == 0
+            ? (index + 1) / files.length
+            : transferredBytes / totalBytes;
+        progress.value = _UniformExportProgress(
+          value: 0.62 + (uploadFraction.clamp(0.0, 1.0) * 0.28),
+          status: 'Uploading file ${index + 1} of ${files.length}…',
+        );
+      });
+
+      try {
+        await task;
+      } finally {
+        await subscription.cancel();
+      }
+      completedBytes += fileSizes[index];
+      uploadedPaths.add(ref.fullPath);
+    }
+
+    return uploadedPaths;
+  }
+
+  Future<void> _showUniformExportProgressDialog(
+    ValueListenable<_UniformExportProgress> progress, {
+    required ValueChanged<BuildContext> onDialogBuilt,
+  }) {
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        onDialogBuilt(dialogContext);
+        return PopScope(
+          canPop: false,
+          child: Dialog(
+            insetPadding: const EdgeInsets.symmetric(horizontal: 28),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(28),
+            ),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(26, 28, 26, 24),
+                child: ValueListenableBuilder<_UniformExportProgress>(
+                  valueListenable: progress,
+                  builder: (context, state, _) {
+                    final percentage = (state.value * 100).round();
+                    final isComplete = state.value >= 1;
+                    return Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 250),
+                          width: 66,
+                          height: 66,
+                          decoration: BoxDecoration(
+                            color: isComplete
+                                ? const Color(0xFFE8F7EF)
+                                : const Color(0xFFEAF3FF),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            isComplete
+                                ? Icons.check_rounded
+                                : Icons.cloud_upload_rounded,
+                            size: 32,
+                            color: isComplete
+                                ? const Color(0xFF168653)
+                                : const Color(0xFF1976D2),
+                          ),
+                        ),
+                        const SizedBox(height: 18),
+                        Text(
+                          isComplete
+                              ? 'Export complete'
+                              : 'Generating BKMVDATA files',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: Color(0xFF111827),
+                            fontSize: 21,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 180),
+                          child: Text(
+                            state.status,
+                            key: ValueKey(state.status),
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: Color(0xFF64748B),
+                              fontSize: 14,
+                              height: 1.35,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 22),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(999),
+                          child: LinearProgressIndicator(
+                            value: state.value,
+                            minHeight: 10,
+                            backgroundColor: const Color(0xFFE5E7EB),
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              isComplete
+                                  ? const Color(0xFF168653)
+                                  : const Color(0xFF1976D2),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: Text(
+                            '$percentage%',
+                            style: const TextStyle(
+                              color: Color(0xFF334155),
+                              fontSize: 13,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 18),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFF8E6),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: const Color(0xFFF4D58A)),
+                          ),
+                          child: const Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Icon(
+                                Icons.info_outline_rounded,
+                                color: Color(0xFF9A6700),
+                                size: 20,
+                              ),
+                              SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  'Please keep this page open until the export is finished.',
+                                  style: TextStyle(
+                                    color: Color(0xFF7A5200),
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    height: 1.35,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 
   Map<String, String> _getLocalizedStrings(
@@ -2023,6 +2251,13 @@ class _SettingsPageState extends State<SettingsPage>
       ),
     );
   }
+}
+
+class _UniformExportProgress {
+  const _UniformExportProgress({required this.value, required this.status});
+
+  final double value;
+  final String status;
 }
 
 class LanguageDropDown extends StatelessWidget {

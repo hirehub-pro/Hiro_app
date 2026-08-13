@@ -852,15 +852,32 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
             return Stack(
               children: [
                 Positioned.fill(
-                  child: AnimatedBuilder(
-                    animation: backgroundController,
-                    builder: (context, _) {
-                      return CustomPaint(
-                        painter: _SignInBackgroundPainter(
-                          backgroundController.value,
-                        ),
-                      );
-                    },
+                  child: const RepaintBoundary(
+                    child: CustomPaint(painter: _SignInBackgroundPainter()),
+                  ),
+                ),
+                Positioned.fill(
+                  left: -40,
+                  right: -40,
+                  top: -40,
+                  bottom: -40,
+                  child: IgnorePointer(
+                    child: AnimatedBuilder(
+                      animation: backgroundController,
+                      child: const RepaintBoundary(
+                        child: CustomPaint(painter: _SignInGlowPainter()),
+                      ),
+                      builder: (context, child) {
+                        final phase = backgroundController.value * math.pi * 2;
+                        return Transform.translate(
+                          offset: Offset(
+                            math.sin(phase) * 14,
+                            math.cos(phase) * 10,
+                          ),
+                          child: child,
+                        );
+                      },
+                    ),
                   ),
                 ),
                 SafeArea(
@@ -1152,7 +1169,9 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
                 child: child,
               );
             },
-            child: _buildSignInCard(strings, compact: compact),
+            child: RepaintBoundary(
+              child: _buildSignInCard(strings, compact: compact),
+            ),
           ),
         ],
       ),
@@ -1509,7 +1528,11 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(24),
                   image: const DecorationImage(
-                    image: AssetImage('assets/icon/app_icon.jpg'),
+                    image: ResizeImage(
+                      AssetImage('assets/icon/app_icon.jpg'),
+                      width: 240,
+                      height: 240,
+                    ),
                     fit: BoxFit.cover,
                   ),
                   boxShadow: [
@@ -1879,78 +1902,63 @@ class _SignInFeature {
 }
 
 class _SignInBackgroundPainter extends CustomPainter {
-  const _SignInBackgroundPainter(this.progress);
-
-  final double progress;
+  const _SignInBackgroundPainter();
 
   @override
   void paint(Canvas canvas, Size size) {
     final rect = Offset.zero & size;
-    final eased = Curves.easeInOut.transform(progress);
-    final begin = Alignment.lerp(Alignment.topLeft, Alignment.topRight, eased)!;
-    final end = Alignment.lerp(
-      Alignment.bottomRight,
-      Alignment.bottomLeft,
-      eased,
-    )!;
-
     final basePaint = Paint()
-      ..shader = LinearGradient(
-        begin: begin,
-        end: end,
-        colors: const [
+      ..shader = const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [
           Color(0xFFFDFEFF),
           Color(0xFFEAF5FF),
           Color(0xFFF7FBFF),
           Color(0xFFE3F8FF),
         ],
-        stops: const [0, 0.38, 0.68, 1],
+        stops: [0, 0.38, 0.68, 1],
       ).createShader(rect);
     canvas.drawRect(rect, basePaint);
-
-    final width = size.width;
-    final height = size.height;
-    final phase = progress * math.pi * 2;
-
-    final highlightPaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round
-      ..strokeWidth = math.max(120, size.shortestSide * 0.18)
-      ..color = const Color(0xFF1976D2).withValues(alpha: 0.055)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 54);
-    final path = Path()
-      ..moveTo(-width * 0.2, height * (0.22 + math.sin(phase) * 0.03))
-      ..cubicTo(
-        width * 0.24,
-        height * (0.02 + math.cos(phase) * 0.04),
-        width * 0.58,
-        height * (0.54 + math.sin(phase) * 0.03),
-        width * 1.2,
-        height * (0.25 + math.cos(phase) * 0.03),
-      );
-    canvas.drawPath(path, highlightPaint);
-
-    final lowerPaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round
-      ..strokeWidth = math.max(90, size.shortestSide * 0.13)
-      ..color = const Color(0xFF62D6E8).withValues(alpha: 0.05)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 46);
-    final lowerPath = Path()
-      ..moveTo(width * 0.36, height * 1.12)
-      ..cubicTo(
-        width * (0.46 + math.sin(phase) * 0.04),
-        height * 0.78,
-        width * (0.72 + math.cos(phase) * 0.03),
-        height * 0.95,
-        width * 1.16,
-        height * (0.65 + math.sin(phase) * 0.04),
-      );
-    canvas.drawPath(lowerPath, lowerPaint);
   }
 
   @override
-  bool shouldRepaint(covariant _SignInBackgroundPainter oldDelegate) {
-    return oldDelegate.progress != progress;
+  bool shouldRepaint(covariant _SignInBackgroundPainter oldDelegate) => false;
+}
+
+class _SignInGlowPainter extends CustomPainter {
+  const _SignInGlowPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final width = size.width;
+    final height = size.height;
+
+    final upperRect = Rect.fromCenter(
+      center: Offset(width * 0.38, height * 0.22),
+      width: width * 1.15,
+      height: math.max(260, height * 0.5),
+    );
+    final upperPaint = Paint()
+      ..shader = const RadialGradient(
+        colors: [Color(0x1A1976D2), Color(0x001976D2)],
+        stops: [0, 1],
+      ).createShader(upperRect);
+    canvas.drawOval(upperRect, upperPaint);
+
+    final lowerRect = Rect.fromCenter(
+      center: Offset(width * 0.78, height * 0.86),
+      width: width * 0.9,
+      height: math.max(220, height * 0.42),
+    );
+    final lowerPaint = Paint()
+      ..shader = const RadialGradient(
+        colors: [Color(0x1762D6E8), Color(0x0062D6E8)],
+        stops: [0, 1],
+      ).createShader(lowerRect);
+    canvas.drawOval(lowerRect, lowerPaint);
   }
+
+  @override
+  bool shouldRepaint(covariant _SignInGlowPainter oldDelegate) => false;
 }
