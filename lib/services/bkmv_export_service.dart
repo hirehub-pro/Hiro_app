@@ -1117,7 +1117,8 @@ class BkmvExportService {
       _fitAlpha('', 7),
       _fitSignedAmount(0, wholeDigits: 12, decimalDigits: 2),
       _fitAlpha('', 3),
-    ], 360);
+      _fitAlpha('', 16),
+    ], 376);
   }
 
   static String _buildC100({

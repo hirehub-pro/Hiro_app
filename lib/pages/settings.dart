@@ -633,17 +633,21 @@ class _SettingsPageState extends State<SettingsPage>
     String text, {
     required pw.Font font,
     bool isHeader = false,
+    bool compact = false,
     pw.Alignment alignment = pw.Alignment.centerRight,
   }) {
     return pw.Container(
       alignment: alignment,
-      padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      padding: compact
+          ? const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 2.5)
+          : const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       child: pw.Text(
         text,
         textDirection: pw.TextDirection.rtl,
         style: pw.TextStyle(
           font: font,
-          fontSize: isHeader ? 11 : 10.5,
+          fontSize: compact ? (isHeader ? 9.5 : 9) : (isHeader ? 11 : 10.5),
+          height: compact ? 1 : null,
           fontWeight: isHeader ? pw.FontWeight.bold : pw.FontWeight.normal,
         ),
       ),
@@ -654,6 +658,7 @@ class _SettingsPageState extends State<SettingsPage>
     List<String> values, {
     required pw.Font font,
     bool isHeader = false,
+    bool compact = false,
   }) {
     return pw.TableRow(
       decoration: pw.BoxDecoration(
@@ -665,12 +670,49 @@ class _SettingsPageState extends State<SettingsPage>
               value,
               font: font,
               isHeader: isHeader,
+              compact: compact,
               alignment: value == values.first
                   ? pw.Alignment.centerLeft
                   : pw.Alignment.centerRight,
             ),
           )
           .toList(growable: false),
+    );
+  }
+
+  pw.Widget _buildPrintedSummaryDetailRow({
+    required String label,
+    required String value,
+    required pw.Font font,
+  }) {
+    return pw.Directionality(
+      textDirection: pw.TextDirection.ltr,
+      child: pw.Row(
+        children: [
+          pw.Expanded(
+            child: pw.Text(
+              value,
+              textDirection: pw.TextDirection.ltr,
+              textAlign: pw.TextAlign.right,
+              style: pw.TextStyle(font: font, fontSize: 11.5),
+            ),
+          ),
+          pw.SizedBox(width: 12),
+          pw.SizedBox(
+            width: 170,
+            child: pw.Text(
+              label,
+              textDirection: pw.TextDirection.rtl,
+              textAlign: pw.TextAlign.right,
+              style: pw.TextStyle(
+                font: font,
+                fontSize: 11.5,
+                fontWeight: pw.FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -692,24 +734,24 @@ class _SettingsPageState extends State<SettingsPage>
       child: pw.Column(
         crossAxisAlignment: pw.CrossAxisAlignment.stretch,
         children: [
-          pw.Text(
-            'מספר עוסק מורשה: ${summary.businessNumber}',
-            textAlign: pw.TextAlign.right,
-            style: pw.TextStyle(font: font, fontSize: 14),
+          _buildPrintedSummaryDetailRow(
+            label: 'מספר עוסק מורשה:',
+            value: summary.businessNumber,
+            font: font,
           ),
-          pw.SizedBox(height: 6),
-          pw.Text(
-            'שם בית העסק: ${summary.businessName}',
-            textAlign: pw.TextAlign.right,
-            style: pw.TextStyle(font: font, fontSize: 14),
+          pw.SizedBox(height: 3),
+          _buildPrintedSummaryDetailRow(
+            label: 'שם בית העסק:',
+            value: summary.businessName,
+            font: font,
           ),
-          pw.SizedBox(height: 6),
-          pw.Text(
-            'טווח תאריכי הנתונים: $displayFromDate-$displayToDate',
-            textAlign: pw.TextAlign.right,
-            style: pw.TextStyle(font: font, fontSize: 14),
+          pw.SizedBox(height: 3),
+          _buildPrintedSummaryDetailRow(
+            label: 'טווח תאריכי הנתונים:',
+            value: '$displayFromDate-$displayToDate',
+            font: font,
           ),
-          pw.SizedBox(height: 12),
+          pw.SizedBox(height: 8),
           pw.Table(
             border: pw.TableBorder.all(width: 0.6),
             columnWidths: const {
@@ -728,36 +770,41 @@ class _SettingsPageState extends State<SettingsPage>
                 ],
                 font: font,
                 isHeader: true,
+                compact: true,
               ),
               for (final row in visibleRows)
-                _buildPdfTableRow([
-                  _formatAmountForPdf(row.totalAmountIncludingVat),
-                  row.quantity.toString(),
-                  row.documentTypeLabel,
-                  row.documentTypeCode.toString(),
-                ], font: font),
+                _buildPdfTableRow(
+                  [
+                    _formatAmountForPdf(row.totalAmountIncludingVat),
+                    row.quantity.toString(),
+                    row.documentTypeLabel,
+                    row.documentTypeCode.toString(),
+                  ],
+                  font: font,
+                  compact: true,
+                ),
             ],
           ),
-          pw.SizedBox(height: 12),
+          pw.SizedBox(height: 6),
           pw.Text(
             'סה"כ כמות: ${summary.totalDocumentQuantity}',
             textDirection: pw.TextDirection.rtl,
-            style: pw.TextStyle(font: font, fontSize: 11),
+            style: pw.TextStyle(font: font, fontSize: 9),
           ),
-          pw.SizedBox(height: 4),
+          pw.SizedBox(height: 2),
           pw.Text(
             'סה"כ כספי: ${_formatAmountForPdf(totalMoney)}',
             textDirection: pw.TextDirection.rtl,
-            style: pw.TextStyle(font: font, fontSize: 11),
+            style: pw.TextStyle(font: font, fontSize: 9),
           ),
-          pw.SizedBox(height: 12),
+          pw.SizedBox(height: 6),
           pw.Row(
             children: [
               pw.Expanded(
                 flex: 4,
                 child: pw.Text(
                   'הנתונים הופקו באמצעות תוכנת',
-                  style: pw.TextStyle(font: font, fontSize: 11),
+                  style: pw.TextStyle(font: font, fontSize: 9),
                 ),
               ),
               pw.Expanded(
@@ -766,21 +813,21 @@ class _SettingsPageState extends State<SettingsPage>
                   summary.softwareName,
                   style: pw.TextStyle(
                     font: font,
-                    fontSize: 11,
+                    fontSize: 9,
                     fontWeight: pw.FontWeight.bold,
                   ),
                 ),
               ),
             ],
           ),
-          pw.SizedBox(height: 4),
+          pw.SizedBox(height: 2),
           pw.Row(
             children: [
               pw.Expanded(
                 flex: 4,
                 child: pw.Text(
                   'מספר תעודת רישום:',
-                  style: pw.TextStyle(font: font, fontSize: 11),
+                  style: pw.TextStyle(font: font, fontSize: 9),
                 ),
               ),
               pw.Expanded(
@@ -789,28 +836,28 @@ class _SettingsPageState extends State<SettingsPage>
                   summary.softwareRegistrationNumber,
                   style: pw.TextStyle(
                     font: font,
-                    fontSize: 11,
+                    fontSize: 9,
                     fontWeight: pw.FontWeight.bold,
                   ),
                 ),
               ),
             ],
           ),
-          pw.SizedBox(height: 4),
+          pw.SizedBox(height: 2),
           pw.Row(
             children: [
               pw.Expanded(
                 flex: 4,
                 child: pw.Text(
                   'תאריך הפקה:',
-                  style: pw.TextStyle(font: font, fontSize: 11),
+                  style: pw.TextStyle(font: font, fontSize: 9),
                 ),
               ),
               pw.Expanded(
                 flex: 6,
                 child: pw.Text(
                   '$displayExportDate $displayExportTime',
-                  style: pw.TextStyle(font: font, fontSize: 11),
+                  style: pw.TextStyle(font: font, fontSize: 9),
                 ),
               ),
             ],
@@ -1124,12 +1171,10 @@ class _SettingsPageState extends State<SettingsPage>
 
       for (final package in result.packages) {
         printedSummaryDoc.addPage(
-          pw.MultiPage(
+          pw.Page(
             pageFormat: pdf.PdfPageFormat.a4,
             margin: const pw.EdgeInsets.all(28),
-            build: (_) => [
-              _buildPrintedSummaryPage(package.summary, font: font),
-            ],
+            build: (_) => _buildPrintedSummaryPage(package.summary, font: font),
           ),
         );
         annex4Doc.addPage(
