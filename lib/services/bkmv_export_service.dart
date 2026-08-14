@@ -161,6 +161,37 @@ class _InvoiceItemRecord {
   });
 }
 
+class _ClientAccountRecord {
+  final String id;
+  final String name;
+  final String externalClientNumber;
+  final String taxId;
+  final String address;
+
+  const _ClientAccountRecord({
+    required this.id,
+    required this.name,
+    required this.externalClientNumber,
+    required this.taxId,
+    required this.address,
+  });
+
+  factory _ClientAccountRecord.fromDocument(
+    QueryDocumentSnapshot<Map<String, dynamic>> document,
+  ) {
+    final data = document.data();
+    return _ClientAccountRecord(
+      id: document.id,
+      name: (data['name'] ?? '').toString().trim(),
+      externalClientNumber: (data['externalClientNumber'] ?? '')
+          .toString()
+          .trim(),
+      taxId: (data['taxId'] ?? '').toString().trim(),
+      address: (data['address'] ?? '').toString().trim(),
+    );
+  }
+}
+
 class BkmvExportService {
   static const _bucketNames = [
     'invoices',
@@ -450,6 +481,10 @@ class BkmvExportService {
       userId: context.userId,
       logDocs: sortedLogs,
     );
+    final clients = await _loadClients(
+      firestore: firestore,
+      userId: context.userId,
+    );
     final exportTimestamp = DateTime.now();
     final summary = _buildPrintedSummaryFromSortedLogs(
       context: context,
@@ -494,13 +529,16 @@ class BkmvExportService {
       ),
     );
 
-    addRecord(
-      'B110',
-      _buildB110(
-        recordNumber: recordNumber,
-        businessNumber: context.businessNumber,
-      ),
-    );
+    for (final client in clients) {
+      addRecord(
+        'B110',
+        _buildB110(
+          recordNumber: recordNumber,
+          businessNumber: context.businessNumber,
+          client: client,
+        ),
+      );
+    }
 
     for (final logDoc in sortedLogs) {
       final logData = logDoc.data();
@@ -990,6 +1028,27 @@ class BkmvExportService {
     return result;
   }
 
+  static Future<List<_ClientAccountRecord>> _loadClients({
+    required FirebaseFirestore firestore,
+    required String userId,
+  }) async {
+    final snapshot = await firestore
+        .collection('users')
+        .doc(userId)
+        .collection('clients')
+        .get();
+    final clients = snapshot.docs
+        .map(_ClientAccountRecord.fromDocument)
+        .toList();
+    clients.sort((a, b) {
+      final numberCompare = a.externalClientNumber.compareTo(
+        b.externalClientNumber,
+      );
+      return numberCompare != 0 ? numberCompare : a.id.compareTo(b.id);
+    });
+    return clients;
+  }
+
   static Future<Directory> _createExportDirectory({
     required Directory rootDirectory,
     required String businessNumber,
@@ -1093,30 +1152,32 @@ class BkmvExportService {
   static String _buildB110({
     required int recordNumber,
     required String businessNumber,
+    required _ClientAccountRecord client,
   }) {
+    final address = _splitAddress(client.address);
     return _joinFixed([
       _fitAlpha('B110', 4),
       _fitNumeric(recordNumber.toString(), 9),
       _fitNumeric(businessNumber, 9),
-      _fitAlpha('aaaaaaaaaaaa', 15),
-      _fitAlpha('aaaaaaaaaaaa', 50),
-      _fitAlpha('aaaaaaaaaaaa', 15),
-      _fitAlpha('aaaaaaaaaaaa', 30),
-      _fitAlpha('aaaaaaaaaaaa', 50),
-      _fitAlpha('aaaaaaaa', 10),
-      _fitAlpha('aaaaaaaaaaaa', 30),
-      _fitAlpha('aaaaaaaa', 8),
-      _fitAlpha('aaaaaaaaaaaa', 30),
-      _fitAlpha('aa', 2),
-      _fitAlpha('aaaaaaaaaaaa', 15),
+      _fitNumeric(client.externalClientNumber, 15),
+      _fitAlpha(client.name, 50),
+      _fitAlpha(client.externalClientNumber, 15),
+      _fitAlpha(client.name, 30),
+      _fitAlpha(address.street, 50),
+      _fitAlpha(address.houseNumber, 10),
+      _fitAlpha(address.city, 30),
+      _fitAlpha(address.postalCode, 8),
+      _fitAlpha('', 30),
+      _fitAlpha('IL', 2),
+      _fitAlpha('', 15),
       _fitSignedAmount(0, wholeDigits: 12, decimalDigits: 2),
       _fitSignedAmount(0, wholeDigits: 12, decimalDigits: 2),
       _fitSignedAmount(0, wholeDigits: 12, decimalDigits: 2),
       _fitNumeric('0', 4),
-      _fitNumeric('', 9),
-      _fitAlpha('', 7),
+      _fitNumeric(client.taxId, 9),
+      _fitAlpha('0000000', 7),
       _fitSignedAmount(0, wholeDigits: 12, decimalDigits: 2),
-      _fitAlpha('', 3),
+      _fitAlpha('ILS', 3),
       _fitAlpha('', 16),
     ], 376);
   }
@@ -1541,7 +1602,7 @@ class BkmvExportService {
           .replaceAll('\r\n', ' ')
           .replaceAll('\n', ' ')
           .replaceAll('\r', ' ')
-          .replaceAll(RegExp(r'\s+'), '')
+          .replaceAll(RegExp(r'\s+'), ' ')
           .trim(),
     );
     if (length == 0) {
