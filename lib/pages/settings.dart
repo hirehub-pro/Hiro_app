@@ -1474,7 +1474,9 @@ class _SettingsPageState extends State<SettingsPage>
           'hide_schedule': 'הסתר לוח זמנים מאחרים',
           'work_days': 'ימי עבודה',
           'working_hours': 'שעות עבודה',
-          'uniform_export': 'הפקת קבצים במבנה אחיד',
+          'uniform_export_section': 'ייצוא נתונים',
+          'uniform_export': 'ייצוא קובץ במבנה אחיד',
+          'accounting_export': 'ייצוא להנה״ח חיצונית',
           'available_from': 'זמין מ-',
           'available_to': 'זמין עד',
           'select_off_days': 'בחר ימי חופש קבועים',
@@ -1504,7 +1506,9 @@ class _SettingsPageState extends State<SettingsPage>
           'hide_schedule': 'إخفاء الجدول عن الآخرين',
           'work_days': 'أيام العمل',
           'working_hours': 'ساعات العمل',
-          'uniform_export': 'إنتاج ملفات بالبنية الموحدة',
+          'uniform_export_section': 'تصدير البيانات',
+          'uniform_export': 'تصدير ملف موحّد',
+          'accounting_export': 'التصدير إلى نظام محاسبة خارجي',
           'available_from': 'متاح من',
           'available_to': 'متاح حتى',
           'select_off_days': 'اختر أيام العطلة الثابتة',
@@ -1534,7 +1538,9 @@ class _SettingsPageState extends State<SettingsPage>
           'hide_schedule': 'Скрыть расписание от других',
           'work_days': 'Рабочие дни',
           'working_hours': 'Рабочие часы',
-          'uniform_export': 'Создать файлы в едином формате',
+          'uniform_export_section': 'Экспорт данных',
+          'uniform_export': 'Экспорт файла в едином формате',
+          'accounting_export': 'Экспорт во внешнюю бухгалтерскую систему',
           'available_from': 'Доступен с',
           'available_to': 'Доступен до',
           'select_off_days': 'Выберите постоянные выходные',
@@ -1564,7 +1570,9 @@ class _SettingsPageState extends State<SettingsPage>
           'hide_schedule': 'መርሃ ግብሩን ከሌሎች ደብቅ',
           'work_days': 'የስራ ቀናት',
           'working_hours': 'የስራ ሰዓቶች',
-          'uniform_export': 'በአንድ መዋቅር ፋይሎችን አውጣ',
+          'uniform_export_section': 'ውሂብ ወደ ውጭ ላክ',
+          'uniform_export': 'ወጥ ቅርጸት ያለውን ፋይል ወደ ውጭ ላክ',
+          'accounting_export': 'ወደ ውጫዊ የሂሳብ አያያዝ ስርዓት ላክ',
           'available_from': 'ዝግጁ ከ',
           'available_to': 'ዝግጁ እስከ',
           'select_off_days': 'ቋሚ የእረፍት ቀናትን ይምረጡ',
@@ -1593,7 +1601,9 @@ class _SettingsPageState extends State<SettingsPage>
           'hide_schedule': 'Hide schedule from others',
           'work_days': 'Working Days',
           'working_hours': 'Working Hours',
-          'uniform_export': 'Generate Uniform Files',
+          'uniform_export_section': 'Export Data',
+          'uniform_export': 'Export Uniform File',
+          'accounting_export': 'Export to Accounting',
           'available_from': 'Available from',
           'available_to': 'Available to',
           'select_off_days': 'Select fixed days off',
@@ -1765,7 +1775,7 @@ class _SettingsPageState extends State<SettingsPage>
     }
     if (_userRole != 'worker') return const SizedBox.shrink();
 
-    return _buildGalaxySection(strings['uniform_export']!, [
+    return _buildGalaxySection(strings['uniform_export_section']!, [
       ListTile(
         leading: Icon(
           Icons.file_present_rounded,
@@ -1788,6 +1798,18 @@ class _SettingsPageState extends State<SettingsPage>
               )
             : const Icon(Icons.chevron_right_rounded, size: 20),
         onTap: _isGeneratingUniformFiles ? null : _generateWorkerUniformFiles,
+      ),
+      ListTile(
+        leading: const Icon(
+          Icons.account_balance_rounded,
+          color: Color(0xFF1976D2),
+        ),
+        title: Text(
+          strings['accounting_export']!,
+          style: const TextStyle(fontWeight: FontWeight.w500),
+        ),
+        trailing: const Icon(Icons.chevron_right_rounded, size: 20),
+        onTap: () {},
       ),
     ]);
   }
@@ -2186,7 +2208,7 @@ class _SettingsPageState extends State<SettingsPage>
               ),
             if (_userRole == 'worker')
               CupertinoListSection.insetGrouped(
-                header: Text(strings['uniform_export']!),
+                header: Text(strings['uniform_export_section']!),
                 children: [
                   CupertinoListTile(
                     leading: Icon(
@@ -2202,6 +2224,15 @@ class _SettingsPageState extends State<SettingsPage>
                     onTap: _isGeneratingUniformFiles
                         ? null
                         : _generateWorkerUniformFiles,
+                  ),
+                  CupertinoListTile(
+                    leading: const Icon(
+                      CupertinoIcons.building_2_fill,
+                      color: CupertinoColors.systemBlue,
+                    ),
+                    title: Text(strings['accounting_export']!),
+                    trailing: const CupertinoListTileChevron(),
+                    onTap: () {},
                   ),
                 ],
               ),

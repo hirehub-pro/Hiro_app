@@ -8,6 +8,7 @@ import android.provider.OpenableColumns
 import com.android.billingclient.api.BillingClient
 import com.android.billingclient.api.BillingClientStateListener
 import com.android.billingclient.api.BillingResult
+import com.android.billingclient.api.PendingPurchasesParams
 import com.android.billingclient.api.Purchase
 import com.android.billingclient.api.QueryPurchasesParams
 import java.io.File
@@ -170,7 +171,11 @@ class MainActivity : FlutterActivity() {
 	) {
 		val billingClient = BillingClient.newBuilder(this)
 			.setListener { _: BillingResult, _: MutableList<Purchase>? -> }
-			.enablePendingPurchases()
+			.enablePendingPurchases(
+				PendingPurchasesParams.newBuilder()
+					.enableOneTimeProducts()
+					.build(),
+			)
 			.build()
 
 		billingClient.startConnection(
