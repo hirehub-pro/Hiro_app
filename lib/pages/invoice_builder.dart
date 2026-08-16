@@ -85,6 +85,54 @@ class _InvoiceClient {
   }
 }
 
+class _LinkedInvoiceDocument {
+  const _LinkedInvoiceDocument({
+    required this.id,
+    required this.docType,
+    required this.documentNumber,
+    required this.name,
+    required this.date,
+    required this.amount,
+    required this.createdAt,
+  });
+
+  factory _LinkedInvoiceDocument.fromDocument(
+    QueryDocumentSnapshot<Map<String, dynamic>> document,
+  ) {
+    final data = document.data();
+    return _LinkedInvoiceDocument(
+      id: document.id,
+      docType: (data['docType'] ?? data['type'] ?? '').toString().trim(),
+      documentNumber: (data['invoiceNumber'] ?? data['documentNumber'] ?? '')
+          .toString()
+          .trim(),
+      name: (data['name'] ?? '').toString().trim(),
+      date: (data['date'] ?? '').toString().trim(),
+      amount: (data['amount'] as num?)?.toDouble() ?? 0,
+      createdAt: data['createdAt'] is Timestamp
+          ? (data['createdAt'] as Timestamp).toDate()
+          : null,
+    );
+  }
+
+  final String id;
+  final String docType;
+  final String documentNumber;
+  final String name;
+  final String date;
+  final double amount;
+  final DateTime? createdAt;
+
+  Map<String, dynamic> toReferenceMap() => {
+    'invoiceDocId': id,
+    'docType': docType,
+    if (documentNumber.isNotEmpty) 'documentNumber': documentNumber,
+    if (name.isNotEmpty) 'name': name,
+    if (date.isNotEmpty) 'date': date,
+    'amount': amount,
+  };
+}
+
 Map<String, List<_BankBranch>> _parseBankBranches(String xmlText) {
   final document = XmlDocument.parse(xmlText);
   final branchesByBankId = <String, List<_BankBranch>>{};
@@ -257,6 +305,542 @@ class _TaxAuthorityAllocationResult {
     'raw': raw,
     'requestedAt': FieldValue.serverTimestamp(),
   };
+}
+
+class _LinkedDocumentsDialog extends StatefulWidget {
+  const _LinkedDocumentsDialog({
+    required this.strings,
+    required this.loadDocuments,
+    required this.initiallySelected,
+    required this.documentTypeLabel,
+  });
+
+  final Map<String, String> strings;
+  final Future<List<_LinkedInvoiceDocument>> Function() loadDocuments;
+  final Map<String, _LinkedInvoiceDocument> initiallySelected;
+  final String Function(String docType) documentTypeLabel;
+
+  @override
+  State<_LinkedDocumentsDialog> createState() => _LinkedDocumentsDialogState();
+}
+
+class _LinkedDocumentsDialogState extends State<_LinkedDocumentsDialog> {
+  late final Map<String, _LinkedInvoiceDocument> _selected = Map.fromEntries(
+    widget.initiallySelected.entries.take(1),
+  );
+  final TextEditingController _searchController = TextEditingController();
+  List<_LinkedInvoiceDocument> _documents = const [];
+  bool _isLoading = true;
+  Object? _loadError;
+  String _query = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _searchController.addListener(_handleSearchChanged);
+    _loadDocuments();
+  }
+
+  @override
+  void dispose() {
+    _searchController.removeListener(_handleSearchChanged);
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _handleSearchChanged() {
+    final query = _searchController.text.trim().toLowerCase();
+    if (query == _query) return;
+    setState(() => _query = query);
+  }
+
+  Future<void> _loadDocuments() async {
+    setState(() {
+      _isLoading = true;
+      _loadError = null;
+    });
+    try {
+      final documents = await widget.loadDocuments();
+      if (!mounted) return;
+      setState(() {
+        _documents = documents;
+        _isLoading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _loadError = error;
+        _isLoading = false;
+      });
+    }
+  }
+
+  String _dateLabel(_LinkedInvoiceDocument document) {
+    if (document.createdAt != null) {
+      return intl.DateFormat('dd/MM/yyyy').format(document.createdAt!);
+    }
+    final raw = document.date;
+    if (RegExp(r'^\d{8}$').hasMatch(raw)) {
+      return '${raw.substring(6, 8)}/${raw.substring(4, 6)}/${raw.substring(0, 4)}';
+    }
+    return raw;
+  }
+
+  String _title(_LinkedInvoiceDocument document) {
+    final type = widget.documentTypeLabel(document.docType);
+    if (document.documentNumber.isNotEmpty) {
+      return '$type #${document.documentNumber}';
+    }
+    return document.name.isNotEmpty ? document.name : type;
+  }
+
+  Color _documentColor(String docType) {
+    switch (docType) {
+      case 'quote':
+        return const Color(0xFF0F766E);
+      case 'work_order':
+        return const Color(0xFF92400E);
+      case 'transaction_account':
+        return const Color(0xFF6D28D9);
+      case 'invoice':
+        return const Color(0xFF1D4ED8);
+      case 'invoice_receipt':
+        return const Color(0xFF15803D);
+      case 'credit_note':
+        return const Color(0xFFBE185D);
+      case 'receipt':
+      default:
+        return const Color(0xFFEA580C);
+    }
+  }
+
+  IconData _documentIcon(String docType) {
+    switch (docType) {
+      case 'quote':
+        return Icons.request_quote_outlined;
+      case 'work_order':
+        return Icons.assignment_outlined;
+      case 'transaction_account':
+        return Icons.description_outlined;
+      case 'invoice':
+        return Icons.receipt_long_outlined;
+      case 'invoice_receipt':
+        return Icons.task_alt_rounded;
+      case 'credit_note':
+        return Icons.currency_exchange_rounded;
+      case 'receipt':
+      default:
+        return Icons.receipt_outlined;
+    }
+  }
+
+  List<_LinkedInvoiceDocument> get _visibleDocuments {
+    if (_query.isEmpty) return _documents;
+    return _documents.where((document) {
+      final searchText = [
+        _title(document),
+        widget.documentTypeLabel(document.docType),
+        document.documentNumber,
+        document.name,
+        _dateLabel(document),
+        document.amount.toStringAsFixed(2),
+      ].join(' ').toLowerCase();
+      return searchText.contains(_query);
+    }).toList();
+  }
+
+  void _toggleDocument(_LinkedInvoiceDocument document) {
+    setState(() {
+      if (_selected.containsKey(document.id)) {
+        _selected.remove(document.id);
+      } else {
+        _selected.clear();
+        _selected[document.id] = document;
+      }
+    });
+  }
+
+  Widget _buildStatusContent() {
+    if (_isLoading) {
+      return const Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(strokeWidth: 3),
+            SizedBox(height: 16),
+          ],
+        ),
+      );
+    }
+    if (_loadError != null) {
+      return _DialogEmptyState(
+        icon: Icons.cloud_off_outlined,
+        message: widget.strings['linked_documents_load_failed']!,
+        actionLabel: widget.strings['retry']!,
+        onAction: _loadDocuments,
+      );
+    }
+    if (_documents.isEmpty) {
+      return _DialogEmptyState(
+        icon: Icons.folder_off_outlined,
+        message: widget.strings['linked_documents_empty']!,
+      );
+    }
+
+    final visibleDocuments = _visibleDocuments;
+    if (visibleDocuments.isEmpty) {
+      return _DialogEmptyState(
+        icon: Icons.search_off_rounded,
+        message: widget.strings['linked_documents_no_results']!,
+      );
+    }
+
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+      itemCount: visibleDocuments.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 10),
+      itemBuilder: (context, index) {
+        final document = visibleDocuments[index];
+        final selected = _selected.containsKey(document.id);
+        final color = _documentColor(document.docType);
+        final date = _dateLabel(document);
+        return Semantics(
+          selected: selected,
+          button: true,
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () => _toggleDocument(document),
+              borderRadius: BorderRadius.circular(16),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 160),
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: selected
+                      ? color.withValues(alpha: 0.07)
+                      : Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: selected ? color : const Color(0xFFE2E8F0),
+                    width: selected ? 1.6 : 1,
+                  ),
+                  boxShadow: selected
+                      ? [
+                          BoxShadow(
+                            color: color.withValues(alpha: 0.10),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
+                          ),
+                        ]
+                      : null,
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 46,
+                      height: 46,
+                      decoration: BoxDecoration(
+                        color: color.withValues(alpha: 0.11),
+                        borderRadius: BorderRadius.circular(13),
+                      ),
+                      child: Icon(
+                        _documentIcon(document.docType),
+                        color: color,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _title(document),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Color(0xFF0F172A),
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(height: 7),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 5,
+                            children: [
+                              if (date.isNotEmpty)
+                                _DocumentMetadata(
+                                  icon: Icons.calendar_today_outlined,
+                                  label: date,
+                                ),
+                              _DocumentMetadata(
+                                icon: Icons.payments_outlined,
+                                label:
+                                    '${document.amount.toStringAsFixed(2)} ₪',
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 160),
+                      width: 26,
+                      height: 26,
+                      decoration: BoxDecoration(
+                        color: selected ? color : Colors.white,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: selected ? color : const Color(0xFFCBD5E1),
+                          width: 1.5,
+                        ),
+                      ),
+                      child: selected
+                          ? const Icon(
+                              Icons.check_rounded,
+                              size: 17,
+                              color: Colors.white,
+                            )
+                          : null,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final mediaQuery = MediaQuery.of(context);
+    final dialogHeight = mediaQuery.size.height * 0.86;
+    final hasDocuments =
+        !_isLoading && _loadError == null && _documents.isNotEmpty;
+
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      backgroundColor: const Color(0xFFF8FAFC),
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: 640, maxHeight: dialogHeight),
+        child: Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.fromLTRB(22, 18, 14, 18),
+              color: Colors.white,
+              child: Row(
+                children: [
+                  Container(
+                    width: 46,
+                    height: 46,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEFF6FF),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: const Icon(
+                      Icons.link_rounded,
+                      color: Color(0xFF1976D2),
+                    ),
+                  ),
+                  const SizedBox(width: 13),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.strings['linked_documents_title']!,
+                          style: const TextStyle(
+                            color: Color(0xFF0F172A),
+                            fontSize: 19,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          widget.strings['linked_documents_helper']!,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Color(0xFF64748B),
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: widget.strings['cancel'],
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close_rounded),
+                    color: const Color(0xFF64748B),
+                  ),
+                ],
+              ),
+            ),
+            if (hasDocuments) ...[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 10),
+                child: TextField(
+                  controller: _searchController,
+                  textInputAction: TextInputAction.search,
+                  decoration: InputDecoration(
+                    hintText: widget.strings['linked_documents_search']!,
+                    prefixIcon: const Icon(Icons.search_rounded),
+                    suffixIcon: _query.isEmpty
+                        ? null
+                        : IconButton(
+                            onPressed: _searchController.clear,
+                            icon: const Icon(Icons.close_rounded),
+                          ),
+                    filled: true,
+                    fillColor: Colors.white,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 13),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 2),
+            ],
+            Expanded(child: _buildStatusContent()),
+            Container(
+              padding: const EdgeInsets.fromLTRB(20, 13, 20, 17),
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                border: Border(top: BorderSide(color: Color(0xFFE2E8F0))),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(13),
+                        ),
+                      ),
+                      child: Text(widget.strings['cancel']!),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    flex: 2,
+                    child: FilledButton.icon(
+                      onPressed: () =>
+                          Navigator.of(context).pop(_selected.values.toList()),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFF1976D2),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(13),
+                        ),
+                      ),
+                      icon: const Icon(Icons.link_rounded, size: 19),
+                      label: Text(widget.strings['link_documents_action']!),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DocumentMetadata extends StatelessWidget {
+  const _DocumentMetadata({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 13, color: const Color(0xFF64748B)),
+        const SizedBox(width: 4),
+        Text(
+          label,
+          style: const TextStyle(
+            color: Color(0xFF64748B),
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _DialogEmptyState extends StatelessWidget {
+  const _DialogEmptyState({
+    required this.icon,
+    required this.message,
+    this.actionLabel,
+    this.onAction,
+  });
+
+  final IconData icon;
+  final String message;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 62,
+              height: 62,
+              decoration: const BoxDecoration(
+                color: Color(0xFFEFF6FF),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, size: 30, color: const Color(0xFF3B82F6)),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Color(0xFF475569),
+                fontSize: 14,
+                height: 1.4,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            if (onAction != null && actionLabel != null) ...[
+              const SizedBox(height: 14),
+              OutlinedButton.icon(
+                onPressed: onAction,
+                icon: const Icon(Icons.refresh_rounded),
+                label: Text(actionLabel!),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class InvoiceItem {
@@ -732,6 +1316,10 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         'clientEmail': _clientEmailController.text.trim(),
         'clientTaxId': _clientIdController.text.trim(),
         'externalClientNumber': _selectedSavedClientExternalNumber ?? '',
+        if (_selectedSavedClientId != null)
+          'savedClientId': _selectedSavedClientId,
+        'linkedDocuments': _linkedDocumentReferences,
+        'linkedDocumentIds': _linkedDocumentIds,
         'items': _items
             .map(
               (item) => {
@@ -846,6 +1434,10 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         'clientEmail': _clientEmailController.text.trim(),
         'clientTaxId': _clientIdController.text.trim(),
         'externalClientNumber': _selectedSavedClientExternalNumber ?? '',
+        if (_selectedSavedClientId != null)
+          'savedClientId': _selectedSavedClientId,
+        'linkedDocuments': _linkedDocumentReferences,
+        'linkedDocumentIds': _linkedDocumentIds,
         'items': _items
             .map(
               (item) => {
@@ -947,6 +1539,10 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'clientPhone': _clientPhoneController.text,
           'clientEmail': _clientEmailController.text.trim(),
           'externalClientNumber': _selectedSavedClientExternalNumber ?? '',
+          if (_selectedSavedClientId != null)
+            'savedClientId': _selectedSavedClientId,
+          'linkedDocuments': _linkedDocumentReferences,
+          'linkedDocumentIds': _linkedDocumentIds,
           'paymentMethod': _paymentMethods.isNotEmpty
               ? _paymentMethods.first.method
               : 'cash',
@@ -1159,6 +1755,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   final ImagePicker _imagePicker = ImagePicker();
   String? _selectedSavedClientId;
   String? _selectedSavedClientExternalNumber;
+  final Map<String, _LinkedInvoiceDocument> _linkedDocuments = {};
   bool _isAddingClient = false;
 
   // Payment method state
@@ -1200,6 +1797,14 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       _usesVat &&
       _digitsOnly(_clientIdController.text).isNotEmpty &&
       _subtotalAmount > _allocationNumberMinAmountBeforeVat;
+
+  List<Map<String, dynamic>> get _linkedDocumentReferences => _linkedDocuments
+      .values
+      .map((document) => document.toReferenceMap())
+      .toList(growable: false);
+
+  List<String> get _linkedDocumentIds =>
+      _linkedDocuments.keys.toList(growable: false);
 
   double _unitPriceAfterTax(InvoiceItem item) {
     if (!_usesVat) return item.price;
@@ -2511,6 +3116,20 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'client_address': 'כתובת הלקוח',
           'client_phone': 'טלפון הלקוח',
           'client_email': 'דוא״ל הלקוח',
+          'linked_documents': 'מסמך מקושר',
+          'linked_documents_title': 'בחירת מסמך לקישור',
+          'linked_documents_selected': 'מסמך מקושר',
+          'linked_documents_empty': 'אין מסמכים מתאימים ללקוח זה.',
+          'linked_documents_load_failed': 'לא ניתן לטעון את המסמכים.',
+          'link_documents_action': 'קישור מסמך',
+          'linked_documents_helper': 'בחרו מסמך אחד לקישור למסמך הנוכחי.',
+          'linked_documents_search': 'חיפוש לפי סוג, מספר, תאריך או סכום',
+          'linked_documents_count': '{count} נבחרו',
+          'linked_documents_no_results': 'לא נמצאו מסמכים התואמים לחיפוש.',
+          'select_all': 'בחר הכל',
+          'clear_selection': 'נקה',
+          'retry': 'נסה שוב',
+          'link_documents_action_count': 'קישור ({count})',
           'add_client': 'הוסף לקוח',
           'save_client': 'שמור לקוח',
           'client_added': 'הלקוח נוסף ונבחר.',
@@ -2644,6 +3263,22 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'client_address': 'عنوان العميل',
           'client_phone': 'هاتف العميل',
           'client_email': 'البريد الإلكتروني للعميل',
+          'linked_documents': 'المستند المرتبط',
+          'linked_documents_title': 'اختر مستندًا للربط',
+          'linked_documents_selected': 'تم ربط مستند',
+          'linked_documents_empty': 'لا توجد مستندات متوافقة لهذا العميل.',
+          'linked_documents_load_failed': 'تعذر تحميل المستندات.',
+          'link_documents_action': 'ربط المستند',
+          'linked_documents_helper':
+              'اختر مستندًا واحدًا لربطه بالمستند الحالي.',
+          'linked_documents_search':
+              'ابحث حسب النوع أو الرقم أو التاريخ أو المبلغ',
+          'linked_documents_count': 'تم اختيار {count}',
+          'linked_documents_no_results': 'لا توجد مستندات مطابقة لبحثك.',
+          'select_all': 'تحديد الكل',
+          'clear_selection': 'مسح',
+          'retry': 'إعادة المحاولة',
+          'link_documents_action_count': 'ربط ({count})',
           'add_client': 'إضافة عميل',
           'save_client': 'حفظ العميل',
           'client_added': 'تمت إضافة العميل واختياره.',
@@ -2764,6 +3399,22 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'client_address': 'Адрес клиента',
           'client_phone': 'Телефон клиента',
           'client_email': 'Электронная почта клиента',
+          'linked_documents': 'Связанный документ',
+          'linked_documents_title': 'Выберите документ для связи',
+          'linked_documents_selected': 'Документ связан',
+          'linked_documents_empty':
+              'Для этого клиента нет подходящих документов.',
+          'linked_documents_load_failed': 'Не удалось загрузить документы.',
+          'link_documents_action': 'Связать документ',
+          'linked_documents_helper':
+              'Выберите один документ для связи с текущим.',
+          'linked_documents_search': 'Поиск по типу, номеру, дате или сумме',
+          'linked_documents_count': 'Выбрано: {count}',
+          'linked_documents_no_results': 'По вашему запросу ничего не найдено.',
+          'select_all': 'Выбрать все',
+          'clear_selection': 'Очистить',
+          'retry': 'Повторить',
+          'link_documents_action_count': 'Связать ({count})',
           'add_client': 'Добавить клиента',
           'save_client': 'Сохранить клиента',
           'client_added': 'Клиент добавлен и выбран.',
@@ -2887,6 +3538,20 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'client_address': 'የደንበኛ አድራሻ',
           'client_phone': 'የደንበኛ ስልክ',
           'client_email': 'የደንበኛ ኢሜይል',
+          'linked_documents': 'የተገናኘ ሰነድ',
+          'linked_documents_title': 'የሚገናኝ ሰነድ ይምረጡ',
+          'linked_documents_selected': 'ሰነድ ተገናኝቷል',
+          'linked_documents_empty': 'ለዚህ ደንበኛ ተስማሚ ሰነዶች የሉም።',
+          'linked_documents_load_failed': 'ሰነዶቹን መጫን አልተቻለም።',
+          'link_documents_action': 'ሰነድ አገናኝ',
+          'linked_documents_helper': 'ከአሁኑ ሰነድ ጋር ለማገናኘት አንድ ሰነድ ይምረጡ።',
+          'linked_documents_search': 'በአይነት፣ ቁጥር፣ ቀን ወይም መጠን ይፈልጉ',
+          'linked_documents_count': '{count} ተመርጧል',
+          'linked_documents_no_results': 'ከፍለጋዎ ጋር የሚዛመድ ሰነድ የለም።',
+          'select_all': 'ሁሉንም ምረጥ',
+          'clear_selection': 'አጽዳ',
+          'retry': 'እንደገና ሞክር',
+          'link_documents_action_count': 'አገናኝ ({count})',
           'add_client': 'ደንበኛ ጨምር',
           'save_client': 'ደንበኛ አስቀምጥ',
           'client_added': 'ደንበኛው ተጨምሮ ተመርጧል።',
@@ -3005,6 +3670,22 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'client_address': 'Client Address',
           'client_phone': 'Client Phone',
           'client_email': 'Client Email',
+          'linked_documents': 'Linked document',
+          'linked_documents_title': 'Select a document to link',
+          'linked_documents_selected': 'Document linked',
+          'linked_documents_empty':
+              'There are no compatible documents for this client.',
+          'linked_documents_load_failed': 'Could not load the documents.',
+          'link_documents_action': 'Link document',
+          'linked_documents_helper':
+              'Choose one document to connect to this document.',
+          'linked_documents_search': 'Search by type, number, date, or amount',
+          'linked_documents_count': '{count} selected',
+          'linked_documents_no_results': 'No documents match your search.',
+          'select_all': 'Select all',
+          'clear_selection': 'Clear',
+          'retry': 'Try again',
+          'link_documents_action_count': 'Link ({count})',
           'add_client': 'Add Client',
           'save_client': 'Save Client',
           'client_added': 'Client added and selected.',
@@ -3154,6 +3835,22 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'client_phone': 'Client Phone',
       'client_email': 'Client Email',
       'client_address': 'Client Address',
+      'linked_documents': 'Linked document',
+      'linked_documents_title': 'Select a document to link',
+      'linked_documents_selected': 'Document linked',
+      'linked_documents_empty':
+          'There are no compatible documents for this client.',
+      'linked_documents_load_failed': 'Could not load the documents.',
+      'link_documents_action': 'Link document',
+      'linked_documents_helper':
+          'Choose one document to connect to this document.',
+      'linked_documents_search': 'Search by type, number, date, or amount',
+      'linked_documents_count': '{count} selected',
+      'linked_documents_no_results': 'No documents match your search.',
+      'select_all': 'Select all',
+      'clear_selection': 'Clear',
+      'retry': 'Try again',
+      'link_documents_action_count': 'Link ({count})',
       'add_client': 'Add Client',
       'save_client': 'Save Client',
       'client_added': 'Client added and selected.',
@@ -4425,6 +5122,10 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         'clientEmail': _clientEmailController.text.trim(),
         'clientTaxId': _clientIdController.text.trim(),
         'externalClientNumber': _selectedSavedClientExternalNumber ?? '',
+        if (_selectedSavedClientId != null)
+          'savedClientId': _selectedSavedClientId,
+        'linkedDocuments': _linkedDocumentReferences,
+        'linkedDocumentIds': _linkedDocumentIds,
         'paymentMethod': _paymentMethods.isNotEmpty
             ? _paymentMethods.first.method
             : 'cash',
@@ -5843,6 +6544,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                 if (val == null) return;
                                 setState(() {
                                   _selectedDocType = val;
+                                  _linkedDocuments.clear();
                                   _currentDocumentCounter = null;
                                   _invoiceNumber = '';
                                 });
@@ -5897,6 +6599,36 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                               strings['client_address']!,
                               Icons.location_on_outlined,
                               enabled: false,
+                            ),
+                            const SizedBox(height: 14),
+                            SizedBox(
+                              width: double.infinity,
+                              child: OutlinedButton.icon(
+                                onPressed: _selectedSavedClientId == null
+                                    ? null
+                                    : () => _showLinkedDocumentsPopup(strings),
+                                icon: const Icon(Icons.link_rounded),
+                                label: Text(
+                                  _linkedDocuments.isEmpty
+                                      ? strings['linked_documents']!
+                                      : strings['linked_documents_selected']!
+                                            .replaceFirst(
+                                              '{count}',
+                                              '${_linkedDocuments.length}',
+                                            ),
+                                ),
+                                style: OutlinedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 14,
+                                  ),
+                                  side: const BorderSide(
+                                    color: Color(0xFF1976D2),
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                              ),
                             ),
                           ],
                         ),
@@ -6862,8 +7594,109 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     setState(branchController.clear);
   }
 
+  Set<String> _linkableDocumentTypes(String docType) {
+    switch (docType) {
+      case 'quote':
+        return const {'work_order'};
+      case 'work_order':
+        return const {'quote'};
+      case 'transaction_account':
+        return const {'quote', 'work_order'};
+      case 'invoice':
+        return const {'quote', 'work_order', 'transaction_account'};
+      case 'invoice_receipt':
+        return const {'quote', 'work_order', 'transaction_account', 'invoice'};
+      case 'credit_note':
+        return const {'invoice', 'invoice_receipt', 'receipt'};
+      case 'receipt':
+      default:
+        return const {'invoice', 'transaction_account'};
+    }
+  }
+
+  bool _documentBelongsToSelectedClient(Map<String, dynamic> data) {
+    final selectedClientId = _selectedSavedClientId?.trim() ?? '';
+    if (selectedClientId.isEmpty) return false;
+
+    final savedClientId = (data['savedClientId'] ?? '').toString().trim();
+    if (savedClientId.isNotEmpty) return savedClientId == selectedClientId;
+
+    final selectedExternalNumber =
+        _selectedSavedClientExternalNumber?.trim() ?? '';
+    final externalNumber = (data['externalClientNumber'] ?? '')
+        .toString()
+        .trim();
+    if (selectedExternalNumber.isNotEmpty && externalNumber.isNotEmpty) {
+      return selectedExternalNumber == externalNumber;
+    }
+
+    final selectedTaxId = _clientIdController.text.trim();
+    final taxId = (data['clientTaxId'] ?? '').toString().trim();
+    if (selectedTaxId.isNotEmpty && taxId.isNotEmpty) {
+      return selectedTaxId == taxId;
+    }
+
+    final selectedName = _clientNameController.text.trim().toLowerCase();
+    final clientName = (data['clientName'] ?? data['receiverName'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+    return selectedName.isNotEmpty && selectedName == clientName;
+  }
+
+  Future<List<_LinkedInvoiceDocument>> _loadLinkableDocuments() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || _selectedSavedClientId == null) return const [];
+
+    final compatibleTypes = _linkableDocumentTypes(_selectedDocType);
+    final snapshot = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .collection('invoices')
+        .where('docType', whereIn: compatibleTypes.toList())
+        .get();
+
+    final documents = snapshot.docs
+        .where((document) => _documentBelongsToSelectedClient(document.data()))
+        .map(_LinkedInvoiceDocument.fromDocument)
+        .toList();
+    documents.sort((a, b) {
+      final aDate = a.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+      final bDate = b.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+      return bDate.compareTo(aDate);
+    });
+    return documents;
+  }
+
+  Future<void> _showLinkedDocumentsPopup(Map<String, String> strings) async {
+    if (_selectedSavedClientId == null || !mounted) return;
+
+    _clientNameFocusNode.unfocus();
+    final selected = await showDialog<List<_LinkedInvoiceDocument>>(
+      context: context,
+      builder: (dialogContext) => _LinkedDocumentsDialog(
+        strings: strings,
+        loadDocuments: _loadLinkableDocuments,
+        initiallySelected: _linkedDocuments,
+        documentTypeLabel: (docType) =>
+            _documentTypeDisplayName(strings, docType),
+      ),
+    );
+    if (selected == null || !mounted) return;
+    setState(() {
+      _linkedDocuments
+        ..clear()
+        ..addEntries(
+          selected.map((document) => MapEntry(document.id, document)),
+        );
+    });
+  }
+
   void _applySavedClient(_InvoiceClient client) {
     setState(() {
+      if (_selectedSavedClientId != client.id) {
+        _linkedDocuments.clear();
+      }
       _selectedSavedClientId = client.id;
       _selectedSavedClientExternalNumber = client.externalClientNumber;
       _clientNameController.text = client.name;
@@ -6919,6 +7752,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     setState(() {
       _selectedSavedClientId = null;
       _selectedSavedClientExternalNumber = null;
+      _linkedDocuments.clear();
       _clientIdController.clear();
       _clientPhoneController.clear();
       _clientEmailController.clear();
@@ -6935,6 +7769,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     if (_clientNameController.text.isEmpty) return;
 
     setState(() {
+      _linkedDocuments.clear();
       _clientNameController.clear();
       _clientIdController.clear();
       _clientPhoneController.clear();
