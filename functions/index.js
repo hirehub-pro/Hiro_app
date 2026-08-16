@@ -1379,6 +1379,127 @@ exports.sendUniformFilesEmail = onCall(
     },
 );
 
+// Emails the two short-lived Hashavshevet MOVEIN files uploaded by the
+// authenticated worker. The Firebase ID token uses a dedicated header because
+// some Cloud Run clients interpret an Authorization bearer as a Google IAM
+// token before it reaches the Firebase Functions runtime.
+exports.sendAccountingExportEmailHttp = onRequest(
+    {
+      region: "us-central1",
+      secrets: [RESEND_API_KEY, RESEND_FROM_EMAIL],
+      invoker: "public",
+    },
+    async (request, response) => {
+      try {
+        if (request.method !== "POST") {
+          response.status(405).json({error: "POST is required."});
+          return;
+        }
+
+        const firebaseToken = normalizeString(
+            request.get("X-Firebase-Auth"),
+        ).trim();
+        if (!firebaseToken) {
+          response.status(401).json({error: "Authentication required."});
+          return;
+        }
+        const decodedToken = await admin.auth().verifyIdToken(firebaseToken);
+        const userId = decodedToken.uid;
+
+        const recipientEmail = normalizeEmail(request.body?.recipientEmail);
+        const rawPaths = request.body?.filePaths;
+        if (!recipientEmail || !Array.isArray(rawPaths) || rawPaths.length !== 2) {
+          response.status(400).json({
+            error: "A recipient email and both MOVEIN files are required.",
+          });
+          return;
+        }
+
+        const allowedPrefix = `users/${userId}/accounting_exports/`;
+        const paths = rawPaths.map((value) => normalizeString(value).trim());
+        if (paths.some((value) => !value.startsWith(allowedPrefix))) {
+          response.status(403).json({
+            error: "Accounting export files must belong to the signed-in user.",
+          });
+          return;
+        }
+
+        const names = paths.map((value) => value.split("/").pop()?.toUpperCase());
+        const expectedNames = new Set(["MOVEIN.DOC", "MOVEIN.PRM"]);
+        if (new Set(names).size !== 2 ||
+            names.some((name) => !expectedNames.has(name))) {
+          response.status(400).json({
+            error: "The attachments must be MOVEIN.DOC and MOVEIN.PRM.",
+          });
+          return;
+        }
+
+        const bucket = admin.storage().bucket();
+        const files = paths.map((filePath) => bucket.file(filePath));
+        const metadata = await Promise.all(files.map(async (file) => {
+          const [exists] = await file.exists();
+          if (!exists) {
+            const error = new Error("A MOVEIN file was not found.");
+            error.statusCode = 404;
+            throw error;
+          }
+          const [fileMetadata] = await file.getMetadata();
+          return fileMetadata;
+        }));
+        const totalSize = metadata.reduce(
+            (total, item) => total + (Number(item.size) || 0), 0,
+        );
+        if (totalSize > 28 * 1024 * 1024) {
+          response.status(413).json({
+            error: "The generated MOVEIN files are too large to email.",
+          });
+          return;
+        }
+
+        const contents = await Promise.all(files.map(async (file) => {
+          const [content] = await file.download();
+          return content;
+        }));
+        const attachments = contents.map((content, index) => ({
+          filename: names[index],
+          content,
+        }));
+        const {data, error} = await new Resend(RESEND_API_KEY.value())
+            .emails.send({
+              from: RESEND_FROM_EMAIL.value(),
+              to: [recipientEmail],
+              subject: "קובצי MOVEIN מהירו",
+              text: "שלום,\n\nמצורפים קובצי MOVEIN.DOC ו-MOVEIN.PRM לייבוא בהנהלת החשבונות.\n\nבברכה,\nצוות הירו",
+              attachments,
+            });
+        if (error) {
+          throw new Error(error.message || "Resend rejected the email.");
+        }
+
+        await Promise.all(files.map(async (file) => {
+          await file.delete().catch((deleteError) => {
+            logger.warn("Unable to delete emailed MOVEIN export", {
+              path: file.name,
+              error: deleteError.message,
+            });
+          });
+        }));
+        response.json({sent: true, emailId: data?.id || null});
+      } catch (error) {
+        const statusCode = error?.statusCode ||
+          (error?.code?.startsWith?.("auth/") ? 401 : 500);
+        logger.error("Could not email MOVEIN export", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        response.status(statusCode).json({
+          error: statusCode === 500 ?
+            "Unable to send the MOVEIN files." :
+            (error.message || "Authentication failed."),
+        });
+      }
+    },
+);
+
 async function getUserFcmTokens(userDoc) {
   const tokens = new Set();
   const tokenSnap = await userDoc.ref.collection("deviceTokens").limit(100).get();

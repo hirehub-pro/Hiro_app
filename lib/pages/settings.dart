@@ -23,6 +23,7 @@ import 'package:untitled1/services/language_provider.dart';
 import 'package:untitled1/sign_in.dart';
 import 'package:untitled1/pages/about.dart';
 import 'package:untitled1/pages/account_settings.dart';
+import 'package:untitled1/pages/accounting_export_page.dart';
 import 'package:untitled1/pages/help_page.dart';
 import 'package:untitled1/pages/privacy_policy_page.dart';
 import 'package:untitled1/pages/reports_page.dart';
@@ -1640,6 +1641,14 @@ class _SettingsPageState extends State<SettingsPage>
     _loadSettings();
   }
 
+  Future<void> _goToAccountingExport() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (context) => const AccountingExportPage(),
+      ),
+    );
+  }
+
   void _goToHelpPage() {
     if (_isApplePlatform) {
       Navigator.push(
@@ -1809,7 +1818,7 @@ class _SettingsPageState extends State<SettingsPage>
           style: const TextStyle(fontWeight: FontWeight.w500),
         ),
         trailing: const Icon(Icons.chevron_right_rounded, size: 20),
-        onTap: () {},
+        onTap: _goToAccountingExport,
       ),
     ]);
   }
@@ -2232,7 +2241,7 @@ class _SettingsPageState extends State<SettingsPage>
                     ),
                     title: Text(strings['accounting_export']!),
                     trailing: const CupertinoListTileChevron(),
-                    onTap: () {},
+                    onTap: _goToAccountingExport,
                   ),
                 ],
               ),
