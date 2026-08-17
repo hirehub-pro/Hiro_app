@@ -24,6 +24,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:untitled1/services/invoice_builder_lock_service.dart';
 import 'package:untitled1/services/invoice_builder_verification_session.dart';
 import 'package:untitled1/services/client_service.dart';
+import 'package:untitled1/services/app_navigation_service.dart';
 import 'package:xml/xml.dart';
 
 class _BankBranch {
@@ -1780,6 +1781,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
 
   final List<InvoiceItem> _items = [];
   bool _isPreparing = false;
+  bool _hasSavedDocument = false;
   String _invoiceNumber = "";
   int? _currentDocumentCounter;
   bool _isLoadingCounterAssignment = false;
@@ -1813,6 +1815,23 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       _usesVat &&
       _digitsOnly(_clientIdController.text).isNotEmpty &&
       _subtotalAmount > _allocationNumberMinAmountBeforeVat;
+
+  bool get _returnsHomeAfterSave =>
+      _hasSavedDocument && !widget.returnDraftOnSend;
+
+  void _markDocumentSaved() {
+    if (!mounted || _hasSavedDocument) return;
+    setState(() => _hasSavedDocument = true);
+  }
+
+  void _handleBuilderBack() {
+    if (!_returnsHomeAfterSave) {
+      Navigator.of(context).maybePop();
+      return;
+    }
+    AppNavigationService.requestHome();
+    Navigator.of(context).popUntil((route) => route.isFirst);
+  }
 
   List<Map<String, dynamic>> get _linkedDocumentReferences => _linkedDocuments
       .values
@@ -1946,7 +1965,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   double get _discountAmount => _manualDiscountAmount;
 
   double get _subtotalAmount {
-    if (_selectedDocType == 'receipt' && _items.isEmpty) {
+    if (_selectedDocType == 'receipt') {
       return _paymentMethodsAmountTotal();
     }
     final subtotal = _itemsSubtotalBeforeTax - _discountAmount;
@@ -1958,7 +1977,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   double get _totalBeforeRoundingAmount => _subtotalAmount + _vatAmount;
 
   double get _roundingAmount {
-    if (_selectedDocType == 'receipt' && _items.isEmpty) return 0.0;
+    if (_selectedDocType == 'receipt') return 0.0;
     if (!_roundTotalEnabled) return 0.0;
     final roundedTotal = _totalBeforeRoundingAmount.floorToDouble();
     final reductionNeeded = _totalBeforeRoundingAmount - roundedTotal;
@@ -2684,6 +2703,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       _creditReceiptConfirmationController.text =
           widget.initialCreditReceiptConfirmation!;
     }
+
+    // Receipts record payments, not service-item rows.
+    if (_selectedDocType == 'receipt') return;
 
     final rawItems = widget.initialItems;
     if (rawItems == null || rawItems.isEmpty) return;
@@ -4103,6 +4125,16 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     });
   }
 
+  void _clearServiceItems() {
+    _items.clear();
+    _itemDescController.clear();
+    _itemQtyController.text = '1';
+    _itemPriceController.clear();
+    _discountController.clear();
+    _hasDiscount = false;
+    _selectedPriceTaxMode = 'after_tax';
+  }
+
   Future<void> _loadCurrentDocumentNumber({
     bool promptIfMissing = false,
   }) async {
@@ -4986,6 +5018,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                 _requiresTaxAuthorityAllocation,
             isTaxAuthorityConnected: _isTaxAuthorityConnected,
             onConnectTaxAuthority: _openTaxAuthorityConnection,
+            onReturnAfterSave: widget.returnDraftOnSend
+                ? null
+                : _handleBuilderBack,
             onSave: () async {
               var finalPdfBytes = pdfBytes;
               Map<String, dynamic>? taxAuthorityAllocation;
@@ -5023,6 +5058,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                 taxAuthorityAllocation: taxAuthorityAllocation,
               );
               if (savedDraftResult != null) {
+                _markDocumentSaved();
                 _showInvoiceEmailDeliveryToast(savedDraftResult!);
               }
               return finalPdfBytes;
@@ -5190,6 +5226,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
             ),
           );
         }
+        _markDocumentSaved();
         return _SavedInvoiceResult(
           url: (existingData['url'] ?? '').toString(),
           fileName: (existingData['fileName'] ?? _previewFileName()).toString(),
@@ -5296,6 +5333,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           ),
         );
       }
+
+      _markDocumentSaved();
 
       return _SavedInvoiceResult(
         url: downloadUrl,
@@ -6508,38 +6547,31 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
 
         return Directionality(
           textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
-          child: Scaffold(
-            backgroundColor: const Color(0xFFF8FAFC),
-            appBar: AppBar(
-              title: Text(
-                strings['title']!,
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 18,
+          child: PopScope(
+            canPop: !_returnsHomeAfterSave,
+            onPopInvokedWithResult: (didPop, result) {
+              if (!didPop && _returnsHomeAfterSave) {
+                _handleBuilderBack();
+              }
+            },
+            child: Scaffold(
+              backgroundColor: const Color(0xFFF8FAFC),
+              appBar: AppBar(
+                leading: BackButton(onPressed: _handleBuilderBack),
+                title: Text(
+                  strings['title']!,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 18,
+                  ),
                 ),
+                backgroundColor: Colors.white,
+                foregroundColor: const Color(0xFF1976D2),
+                elevation: 0,
+                centerTitle: true,
               ),
-              backgroundColor: Colors.white,
-              foregroundColor: const Color(0xFF1976D2),
-              elevation: 0,
-              centerTitle: true,
-            ),
-            body: _isPreparing
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const CircularProgressIndicator(
-                          color: Color(0xFF1976D2),
-                        ),
-                        const SizedBox(height: 16),
-                        Text(strings['preparing']!),
-                      ],
-                    ),
-                  )
-                : _isLoadingCounterAssignment || _isWaitingForStartingNumber
-                ? Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
+              body: _isPreparing
+                  ? Center(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
@@ -6547,362 +6579,235 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                             color: Color(0xFF1976D2),
                           ),
                           const SizedBox(height: 16),
-                          Text(
-                            strings['doc_start_title']!,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            strings['doc_start_message']!.replaceFirst(
-                              '{docType}',
-                              _documentTypeDisplayName(
-                                strings,
-                                _selectedDocType,
-                              ),
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
+                          Text(strings['preparing']!),
                         ],
                       ),
-                    ),
-                  )
-                : SingleChildScrollView(
-                    padding: const EdgeInsets.all(20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildSectionCard(
-                          title: strings['doc_type']!,
-                          icon: Icons.article_outlined,
+                    )
+                  : _isLoadingCounterAssignment || _isWaitingForStartingNumber
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            DropdownButtonFormField<String>(
-                              key: ValueKey(_selectedDocType),
-                              isExpanded: true,
-                              initialValue: _selectedDocType,
-                              decoration: _inputStyle(
-                                strings['doc_type']!,
-                                Icons.description_outlined,
+                            const CircularProgressIndicator(
+                              color: Color(0xFF1976D2),
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              strings['doc_start_title']!,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
                               ),
-                              items: [
-                                DropdownMenuItem(
-                                  value: 'quote',
-                                  child: Text(strings['quote']!),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              strings['doc_start_message']!.replaceFirst(
+                                '{docType}',
+                                _documentTypeDisplayName(
+                                  strings,
+                                  _selectedDocType,
                                 ),
-                                DropdownMenuItem(
-                                  value: 'work_order',
-                                  child: Text(strings['work_order']!),
-                                ),
-                                DropdownMenuItem(
-                                  value: 'transaction_account',
-                                  child: Text(strings['transaction_account']!),
-                                ),
-                                DropdownMenuItem(
-                                  value: 'receipt',
-                                  child: Text(strings['receipt']!),
-                                ),
-                                DropdownMenuItem(
-                                  value: 'invoice',
-                                  enabled:
-                                      _isLicensedDealerType &&
-                                      _isBusinessVerified,
-                                  child: Text(
-                                    strings['invoice']! +
-                                        ((!_isLicensedDealerType ||
-                                                !_isBusinessVerified)
-                                            ? " (${strings['licensed_only']})"
-                                            : ""),
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      color:
-                                          (_isLicensedDealerType &&
-                                              _isBusinessVerified)
-                                          ? Colors.black
-                                          : Colors.grey,
-                                    ),
-                                  ),
-                                ),
-                                DropdownMenuItem(
-                                  value: 'invoice_receipt',
-                                  enabled:
-                                      _isLicensedDealerType &&
-                                      _isBusinessVerified,
-                                  child: Text(
-                                    strings['invoice_receipt']! +
-                                        ((!_isLicensedDealerType ||
-                                                !_isBusinessVerified)
-                                            ? " (${strings['licensed_only']})"
-                                            : ""),
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      color:
-                                          (_isLicensedDealerType &&
-                                              _isBusinessVerified)
-                                          ? Colors.black
-                                          : Colors.grey,
-                                    ),
-                                  ),
-                                ),
-                                DropdownMenuItem(
-                                  value: 'credit_note',
-                                  child: Text(strings['credit_note']!),
-                                ),
-                              ],
-                              onChanged: (val) async {
-                                if (val == null) return;
-                                setState(() {
-                                  _selectedDocType = val;
-                                  _linkedDocuments.clear();
-                                  _currentDocumentCounter = null;
-                                  _invoiceNumber = '';
-                                });
-                                await _loadCurrentDocumentNumber(
-                                  promptIfMissing: true,
-                                );
-                              },
+                              ),
+                              textAlign: TextAlign.center,
                             ),
                           ],
                         ),
-                        const SizedBox(height: 20),
-                        _buildBusinessLogoSection(strings),
-                        const SizedBox(height: 20),
-                        // Client information
-                        const SizedBox(height: 20),
-                        _buildSectionCard(
-                          title: strings['client_info']!,
-                          icon: Icons.person_add_alt_1_rounded,
-                          children: [
-                            _buildClientPicker(strings),
-                            const SizedBox(height: 12),
-                            _buildTextField(
-                              _clientIdController,
-                              strings['client_id']!,
-                              Icons.badge_outlined,
-                              keyboardType: TextInputType.number,
-                              inputFormatters: [
-                                FilteringTextInputFormatter.digitsOnly,
-                                LengthLimitingTextInputFormatter(9),
-                              ],
-                              enabled: false,
-                            ),
-                            const SizedBox(height: 12),
-                            _buildTextField(
-                              _clientPhoneController,
-                              strings['client_phone']!,
-                              Icons.phone_outlined,
-                              keyboardType: TextInputType.phone,
-                              enabled: false,
-                            ),
-                            const SizedBox(height: 12),
-                            _buildTextField(
-                              _clientEmailController,
-                              strings['client_email']!,
-                              Icons.email_outlined,
-                              keyboardType: TextInputType.emailAddress,
-                              enabled: false,
-                            ),
-                            const SizedBox(height: 12),
-                            _buildTextField(
-                              _clientAddressController,
-                              strings['client_address']!,
-                              Icons.location_on_outlined,
-                              enabled: false,
-                            ),
-                          ],
-                        ),
-
-                        const SizedBox(height: 20),
-                        _buildSectionCard(
-                          title: strings['linked_documents']!,
-                          icon: Icons.link_rounded,
-                          children: [
-                            if (_linkedDocuments.isNotEmpty) ...[
-                              ..._linkedDocuments.values.map(
-                                (document) => Padding(
-                                  padding: const EdgeInsets.only(bottom: 10),
-                                  child: _buildLinkedDocumentSummary(
-                                    strings,
-                                    document,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                            ],
-                            SizedBox(
-                              width: double.infinity,
-                              child: OutlinedButton.icon(
-                                onPressed: _selectedSavedClientId == null
-                                    ? null
-                                    : () => _showLinkedDocumentsPopup(strings),
-                                icon: const Icon(Icons.link_rounded),
-                                label: Text(
-                                  _linkedDocuments.isEmpty
-                                      ? strings['linked_documents_title']!
-                                      : strings['linked_documents_count']!
-                                            .replaceFirst(
-                                              '{count}',
-                                              '${_linkedDocuments.length}',
-                                            ),
-                                ),
-                                style: OutlinedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 14,
-                                  ),
-                                  side: const BorderSide(
-                                    color: Color(0xFF1976D2),
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 20),
-                        _buildSectionCard(
-                          title: strings['date']!,
-                          icon: Icons.event_outlined,
-                          children: [
-                            TextField(
-                              controller: _invoiceDateController,
-                              readOnly: true,
-                              onTap: _pickInvoiceDate,
-                              decoration:
-                                  _inputStyle(
-                                    strings['date']!,
-                                    Icons.event_outlined,
-                                    required: true,
-                                  ).copyWith(
-                                    suffixIcon: TextButton(
-                                      onPressed: _pickInvoiceDate,
-                                      child: Text(strings['pick_date']!),
-                                    ),
-                                  ),
-                            ),
-                            if (_showsDueDateSection) ...[
-                              const SizedBox(height: 12),
-                              TextField(
-                                controller: _paymentDueDateController,
-                                readOnly: true,
-                                onTap: _pickPaymentDueDate,
-                                decoration:
-                                    _inputStyle(
-                                      strings['payment_due_date']!,
-                                      Icons.schedule_outlined,
-                                    ).copyWith(
-                                      suffixIcon: TextButton(
-                                        onPressed: _pickPaymentDueDate,
-                                        child: Text(strings['pick_date']!),
-                                      ),
-                                    ),
-                              ),
-                            ],
-                          ],
-                        ),
-
-                        if (_selectedDocType != 'receipt') ...[
-                          const SizedBox(height: 20),
+                      ),
+                    )
+                  : SingleChildScrollView(
+                      padding: const EdgeInsets.all(20),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
                           _buildSectionCard(
-                            title: strings['items']!,
-                            icon: Icons.list_alt_rounded,
+                            title: strings['doc_type']!,
+                            icon: Icons.article_outlined,
                             children: [
-                              _buildTextField(
-                                _itemDescController,
-                                strings['desc']!,
-                                Icons.description_outlined,
-                                required: true,
-                              ),
-                              const SizedBox(height: 12),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: _buildTextField(
-                                      _itemQtyController,
-                                      strings['qty']!,
-                                      Icons.numbers_rounded,
-                                      keyboardType: TextInputType.number,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: _buildTextField(
-                                      _itemPriceController,
-                                      strings['price']!,
-                                      Icons.sell_outlined,
-                                      required: true,
-                                      keyboardType: TextInputType.number,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 12),
                               DropdownButtonFormField<String>(
+                                key: ValueKey(_selectedDocType),
                                 isExpanded: true,
-                                initialValue: _selectedPriceTaxMode,
+                                initialValue: _selectedDocType,
                                 decoration: _inputStyle(
-                                  strings['price_tax_mode']!,
-                                  Icons.percent_rounded,
+                                  strings['doc_type']!,
+                                  Icons.description_outlined,
                                 ),
                                 items: [
                                   DropdownMenuItem(
-                                    value: 'after_tax',
-                                    child: Text(strings['price_after_tax']!),
+                                    value: 'quote',
+                                    child: Text(strings['quote']!),
                                   ),
                                   DropdownMenuItem(
-                                    value: 'before_tax',
-                                    child: Text(strings['price_before_tax']!),
+                                    value: 'work_order',
+                                    child: Text(strings['work_order']!),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'transaction_account',
+                                    child: Text(
+                                      strings['transaction_account']!,
+                                    ),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'receipt',
+                                    child: Text(strings['receipt']!),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'invoice',
+                                    enabled:
+                                        _isLicensedDealerType &&
+                                        _isBusinessVerified,
+                                    child: Text(
+                                      strings['invoice']! +
+                                          ((!_isLicensedDealerType ||
+                                                  !_isBusinessVerified)
+                                              ? " (${strings['licensed_only']})"
+                                              : ""),
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color:
+                                            (_isLicensedDealerType &&
+                                                _isBusinessVerified)
+                                            ? Colors.black
+                                            : Colors.grey,
+                                      ),
+                                    ),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'invoice_receipt',
+                                    enabled:
+                                        _isLicensedDealerType &&
+                                        _isBusinessVerified,
+                                    child: Text(
+                                      strings['invoice_receipt']! +
+                                          ((!_isLicensedDealerType ||
+                                                  !_isBusinessVerified)
+                                              ? " (${strings['licensed_only']})"
+                                              : ""),
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color:
+                                            (_isLicensedDealerType &&
+                                                _isBusinessVerified)
+                                            ? Colors.black
+                                            : Colors.grey,
+                                      ),
+                                    ),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'credit_note',
+                                    child: Text(strings['credit_note']!),
                                   ),
                                 ],
-                                onChanged: (value) {
-                                  if (value == null) return;
-                                  setState(() => _selectedPriceTaxMode = value);
+                                onChanged: (val) async {
+                                  if (val == null) return;
+                                  setState(() {
+                                    if (val == 'receipt' &&
+                                        _selectedDocType != 'receipt') {
+                                      _clearServiceItems();
+                                    }
+                                    _selectedDocType = val;
+                                    _linkedDocuments.clear();
+                                    _currentDocumentCounter = null;
+                                    _invoiceNumber = '';
+                                  });
+                                  await _loadCurrentDocumentNumber(
+                                    promptIfMissing: true,
+                                  );
                                 },
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 20),
+                          _buildBusinessLogoSection(strings),
+                          const SizedBox(height: 20),
+                          // Client information
+                          const SizedBox(height: 20),
+                          _buildSectionCard(
+                            title: strings['client_info']!,
+                            icon: Icons.person_add_alt_1_rounded,
+                            children: [
+                              _buildClientPicker(strings),
+                              const SizedBox(height: 12),
+                              _buildTextField(
+                                _clientIdController,
+                                strings['client_id']!,
+                                Icons.badge_outlined,
+                                keyboardType: TextInputType.number,
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.digitsOnly,
+                                  LengthLimitingTextInputFormatter(9),
+                                ],
+                                enabled: false,
                               ),
                               const SizedBox(height: 12),
-                              SwitchListTile.adaptive(
-                                contentPadding: EdgeInsets.zero,
-                                title: Text(strings['has_discount']!),
-                                value: _hasDiscount,
-                                onChanged: (value) {
-                                  setState(() {
-                                    _hasDiscount = value;
-                                    if (!value) {
-                                      _discountController.clear();
-                                    }
-                                  });
-                                },
+                              _buildTextField(
+                                _clientPhoneController,
+                                strings['client_phone']!,
+                                Icons.phone_outlined,
+                                keyboardType: TextInputType.phone,
+                                enabled: false,
                               ),
-                              if (_hasDiscount) ...[
-                                const SizedBox(height: 8),
-                                _buildTextField(
-                                  _discountController,
-                                  strings['discount_amount']!,
-                                  Icons.discount_outlined,
-                                  required: true,
-                                  keyboardType:
-                                      const TextInputType.numberWithOptions(
-                                        decimal: true,
-                                      ),
-                                  onChanged: (_) => setState(() {}),
+                              const SizedBox(height: 12),
+                              _buildTextField(
+                                _clientEmailController,
+                                strings['client_email']!,
+                                Icons.email_outlined,
+                                keyboardType: TextInputType.emailAddress,
+                                enabled: false,
+                              ),
+                              const SizedBox(height: 12),
+                              _buildTextField(
+                                _clientAddressController,
+                                strings['client_address']!,
+                                Icons.location_on_outlined,
+                                enabled: false,
+                              ),
+                            ],
+                          ),
+
+                          const SizedBox(height: 20),
+                          _buildSectionCard(
+                            title: strings['linked_documents']!,
+                            icon: Icons.link_rounded,
+                            children: [
+                              if (_linkedDocuments.isNotEmpty) ...[
+                                ..._linkedDocuments.values.map(
+                                  (document) => Padding(
+                                    padding: const EdgeInsets.only(bottom: 10),
+                                    child: _buildLinkedDocumentSummary(
+                                      strings,
+                                      document,
+                                    ),
+                                  ),
                                 ),
+                                const SizedBox(height: 12),
                               ],
-                              const SizedBox(height: 16),
                               SizedBox(
                                 width: double.infinity,
-                                child: ElevatedButton.icon(
-                                  onPressed: _addItem,
-                                  icon: const Icon(Icons.add_rounded),
-                                  label: Text(strings['add_item']!),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: const Color(
-                                      0xFF1976D2,
-                                    ).withValues(alpha: 0.1),
-                                    foregroundColor: const Color(0xFF1976D2),
-                                    elevation: 0,
+                                child: OutlinedButton.icon(
+                                  onPressed: _selectedSavedClientId == null
+                                      ? null
+                                      : () =>
+                                            _showLinkedDocumentsPopup(strings),
+                                  icon: const Icon(Icons.link_rounded),
+                                  label: Text(
+                                    _linkedDocuments.isEmpty
+                                        ? strings['linked_documents_title']!
+                                        : strings['linked_documents_count']!
+                                              .replaceFirst(
+                                                '{count}',
+                                                '${_linkedDocuments.length}',
+                                              ),
+                                  ),
+                                  style: OutlinedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 14,
+                                    ),
+                                    side: const BorderSide(
+                                      color: Color(0xFF1976D2),
+                                    ),
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(12),
                                     ),
@@ -6911,279 +6816,453 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                               ),
                             ],
                           ),
-                        ],
-
-                        if (_showsPaymentMethodSection)
+                          const SizedBox(height: 20),
                           _buildSectionCard(
-                            title: isRtl ? 'אמצעי תשלום' : 'Payment Method',
-                            icon: Icons.payment,
+                            title: strings['date']!,
+                            icon: Icons.event_outlined,
                             children: [
-                              ...List.generate(_paymentMethods.length, (index) {
-                                return Padding(
-                                  padding: EdgeInsets.only(
-                                    bottom: index == _paymentMethods.length - 1
-                                        ? 0
-                                        : 12,
+                              TextField(
+                                controller: _invoiceDateController,
+                                readOnly: true,
+                                onTap: _pickInvoiceDate,
+                                decoration:
+                                    _inputStyle(
+                                      strings['date']!,
+                                      Icons.event_outlined,
+                                      required: true,
+                                    ).copyWith(
+                                      suffixIcon: TextButton(
+                                        onPressed: _pickInvoiceDate,
+                                        child: Text(strings['pick_date']!),
+                                      ),
+                                    ),
+                              ),
+                              if (_showsDueDateSection) ...[
+                                const SizedBox(height: 12),
+                                TextField(
+                                  controller: _paymentDueDateController,
+                                  readOnly: true,
+                                  onTap: _pickPaymentDueDate,
+                                  decoration:
+                                      _inputStyle(
+                                        strings['payment_due_date']!,
+                                        Icons.schedule_outlined,
+                                      ).copyWith(
+                                        suffixIcon: TextButton(
+                                          onPressed: _pickPaymentDueDate,
+                                          child: Text(strings['pick_date']!),
+                                        ),
+                                      ),
+                                ),
+                              ],
+                            ],
+                          ),
+
+                          if (_selectedDocType != 'receipt') ...[
+                            const SizedBox(height: 20),
+                            _buildSectionCard(
+                              title: strings['items']!,
+                              icon: Icons.list_alt_rounded,
+                              children: [
+                                _buildTextField(
+                                  _itemDescController,
+                                  strings['desc']!,
+                                  Icons.description_outlined,
+                                  required: true,
+                                ),
+                                const SizedBox(height: 12),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: _buildTextField(
+                                        _itemQtyController,
+                                        strings['qty']!,
+                                        Icons.numbers_rounded,
+                                        keyboardType: TextInputType.number,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: _buildTextField(
+                                        _itemPriceController,
+                                        strings['price']!,
+                                        Icons.sell_outlined,
+                                        required: true,
+                                        keyboardType: TextInputType.number,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
+                                DropdownButtonFormField<String>(
+                                  isExpanded: true,
+                                  initialValue: _selectedPriceTaxMode,
+                                  decoration: _inputStyle(
+                                    strings['price_tax_mode']!,
+                                    Icons.percent_rounded,
                                   ),
-                                  child: _buildPaymentMethodCard(
-                                    index,
-                                    _paymentMethods[index],
-                                    isRtl,
+                                  items: [
+                                    DropdownMenuItem(
+                                      value: 'after_tax',
+                                      child: Text(strings['price_after_tax']!),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'before_tax',
+                                      child: Text(strings['price_before_tax']!),
+                                    ),
+                                  ],
+                                  onChanged: (value) {
+                                    if (value == null) return;
+                                    setState(
+                                      () => _selectedPriceTaxMode = value,
+                                    );
+                                  },
+                                ),
+                                const SizedBox(height: 12),
+                                SwitchListTile.adaptive(
+                                  contentPadding: EdgeInsets.zero,
+                                  title: Text(strings['has_discount']!),
+                                  value: _hasDiscount,
+                                  onChanged: (value) {
+                                    setState(() {
+                                      _hasDiscount = value;
+                                      if (!value) {
+                                        _discountController.clear();
+                                      }
+                                    });
+                                  },
+                                ),
+                                if (_hasDiscount) ...[
+                                  const SizedBox(height: 8),
+                                  _buildTextField(
+                                    _discountController,
+                                    strings['discount_amount']!,
+                                    Icons.discount_outlined,
+                                    required: true,
+                                    keyboardType:
+                                        const TextInputType.numberWithOptions(
+                                          decimal: true,
+                                        ),
+                                    onChanged: (_) => setState(() {}),
+                                  ),
+                                ],
+                                const SizedBox(height: 16),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: ElevatedButton.icon(
+                                    onPressed: _addItem,
+                                    icon: const Icon(Icons.add_rounded),
+                                    label: Text(strings['add_item']!),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: const Color(
+                                        0xFF1976D2,
+                                      ).withValues(alpha: 0.1),
+                                      foregroundColor: const Color(0xFF1976D2),
+                                      elevation: 0,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+
+                          if (_showsPaymentMethodSection) ...[
+                            const SizedBox(height: 20),
+                            _buildSectionCard(
+                              title: isRtl ? 'אמצעי תשלום' : 'Payment Method',
+                              icon: Icons.payment,
+                              children: [
+                                ...List.generate(_paymentMethods.length, (
+                                  index,
+                                ) {
+                                  return Padding(
+                                    padding: EdgeInsets.only(
+                                      bottom:
+                                          index == _paymentMethods.length - 1
+                                          ? 0
+                                          : 12,
+                                    ),
+                                    child: _buildPaymentMethodCard(
+                                      index,
+                                      _paymentMethods[index],
+                                      isRtl,
+                                    ),
+                                  );
+                                }),
+                                const SizedBox(height: 12),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: OutlinedButton.icon(
+                                    onPressed: () {
+                                      setState(() {
+                                        for (final methodEntry
+                                            in _paymentMethods) {
+                                          methodEntry.isExpanded = false;
+                                        }
+                                        _paymentMethods.add(
+                                          _PaymentMethodEntry(),
+                                        );
+                                      });
+                                    },
+                                    icon: const Icon(Icons.add_rounded),
+                                    label: Text(
+                                      isRtl
+                                          ? 'הוסף אמצעי תשלום'
+                                          : 'Add Payment Method',
+                                    ),
+                                    style: OutlinedButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 14,
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(13),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                          if (_selectedDocType != 'receipt' &&
+                              _items.isNotEmpty) ...[
+                            const SizedBox(height: 16),
+                            ListView.builder(
+                              shrinkWrap: true,
+                              physics: const NeverScrollableScrollPhysics(),
+                              itemCount: _items.length,
+                              itemBuilder: (context, index) {
+                                final item = _items[index];
+                                return Container(
+                                  margin: const EdgeInsets.only(bottom: 8),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(12),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withValues(
+                                          alpha: 0.03,
+                                        ),
+                                        blurRadius: 4,
+                                        offset: const Offset(0, 2),
+                                      ),
+                                    ],
+                                  ),
+                                  child: ListTile(
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 4,
+                                    ),
+                                    title: Text(
+                                      item.description,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                    subtitle: Text(
+                                      "${item.quantity} x ${item.price.toStringAsFixed(2)} ₪ (${item.isPriceBeforeTax ? strings['entered_price_before_tax']! : strings['entered_price_after_tax']!})",
+                                    ),
+                                    trailing: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          "${_signedItemTotal(item).toStringAsFixed(2)} ₪",
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            color: Color(0xFF1976D2),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        IconButton(
+                                          icon: const Icon(
+                                            Icons.remove_circle_outline,
+                                            color: Colors.red,
+                                            size: 20,
+                                          ),
+                                          onPressed: () => _removeItem(index),
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 );
-                              }),
-                              const SizedBox(height: 12),
-                              OutlinedButton.icon(
-                                onPressed: () {
-                                  setState(() {
-                                    for (final methodEntry in _paymentMethods) {
-                                      methodEntry.isExpanded = false;
-                                    }
-                                    _paymentMethods.add(_PaymentMethodEntry());
-                                  });
-                                },
-                                icon: const Icon(Icons.add),
-                                label: Text(
-                                  isRtl
-                                      ? 'הוסף אמצעי תשלום'
-                                      : 'Add Payment Method',
+                              },
+                            ),
+                          ],
+
+                          const SizedBox(height: 20),
+                          _buildSectionCard(
+                            title: strings['notes']!,
+                            icon: Icons.note_add_outlined,
+                            children: [
+                              TextField(
+                                controller: _notesController,
+                                maxLines: 3,
+                                decoration: InputDecoration(
+                                  hintText: strings['notes'],
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: const BorderSide(
+                                      color: Color(0xFFE2E8F0),
+                                    ),
+                                  ),
+                                  filled: true,
+                                  fillColor: Colors.white,
                                 ),
                               ),
                             ],
                           ),
-                        if (_selectedDocType != 'receipt' &&
-                            _items.isNotEmpty) ...[
-                          const SizedBox(height: 16),
-                          ListView.builder(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            itemCount: _items.length,
-                            itemBuilder: (context, index) {
-                              final item = _items[index];
-                              return Container(
-                                margin: const EdgeInsets.only(bottom: 8),
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(12),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withValues(
-                                        alpha: 0.03,
-                                      ),
-                                      blurRadius: 4,
-                                      offset: const Offset(0, 2),
-                                    ),
-                                  ],
-                                ),
-                                child: ListTile(
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                    vertical: 4,
-                                  ),
-                                  title: Text(
-                                    item.description,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 14,
-                                    ),
-                                  ),
-                                  subtitle: Text(
-                                    "${item.quantity} x ${item.price.toStringAsFixed(2)} ₪ (${item.isPriceBeforeTax ? strings['entered_price_before_tax']! : strings['entered_price_after_tax']!})",
-                                  ),
-                                  trailing: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Text(
-                                        "${_signedItemTotal(item).toStringAsFixed(2)} ₪",
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          color: Color(0xFF1976D2),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      IconButton(
-                                        icon: const Icon(
-                                          Icons.remove_circle_outline,
-                                          color: Colors.red,
-                                          size: 20,
-                                        ),
-                                        onPressed: () => _removeItem(index),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                        ],
 
-                        const SizedBox(height: 20),
-                        _buildSectionCard(
-                          title: strings['notes']!,
-                          icon: Icons.note_add_outlined,
-                          children: [
-                            TextField(
-                              controller: _notesController,
-                              maxLines: 3,
-                              decoration: InputDecoration(
-                                hintText: strings['notes'],
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                  borderSide: const BorderSide(
-                                    color: Color(0xFFE2E8F0),
+                          const SizedBox(height: 32),
+                          if (_items.isNotEmpty ||
+                              (_selectedDocType == 'receipt' &&
+                                  _paymentMethodsAmountTotal() > 0)) ...[
+                            Container(
+                              padding: const EdgeInsets.all(20),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF1976D2),
+                                borderRadius: BorderRadius.circular(20),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: const Color(
+                                      0xFF1976D2,
+                                    ).withValues(alpha: 0.3),
+                                    blurRadius: 10,
+                                    offset: const Offset(0, 4),
                                   ),
-                                ),
-                                filled: true,
-                                fillColor: Colors.white,
+                                ],
                               ),
-                            ),
-                          ],
-                        ),
-
-                        const SizedBox(height: 32),
-                        if (_items.isNotEmpty ||
-                            (_selectedDocType == 'receipt' &&
-                                _paymentMethodsAmountTotal() > 0)) ...[
-                          Container(
-                            padding: const EdgeInsets.all(20),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF1976D2),
-                              borderRadius: BorderRadius.circular(20),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: const Color(
-                                    0xFF1976D2,
-                                  ).withValues(alpha: 0.3),
-                                  blurRadius: 10,
-                                  offset: const Offset(0, 4),
-                                ),
-                              ],
-                            ),
-                            child: Column(
-                              children: [
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text(
-                                      _selectedDocType == 'receipt'
-                                          ? (isRtl ? 'סה״כ שולם' : 'Total Paid')
-                                          : strings['total']!,
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 16,
+                              child: Column(
+                                children: [
+                                  Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(
+                                        _selectedDocType == 'receipt'
+                                            ? (isRtl
+                                                  ? 'סה״כ שולם'
+                                                  : 'Total Paid')
+                                            : strings['total']!,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 16,
+                                        ),
                                       ),
+                                      Text(
+                                        "${_signedTotalAmount.toStringAsFixed(2)} ₪",
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 24,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  if (_discountAmount > 0) ...[
+                                    const SizedBox(height: 10),
+                                    Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text(
+                                          strings['discount']!,
+                                          style: const TextStyle(
+                                            color: Colors.white70,
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                        Text(
+                                          "-${_discountAmount.toStringAsFixed(2)} ₪",
+                                          style: const TextStyle(
+                                            color: Colors.white70,
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                      ],
                                     ),
-                                    Text(
-                                      "${_signedTotalAmount.toStringAsFixed(2)} ₪",
-                                      style: const TextStyle(
+                                  ],
+                                  if (_roundingAmount > 0) ...[
+                                    const SizedBox(height: 10),
+                                    Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text(
+                                          strings['rounding_amount']!,
+                                          style: const TextStyle(
+                                            color: Colors.white70,
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                        Text(
+                                          "${_signedRoundingAmount.toStringAsFixed(2)} ₪",
+                                          style: const TextStyle(
+                                            color: Colors.white70,
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                  if (_selectedDocType != 'receipt') ...[
+                                    const SizedBox(height: 8),
+                                    SwitchListTile.adaptive(
+                                      contentPadding: EdgeInsets.zero,
+                                      value: _roundTotalEnabled,
+                                      onChanged: (value) {
+                                        setState(() {
+                                          _roundTotalEnabled = value;
+                                        });
+                                      },
+                                      secondary: const Icon(
+                                        Icons.currency_exchange_rounded,
                                         color: Colors.white,
-                                        fontSize: 24,
-                                        fontWeight: FontWeight.bold,
+                                      ),
+                                      activeThumbColor: Colors.white,
+                                      activeTrackColor: Colors.white54,
+                                      title: Text(
+                                        strings['round_total']!,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w600,
+                                        ),
                                       ),
                                     ),
                                   ],
-                                ),
-                                if (_discountAmount > 0) ...[
-                                  const SizedBox(height: 10),
+                                  const SizedBox(height: 20),
                                   Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
                                     children: [
-                                      Text(
-                                        strings['discount']!,
-                                        style: const TextStyle(
-                                          color: Colors.white70,
-                                          fontSize: 14,
-                                        ),
-                                      ),
-                                      Text(
-                                        "-${_discountAmount.toStringAsFixed(2)} ₪",
-                                        style: const TextStyle(
-                                          color: Colors.white70,
-                                          fontSize: 14,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                                if (_roundingAmount > 0) ...[
-                                  const SizedBox(height: 10),
-                                  Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Text(
-                                        strings['rounding_amount']!,
-                                        style: const TextStyle(
-                                          color: Colors.white70,
-                                          fontSize: 14,
-                                        ),
-                                      ),
-                                      Text(
-                                        "${_signedRoundingAmount.toStringAsFixed(2)} ₪",
-                                        style: const TextStyle(
-                                          color: Colors.white70,
-                                          fontSize: 14,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                                const SizedBox(height: 8),
-                                SwitchListTile.adaptive(
-                                  contentPadding: EdgeInsets.zero,
-                                  value: _roundTotalEnabled,
-                                  onChanged: (value) {
-                                    setState(() {
-                                      _roundTotalEnabled = value;
-                                    });
-                                  },
-                                  secondary: const Icon(
-                                    Icons.currency_exchange_rounded,
-                                    color: Colors.white,
-                                  ),
-                                  activeThumbColor: Colors.white,
-                                  activeTrackColor: Colors.white54,
-                                  title: Text(
-                                    strings['round_total']!,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(height: 20),
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: ElevatedButton.icon(
-                                        onPressed: _openPreviewPage,
-                                        icon: const Icon(Icons.print_rounded),
-                                        label: Text(strings['generate']!),
-                                        style: ElevatedButton.styleFrom(
-                                          backgroundColor: Colors.white
-                                              .withValues(alpha: 0.2),
-                                          foregroundColor: Colors.white,
-                                          elevation: 0,
-                                          shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(
-                                              12,
+                                      Expanded(
+                                        child: ElevatedButton.icon(
+                                          onPressed: _openPreviewPage,
+                                          icon: const Icon(Icons.print_rounded),
+                                          label: Text(strings['generate']!),
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: Colors.white
+                                                .withValues(alpha: 0.2),
+                                            foregroundColor: Colors.white,
+                                            elevation: 0,
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
                                             ),
                                           ),
                                         ),
                                       ),
-                                    ),
-                                  ],
-                                ),
-                              ],
+                                    ],
+                                  ),
+                                ],
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 40),
+                            const SizedBox(height: 40),
+                          ],
                         ],
-                      ],
+                      ),
                     ),
-                  ),
+            ),
           ),
         );
       },
@@ -7234,144 +7313,217 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     bool isRtl,
   ) {
     final parsedAmount = _parsePaymentAmount(entry.amountController.text);
+    final methodLabel = _paymentMethodLabel(isRtl, entry.method);
+    final methodIcon = switch (entry.method) {
+      'credit' => Icons.credit_card_rounded,
+      'transfer' => Icons.account_balance_rounded,
+      'check' => Icons.payments_outlined,
+      'bit' || 'paybox' => Icons.phone_iphone_rounded,
+      'withholding_tax' => Icons.percent_rounded,
+      'other' => Icons.more_horiz_rounded,
+      _ => Icons.payments_rounded,
+    };
 
     if (!entry.isExpanded) {
-      return Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: const Color(0xFFF8FAFC),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFFE2E8F0)),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    _paymentMethodLabel(isRtl, entry.method),
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF1E293B),
-                    ),
+      return Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => setState(() => entry.isExpanded = true),
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEFF6FF),
+                    borderRadius: BorderRadius.circular(12),
                   ),
-                  if (parsedAmount != null)
-                    Text(
-                      '${isRtl ? 'שולם: ' : 'Paid: '}${parsedAmount.toStringAsFixed(2)} ₪',
-                      style: const TextStyle(color: Color(0xFF475569)),
-                    ),
-                ],
-              ),
-            ),
-            IconButton(
-              onPressed: () {
-                setState(() => entry.isExpanded = true);
-              },
-              icon: const Icon(Icons.expand_more),
-              tooltip: isRtl ? 'פתח' : 'Expand',
-            ),
-            IconButton(
-              onPressed: _paymentMethods.length == 1
-                  ? null
-                  : () {
+                  child: Icon(methodIcon, color: const Color(0xFF1976D2)),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        isRtl
+                            ? 'אמצעי תשלום ${index + 1}'
+                            : 'Payment method ${index + 1}',
+                        style: const TextStyle(
+                          color: Color(0xFF64748B),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        parsedAmount == null
+                            ? methodLabel
+                            : '$methodLabel  •  ${parsedAmount.toStringAsFixed(2)} ₪',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF0F172A),
+                          fontSize: 15,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (_paymentMethods.length > 1)
+                  IconButton(
+                    onPressed: () {
                       setState(() {
                         final removed = _paymentMethods.removeAt(index);
                         removed.dispose();
                       });
                     },
-              icon: const Icon(Icons.delete_outline),
-              tooltip: isRtl ? 'הסר' : 'Remove',
+                    icon: const Icon(Icons.delete_outline_rounded),
+                    color: const Color(0xFFDC2626),
+                    tooltip: isRtl ? 'הסר' : 'Remove',
+                  ),
+                const Icon(
+                  Icons.keyboard_arrow_down_rounded,
+                  color: Color(0xFF64748B),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       );
     }
 
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFBFDBFE), width: 1.2),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0A1976D2),
+            blurRadius: 12,
+            offset: Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEFF6FF),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(methodIcon, color: const Color(0xFF1976D2)),
+              ),
+              const SizedBox(width: 12),
               Expanded(
-                child: DropdownButtonFormField<String>(
-                  isExpanded: true,
-                  initialValue: entry.method,
-                  decoration: _inputStyle(
-                    isRtl ? 'אמצעי תשלום' : 'Payment Method',
-                    Icons.payment,
-                  ),
-                  items: [
-                    DropdownMenuItem(
-                      value: 'cash',
-                      child: Text(isRtl ? 'מזומן' : 'Cash'),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      isRtl
+                          ? 'אמצעי תשלום ${index + 1}'
+                          : 'Payment method ${index + 1}',
+                      style: const TextStyle(
+                        color: Color(0xFF64748B),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
-                    DropdownMenuItem(
-                      value: 'credit',
-                      child: Text(isRtl ? 'אשראי' : 'Credit Card'),
-                    ),
-                    DropdownMenuItem(
-                      value: 'transfer',
-                      child: Text(isRtl ? 'העברה בנקאית' : 'Bank Transfer'),
-                    ),
-                    const DropdownMenuItem(value: 'bit', child: Text('Bit')),
-                    const DropdownMenuItem(
-                      value: 'paybox',
-                      child: Text('PayBox'),
-                    ),
-                    DropdownMenuItem(
-                      value: 'other',
-                      child: Text(isRtl ? 'אחר' : 'Other'),
-                    ),
-                    DropdownMenuItem(
-                      value: 'withholding_tax',
-                      child: Text(isRtl ? 'ניכוי מס במקור' : 'Withholding Tax'),
-                    ),
-                    DropdownMenuItem(
-                      value: 'check',
-                      child: Text(isRtl ? 'צ׳ק' : 'Check'),
+                    const SizedBox(height: 3),
+                    Text(
+                      methodLabel,
+                      style: const TextStyle(
+                        color: Color(0xFF0F172A),
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                   ],
-                  onChanged: (val) {
-                    if (val == null) return;
-                    setState(() {
-                      entry.method = val;
-                      if (val == 'credit' &&
-                          entry.installmentsController.text.isEmpty) {
-                        entry.installmentsController.text = '1';
-                      }
-                    });
-                  },
                 ),
               ),
-              const SizedBox(width: 8),
               IconButton(
                 onPressed: () {
                   setState(() => entry.isExpanded = false);
                 },
-                icon: const Icon(Icons.expand_less),
+                icon: const Icon(Icons.keyboard_arrow_up_rounded),
                 tooltip: isRtl ? 'כווץ' : 'Collapse',
               ),
-              IconButton(
-                onPressed: _paymentMethods.length == 1
-                    ? null
-                    : () {
-                        setState(() {
-                          final removed = _paymentMethods.removeAt(index);
-                          removed.dispose();
-                        });
-                      },
-                icon: const Icon(Icons.delete_outline),
-                tooltip: isRtl ? 'הסר' : 'Remove',
+              if (_paymentMethods.length > 1)
+                IconButton(
+                  onPressed: () {
+                    setState(() {
+                      final removed = _paymentMethods.removeAt(index);
+                      removed.dispose();
+                    });
+                  },
+                  icon: const Icon(Icons.delete_outline_rounded),
+                  color: const Color(0xFFDC2626),
+                  tooltip: isRtl ? 'הסר' : 'Remove',
+                ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          const Divider(height: 1, color: Color(0xFFE2E8F0)),
+          const SizedBox(height: 14),
+          DropdownButtonFormField<String>(
+            isExpanded: true,
+            initialValue: entry.method,
+            decoration: _inputStyle(
+              isRtl ? 'אמצעי תשלום' : 'Payment Method',
+              methodIcon,
+            ),
+            items: [
+              DropdownMenuItem(
+                value: 'cash',
+                child: Text(isRtl ? 'מזומן' : 'Cash'),
+              ),
+              DropdownMenuItem(
+                value: 'credit',
+                child: Text(isRtl ? 'אשראי' : 'Credit Card'),
+              ),
+              DropdownMenuItem(
+                value: 'transfer',
+                child: Text(isRtl ? 'העברה בנקאית' : 'Bank Transfer'),
+              ),
+              const DropdownMenuItem(value: 'bit', child: Text('Bit')),
+              const DropdownMenuItem(value: 'paybox', child: Text('PayBox')),
+              DropdownMenuItem(
+                value: 'other',
+                child: Text(isRtl ? 'אחר' : 'Other'),
+              ),
+              DropdownMenuItem(
+                value: 'withholding_tax',
+                child: Text(isRtl ? 'ניכוי מס במקור' : 'Withholding Tax'),
+              ),
+              DropdownMenuItem(
+                value: 'check',
+                child: Text(isRtl ? 'צ׳ק' : 'Check'),
               ),
             ],
+            onChanged: (val) {
+              if (val == null) return;
+              setState(() {
+                entry.method = val;
+                if (val == 'credit' &&
+                    entry.installmentsController.text.isEmpty) {
+                  entry.installmentsController.text = '1';
+                }
+              });
+            },
           ),
           if (entry.method == 'credit') ...[
             const SizedBox(height: 12),
@@ -7485,19 +7637,29 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
               Icons.account_balance,
             ),
           ],
-          const SizedBox(height: 12),
-          _buildTextField(
-            entry.amountController,
-            isRtl ? 'סכום ששולם (חובה)' : 'Amount Paid (Required)',
-            Icons.payments_outlined,
-            required: true,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            onChanged: (_) => setState(() {}),
-            textInputAction: TextInputAction.done,
-            onSubmitted: (_) {
-              FocusScope.of(context).unfocus();
-              setState(() => entry.isExpanded = false);
-            },
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF0F7FF),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: const Color(0xFFDBEAFE)),
+            ),
+            child: _buildTextField(
+              entry.amountController,
+              isRtl ? 'סכום ששולם (חובה)' : 'Amount Paid (Required)',
+              Icons.payments_outlined,
+              required: true,
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              onChanged: (_) => setState(() {}),
+              textInputAction: TextInputAction.done,
+              onSubmitted: (_) {
+                FocusScope.of(context).unfocus();
+                setState(() => entry.isExpanded = false);
+              },
+            ),
           ),
         ],
       ),
@@ -7773,20 +7935,84 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     return selectedName.isNotEmpty && selectedName == clientName;
   }
 
+  bool _isInvoiceFullyPaid(Map<String, dynamic> data) {
+    final paymentStatus = (data['paymentStatus'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+    if (paymentStatus == 'paid') return true;
+
+    final totalAmount = ((data['amount'] as num?)?.toDouble() ?? 0).abs();
+    final paidAmount = ((data['paidAmount'] as num?)?.toDouble() ?? 0).abs();
+    return totalAmount > 0 && paidAmount + 0.01 >= totalAmount;
+  }
+
+  Set<String> _linkedIdsFromDocument(Map<String, dynamic> data) {
+    final ids = <String>{};
+    final rawIds = data['linkedDocumentIds'];
+    if (rawIds is Iterable) {
+      ids.addAll(
+        rawIds
+            .map((value) => value.toString().trim())
+            .where((value) => value.isNotEmpty),
+      );
+    }
+
+    final rawReferences = data['linkedDocuments'];
+    if (rawReferences is Iterable) {
+      for (final reference in rawReferences) {
+        if (reference is! Map) continue;
+        final id = (reference['invoiceDocId'] ?? reference['id'] ?? '')
+            .toString()
+            .trim();
+        if (id.isNotEmpty) ids.add(id);
+      }
+    }
+    return ids;
+  }
+
   Future<List<_LinkedInvoiceDocument>> _loadLinkableDocuments() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null || _selectedSavedClientId == null) return const [];
 
     final compatibleTypes = _linkableDocumentTypes(_selectedDocType);
+    final queryTypes = _selectedDocType == 'receipt'
+        ? {...compatibleTypes, 'invoice_receipt'}
+        : compatibleTypes;
     final snapshot = await FirebaseFirestore.instance
         .collection('users')
         .doc(user.uid)
         .collection('invoices')
-        .where('docType', whereIn: compatibleTypes.toList())
+        .where('docType', whereIn: queryTypes.toList())
         .get();
 
-    final documents = snapshot.docs
+    final clientDocuments = snapshot.docs
         .where((document) => _documentBelongsToSelectedClient(document.data()))
+        .toList();
+    final proformasLinkedToInvoices = <String>{};
+    if (_selectedDocType == 'receipt') {
+      for (final document in clientDocuments) {
+        final docType = (document.data()['docType'] ?? '').toString();
+        if (docType == 'invoice' || docType == 'invoice_receipt') {
+          proformasLinkedToInvoices.addAll(
+            _linkedIdsFromDocument(document.data()),
+          );
+        }
+      }
+    }
+
+    final documents = clientDocuments
+        .where((document) {
+          final data = document.data();
+          final docType = (data['docType'] ?? '').toString();
+          if (!compatibleTypes.contains(docType)) return false;
+          if (_selectedDocType != 'receipt') return true;
+          if (docType == 'invoice') return !_isInvoiceFullyPaid(data);
+          if (docType == 'transaction_account') {
+            return !proformasLinkedToInvoices.contains(document.id);
+          }
+          return true;
+        })
         .map(_LinkedInvoiceDocument.fromDocument)
         .toList();
     documents.sort((a, b) {
@@ -8602,6 +8828,7 @@ class InvoicePreviewPage extends StatefulWidget {
   final Future<bool> Function()? isTaxAuthorityConnected;
   final Future<void> Function()? onConnectTaxAuthority;
   final Future<void> Function()? onSendForSignature;
+  final VoidCallback? onReturnAfterSave;
 
   const InvoicePreviewPage({
     super.key,
@@ -8612,6 +8839,7 @@ class InvoicePreviewPage extends StatefulWidget {
     this.isTaxAuthorityConnected,
     this.onConnectTaxAuthority,
     this.onSendForSignature,
+    this.onReturnAfterSave,
   });
 
   @override
@@ -8649,6 +8877,14 @@ class _InvoicePreviewPageState extends State<InvoicePreviewPage> {
     } finally {
       if (mounted) setState(() => _isSendingForSignature = false);
     }
+  }
+
+  void _handleBack() {
+    if (_isSaved && widget.onReturnAfterSave != null) {
+      widget.onReturnAfterSave!();
+      return;
+    }
+    Navigator.of(context).maybePop();
   }
 
   Widget _buildTaxAuthorityConnectionSheet(
@@ -8904,133 +9140,142 @@ class _InvoicePreviewPageState extends State<InvoicePreviewPage> {
 
     return Directionality(
       textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
-      child: Scaffold(
-        appBar: AppBar(
-          title: Text(isRtl ? 'תצוגה מקדימה לחשבונית' : 'Invoice Preview'),
-          backgroundColor: Colors.white,
-          foregroundColor: const Color(0xFF1976D2),
-        ),
-        body: PdfPreview(
-          canDebug: false,
-          canChangePageFormat: false,
-          canChangeOrientation: false,
-          allowPrinting: false,
-          allowSharing: false,
-          useActions: false,
-          initialPageFormat: pdf.PdfPageFormat.a4,
-          build: (_) async => _pdfBytes,
-        ),
-        bottomNavigationBar: SafeArea(
-          minimum: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: _isSaved ? null : _handleSave,
-                  icon: const Icon(Icons.save_alt_rounded),
-                  label: Text(
-                    _isSaved
-                        ? (isRtl ? 'נשמר' : 'Saved')
-                        : (_isSaving
-                              ? (isRtl ? 'שומר...' : 'Saving...')
-                              : (isRtl ? 'שמור' : 'Save')),
-                  ),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFF1976D2),
-                    side: const BorderSide(color: Color(0xFF1976D2)),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                  ),
-                ),
-              ),
-              if (_isSaved) ...[
-                const SizedBox(height: 12),
-                if (widget.onSendForSignature != null) ...[
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: _isSendingForSignature
-                          ? null
-                          : _handleSendForSignature,
-                      icon: _isSendingForSignature
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Icon(Icons.draw_rounded),
-                      label: Text(
-                        _isSendingForSignature
-                            ? (isRtl ? 'יוצר קישור...' : 'Creating link...')
-                            : (isRtl ? 'שלח לחתימה' : 'Send it to be signed'),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF7C3AED),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                      ),
+      child: PopScope(
+        canPop: !(_isSaved && widget.onReturnAfterSave != null),
+        onPopInvokedWithResult: (didPop, result) {
+          if (!didPop && _isSaved && widget.onReturnAfterSave != null) {
+            widget.onReturnAfterSave!();
+          }
+        },
+        child: Scaffold(
+          appBar: AppBar(
+            leading: BackButton(onPressed: _handleBack),
+            title: Text(isRtl ? 'תצוגה מקדימה לחשבונית' : 'Invoice Preview'),
+            backgroundColor: Colors.white,
+            foregroundColor: const Color(0xFF1976D2),
+          ),
+          body: PdfPreview(
+            canDebug: false,
+            canChangePageFormat: false,
+            canChangeOrientation: false,
+            allowPrinting: false,
+            allowSharing: false,
+            useActions: false,
+            initialPageFormat: pdf.PdfPageFormat.a4,
+            build: (_) async => _pdfBytes,
+          ),
+          bottomNavigationBar: SafeArea(
+            minimum: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: _isSaved ? null : _handleSave,
+                    icon: const Icon(Icons.save_alt_rounded),
+                    label: Text(
+                      _isSaved
+                          ? (isRtl ? 'נשמר' : 'Saved')
+                          : (_isSaving
+                                ? (isRtl ? 'שומר...' : 'Saving...')
+                                : (isRtl ? 'שמור' : 'Save')),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF1976D2),
+                      side: const BorderSide(color: Color(0xFF1976D2)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
                     ),
                   ),
+                ),
+                if (_isSaved) ...[
                   const SizedBox(height: 12),
-                ],
-                Row(
-                  children: [
-                    Expanded(
+                  if (widget.onSendForSignature != null) ...[
+                    SizedBox(
+                      width: double.infinity,
                       child: ElevatedButton.icon(
-                        onPressed: () => Navigator.pop(context, 'send'),
-                        icon: const Icon(Icons.send_rounded),
-                        label: Text(isRtl ? 'שלח' : 'Send'),
+                        onPressed: _isSendingForSignature
+                            ? null
+                            : _handleSendForSignature,
+                        icon: _isSendingForSignature
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.draw_rounded),
+                        label: Text(
+                          _isSendingForSignature
+                              ? (isRtl ? 'יוצר קישור...' : 'Creating link...')
+                              : (isRtl ? 'שלח לחתימה' : 'Send it to be signed'),
+                        ),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF0EA5E9),
+                          backgroundColor: const Color(0xFF7C3AED),
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 12),
                         ),
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: () {
-                          Printing.layoutPdf(
-                            name: widget.fileName,
-                            onLayout: (_) async => _pdfBytes,
-                          );
-                        },
-                        icon: const Icon(Icons.print_rounded),
-                        label: Text(isRtl ? 'הדפס' : 'Print'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF1976D2),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: () {
-                          Printing.sharePdf(
-                            bytes: _pdfBytes,
-                            filename: widget.fileName,
-                          );
-                        },
-                        icon: const Icon(Icons.share_rounded),
-                        label: Text(isRtl ? 'שתף' : 'Share'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF0F766E),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                        ),
-                      ),
-                    ),
+                    const SizedBox(height: 12),
                   ],
-                ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: () => Navigator.pop(context, 'send'),
+                          icon: const Icon(Icons.send_rounded),
+                          label: Text(isRtl ? 'שלח' : 'Send'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF0EA5E9),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: () {
+                            Printing.layoutPdf(
+                              name: widget.fileName,
+                              onLayout: (_) async => _pdfBytes,
+                            );
+                          },
+                          icon: const Icon(Icons.print_rounded),
+                          label: Text(isRtl ? 'הדפס' : 'Print'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF1976D2),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: () {
+                            Printing.sharePdf(
+                              bytes: _pdfBytes,
+                              filename: widget.fileName,
+                            );
+                          },
+                          icon: const Icon(Icons.share_rounded),
+                          label: Text(isRtl ? 'שתף' : 'Share'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF0F766E),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),

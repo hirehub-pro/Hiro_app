@@ -17,6 +17,7 @@ import 'package:untitled1/pages/admin_profile.dart';
 import 'package:untitled1/pages/inbox_page.dart';
 import 'package:untitled1/pages/chat_page.dart';
 import 'package:untitled1/services/analytics_service.dart';
+import 'package:untitled1/services/app_navigation_service.dart';
 import 'package:untitled1/services/notification_service.dart';
 import 'package:untitled1/services/subscription_access_service.dart';
 import 'package:untitled1/sign_in.dart';
@@ -511,6 +512,7 @@ class _MyHomePageState extends State<MyHomePage> {
   @override
   void initState() {
     super.initState();
+    AppNavigationService.homeRequests.addListener(_handleHomeRequest);
     _checkAdminStatus();
     _logCurrentTab();
     NotificationService.selectNotificationStream.stream.listen((
@@ -525,6 +527,18 @@ class _MyHomePageState extends State<MyHomePage> {
         }
       }
     });
+  }
+
+  void _handleHomeRequest() {
+    if (!mounted || pagenumber == 0) return;
+    setState(() => pagenumber = 0);
+    _logCurrentTab();
+  }
+
+  @override
+  void dispose() {
+    AppNavigationService.homeRequests.removeListener(_handleHomeRequest);
+    super.dispose();
   }
 
   Future<void> _checkAdminStatus() async {
