@@ -1746,7 +1746,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       case 'invoice_receipt':
         return 'Invoice Receipt';
       case 'credit_note':
-        return 'Credit Note';
+        return 'Tax Invoice Credit';
       case 'receipt':
       default:
         return 'Receipt';
@@ -2182,36 +2182,232 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     return digits;
   }
 
+  static const Map<String, Map<String, String>>
+  _identityVerificationTranslations = {
+    'en': {
+      'page_title': 'Verify your identity',
+      'heading': 'Verify it’s you',
+      'description':
+          'For your security, enter the phone number and password for this account before opening the invoice builder.',
+      'phone': 'Phone number',
+      'password': 'Password',
+      'show_password': 'Show password',
+      'hide_password': 'Hide password',
+      'code_sent': 'A verification code was sent to your email address.',
+      'email_code': 'Email verification code',
+      'verify_code': 'Verify code and continue',
+      'send_code': 'Send email code',
+      'enter_phone_password':
+          'Enter your phone number and password to continue.',
+      'password_sign_in_unavailable':
+          'This account does not have password sign-in enabled.',
+      'phone_mismatch': 'The phone number does not match this account.',
+      'wrong_password': 'The password is incorrect. Please try again.',
+      'identity_failed': 'We could not verify your identity.',
+      'enter_six_digit_code': 'Enter the six-digit code from your email.',
+      'session_ended': 'Your sign-in session has ended. Please sign in again.',
+      'code_requested_recently':
+          'A verification code was requested recently. Please wait one minute and try again.',
+      'too_many_attempts':
+          'Too many attempts. Please wait one minute and try again.',
+      'session_expired':
+          'Your sign-in session has expired. Please sign in again.',
+      'account_not_confirmed':
+          'We could not confirm that this account belongs to you.',
+      'check_details': 'Please check your details and try again.',
+      'cannot_send_code':
+          'We cannot send a verification code right now. Please try again shortly.',
+      'code_expired':
+          'This verification code is no longer valid. Request a new code.',
+      'service_unavailable':
+          'The verification service is temporarily unavailable. Please try again.',
+      'send_failed':
+          'We could not send the verification code. Please try again.',
+      'code_failed': 'We could not verify that code. Please try again.',
+    },
+    'he': {
+      'page_title': 'אימות זהות',
+      'heading': 'נא לאמת את זהותך',
+      'description':
+          'למען אבטחתך, יש להזין את מספר הטלפון והסיסמה של חשבון זה לפני פתיחת מפיק המסמכים.',
+      'phone': 'מספר טלפון',
+      'password': 'סיסמה',
+      'show_password': 'הצגת הסיסמה',
+      'hide_password': 'הסתרת הסיסמה',
+      'code_sent': 'קוד אימות נשלח לכתובת הדוא״ל שלך.',
+      'email_code': 'קוד אימות מהדוא״ל',
+      'verify_code': 'אימות הקוד והמשך',
+      'send_code': 'שליחת קוד לדוא״ל',
+      'enter_phone_password': 'יש להזין מספר טלפון וסיסמה כדי להמשיך.',
+      'password_sign_in_unavailable':
+          'התחברות באמצעות סיסמה אינה מופעלת בחשבון זה.',
+      'phone_mismatch': 'מספר הטלפון אינו תואם לחשבון זה.',
+      'wrong_password': 'הסיסמה שגויה. נא לנסות שוב.',
+      'identity_failed': 'לא הצלחנו לאמת את זהותך.',
+      'enter_six_digit_code': 'יש להזין את הקוד בן שש הספרות שנשלח בדוא״ל.',
+      'session_ended': 'תוקף ההתחברות הסתיים. יש להתחבר מחדש.',
+      'code_requested_recently':
+          'קוד אימות נשלח לאחרונה. יש להמתין דקה ולנסות שוב.',
+      'too_many_attempts': 'יותר מדי ניסיונות. יש להמתין דקה ולנסות שוב.',
+      'session_expired': 'תוקף ההתחברות פג. יש להתחבר מחדש.',
+      'account_not_confirmed': 'לא הצלחנו לאשר שהחשבון הזה שייך לך.',
+      'check_details': 'יש לבדוק את הפרטים ולנסות שוב.',
+      'cannot_send_code':
+          'לא ניתן לשלוח קוד אימות כעת. יש לנסות שוב בעוד זמן קצר.',
+      'code_expired': 'קוד האימות אינו בתוקף עוד. יש לבקש קוד חדש.',
+      'service_unavailable':
+          'שירות האימות אינו זמין זמנית. יש לנסות שוב מאוחר יותר.',
+      'send_failed': 'לא הצלחנו לשלוח את קוד האימות. יש לנסות שוב.',
+      'code_failed': 'לא הצלחנו לאמת את הקוד. יש לנסות שוב.',
+    },
+    'ar': {
+      'page_title': 'التحقق من هويتك',
+      'heading': 'تحقق من هويتك',
+      'description':
+          'لحماية حسابك، أدخل رقم الهاتف وكلمة المرور لهذا الحساب قبل فتح منشئ المستندات.',
+      'phone': 'رقم الهاتف',
+      'password': 'كلمة المرور',
+      'show_password': 'إظهار كلمة المرور',
+      'hide_password': 'إخفاء كلمة المرور',
+      'code_sent': 'تم إرسال رمز تحقق إلى بريدك الإلكتروني.',
+      'email_code': 'رمز التحقق من البريد الإلكتروني',
+      'verify_code': 'تحقق من الرمز وتابع',
+      'send_code': 'إرسال الرمز بالبريد الإلكتروني',
+      'enter_phone_password': 'أدخل رقم هاتفك وكلمة المرور للمتابعة.',
+      'password_sign_in_unavailable':
+          'تسجيل الدخول بكلمة المرور غير مفعّل لهذا الحساب.',
+      'phone_mismatch': 'رقم الهاتف لا يطابق هذا الحساب.',
+      'wrong_password': 'كلمة المرور غير صحيحة. حاول مرة أخرى.',
+      'identity_failed': 'تعذر التحقق من هويتك.',
+      'enter_six_digit_code':
+          'أدخل الرمز المكوّن من ستة أرقام من بريدك الإلكتروني.',
+      'session_ended': 'انتهت جلسة تسجيل الدخول. سجّل الدخول مرة أخرى.',
+      'code_requested_recently':
+          'تم طلب رمز تحقق مؤخرًا. انتظر دقيقة ثم حاول مرة أخرى.',
+      'too_many_attempts': 'محاولات كثيرة جدًا. انتظر دقيقة ثم حاول مرة أخرى.',
+      'session_expired': 'انتهت صلاحية جلسة الدخول. سجّل الدخول مرة أخرى.',
+      'account_not_confirmed': 'تعذر التأكد من أن هذا الحساب يخصك.',
+      'check_details': 'تحقق من بياناتك وحاول مرة أخرى.',
+      'cannot_send_code':
+          'لا يمكن إرسال رمز تحقق الآن. حاول مرة أخرى بعد قليل.',
+      'code_expired': 'لم يعد رمز التحقق صالحًا. اطلب رمزًا جديدًا.',
+      'service_unavailable':
+          'خدمة التحقق غير متاحة مؤقتًا. حاول مرة أخرى لاحقًا.',
+      'send_failed': 'تعذر إرسال رمز التحقق. حاول مرة أخرى.',
+      'code_failed': 'تعذر التحقق من الرمز. حاول مرة أخرى.',
+    },
+    'ru': {
+      'page_title': 'Подтвердите личность',
+      'heading': 'Подтвердите, что это вы',
+      'description':
+          'В целях безопасности введите номер телефона и пароль этого аккаунта перед открытием конструктора документов.',
+      'phone': 'Номер телефона',
+      'password': 'Пароль',
+      'show_password': 'Показать пароль',
+      'hide_password': 'Скрыть пароль',
+      'code_sent': 'Код подтверждения отправлен на вашу электронную почту.',
+      'email_code': 'Код из электронной почты',
+      'verify_code': 'Подтвердить код и продолжить',
+      'send_code': 'Отправить код на почту',
+      'enter_phone_password':
+          'Введите номер телефона и пароль, чтобы продолжить.',
+      'password_sign_in_unavailable':
+          'Для этого аккаунта не включён вход по паролю.',
+      'phone_mismatch': 'Номер телефона не соответствует этому аккаунту.',
+      'wrong_password': 'Неверный пароль. Попробуйте ещё раз.',
+      'identity_failed': 'Не удалось подтвердить вашу личность.',
+      'enter_six_digit_code': 'Введите шестизначный код из электронной почты.',
+      'session_ended': 'Сеанс завершён. Войдите в аккаунт снова.',
+      'code_requested_recently':
+          'Код подтверждения уже был запрошен. Подождите минуту и повторите попытку.',
+      'too_many_attempts':
+          'Слишком много попыток. Подождите минуту и попробуйте снова.',
+      'session_expired': 'Срок сеанса истёк. Войдите в аккаунт снова.',
+      'account_not_confirmed':
+          'Не удалось подтвердить, что этот аккаунт принадлежит вам.',
+      'check_details': 'Проверьте введённые данные и попробуйте снова.',
+      'cannot_send_code':
+          'Сейчас невозможно отправить код. Попробуйте немного позже.',
+      'code_expired': 'Код больше не действителен. Запросите новый код.',
+      'service_unavailable':
+          'Служба подтверждения временно недоступна. Попробуйте позже.',
+      'send_failed': 'Не удалось отправить код. Попробуйте снова.',
+      'code_failed': 'Не удалось подтвердить код. Попробуйте снова.',
+    },
+    'am': {
+      'page_title': 'ማንነትዎን ያረጋግጡ',
+      'heading': 'እርስዎ መሆንዎን ያረጋግጡ',
+      'description':
+          'ለደህንነትዎ፣ የሰነድ አዘጋጁን ከመክፈትዎ በፊት የዚህን መለያ ስልክ ቁጥርና የይለፍ ቃል ያስገቡ።',
+      'phone': 'ስልክ ቁጥር',
+      'password': 'የይለፍ ቃል',
+      'show_password': 'የይለፍ ቃሉን አሳይ',
+      'hide_password': 'የይለፍ ቃሉን ደብቅ',
+      'code_sent': 'የማረጋገጫ ኮድ ወደ ኢሜይልዎ ተልኳል።',
+      'email_code': 'የኢሜይል ማረጋገጫ ኮድ',
+      'verify_code': 'ኮዱን አረጋግጥና ቀጥል',
+      'send_code': 'ኮድ ወደ ኢሜይል ላክ',
+      'enter_phone_password': 'ለመቀጠል ስልክ ቁጥርዎንና የይለፍ ቃልዎን ያስገቡ።',
+      'password_sign_in_unavailable': 'ለዚህ መለያ በይለፍ ቃል መግባት አልነቃም።',
+      'phone_mismatch': 'ስልክ ቁጥሩ ከዚህ መለያ ጋር አይዛመድም።',
+      'wrong_password': 'የይለፍ ቃሉ ትክክል አይደለም። እንደገና ይሞክሩ።',
+      'identity_failed': 'ማንነትዎን ማረጋገጥ አልተቻለም።',
+      'enter_six_digit_code': 'ከኢሜይልዎ የተላከውን ባለስድስት አሃዝ ኮድ ያስገቡ።',
+      'session_ended': 'የመግቢያ ክፍለ ጊዜዎ አብቅቷል። እንደገና ይግቡ።',
+      'code_requested_recently':
+          'የማረጋገጫ ኮድ በቅርቡ ተጠይቋል። አንድ ደቂቃ ጠብቀው እንደገና ይሞክሩ።',
+      'too_many_attempts': 'ብዙ ሙከራዎች ተደርገዋል። አንድ ደቂቃ ጠብቀው ይሞክሩ።',
+      'session_expired': 'የመግቢያ ክፍለ ጊዜዎ ጊዜ አልፏል። እንደገና ይግቡ።',
+      'account_not_confirmed': 'ይህ መለያ የእርስዎ መሆኑን ማረጋገጥ አልተቻለም።',
+      'check_details': 'ዝርዝሮችዎን ያረጋግጡና እንደገና ይሞክሩ።',
+      'cannot_send_code': 'አሁን የማረጋገጫ ኮድ መላክ አይቻልም። ትንሽ ቆይተው ይሞክሩ።',
+      'code_expired': 'ይህ የማረጋገጫ ኮድ ከእንግዲህ አይሰራም። አዲስ ኮድ ይጠይቁ።',
+      'service_unavailable': 'የማረጋገጫ አገልግሎቱ ለጊዜው አይገኝም። እንደገና ይሞክሩ።',
+      'send_failed': 'የማረጋገጫ ኮዱን መላክ አልተቻለም። እንደገና ይሞክሩ።',
+      'code_failed': 'ኮዱን ማረጋገጥ አልተቻለም። እንደገና ይሞክሩ።',
+    },
+  };
+
+  Map<String, String> _identityStrings({bool listen = false}) {
+    final locale = Provider.of<LanguageProvider>(
+      context,
+      listen: listen,
+    ).locale.languageCode;
+    return _identityVerificationTranslations[locale] ??
+        _identityVerificationTranslations['en']!;
+  }
+
   String _friendlyIdentityVerificationError(
     Object error, {
     required bool sendingCode,
   }) {
+    final strings = _identityStrings();
     if (error is FirebaseFunctionsException) {
       switch (error.code) {
         case 'resource-exhausted':
           return sendingCode
-              ? 'A verification code was requested recently. Please wait one minute and try again.'
-              : 'Too many attempts. Please wait one minute and try again.';
+              ? strings['code_requested_recently']!
+              : strings['too_many_attempts']!;
         case 'unauthenticated':
-          return 'Your sign-in session has expired. Please sign in again.';
+          return strings['session_expired']!;
         case 'permission-denied':
-          return 'We could not confirm that this account belongs to you.';
+          return strings['account_not_confirmed']!;
         case 'invalid-argument':
           return sendingCode
-              ? 'Please check your details and try again.'
-              : 'Enter the six-digit code from your email.';
+              ? strings['check_details']!
+              : strings['enter_six_digit_code']!;
         case 'failed-precondition':
           return sendingCode
-              ? 'We cannot send a verification code right now. Please try again shortly.'
-              : 'This verification code is no longer valid. Request a new code.';
+              ? strings['cannot_send_code']!
+              : strings['code_expired']!;
         case 'unavailable':
         case 'deadline-exceeded':
         case 'internal':
-          return 'The verification service is temporarily unavailable. Please try again.';
+          return strings['service_unavailable']!;
         default:
           return sendingCode
-              ? 'We could not send the verification code. Please try again.'
-              : 'We could not verify that code. Please try again.';
+              ? strings['send_failed']!
+              : strings['code_failed']!;
       }
     }
 
@@ -2219,13 +2415,12 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       return error.message.toString();
     }
 
-    return sendingCode
-        ? 'We could not send the verification code. Please try again.'
-        : 'We could not verify that code. Please try again.';
+    return sendingCode ? strings['send_failed']! : strings['code_failed']!;
   }
 
   Future<void> _verifyIdentityForInvoiceBuilder() async {
     if (_isVerifyingIdentity) return;
+    final strings = _identityStrings();
 
     if (_isEmailCodeSent) {
       await _verifyInvoiceBuilderEmailCode();
@@ -2238,8 +2433,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     final password = _identityPasswordController.text;
     if (enteredPhone.isEmpty || password.isEmpty) {
       setState(() {
-        _identityVerificationError =
-            'Enter your phone number and password to continue.';
+        _identityVerificationError = strings['enter_phone_password']!;
       });
       return;
     }
@@ -2253,8 +2447,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         false;
     if (user == null || email == null || email.isEmpty || !supportsPassword) {
       setState(() {
-        _identityVerificationError =
-            'This account does not have password sign-in enabled.';
+        _identityVerificationError = strings['password_sign_in_unavailable']!;
       });
       return;
     }
@@ -2278,7 +2471,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
 
       if (registeredPhones.isEmpty ||
           !registeredPhones.contains(enteredPhone)) {
-        throw StateError('The phone number does not match this account.');
+        throw StateError(strings['phone_mismatch']!);
       }
 
       await user.reauthenticateWithCredential(
@@ -2299,8 +2492,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         _isVerifyingIdentity = false;
         _identityVerificationError =
             error.code == 'wrong-password' || error.code == 'invalid-credential'
-            ? 'The password is incorrect. Please try again.'
-            : error.message ?? 'We could not verify your identity.';
+            ? strings['wrong_password']!
+            : strings['identity_failed']!;
       });
     } on FirebaseFunctionsException catch (error) {
       if (!mounted) return;
@@ -2324,11 +2517,11 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   }
 
   Future<void> _verifyInvoiceBuilderEmailCode() async {
+    final strings = _identityStrings();
     final code = _identityEmailCodeController.text.trim();
     if (!RegExp(r'^\d{6}$').hasMatch(code)) {
       setState(() {
-        _identityVerificationError =
-            'Enter the six-digit code from your email.';
+        _identityVerificationError = strings['enter_six_digit_code']!;
       });
       return;
     }
@@ -2345,9 +2538,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       _identityEmailCodeController.clear();
       final userId = FirebaseAuth.instance.currentUser?.uid;
       if (userId == null) {
-        throw StateError(
-          'Your sign-in session has ended. Please sign in again.',
-        );
+        throw StateError(strings['session_ended']!);
       }
       InvoiceBuilderVerificationSession.markVerified(userId);
       setState(() {
@@ -2377,10 +2568,11 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   }
 
   Widget _buildIdentityVerificationGate(BuildContext context) {
+    final strings = _identityStrings(listen: true);
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
-        title: const Text('Verify your identity'),
+        title: Text(strings['page_title']!),
         backgroundColor: Colors.white,
         foregroundColor: const Color(0xFF1976D2),
         elevation: 0,
@@ -2409,19 +2601,19 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                         size: 42,
                       ),
                       const SizedBox(height: 16),
-                      const Text(
-                        'Verify it’s you',
+                      Text(
+                        strings['heading']!,
                         textAlign: TextAlign.center,
-                        style: TextStyle(
+                        style: const TextStyle(
                           fontSize: 22,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
                       const SizedBox(height: 8),
-                      const Text(
-                        'For your security, enter the phone number and password for this account before opening the invoice builder.',
+                      Text(
+                        strings['description']!,
                         textAlign: TextAlign.center,
-                        style: TextStyle(color: Color(0xFF64748B)),
+                        style: const TextStyle(color: Color(0xFF64748B)),
                       ),
                       const SizedBox(height: 24),
                       TextField(
@@ -2429,10 +2621,10 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                         enabled: !_isVerifyingIdentity,
                         keyboardType: TextInputType.phone,
                         textInputAction: TextInputAction.next,
-                        decoration: const InputDecoration(
-                          labelText: 'Phone number',
-                          prefixIcon: Icon(Icons.phone_outlined),
-                          border: OutlineInputBorder(),
+                        decoration: InputDecoration(
+                          labelText: strings['phone']!,
+                          prefixIcon: const Icon(Icons.phone_outlined),
+                          border: const OutlineInputBorder(),
                         ),
                       ),
                       const SizedBox(height: 16),
@@ -2442,13 +2634,13 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                         obscureText: _obscureIdentityPassword,
                         onSubmitted: (_) => _verifyIdentityForInvoiceBuilder(),
                         decoration: InputDecoration(
-                          labelText: 'Password',
+                          labelText: strings['password']!,
                           prefixIcon: const Icon(Icons.lock_outline),
                           border: const OutlineInputBorder(),
                           suffixIcon: IconButton(
                             tooltip: _obscureIdentityPassword
-                                ? 'Show password'
-                                : 'Hide password',
+                                ? strings['show_password']!
+                                : strings['hide_password']!,
                             icon: Icon(
                               _obscureIdentityPassword
                                   ? Icons.visibility_outlined
@@ -2465,10 +2657,10 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                       ),
                       if (_isEmailCodeSent) ...[
                         const SizedBox(height: 16),
-                        const Text(
-                          'A verification code was sent to your email address.',
+                        Text(
+                          strings['code_sent']!,
                           textAlign: TextAlign.center,
-                          style: TextStyle(color: Color(0xFF64748B)),
+                          style: const TextStyle(color: Color(0xFF64748B)),
                         ),
                         const SizedBox(height: 12),
                         TextField(
@@ -2478,10 +2670,12 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                           textInputAction: TextInputAction.done,
                           maxLength: 6,
                           onSubmitted: (_) => _verifyInvoiceBuilderEmailCode(),
-                          decoration: const InputDecoration(
-                            labelText: 'Email verification code',
-                            prefixIcon: Icon(Icons.mark_email_read_outlined),
-                            border: OutlineInputBorder(),
+                          decoration: InputDecoration(
+                            labelText: strings['email_code']!,
+                            prefixIcon: const Icon(
+                              Icons.mark_email_read_outlined,
+                            ),
+                            border: const OutlineInputBorder(),
                           ),
                         ),
                       ],
@@ -2540,8 +2734,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                               )
                             : Text(
                                 _isEmailCodeSent
-                                    ? 'Verify code and continue'
-                                    : 'Send email code',
+                                    ? strings['verify_code']!
+                                    : strings['send_code']!,
                               ),
                       ),
                     ],
@@ -3329,7 +3523,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'receipt': 'קבלה',
           'invoice': 'חשבונית מס',
           'invoice_receipt': 'חשבונית מס / קבלה',
-          'credit_note': 'הודעת זיכוי',
+          'credit_note': 'חשבונית מס זיכוי',
           'licensed_only': 'זמין לעוסק מורשה מאומת בלבד',
           'vat_id': 'ח.פ / ע.מ:',
           'vat': 'מע"מ:',
@@ -3343,11 +3537,11 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'worker_id': 'מזהה עובד:',
           'authorized_dealer_label': 'עובד מורשה:',
           'payment_method': 'אמצעי תשלום',
-          'credit_note_legal': 'פרטי הודעת זיכוי',
+          'credit_note_legal': 'פרטי חשבונית מס זיכוי',
           'credit_reason': 'סיבת הזיכוי',
           'original_invoice_number': 'מספר חשבונית מקור',
           'original_invoice_date': 'תאריך חשבונית מקור',
-          'delivery_method': 'אופן מסירת הודעת הזיכוי',
+          'delivery_method': 'אופן מסירת חשבונית מס הזיכוי',
           'receipt_confirmation': 'אסמכתא למסירה / אישור קבלה',
           'pick_date': 'בחירת תאריך',
           'delivery_registered_mail': 'דואר רשום',
@@ -3355,9 +3549,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'delivery_customer_signature': 'חתימת לקוח',
           'delivery_manual': 'מסירה ידנית',
           'credit_note_missing_fields':
-              'להודעת זיכוי יש למלא מספר חשבונית מקור, תאריך מקור, סיבת זיכוי ואסמכתא למסירה.',
+              'לחשבונית מס זיכוי יש למלא מספר חשבונית מקור, תאריך מקור, סיבת זיכוי ואסמכתא למסירה.',
           'credit_note_legal_hint':
-              'לשימוש תקין בישראל יש לשמור קישור לחשבונית המקור ואסמכתא למסירת הודעת הזיכוי ללקוח.',
+              'לשימוש תקין בישראל יש לשמור קישור לחשבונית המקור ואסמכתא למסירת חשבונית מס הזיכוי ללקוח.',
           'doc_start_title': 'מספר פתיחה למסמך',
           'doc_start_message':
               'זו הפעם הראשונה שאתה משתמש ב-{docType}. הזן את המספר שממנו המסמך הזה צריך להתחיל.',
@@ -3478,7 +3672,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'receipt': 'إيصال',
           'invoice': 'فاتورة ضريبية',
           'invoice_receipt': 'فاتورة ضريبية / إيصال',
-          'credit_note': 'إشعار دائن',
+          'credit_note': 'فاتورة ضريبية دائنة',
           'licensed_only': 'متاح فقط للتاجر المرخص الموثق',
           'vat_id': 'رقم الضريبة / الرقم الضريبي:',
           'vat': 'ضريبة القيمة المضافة:',
@@ -3492,8 +3686,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'worker_id': 'معرّف العامل:',
           'authorized_dealer_label': 'تاجر معتمد:',
           'payment_method': 'طريقة الدفع',
-          'credit_note_legal': 'تفاصيل الإشعار الدائن',
-          'credit_reason': 'سبب الإشعار الدائن',
+          'credit_note_legal': 'تفاصيل الفاتورة الضريبية الدائنة',
+          'credit_reason': 'سبب الفاتورة الضريبية الدائنة',
           'original_invoice_number': 'رقم الفاتورة الأصلية',
           'original_invoice_date': 'تاريخ الفاتورة الأصلية',
           'delivery_method': 'طريقة التسليم',
@@ -3504,9 +3698,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'delivery_customer_signature': 'توقيع العميل',
           'delivery_manual': 'تسليم يدوي',
           'credit_note_missing_fields':
-              'يتطلب الإشعار الدائن رقم الفاتورة الأصلية وتاريخها وسبب الإشعار وإثبات التسليم.',
+              'تتطلب الفاتورة الضريبية الدائنة رقم الفاتورة الأصلية وتاريخها وسبب الائتمان وإثبات التسليم.',
           'credit_note_legal_hint':
-              'للامتثال في إسرائيل، احتفظ بمرجع الفاتورة الأصلية وإثبات تسليم الإشعار الدائن إلى العميل.',
+              'للامتثال في إسرائيل، احتفظ بمرجع الفاتورة الأصلية وإثبات تسليم الفاتورة الضريبية الدائنة إلى العميل.',
           'doc_start_title': 'رقم بداية المستند',
           'doc_start_message':
               'هذه هي المرة الأولى التي تستخدم فيها {docType}. أدخل الرقم الذي يجب أن يبدأ منه هذا النوع من المستندات.',
@@ -3616,7 +3810,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'receipt': 'Квитанция',
           'invoice': 'Налоговый счет',
           'invoice_receipt': 'Налоговый счет / квитанция',
-          'credit_note': 'Кредит-нота',
+          'credit_note': 'Кредитовый налоговый счёт',
           'licensed_only':
               'Доступно только для подтвержденного лицензированного дилера',
           'vat_id': 'НДС / налоговый номер:',
@@ -3631,7 +3825,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'worker_id': 'ID работника:',
           'authorized_dealer_label': 'Уполномоченный дилер:',
           'payment_method': 'Способ оплаты',
-          'credit_note_legal': 'Данные кредит-ноты',
+          'credit_note_legal': 'Данные кредитового налогового счёта',
           'credit_reason': 'Причина возврата',
           'original_invoice_number': 'Номер исходного счета',
           'original_invoice_date': 'Дата исходного счета',
@@ -3643,9 +3837,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'delivery_customer_signature': 'Подпись клиента',
           'delivery_manual': 'Ручная доставка',
           'credit_note_missing_fields':
-              'Для кредит-ноты необходимы номер исходного счета, дата исходного счета, причина возврата и подтверждение доставки.',
+              'Для кредитового налогового счёта необходимы номер и дата исходного счёта, причина кредита и подтверждение доставки.',
           'credit_note_legal_hint':
-              'Для соответствия требованиям в Израиле храните ссылку на исходный счет и подтверждение вручения кредит-ноты клиенту.',
+              'Для соответствия требованиям в Израиле храните ссылку на исходный счёт и подтверждение вручения кредитового налогового счёта клиенту.',
           'doc_start_title': 'Начальный номер документа',
           'doc_start_message':
               'Вы впервые используете {docType}. Введите номер, с которого должен начинаться этот тип документа.',
@@ -3750,7 +3944,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'receipt': 'ደረሰኝ',
           'invoice': 'የግብር ደረሰኝ',
           'invoice_receipt': 'የግብር ደረሰኝ / ደረሰኝ',
-          'credit_note': 'የክሬዲት ማስታወሻ',
+          'credit_note': 'የግብር ደረሰኝ ክሬዲት',
           'licensed_only': 'ለተረጋገጠ ፈቃድ ያለው ነጋዴ ብቻ ይገኛል',
           'vat_id': 'ቫት / የግብር ቁጥር:',
           'vat': 'ቫት:',
@@ -3764,7 +3958,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'worker_id': 'የሰራተኛ መታወቂያ:',
           'authorized_dealer_label': 'የተፈቀደ ነጋዴ:',
           'payment_method': 'የክፍያ ዘዴ',
-          'credit_note_legal': 'የክሬዲት ማስታወሻ ዝርዝሮች',
+          'credit_note_legal': 'የግብር ደረሰኝ ክሬዲት ዝርዝሮች',
           'credit_reason': 'የክሬዲት ምክንያት',
           'original_invoice_number': 'የመጀመሪያው ደረሰኝ ቁጥር',
           'original_invoice_date': 'የመጀመሪያው ደረሰኝ ቀን',
@@ -3776,9 +3970,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'delivery_customer_signature': 'የደንበኛ ፊርማ',
           'delivery_manual': 'በእጅ ማድረስ',
           'credit_note_missing_fields':
-              'ለክሬዲት ማስታወሻ የመጀመሪያው ደረሰኝ ቁጥር፣ ቀን፣ ምክንያት እና የማድረስ ማረጋገጫ ያስፈልጋሉ።',
+              'ለግብር ደረሰኝ ክሬዲት የመጀመሪያው ደረሰኝ ቁጥር፣ ቀን፣ ምክንያት እና የማድረስ ማረጋገጫ ያስፈልጋሉ።',
           'credit_note_legal_hint':
-              'በእስራኤል ደንብ መሰረት የመጀመሪያውን ደረሰኝ ማጣቀሻ እና የክሬዲት ማስታወሻው ለደንበኛው እንደደረሰ ማረጋገጫ ያስቀምጡ።',
+              'በእስራኤል ደንብ መሰረት የመጀመሪያውን ደረሰኝ ማጣቀሻ እና የግብር ደረሰኝ ክሬዲቱ ለደንበኛው እንደደረሰ ማረጋገጫ ያስቀምጡ።',
           'doc_start_title': 'የመነሻ ሰነድ ቁጥር',
           'doc_start_message':
               'ይህን {docType} ለመጀመሪያ ጊዜ እየተጠቀሙ ነው። ይህ የሰነድ አይነት የሚጀምርበትን ቁጥር ያስገቡ።',
@@ -3887,7 +4081,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'receipt': 'Receipt',
           'invoice': 'Tax Invoice',
           'invoice_receipt': 'Tax Invoice / Receipt',
-          'credit_note': 'Credit Note',
+          'credit_note': 'Tax Invoice Credit',
           'licensed_only': 'Verified Licensed Dealers only',
           'vat_id': 'VAT ID / Tax ID:',
           'vat': 'VAT:',
@@ -3901,7 +4095,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'worker_id': 'Worker ID:',
           'authorized_dealer_label': 'Authorized Dealer:',
           'payment_method': 'Payment Method',
-          'credit_note_legal': 'Credit Note Details',
+          'credit_note_legal': 'Tax Invoice Credit Details',
           'credit_reason': 'Reason for Credit',
           'original_invoice_number': 'Original Invoice Number',
           'original_invoice_date': 'Original Invoice Date',
@@ -3913,9 +4107,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'delivery_customer_signature': 'Customer Signature',
           'delivery_manual': 'Manual Delivery',
           'credit_note_missing_fields':
-              'Credit notes require original invoice number, original invoice date, reason for credit, and delivery proof.',
+              'Tax Invoice Credits require the original invoice number, original invoice date, reason for credit, and delivery proof.',
           'credit_note_legal_hint':
-              'For Israeli compliance, keep the original invoice reference and proof that the credit note was delivered to the customer.',
+              'For Israeli compliance, keep the original invoice reference and proof that the Tax Invoice Credit was delivered to the customer.',
           'doc_start_title': 'Starting Document Number',
           'doc_start_message':
               'This is your first time using {docType}. Enter the number this document type should start from.',
@@ -3960,7 +4154,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'receipt': 'Receipt',
       'invoice': 'Tax Invoice',
       'invoice_receipt': 'Tax Invoice / Receipt',
-      'credit_note': 'Credit Note',
+      'credit_note': 'Tax Invoice Credit',
       'licensed_only': 'Verified Licensed Dealers only',
       'invoice_counter': 'Invoice Counter',
       'client_info': 'Client Details:',
@@ -4053,7 +4247,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'company_dealer': 'Limited Company',
       'vat_id': 'VAT ID / Tax ID:',
       'authorized_dealer_label': 'Authorized Dealer:',
-      'credit_note_legal': 'Credit Note Details',
+      'credit_note_legal': 'Tax Invoice Credit Details',
       'credit_reason': 'Reason for Credit',
       'original_invoice_number': 'Original Invoice Number',
       'original_invoice_date': 'Original Invoice Date',
@@ -4065,9 +4259,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'delivery_customer_signature': 'Customer Signature',
       'delivery_manual': 'Manual Delivery',
       'credit_note_missing_fields':
-          'Credit notes require original invoice number, original invoice date, reason for credit, and delivery proof.',
+          'Tax Invoice Credits require the original invoice number, original invoice date, reason for credit, and delivery proof.',
       'credit_note_legal_hint':
-          'For Israeli compliance, keep the original invoice reference and proof that the credit note was delivered to the customer.',
+          'For Israeli compliance, keep the original invoice reference and proof that the Tax Invoice Credit was delivered to the customer.',
       'doc_start_title': 'Starting Document Number',
       'doc_start_message':
           'This is your first time using {docType}. Enter the number this document type should start from.',
@@ -4728,24 +4922,33 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     required String documentType,
     required String documentNumber,
     required pw.TextStyle style,
-  }) => pw.Directionality(
-    textDirection: pw.TextDirection.rtl,
-    child: pw.Row(
-      mainAxisSize: pw.MainAxisSize.min,
-      children: [
-        pw.Text('$documentType מספר', style: style),
-        pw.SizedBox(width: 7),
-        pw.Directionality(
-          textDirection: pw.TextDirection.ltr,
-          child: pw.Text(
-            documentNumber.isEmpty ? '-' : documentNumber,
-            style: style,
+  }) {
+    if (documentNumber.trim().isEmpty) {
+      return pw.Directionality(
+        textDirection: pw.TextDirection.rtl,
+        child: pw.Text(documentType, style: style),
+      );
+    }
+
+    return pw.Directionality(
+      textDirection: pw.TextDirection.rtl,
+      child: pw.Row(
+        mainAxisSize: pw.MainAxisSize.min,
+        children: [
+          pw.Text('$documentType מספר', style: style),
+          pw.SizedBox(width: 7),
+          pw.Directionality(
             textDirection: pw.TextDirection.ltr,
+            child: pw.Text(
+              documentNumber,
+              style: style,
+              textDirection: pw.TextDirection.ltr,
+            ),
           ),
-        ),
-      ],
-    ),
-  );
+        ],
+      ),
+    );
+  }
 
   List<pw.Widget> _buildPaymentTablesPdf(_PdfTypography typography) {
     final grouped = <String, List<_PaymentMethodEntry>>{};
@@ -5009,6 +5212,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       setState(() => _isPreparing = false);
 
       InvoiceBuilderDraftResult? savedDraftResult;
+      final builderRoute = ModalRoute.of(context);
+      final navigator = Navigator.of(context);
       final action = await Navigator.push<String>(
         context,
         MaterialPageRoute(
@@ -5079,34 +5284,72 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                     await _sendForSignature(saved);
                   }
                 : null,
+            onSend: widget.returnDraftOnSend
+                ? null
+                : () async {
+                    MapEntry<String, String>? recipient;
+                    final returnsToExistingChat = widget.receiverId != null;
+
+                    if (widget.receiverId != null && savedDraftResult != null) {
+                      final sent = await _sendSavedInvoiceToContact(
+                        widget.receiverId!,
+                        widget.receiverName ?? 'User',
+                        savedDraftResult!,
+                      );
+                      if (sent) {
+                        recipient = MapEntry(
+                          widget.receiverId!,
+                          widget.receiverName ?? 'User',
+                        );
+                      }
+                    } else if (widget.receiverId != null) {
+                      final sent = await _sendToContact(
+                        widget.receiverId!,
+                        widget.receiverName ?? 'User',
+                      );
+                      if (sent) {
+                        recipient = MapEntry(
+                          widget.receiverId!,
+                          widget.receiverName ?? 'User',
+                        );
+                      }
+                    } else {
+                      recipient = await _showContactPickerAndSend(
+                        savedInvoice: savedDraftResult,
+                      );
+                    }
+
+                    if (recipient == null) return;
+                    final selectedRecipient = recipient;
+
+                    if (builderRoute != null && builderRoute.isActive) {
+                      navigator.removeRoute(builderRoute);
+                    }
+                    if (returnsToExistingChat) {
+                      navigator.pop();
+                    } else {
+                      unawaited(
+                        navigator.pushReplacement(
+                          MaterialPageRoute(
+                            builder: (_) => ChatPage(
+                              receiverId: selectedRecipient.key,
+                              receiverName: selectedRecipient.value,
+                            ),
+                          ),
+                        ),
+                      );
+                    }
+                  },
           ),
         ),
       );
 
-      if (action == 'send' && mounted) {
+      if (!mounted) return;
+
+      if (action == 'send') {
         if (widget.returnDraftOnSend) {
           Navigator.pop(context, savedDraftResult);
           return;
-        }
-        if (widget.receiverId != null && savedDraftResult != null) {
-          final sent = await _sendSavedInvoiceToContact(
-            widget.receiverId!,
-            widget.receiverName ?? "User",
-            savedDraftResult!,
-          );
-          if (sent && mounted) {
-            Navigator.pop(context);
-          }
-        } else if (widget.receiverId != null) {
-          final sent = await _sendToContact(
-            widget.receiverId!,
-            widget.receiverName ?? "User",
-          );
-          if (sent && mounted) {
-            Navigator.pop(context);
-          }
-        } else {
-          await _showContactPickerAndSend(savedInvoice: savedDraftResult);
         }
         return;
       }
@@ -5376,7 +5619,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         .trim();
   }
 
-  Future<void> _showContactPickerAndSend({
+  Future<MapEntry<String, String>?> _showContactPickerAndSend({
     InvoiceBuilderDraftResult? savedInvoice,
   }) async {
     if (_items.isEmpty && _selectedDocType != 'receipt') {
@@ -5387,7 +5630,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           ),
         ),
       );
-      return;
+      return null;
     }
 
     if (widget.receiverId != null) {
@@ -5404,14 +5647,13 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           widget.receiverName ?? "User",
         );
       }
-      if (sent && mounted) {
-        Navigator.pop(context);
-      }
-      return;
+      return sent
+          ? MapEntry(widget.receiverId!, widget.receiverName ?? 'User')
+          : null;
     }
 
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
+    if (user == null) return null;
 
     final strings = _getLocalizedStrings(context, listen: false);
 
@@ -5494,7 +5736,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       },
     );
 
-    if (!mounted || recipient == null) return;
+    if (!mounted || recipient == null) return null;
 
     final sent = savedInvoice != null
         ? await _sendSavedInvoiceToContact(
@@ -5503,19 +5745,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
             savedInvoice,
           )
         : await _sendToContact(recipient.key, recipient.value);
-    if (!sent || !mounted) return;
-
-    unawaited(
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (_) => ChatPage(
-            receiverId: recipient.key,
-            receiverName: recipient.value,
-          ),
-        ),
-      ),
-    );
+    return sent ? recipient : null;
   }
 
   Future<bool> _sendSavedInvoiceToContact(
@@ -6748,99 +6978,104 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                           _buildBusinessLogoSection(strings),
                           const SizedBox(height: 20),
                           // Client information
-                          const SizedBox(height: 20),
-                          _buildSectionCard(
-                            title: strings['client_info']!,
-                            icon: Icons.person_add_alt_1_rounded,
-                            children: [
-                              _buildClientPicker(strings),
-                              const SizedBox(height: 12),
-                              _buildTextField(
-                                _clientIdController,
-                                strings['client_id']!,
-                                Icons.badge_outlined,
-                                keyboardType: TextInputType.number,
-                                inputFormatters: [
-                                  FilteringTextInputFormatter.digitsOnly,
-                                  LengthLimitingTextInputFormatter(9),
-                                ],
-                                enabled: false,
-                              ),
-                              const SizedBox(height: 12),
-                              _buildTextField(
-                                _clientPhoneController,
-                                strings['client_phone']!,
-                                Icons.phone_outlined,
-                                keyboardType: TextInputType.phone,
-                                enabled: false,
-                              ),
-                              const SizedBox(height: 12),
-                              _buildTextField(
-                                _clientEmailController,
-                                strings['client_email']!,
-                                Icons.email_outlined,
-                                keyboardType: TextInputType.emailAddress,
-                                enabled: false,
-                              ),
-                              const SizedBox(height: 12),
-                              _buildTextField(
-                                _clientAddressController,
-                                strings['client_address']!,
-                                Icons.location_on_outlined,
-                                enabled: false,
-                              ),
-                            ],
-                          ),
-
-                          const SizedBox(height: 20),
-                          _buildSectionCard(
-                            title: strings['linked_documents']!,
-                            icon: Icons.link_rounded,
-                            children: [
-                              if (_linkedDocuments.isNotEmpty) ...[
-                                ..._linkedDocuments.values.map(
-                                  (document) => Padding(
-                                    padding: const EdgeInsets.only(bottom: 10),
-                                    child: _buildLinkedDocumentSummary(
-                                      strings,
-                                      document,
-                                    ),
-                                  ),
+                          if (_selectedDocType != 'quote') ...[
+                            const SizedBox(height: 20),
+                            _buildSectionCard(
+                              title: strings['client_info']!,
+                              icon: Icons.person_add_alt_1_rounded,
+                              children: [
+                                _buildClientPicker(strings),
+                                const SizedBox(height: 12),
+                                _buildTextField(
+                                  _clientIdController,
+                                  strings['client_id']!,
+                                  Icons.badge_outlined,
+                                  keyboardType: TextInputType.number,
+                                  inputFormatters: [
+                                    FilteringTextInputFormatter.digitsOnly,
+                                    LengthLimitingTextInputFormatter(9),
+                                  ],
+                                  enabled: false,
                                 ),
                                 const SizedBox(height: 12),
+                                _buildTextField(
+                                  _clientPhoneController,
+                                  strings['client_phone']!,
+                                  Icons.phone_outlined,
+                                  keyboardType: TextInputType.phone,
+                                  enabled: false,
+                                ),
+                                const SizedBox(height: 12),
+                                _buildTextField(
+                                  _clientEmailController,
+                                  strings['client_email']!,
+                                  Icons.email_outlined,
+                                  keyboardType: TextInputType.emailAddress,
+                                  enabled: false,
+                                ),
+                                const SizedBox(height: 12),
+                                _buildTextField(
+                                  _clientAddressController,
+                                  strings['client_address']!,
+                                  Icons.location_on_outlined,
+                                  enabled: false,
+                                ),
                               ],
-                              SizedBox(
-                                width: double.infinity,
-                                child: OutlinedButton.icon(
-                                  onPressed: _selectedSavedClientId == null
-                                      ? null
-                                      : () =>
-                                            _showLinkedDocumentsPopup(strings),
-                                  icon: const Icon(Icons.link_rounded),
-                                  label: Text(
-                                    _linkedDocuments.isEmpty
-                                        ? strings['linked_documents_title']!
-                                        : strings['linked_documents_count']!
-                                              .replaceFirst(
-                                                '{count}',
-                                                '${_linkedDocuments.length}',
-                                              ),
+                            ),
+
+                            const SizedBox(height: 20),
+                            _buildSectionCard(
+                              title: strings['linked_documents']!,
+                              icon: Icons.link_rounded,
+                              children: [
+                                if (_linkedDocuments.isNotEmpty) ...[
+                                  ..._linkedDocuments.values.map(
+                                    (document) => Padding(
+                                      padding: const EdgeInsets.only(
+                                        bottom: 10,
+                                      ),
+                                      child: _buildLinkedDocumentSummary(
+                                        strings,
+                                        document,
+                                      ),
+                                    ),
                                   ),
-                                  style: OutlinedButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 14,
+                                  const SizedBox(height: 12),
+                                ],
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: OutlinedButton.icon(
+                                    onPressed: _selectedSavedClientId == null
+                                        ? null
+                                        : () => _showLinkedDocumentsPopup(
+                                            strings,
+                                          ),
+                                    icon: const Icon(Icons.link_rounded),
+                                    label: Text(
+                                      _linkedDocuments.isEmpty
+                                          ? strings['linked_documents_title']!
+                                          : strings['linked_documents_count']!
+                                                .replaceFirst(
+                                                  '{count}',
+                                                  '${_linkedDocuments.length}',
+                                                ),
                                     ),
-                                    side: const BorderSide(
-                                      color: Color(0xFF1976D2),
-                                    ),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
+                                    style: OutlinedButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 14,
+                                      ),
+                                      side: const BorderSide(
+                                        color: Color(0xFF1976D2),
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
                                     ),
                                   ),
                                 ),
-                              ),
-                            ],
-                          ),
+                              ],
+                            ),
+                          ],
                           const SizedBox(height: 20),
                           _buildSectionCard(
                             title: strings['date']!,
@@ -7913,7 +8148,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   Set<String> _linkableDocumentTypes(String docType) {
     switch (docType) {
       case 'quote':
-        return const {'work_order'};
+        return const {};
       case 'work_order':
         return const {'quote'};
       case 'transaction_account':
@@ -7921,9 +8156,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       case 'invoice':
         return const {'quote', 'work_order', 'transaction_account'};
       case 'invoice_receipt':
-        return const {'quote', 'work_order', 'transaction_account', 'invoice'};
+        return const {'quote', 'work_order', 'transaction_account'};
       case 'credit_note':
-        return const {'invoice', 'invoice_receipt', 'receipt'};
+        return const {'invoice', 'invoice_receipt'};
       case 'receipt':
       default:
         return const {'invoice', 'transaction_account'};
@@ -8001,6 +8236,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     if (user == null || _selectedSavedClientId == null) return const [];
 
     final compatibleTypes = _linkableDocumentTypes(_selectedDocType);
+    if (compatibleTypes.isEmpty) return const [];
     final queryTypes = _selectedDocType == 'receipt'
         ? {...compatibleTypes, 'invoice_receipt'}
         : compatibleTypes;
@@ -8853,6 +9089,7 @@ class InvoicePreviewPage extends StatefulWidget {
   final Future<bool> Function()? isTaxAuthorityConnected;
   final Future<void> Function()? onConnectTaxAuthority;
   final Future<void> Function()? onSendForSignature;
+  final Future<void> Function()? onSend;
   final VoidCallback? onReturnAfterSave;
 
   const InvoicePreviewPage({
@@ -8864,6 +9101,7 @@ class InvoicePreviewPage extends StatefulWidget {
     this.isTaxAuthorityConnected,
     this.onConnectTaxAuthority,
     this.onSendForSignature,
+    this.onSend,
     this.onReturnAfterSave,
   });
 
@@ -8874,6 +9112,7 @@ class InvoicePreviewPage extends StatefulWidget {
 class _InvoicePreviewPageState extends State<InvoicePreviewPage> {
   bool _isSaved = false;
   bool _isSaving = false;
+  bool _isSending = false;
   bool _isSendingForSignature = false;
   late Uint8List _pdfBytes;
 
@@ -8901,6 +9140,27 @@ class _InvoicePreviewPageState extends State<InvoicePreviewPage> {
       }
     } finally {
       if (mounted) setState(() => _isSendingForSignature = false);
+    }
+  }
+
+  Future<void> _handleSend() async {
+    if (_isSending) return;
+    if (widget.onSend == null) {
+      Navigator.pop(context, 'send');
+      return;
+    }
+
+    setState(() => _isSending = true);
+    try {
+      await widget.onSend!.call();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_friendlySaveError(e))));
+      }
+    } finally {
+      if (mounted) setState(() => _isSending = false);
     }
   }
 
@@ -9250,9 +9510,21 @@ class _InvoicePreviewPageState extends State<InvoicePreviewPage> {
                     children: [
                       Expanded(
                         child: ElevatedButton.icon(
-                          onPressed: () => Navigator.pop(context, 'send'),
-                          icon: const Icon(Icons.send_rounded),
-                          label: Text(isRtl ? 'שלח' : 'Send'),
+                          onPressed: _isSending ? null : _handleSend,
+                          icon: _isSending
+                              ? const SizedBox.square(
+                                  dimension: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Icon(Icons.send_rounded),
+                          label: Text(
+                            _isSending
+                                ? (isRtl ? 'שולח...' : 'Sending...')
+                                : (isRtl ? 'שלח' : 'Send'),
+                          ),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFF0EA5E9),
                             foregroundColor: Colors.white,
