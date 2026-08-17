@@ -325,8 +325,8 @@ class _LinkedDocumentsDialog extends StatefulWidget {
 }
 
 class _LinkedDocumentsDialogState extends State<_LinkedDocumentsDialog> {
-  late final Map<String, _LinkedInvoiceDocument> _selected = Map.fromEntries(
-    widget.initiallySelected.entries.take(1),
+  late final Map<String, _LinkedInvoiceDocument> _selected = Map.from(
+    widget.initiallySelected,
   );
   final TextEditingController _searchController = TextEditingController();
   List<_LinkedInvoiceDocument> _documents = const [];
@@ -454,7 +454,6 @@ class _LinkedDocumentsDialogState extends State<_LinkedDocumentsDialog> {
       if (_selected.containsKey(document.id)) {
         _selected.remove(document.id);
       } else {
-        _selected.clear();
         _selected[document.id] = document;
       }
     });
@@ -748,7 +747,15 @@ class _LinkedDocumentsDialogState extends State<_LinkedDocumentsDialog> {
                         ),
                       ),
                       icon: const Icon(Icons.link_rounded, size: 19),
-                      label: Text(widget.strings['link_documents_action']!),
+                      label: Text(
+                        _selected.isEmpty
+                            ? widget.strings['link_documents_action']!
+                            : widget.strings['link_documents_action_count']!
+                                  .replaceFirst(
+                                    '{count}',
+                                    '${_selected.length}',
+                                  ),
+                      ),
                     ),
                   ),
                 ],
@@ -1805,6 +1812,91 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
 
   List<String> get _linkedDocumentIds =>
       _linkedDocuments.keys.toList(growable: false);
+
+  String _linkedDocumentTitle(
+    Map<String, String> strings,
+    _LinkedInvoiceDocument document,
+  ) {
+    final type = _documentTypeDisplayName(strings, document.docType);
+    if (document.documentNumber.isNotEmpty) {
+      return '$type #${document.documentNumber}';
+    }
+    return document.name.isNotEmpty ? document.name : type;
+  }
+
+  String _linkedDocumentDate(_LinkedInvoiceDocument document) {
+    if (document.createdAt != null) {
+      return intl.DateFormat('dd/MM/yyyy').format(document.createdAt!);
+    }
+    final raw = document.date;
+    if (RegExp(r'^\d{8}$').hasMatch(raw)) {
+      return '${raw.substring(6, 8)}/${raw.substring(4, 6)}/${raw.substring(0, 4)}';
+    }
+    return raw;
+  }
+
+  Widget _buildLinkedDocumentSummary(
+    Map<String, String> strings,
+    _LinkedInvoiceDocument document,
+  ) {
+    final date = _linkedDocumentDate(document);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEFF6FF),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFBFDBFE)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(
+              Icons.description_outlined,
+              color: Color(0xFF1976D2),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _linkedDocumentTitle(strings, document),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF0F172A),
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  [
+                    if (date.isNotEmpty) date,
+                    '${document.amount.toStringAsFixed(2)} ₪',
+                  ].join(' • '),
+                  style: const TextStyle(
+                    color: Color(0xFF475569),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Icon(Icons.check_circle_rounded, color: Color(0xFF16A34A)),
+        ],
+      ),
+    );
+  }
 
   double _unitPriceAfterTax(InvoiceItem item) {
     if (!_usesVat) return item.price;
@@ -3122,7 +3214,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'linked_documents_empty': 'אין מסמכים מתאימים ללקוח זה.',
           'linked_documents_load_failed': 'לא ניתן לטעון את המסמכים.',
           'link_documents_action': 'קישור מסמך',
-          'linked_documents_helper': 'בחרו מסמך אחד לקישור למסמך הנוכחי.',
+          'linked_documents_helper':
+              'בחרו מסמך אחד או יותר לקישור למסמך הנוכחי.',
           'linked_documents_search': 'חיפוש לפי סוג, מספר, תאריך או סכום',
           'linked_documents_count': '{count} נבחרו',
           'linked_documents_no_results': 'לא נמצאו מסמכים התואמים לחיפוש.',
@@ -3270,7 +3363,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'linked_documents_load_failed': 'تعذر تحميل المستندات.',
           'link_documents_action': 'ربط المستند',
           'linked_documents_helper':
-              'اختر مستندًا واحدًا لربطه بالمستند الحالي.',
+              'اختر مستندًا واحدًا أو أكثر لربطه بالمستند الحالي.',
           'linked_documents_search':
               'ابحث حسب النوع أو الرقم أو التاريخ أو المبلغ',
           'linked_documents_count': 'تم اختيار {count}',
@@ -3407,7 +3500,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'linked_documents_load_failed': 'Не удалось загрузить документы.',
           'link_documents_action': 'Связать документ',
           'linked_documents_helper':
-              'Выберите один документ для связи с текущим.',
+              'Выберите один или несколько документов для связи с текущим.',
           'linked_documents_search': 'Поиск по типу, номеру, дате или сумме',
           'linked_documents_count': 'Выбрано: {count}',
           'linked_documents_no_results': 'По вашему запросу ничего не найдено.',
@@ -3544,7 +3637,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'linked_documents_empty': 'ለዚህ ደንበኛ ተስማሚ ሰነዶች የሉም።',
           'linked_documents_load_failed': 'ሰነዶቹን መጫን አልተቻለም።',
           'link_documents_action': 'ሰነድ አገናኝ',
-          'linked_documents_helper': 'ከአሁኑ ሰነድ ጋር ለማገናኘት አንድ ሰነድ ይምረጡ።',
+          'linked_documents_helper':
+              'ከአሁኑ ሰነድ ጋር ለማገናኘት አንድ ወይም ከዚያ በላይ ሰነዶችን ይምረጡ።',
           'linked_documents_search': 'በአይነት፣ ቁጥር፣ ቀን ወይም መጠን ይፈልጉ',
           'linked_documents_count': '{count} ተመርጧል',
           'linked_documents_no_results': 'ከፍለጋዎ ጋር የሚዛመድ ሰነድ የለም።',
@@ -3678,7 +3772,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'linked_documents_load_failed': 'Could not load the documents.',
           'link_documents_action': 'Link document',
           'linked_documents_helper':
-              'Choose one document to connect to this document.',
+              'Choose one or more documents to connect to this document.',
           'linked_documents_search': 'Search by type, number, date, or amount',
           'linked_documents_count': '{count} selected',
           'linked_documents_no_results': 'No documents match your search.',
@@ -3843,7 +3937,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'linked_documents_load_failed': 'Could not load the documents.',
       'link_documents_action': 'Link document',
       'linked_documents_helper':
-          'Choose one document to connect to this document.',
+          'Choose one or more documents to connect to this document.',
       'linked_documents_search': 'Search by type, number, date, or amount',
       'linked_documents_count': '{count} selected',
       'linked_documents_no_results': 'No documents match your search.',
@@ -6600,7 +6694,26 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                               Icons.location_on_outlined,
                               enabled: false,
                             ),
-                            const SizedBox(height: 14),
+                          ],
+                        ),
+
+                        const SizedBox(height: 20),
+                        _buildSectionCard(
+                          title: strings['linked_documents']!,
+                          icon: Icons.link_rounded,
+                          children: [
+                            if (_linkedDocuments.isNotEmpty) ...[
+                              ..._linkedDocuments.values.map(
+                                (document) => Padding(
+                                  padding: const EdgeInsets.only(bottom: 10),
+                                  child: _buildLinkedDocumentSummary(
+                                    strings,
+                                    document,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                            ],
                             SizedBox(
                               width: double.infinity,
                               child: OutlinedButton.icon(
@@ -6610,8 +6723,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                 icon: const Icon(Icons.link_rounded),
                                 label: Text(
                                   _linkedDocuments.isEmpty
-                                      ? strings['linked_documents']!
-                                      : strings['linked_documents_selected']!
+                                      ? strings['linked_documents_title']!
+                                      : strings['linked_documents_count']!
                                             .replaceFirst(
                                               '{count}',
                                               '${_linkedDocuments.length}',
@@ -6632,7 +6745,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                             ),
                           ],
                         ),
-
                         const SizedBox(height: 20),
                         _buildSectionCard(
                           title: strings['date']!,
