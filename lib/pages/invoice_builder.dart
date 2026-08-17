@@ -98,10 +98,15 @@ class _LinkedInvoiceDocument {
 
   factory _LinkedInvoiceDocument.fromDocument(
     QueryDocumentSnapshot<Map<String, dynamic>> document,
-  ) {
-    final data = document.data();
+  ) => _LinkedInvoiceDocument.fromMap({
+    ...document.data(),
+    'invoiceDocId': document.id,
+  });
+
+  factory _LinkedInvoiceDocument.fromMap(Map<String, dynamic> data) {
+    final rawCreatedAt = data['createdAt'];
     return _LinkedInvoiceDocument(
-      id: document.id,
+      id: (data['invoiceDocId'] ?? data['id'] ?? '').toString().trim(),
       docType: (data['docType'] ?? data['type'] ?? '').toString().trim(),
       documentNumber: (data['invoiceNumber'] ?? data['documentNumber'] ?? '')
           .toString()
@@ -109,8 +114,10 @@ class _LinkedInvoiceDocument {
       name: (data['name'] ?? '').toString().trim(),
       date: (data['date'] ?? '').toString().trim(),
       amount: (data['amount'] as num?)?.toDouble() ?? 0,
-      createdAt: data['createdAt'] is Timestamp
-          ? (data['createdAt'] as Timestamp).toDate()
+      createdAt: rawCreatedAt is Timestamp
+          ? rawCreatedAt.toDate()
+          : rawCreatedAt is DateTime
+          ? rawCreatedAt
           : null,
     );
   }
@@ -986,6 +993,7 @@ class InvoiceBuilderPage extends StatefulWidget {
   final String? sourceInvoiceNumber;
   final String? sourceInvoiceDocId;
   final double? sourceInvoiceTotalAmount;
+  final List<Map<String, dynamic>> initialLinkedDocuments;
   final bool returnDraftOnSend;
 
   const InvoiceBuilderPage({
@@ -1016,6 +1024,7 @@ class InvoiceBuilderPage extends StatefulWidget {
     this.sourceInvoiceNumber,
     this.sourceInvoiceDocId,
     this.sourceInvoiceTotalAmount,
+    this.initialLinkedDocuments = const [],
     this.returnDraftOnSend = false,
   });
 
@@ -2130,6 +2139,14 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     _paymentDueDateController.text = _formattedPaymentDueDate();
 
     _applyInitialTemplate();
+    final compatibleLinkedTypes = _linkableDocumentTypes(_selectedDocType);
+    for (final data in widget.initialLinkedDocuments) {
+      final document = _LinkedInvoiceDocument.fromMap(data);
+      if (document.id.isNotEmpty &&
+          compatibleLinkedTypes.contains(document.docType)) {
+        _linkedDocuments[document.id] = document;
+      }
+    }
     _prefillClientBusinessIdFromReceiver();
     _fetchWorkerInfo();
     _loadVatRate();

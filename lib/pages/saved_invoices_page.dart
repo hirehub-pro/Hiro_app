@@ -34,6 +34,7 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
   DateTimeRange? _selectedDateRange;
   _InvoiceScope _selectedScope = _InvoiceScope.createdByMe;
   final Set<String> _generatingSigningLinks = <String>{};
+  final Set<String> _expandedCreateActions = <String>{};
 
   String _paymentStatusLabel(String? status, bool isRtl) {
     switch (status) {
@@ -348,7 +349,24 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
     return trimmed;
   }
 
+  Map<String, dynamic> _linkedDocumentSeed(
+    String sourceDocId,
+    Map<String, dynamic> data,
+  ) {
+    final storedId = (data['invoiceDocId'] ?? '').toString().trim();
+    return {
+      'invoiceDocId': storedId.isEmpty ? sourceDocId : storedId,
+      'docType': data['docType'] ?? data['type'] ?? '',
+      'documentNumber': data['invoiceNumber'] ?? data['documentNumber'] ?? '',
+      'name': data['name'] ?? '',
+      'date': data['date'] ?? '',
+      'amount': data['amount'] ?? 0,
+      if (data['createdAt'] != null) 'createdAt': data['createdAt'],
+    };
+  }
+
   Future<void> _openCreditNoteFromDocument(
+    String sourceDocId,
     Map<String, dynamic> savedData,
     bool isRtl,
   ) async {
@@ -356,7 +374,7 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
     if (currentUser == null) return;
 
     final invoiceNumber = (savedData['invoiceNumber'] ?? '').toString().trim();
-    final invoiceDocId = (savedData['invoiceDocId'] ?? invoiceNumber)
+    final invoiceDocId = (savedData['invoiceDocId'] ?? sourceDocId)
         .toString()
         .trim();
     if (invoiceNumber.isEmpty) return;
@@ -381,6 +399,7 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
           (detailData['clientName'] ?? savedData['clientName'] ?? '')
               .toString();
       final clientPhone = (detailData['clientPhone'] ?? '').toString();
+      final clientEmail = (detailData['clientEmail'] ?? '').toString();
       final clientAddress = (detailData['clientAddress'] ?? '').toString();
       final items = ((detailData['items'] as List?) ?? const [])
           .map((e) => Map<String, dynamic>.from((e as Map)))
@@ -409,7 +428,14 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
             workerEmail: workerEmail.isEmpty ? null : workerEmail,
             receiverName: clientName.isEmpty ? null : clientName,
             receiverPhone: clientPhone.isEmpty ? null : clientPhone,
+            receiverEmail: clientEmail.isEmpty ? null : clientEmail,
             receiverAddress: clientAddress.isEmpty ? null : clientAddress,
+            initialSavedClientId:
+                (detailData['savedClientId'] ?? detailData['clientUid'] ?? '')
+                    .toString(),
+            initialClientTaxId: (detailData['clientTaxId'] ?? '').toString(),
+            initialClientExternalNumber:
+                (detailData['externalClientNumber'] ?? '').toString(),
             initialDocType: 'credit_note',
             initialItems: items,
             initialNotes: (detailData['notes'] ?? '').toString(),
@@ -423,6 +449,9 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
             initialCreditReason: autoReason,
             initialCreditDeliveryMethod: 'email_confirmation',
             initialCreditReceiptConfirmation: autoReceiptConfirmation,
+            initialLinkedDocuments: [
+              _linkedDocumentSeed(invoiceDocId, detailData),
+            ],
           ),
         ),
       );
@@ -498,6 +527,7 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
           (detailData['clientName'] ?? savedData['clientName'] ?? '')
               .toString();
       final clientPhone = (detailData['clientPhone'] ?? '').toString();
+      final clientEmail = (detailData['clientEmail'] ?? '').toString();
       final clientAddress = (detailData['clientAddress'] ?? '').toString();
       final workerName =
           (userData['name'] ?? currentUser.displayName ?? 'Worker').toString();
@@ -520,7 +550,14 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
             workerEmail: workerEmail.isEmpty ? null : workerEmail,
             receiverName: clientName.isEmpty ? null : clientName,
             receiverPhone: clientPhone.isEmpty ? null : clientPhone,
+            receiverEmail: clientEmail.isEmpty ? null : clientEmail,
             receiverAddress: clientAddress.isEmpty ? null : clientAddress,
+            initialSavedClientId:
+                (detailData['savedClientId'] ?? detailData['clientUid'] ?? '')
+                    .toString(),
+            initialClientTaxId: (detailData['clientTaxId'] ?? '').toString(),
+            initialClientExternalNumber:
+                (detailData['externalClientNumber'] ?? '').toString(),
             initialDocType: 'receipt',
             initialItems: [
               {
@@ -536,6 +573,9 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
             sourceInvoiceNumber: invoiceNumber,
             sourceInvoiceDocId: resolvedInvoiceDocId,
             sourceInvoiceTotalAmount: invoiceAmount,
+            initialLinkedDocuments: [
+              _linkedDocumentSeed(resolvedInvoiceDocId, detailData),
+            ],
           ),
         ),
       );
@@ -593,7 +633,11 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
           .toString();
       final clientName = (detailData['clientName'] ?? '').toString();
       final clientPhone = (detailData['clientPhone'] ?? '').toString();
+      final clientEmail = (detailData['clientEmail'] ?? '').toString();
       final clientAddress = (detailData['clientAddress'] ?? '').toString();
+      final resolvedSourceDocId = (detailData['invoiceDocId'] ?? sourceDocId)
+          .toString()
+          .trim();
 
       if (!mounted) return;
       await navigator.push(
@@ -604,8 +648,11 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
             workerEmail: workerEmail.isEmpty ? null : workerEmail,
             receiverName: clientName.isEmpty ? null : clientName,
             receiverPhone: clientPhone.isEmpty ? null : clientPhone,
+            receiverEmail: clientEmail.isEmpty ? null : clientEmail,
             receiverAddress: clientAddress.isEmpty ? null : clientAddress,
-            initialSavedClientId: (detailData['clientUid'] ?? '').toString(),
+            initialSavedClientId:
+                (detailData['savedClientId'] ?? detailData['clientUid'] ?? '')
+                    .toString(),
             initialClientTaxId: (detailData['clientTaxId'] ?? '').toString(),
             initialClientExternalNumber:
                 (detailData['externalClientNumber'] ?? '').toString(),
@@ -614,6 +661,9 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
             initialNotes: (detailData['notes'] ?? '').toString(),
             initialPaymentMethod: paymentDraft?.method,
             initialPaymentAmount: paymentDraft?.amount,
+            initialLinkedDocuments: [
+              _linkedDocumentSeed(resolvedSourceDocId, detailData),
+            ],
           ),
         ),
       );
@@ -1156,6 +1206,13 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                             final canBeSigned =
                                 !isReceivedScope &&
                                 (docType == 'quote' || docType == 'work_order');
+                            final hasCreateDocumentActions =
+                                canCreateCreditNote ||
+                                isProformaInvoice ||
+                                isWorkOrder ||
+                                isQuote;
+                            final createActionsExpanded = _expandedCreateActions
+                                .contains(invoiceDoc.id);
                             final signatureStatus =
                                 (data['signatureStatus'] ?? '')
                                     .toString()
@@ -1453,7 +1510,48 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                         ],
                                       ],
                                     ),
-                                    if (canCreateCreditNote) ...[
+                                    if (hasCreateDocumentActions) ...[
+                                      const SizedBox(height: 6),
+                                      Center(
+                                        child: IconButton(
+                                          tooltip: createActionsExpanded
+                                              ? (isRtl
+                                                    ? 'הסתר פעולות יצירה'
+                                                    : 'Hide document actions')
+                                              : (isRtl
+                                                    ? 'הצג פעולות יצירה'
+                                                    : 'Show document actions'),
+                                          onPressed: () {
+                                            setState(() {
+                                              if (createActionsExpanded) {
+                                                _expandedCreateActions.remove(
+                                                  invoiceDoc.id,
+                                                );
+                                              } else {
+                                                _expandedCreateActions.add(
+                                                  invoiceDoc.id,
+                                                );
+                                              }
+                                            });
+                                          },
+                                          icon: AnimatedRotation(
+                                            turns: createActionsExpanded
+                                                ? 0.5
+                                                : 0,
+                                            duration: const Duration(
+                                              milliseconds: 180,
+                                            ),
+                                            child: Icon(
+                                              Icons.keyboard_arrow_down_rounded,
+                                              color: accent,
+                                              size: 28,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                    if (createActionsExpanded &&
+                                        canCreateCreditNote) ...[
                                       const SizedBox(height: 12),
                                       Wrap(
                                         spacing: 12,
@@ -1488,6 +1586,7 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                           TextButton.icon(
                                             onPressed: () =>
                                                 _openCreditNoteFromDocument(
+                                                  invoiceDoc.id,
                                                   data,
                                                   isRtl,
                                                 ),
@@ -1512,7 +1611,8 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                         ],
                                       ),
                                     ],
-                                    if (isProformaInvoice) ...[
+                                    if (createActionsExpanded &&
+                                        isProformaInvoice) ...[
                                       const SizedBox(height: 12),
                                       Wrap(
                                         spacing: 12,
@@ -1600,7 +1700,9 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                         ],
                                       ),
                                     ],
-                                    if (canBeSigned && !isSigned) ...[
+                                    if (createActionsExpanded &&
+                                        canBeSigned &&
+                                        !isSigned) ...[
                                       const SizedBox(height: 8),
                                       TextButton.icon(
                                         onPressed: isGeneratingSigningLink
@@ -1640,7 +1742,8 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                         ),
                                       ),
                                     ],
-                                    if (isWorkOrder) ...[
+                                    if (createActionsExpanded &&
+                                        isWorkOrder) ...[
                                       const SizedBox(height: 8),
                                       Wrap(
                                         spacing: 12,
@@ -1730,7 +1833,7 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                         ],
                                       ),
                                     ],
-                                    if (isQuote) ...[
+                                    if (createActionsExpanded && isQuote) ...[
                                       const SizedBox(height: 8),
                                       Wrap(
                                         spacing: 12,
