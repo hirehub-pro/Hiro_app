@@ -1379,7 +1379,7 @@ exports.sendUniformFilesEmail = onCall(
     },
 );
 
-// Emails the two short-lived Hashavshevet MOVEIN files uploaded by the
+// Emails the short-lived Hashavshevet MOVEIN and HESHIN files uploaded by the
 // authenticated worker. The Firebase ID token uses a dedicated header because
 // some Cloud Run clients interpret an Authorization bearer as a Google IAM
 // token before it reaches the Firebase Functions runtime.
@@ -1408,9 +1408,11 @@ exports.sendAccountingExportEmailHttp = onRequest(
 
         const recipientEmail = normalizeEmail(request.body?.recipientEmail);
         const rawPaths = request.body?.filePaths;
-        if (!recipientEmail || !Array.isArray(rawPaths) || rawPaths.length !== 2) {
+        const validFileCount = Array.isArray(rawPaths) &&
+          (rawPaths.length === 2 || rawPaths.length === 4);
+        if (!recipientEmail || !validFileCount) {
           response.status(400).json({
-            error: "A recipient email and both MOVEIN files are required.",
+            error: "A recipient email and the accounting export files are required.",
           });
           return;
         }
@@ -1425,11 +1427,20 @@ exports.sendAccountingExportEmailHttp = onRequest(
         }
 
         const names = paths.map((value) => value.split("/").pop()?.toUpperCase());
-        const expectedNames = new Set(["MOVEIN.DOC", "MOVEIN.PRM"]);
-        if (new Set(names).size !== 2 ||
+        const expectedMoveinNames = new Set(["MOVEIN.DOC", "MOVEIN.PRM"]);
+        const expectedAllNames = new Set([
+          ...expectedMoveinNames,
+          "HESHIN.DAT",
+          "HESHIN.PRM",
+        ]);
+        const expectedNames = names.length === 4 ? expectedAllNames :
+          expectedMoveinNames;
+        if (new Set(names).size !== expectedNames.size ||
             names.some((name) => !expectedNames.has(name))) {
           response.status(400).json({
-            error: "The attachments must be MOVEIN.DOC and MOVEIN.PRM.",
+            error: names.length === 4 ?
+              "The attachments must be MOVEIN.DOC, MOVEIN.PRM, HESHIN.DAT, and HESHIN.PRM." :
+              "The attachments must be MOVEIN.DOC and MOVEIN.PRM.",
           });
           return;
         }
@@ -1439,7 +1450,7 @@ exports.sendAccountingExportEmailHttp = onRequest(
         const metadata = await Promise.all(files.map(async (file) => {
           const [exists] = await file.exists();
           if (!exists) {
-            const error = new Error("A MOVEIN file was not found.");
+            const error = new Error("An accounting export file was not found.");
             error.statusCode = 404;
             throw error;
           }
@@ -1451,7 +1462,7 @@ exports.sendAccountingExportEmailHttp = onRequest(
         );
         if (totalSize > 28 * 1024 * 1024) {
           response.status(413).json({
-            error: "The generated MOVEIN files are too large to email.",
+            error: "The generated accounting files are too large to email.",
           });
           return;
         }
@@ -1468,8 +1479,11 @@ exports.sendAccountingExportEmailHttp = onRequest(
             .emails.send({
               from: RESEND_FROM_EMAIL.value(),
               to: [recipientEmail],
-              subject: "קובצי MOVEIN מהירו",
-              text: "שלום,\n\nמצורפים קובצי MOVEIN.DOC ו-MOVEIN.PRM לייבוא בהנהלת החשבונות.\n\nבברכה,\nצוות הירו",
+              subject: names.length === 4 ?
+                "קובצי MOVEIN ו-HESHIN מהירו" : "קובצי MOVEIN מהירו",
+              text: names.length === 4 ?
+                "שלום,\n\nמצורפים קובצי HESHIN.DAT ו-HESHIN.PRM לייבוא כרטיסי החשבון, וקובצי MOVEIN.DOC ו-MOVEIN.PRM לייבוא פקודות היומן. יש לייבא תחילה את קובצי HESHIN ולאחר מכן את קובצי MOVEIN.\n\nבברכה,\nצוות הירו" :
+                "שלום,\n\nמצורפים קובצי MOVEIN.DOC ו-MOVEIN.PRM לייבוא בהנהלת החשבונות.\n\nבברכה,\nצוות הירו",
               attachments,
             });
         if (error) {
@@ -1478,7 +1492,7 @@ exports.sendAccountingExportEmailHttp = onRequest(
 
         await Promise.all(files.map(async (file) => {
           await file.delete().catch((deleteError) => {
-            logger.warn("Unable to delete emailed MOVEIN export", {
+            logger.warn("Unable to delete emailed accounting export", {
               path: file.name,
               error: deleteError.message,
             });
@@ -1488,12 +1502,12 @@ exports.sendAccountingExportEmailHttp = onRequest(
       } catch (error) {
         const statusCode = error?.statusCode ||
           (error?.code?.startsWith?.("auth/") ? 401 : 500);
-        logger.error("Could not email MOVEIN export", {
+        logger.error("Could not email accounting export", {
           error: error instanceof Error ? error.message : String(error),
         });
         response.status(statusCode).json({
           error: statusCode === 500 ?
-            "Unable to send the MOVEIN files." :
+            "Unable to send the accounting export files." :
             (error.message || "Authentication failed."),
         });
       }

@@ -152,7 +152,7 @@ class _AccountingExportPageState extends State<AccountingExportPage> {
       final stamp = DateTime.now().microsecondsSinceEpoch;
       final folder = 'users/${user.uid}/accounting_exports/$stamp';
       final paths = <String>[];
-      for (final file in [package.documentFile, package.parameterFile]) {
+      for (final file in package.files) {
         final name = file.uri.pathSegments.last;
         final reference = firebase_storage.FirebaseStorage.instance.ref().child(
           '$folder/$name',
@@ -542,9 +542,9 @@ class _AccountingExportPageState extends State<AccountingExportPage> {
 
   static const _englishStrings = <String, String>{
     'title': 'External Accounting Export',
-    'heading': 'Hashavshevet MOVEIN export',
+    'heading': 'Hashavshevet accounting export',
     'description':
-        'Set your accounting card numbers, choose a period and email both MOVEIN files.',
+        'Set your accounting cards, choose a period, and email the MOVEIN and HESHIN files.',
     'registers': 'Cash and payment registers',
     'accounts': 'Accounting cards',
     'delivery': 'Export period and delivery',
@@ -555,10 +555,10 @@ class _AccountingExportPageState extends State<AccountingExportPage> {
     'saving': 'Saving settings…',
     'saved': 'Accounting export settings saved.',
     'preparing': 'Preparing the export…',
-    'creating': 'Creating MOVEIN.DOC and MOVEIN.PRM…',
+    'creating': 'Creating MOVEIN and HESHIN files…',
     'uploading': 'Uploading the files securely…',
     'sending': 'Sending the files by email…',
-    'sent': 'MOVEIN files were sent to {email}.',
+    'sent': 'MOVEIN and HESHIN files were sent to {email}.',
     'error': 'Export failed',
     'service_unavailable':
         'The email service is not available yet. Please try again shortly.',
@@ -593,9 +593,9 @@ class _AccountingExportPageState extends State<AccountingExportPage> {
 
   static const _hebrewStrings = <String, String>{
     'title': 'ייצוא להנה״ח חיצונית',
-    'heading': 'ייצוא MOVEIN לחשבשבת',
+    'heading': 'ייצוא הנהלת חשבונות לחשבשבת',
     'description':
-        'הגדירו מספרי כרטיסים, בחרו תקופה וכתובת מייל לקבלת שני קובצי ה-MOVEIN.',
+        'הגדירו מספרי כרטיסים, בחרו תקופה וכתובת מייל לקבלת קובצי MOVEIN ו-HESHIN.',
     'registers': 'עדכון מספרי הקופות',
     'accounts': 'כרטיסי הנהלת חשבונות',
     'delivery': 'תקופת הייצוא ושליחת הקבצים',
@@ -606,10 +606,10 @@ class _AccountingExportPageState extends State<AccountingExportPage> {
     'saving': 'שומר הגדרות…',
     'saved': 'הגדרות הייצוא נשמרו.',
     'preparing': 'מכין את הייצוא…',
-    'creating': 'יוצר את MOVEIN.DOC ואת MOVEIN.PRM…',
+    'creating': 'יוצר את קובצי MOVEIN ו-HESHIN…',
     'uploading': 'מעלה את הקבצים באופן מאובטח…',
     'sending': 'שולח את הקבצים למייל…',
-    'sent': 'קובצי MOVEIN נשלחו אל {email}.',
+    'sent': 'קובצי MOVEIN ו-HESHIN נשלחו אל {email}.',
     'error': 'הייצוא נכשל',
     'service_unavailable':
         'שירות שליחת הקבצים עדיין אינו זמין. נסו שוב בעוד מספר דקות.',
@@ -645,9 +645,9 @@ class _AccountingExportPageState extends State<AccountingExportPage> {
   static final _arabicStrings = <String, String>{
     ..._englishStrings,
     'title': 'التصدير إلى نظام محاسبة خارجي',
-    'heading': 'تصدير MOVEIN إلى Hashavshevet',
+    'heading': 'تصدير المحاسبة إلى Hashavshevet',
     'description':
-        'حدّد أرقام الحسابات والفترة والبريد الإلكتروني لاستلام ملفّي MOVEIN.',
+        'حدّد أرقام الحسابات والفترة والبريد الإلكتروني لاستلام ملفات MOVEIN وHESHIN.',
     'registers': 'حسابات النقد وطرق الدفع',
     'accounts': 'الحسابات المحاسبية',
     'delivery': 'فترة التصدير وإرسال الملفات',
@@ -658,10 +658,10 @@ class _AccountingExportPageState extends State<AccountingExportPage> {
     'saving': 'جارٍ حفظ الإعدادات…',
     'saved': 'تم حفظ إعدادات التصدير.',
     'preparing': 'جارٍ تحضير التصدير…',
-    'creating': 'جارٍ إنشاء MOVEIN.DOC وMOVEIN.PRM…',
+    'creating': 'جارٍ إنشاء ملفات MOVEIN وHESHIN…',
     'uploading': 'جارٍ رفع الملفات بأمان…',
     'sending': 'جارٍ إرسال الملفات بالبريد…',
-    'sent': 'تم إرسال ملفات MOVEIN إلى {email}.',
+    'sent': 'تم إرسال ملفات MOVEIN وHESHIN إلى {email}.',
     'error': 'فشل التصدير',
     'service_unavailable':
         'خدمة إرسال الملفات غير متاحة بعد. حاول مرة أخرى بعد قليل.',
@@ -696,9 +696,9 @@ class _AccountingExportPageState extends State<AccountingExportPage> {
   static final _russianStrings = <String, String>{
     ..._englishStrings,
     'title': 'Экспорт во внешнюю бухгалтерию',
-    'heading': 'Экспорт MOVEIN для Hashavshevet',
+    'heading': 'Бухгалтерский экспорт для Hashavshevet',
     'description':
-        'Укажите номера счетов, период и адрес для получения двух файлов MOVEIN.',
+        'Укажите номера счетов, период и адрес для получения файлов MOVEIN и HESHIN.',
     'registers': 'Кассы и способы оплаты',
     'accounts': 'Бухгалтерские счета',
     'delivery': 'Период и отправка файлов',
@@ -709,10 +709,10 @@ class _AccountingExportPageState extends State<AccountingExportPage> {
     'saving': 'Сохранение настроек…',
     'saved': 'Настройки экспорта сохранены.',
     'preparing': 'Подготовка экспорта…',
-    'creating': 'Создание MOVEIN.DOC и MOVEIN.PRM…',
+    'creating': 'Создание файлов MOVEIN и HESHIN…',
     'uploading': 'Безопасная загрузка файлов…',
     'sending': 'Отправка файлов по email…',
-    'sent': 'Файлы MOVEIN отправлены на {email}.',
+    'sent': 'Файлы MOVEIN и HESHIN отправлены на {email}.',
     'error': 'Ошибка экспорта',
     'service_unavailable':
         'Сервис отправки файлов пока недоступен. Повторите попытку через несколько минут.',
@@ -747,8 +747,9 @@ class _AccountingExportPageState extends State<AccountingExportPage> {
   static final _amharicStrings = <String, String>{
     ..._englishStrings,
     'title': 'ወደ ውጫዊ የሂሳብ ስርዓት ላክ',
-    'heading': 'MOVEIN ወደ Hashavshevet ላክ',
-    'description': 'የሂሳብ ካርድ ቁጥሮችን፣ ጊዜውን እና ሁለቱን MOVEIN ፋይሎች የሚቀበል ኢሜይል ያስገቡ።',
+    'heading': 'የሂሳብ ፋይሎችን ወደ Hashavshevet ላክ',
+    'description':
+        'የሂሳብ ካርድ ቁጥሮችን፣ ጊዜውን እና MOVEIN እና HESHIN ፋይሎችን የሚቀበል ኢሜይል ያስገቡ።',
     'registers': 'የጥሬ ገንዘብና የክፍያ ሂሳቦች',
     'accounts': 'የሂሳብ ካርዶች',
     'delivery': 'የመላኪያ ጊዜና ኢሜይል',
@@ -759,10 +760,10 @@ class _AccountingExportPageState extends State<AccountingExportPage> {
     'saving': 'ቅንብሮችን በማስቀመጥ ላይ…',
     'saved': 'የመላኪያ ቅንብሮች ተቀምጠዋል።',
     'preparing': 'መላኪያውን በማዘጋጀት ላይ…',
-    'creating': 'MOVEIN.DOC እና MOVEIN.PRM በመፍጠር ላይ…',
+    'creating': 'MOVEIN እና HESHIN ፋይሎችን በመፍጠር ላይ…',
     'uploading': 'ፋይሎቹን በደህንነት በመስቀል ላይ…',
     'sending': 'ፋይሎቹን በኢሜይል በመላክ ላይ…',
-    'sent': 'MOVEIN ፋይሎች ወደ {email} ተልከዋል።',
+    'sent': 'MOVEIN እና HESHIN ፋይሎች ወደ {email} ተልከዋል።',
     'error': 'መላክ አልተሳካም',
     'service_unavailable': 'የፋይል መላኪያ አገልግሎቱ ገና አይገኝም። እባክዎ ትንሽ ቆይተው ይሞክሩ።',
     'try_again': 'እባክዎ እንደገና ይሞክሩ።',

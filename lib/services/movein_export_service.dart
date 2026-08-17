@@ -1,20 +1,34 @@
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:untitled1/services/heshin_generator.dart';
 import 'package:untitled1/services/movein_generator.dart';
 
 class MoveinExportPackage {
   final Directory directory;
   final File documentFile;
   final File parameterFile;
+  final File heshinDataFile;
+  final File heshinParameterFile;
   final int recordCount;
+  final int accountCount;
 
   const MoveinExportPackage({
     required this.directory,
     required this.documentFile,
     required this.parameterFile,
+    required this.heshinDataFile,
+    required this.heshinParameterFile,
     required this.recordCount,
+    required this.accountCount,
   });
+
+  List<File> get files => [
+    documentFile,
+    parameterFile,
+    heshinDataFile,
+    heshinParameterFile,
+  ];
 }
 
 class MoveinExportService {
@@ -58,6 +72,16 @@ class MoveinExportService {
       documents: documents,
       settings: settings,
     );
+    final clientsSnapshot = await firestore
+        .collection('users')
+        .doc(userId)
+        .collection('clients')
+        .get();
+    final heshinGenerated = HeshinGenerator.generate(
+      accounts: clientsSnapshot.docs
+          .map((document) => _heshinAccount(document.data()))
+          .toList(growable: false),
+    );
     final now = DateTime.now();
     final stamp =
         '${_compactDate(now)}_${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}${now.second.toString().padLeft(2, '0')}';
@@ -72,15 +96,84 @@ class MoveinExportService {
     final parameterFile = File(
       '${directory.path}${Platform.pathSeparator}MOVEIN.prm',
     );
+    final heshinDataFile = File(
+      '${directory.path}${Platform.pathSeparator}HESHIN.DAT',
+    );
+    final heshinParameterFile = File(
+      '${directory.path}${Platform.pathSeparator}HESHIN.PRM',
+    );
     await documentFile.writeAsBytes(generated.documentBytes, flush: true);
     await parameterFile.writeAsBytes(generated.parameterBytes, flush: true);
+    await heshinDataFile.writeAsBytes(heshinGenerated.dataBytes, flush: true);
+    await heshinParameterFile.writeAsBytes(
+      heshinGenerated.parameterBytes,
+      flush: true,
+    );
 
     return MoveinExportPackage(
       directory: directory,
       documentFile: documentFile,
       parameterFile: parameterFile,
+      heshinDataFile: heshinDataFile,
+      heshinParameterFile: heshinParameterFile,
       recordCount: generated.recordCount,
+      accountCount: heshinGenerated.accountCount,
     );
+  }
+
+  static HeshinAccount _heshinAccount(Map<String, dynamic> data) {
+    final contactDetails = data['contactDetails'] is Map
+        ? Map<String, dynamic>.from(data['contactDetails'] as Map)
+        : const <String, dynamic>{};
+    String value(String key) => (data[key] ?? '').toString().trim();
+    String contactValue(String key) =>
+        (contactDetails[key] ?? '').toString().trim();
+    final phones = _contactValues(data['phones'], value('phone'));
+    final emails = _contactValues(data['emails'], value('email'));
+    final taxId = _nineDigitTaxId(data['taxId']);
+    final externalNumber = value('externalClientNumber');
+    final street = contactValue('street');
+    final primaryEmail = emails.isNotEmpty
+        ? emails.first
+        : (contactValue('contactEmail').isNotEmpty
+              ? contactValue('contactEmail')
+              : contactValue('accountingContactEmail'));
+    final primaryPhone = phones.isNotEmpty
+        ? phones.first
+        : contactValue('accountingContactPhone');
+
+    return HeshinAccount(
+      accountKey: externalNumber.isNotEmpty ? externalNumber : taxId,
+      name: value('name'),
+      taxId: taxId,
+      phone: primaryPhone,
+      mobile: primaryPhone,
+      address: street.isNotEmpty ? street : value('address'),
+      city: contactValue('city'),
+      zipCode: contactValue('zipCode'),
+      email: primaryEmail,
+      fax: contactValue('fax'),
+      country: contactValue('country'),
+      bankCode: _lastNumber(contactValue('bankName')),
+      bankBranch: _lastNumber(contactValue('bankBranch')),
+      bankAccountNumber: contactValue('bankAccountNumber'),
+    );
+  }
+
+  static List<String> _contactValues(Object? raw, String fallback) {
+    final values = raw is List
+        ? raw
+              .map((value) => value.toString().trim())
+              .where((value) => value.isNotEmpty)
+              .toList()
+        : <String>[];
+    if (values.isNotEmpty) return values;
+    return fallback.isEmpty ? const [] : [fallback];
+  }
+
+  static String _lastNumber(String value) {
+    final matches = RegExp(r'\d+').allMatches(value).toList();
+    return matches.isEmpty ? '' : matches.last.group(0)!;
   }
 
   static List<QueryDocumentSnapshot<Map<String, dynamic>>> _deduplicate(

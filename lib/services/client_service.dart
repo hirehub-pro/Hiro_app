@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'dart:developer' as dev;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 
@@ -182,25 +183,35 @@ class ClientService {
         .doc(userId)
         .collection('clients')
         .doc(clientId);
-    await database.runTransaction((transaction) async {
-      final clientSnapshot = await transaction.get(clientRef);
-      final taxId = (clientSnapshot.data()?['taxId'] ?? '').toString().trim();
-      final taxIdReservationRef = taxId.isEmpty
-          ? null
-          : database
-                .collection('users')
-                .doc(userId)
-                .collection('clientTaxIds')
-                .doc(Uri.encodeComponent(taxId));
-      final taxIdReservationSnapshot = taxIdReservationRef == null
-          ? null
-          : await transaction.get(taxIdReservationRef);
+    final clientSnapshot = await clientRef.get();
+    final taxId = (clientSnapshot.data()?['taxId'] ?? '').toString().trim();
 
-      transaction.delete(clientRef);
-      if (taxIdReservationRef != null &&
-          taxIdReservationSnapshot?.data()?['clientId'] == clientId) {
-        transaction.delete(taxIdReservationRef);
-      }
-    });
+    // Delete the client independently. Auxiliary reservation cleanup must not
+    // prevent this operation (for example, when older security rules allow
+    // deleting clients but not clientTaxIds). Firestore has no foreign-key
+    // constraint between saved documents and their client record.
+    await clientRef.delete();
+
+    if (taxId.isEmpty) return;
+    final taxIdReservationRef = database
+        .collection('users')
+        .doc(userId)
+        .collection('clientTaxIds')
+        .doc(Uri.encodeComponent(taxId));
+    try {
+      await database.runTransaction((transaction) async {
+        final reservationSnapshot = await transaction.get(taxIdReservationRef);
+        if (reservationSnapshot.data()?['clientId'] == clientId) {
+          transaction.delete(taxIdReservationRef);
+        }
+      });
+    } on FirebaseException catch (error, stackTrace) {
+      dev.log(
+        'Client deleted, but its tax-ID reservation could not be cleaned up.',
+        name: 'ClientService',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
   }
 }
