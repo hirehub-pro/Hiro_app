@@ -1192,8 +1192,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           'my_requests': 'הבקשות שלי',
           'business_tools': 'כלי עבודה',
           'analytics': 'אנליטיקה',
-          'invoice_builder': 'יוצר חשבוניות',
-          'saved_invoices': 'חשבוניות שמורות',
+          'invoice_builder': 'יצירת מסמך',
+          'saved_invoices': 'מסמכים שמורים',
           'verify_business': 'אמת עסק',
           'upgrade_worker': 'שדרג לחשבון בעל מקצוע',
           'upgrade_msg':
@@ -1463,8 +1463,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           'my_requests': 'طلباتي',
           'business_tools': 'أدوات العمل',
           'analytics': 'التحليلات',
-          'invoice_builder': 'منشئ الفواتير',
-          'saved_invoices': 'الفواتير المحفوظة',
+          'invoice_builder': 'إنشاء مستند',
+          'saved_invoices': 'المستندات المحفوظة',
           'verify_business': 'توثيق العمل',
           'upgrade_worker': 'الترقية لحساب عامل',
           'upgrade_msg':
@@ -1749,8 +1749,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           'my_requests': 'My Requests',
           'business_tools': 'Business Tools',
           'analytics': 'Analytics',
-          'invoice_builder': 'Invoice Builder',
-          'saved_invoices': 'Saved Invoices',
+          'invoice_builder': 'Create Document',
+          'saved_invoices': 'Saved Documents',
           'verify_business': 'Verify Business',
           'upgrade_worker': 'Upgrade to Worker',
           'upgrade_msg':
@@ -2642,6 +2642,25 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     );
   }
 
+  String _documentToolTitle({required bool saved}) {
+    final locale = Provider.of<LanguageProvider>(
+      context,
+      listen: false,
+    ).locale.languageCode;
+    switch (locale) {
+      case 'he':
+        return saved ? 'מסמכים שמורים' : 'יצירת מסמך';
+      case 'ar':
+        return saved ? 'المستندات المحفوظة' : 'إنشاء مستند';
+      case 'ru':
+        return saved ? 'Сохранённые документы' : 'Создать документ';
+      case 'am':
+        return saved ? 'የተቀመጡ ሰነዶች' : 'ሰነድ ፍጠር';
+      default:
+        return saved ? 'Saved Documents' : 'Create Document';
+    }
+  }
+
   Widget _buildBusinessToolsSection(Map<String, dynamic> strings) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -2691,7 +2710,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 _buildBusinessToolCard(
                   icon: Icons.description_outlined,
                   color: const Color(0xFF0F766E),
-                  title: strings['invoice_builder'] ?? 'Invoice Builder',
+                  title: _documentToolTitle(saved: false),
                   onTap: _openInvoiceBuilder,
                   badge: _isBusinessVerified
                       ? null
@@ -2700,7 +2719,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 _buildBusinessToolCard(
                   icon: Icons.folder_copy_outlined,
                   color: const Color(0xFF0891B2),
-                  title: strings['saved_invoices'] ?? 'Saved Invoices',
+                  title: _documentToolTitle(saved: true),
                   onTap: _openSavedInvoicesPage,
                 ),
               ],

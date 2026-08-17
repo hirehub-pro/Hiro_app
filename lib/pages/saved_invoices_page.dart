@@ -60,20 +60,6 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
     }
   }
 
-  String _paymentMethodLabel(String method, bool isRtl) {
-    switch (method) {
-      case 'credit':
-        return isRtl ? 'אשראי' : 'Credit Card';
-      case 'transfer':
-        return isRtl ? 'העברה בנקאית' : 'Bank Transfer';
-      case 'check':
-        return isRtl ? 'צ׳ק' : 'Check';
-      case 'cash':
-      default:
-        return isRtl ? 'מזומן' : 'Cash';
-    }
-  }
-
   @override
   void initState() {
     super.initState();
