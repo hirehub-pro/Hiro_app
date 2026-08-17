@@ -995,6 +995,9 @@ class InvoiceBuilderPage extends StatefulWidget {
   final String? sourceInvoiceNumber;
   final String? sourceInvoiceDocId;
   final double? sourceInvoiceTotalAmount;
+  final bool initialIsNegativeReceipt;
+  final String? cancellationSourceDocumentId;
+  final String? cancellationSourceDocumentNumber;
   final List<Map<String, dynamic>> initialLinkedDocuments;
   final bool returnDraftOnSend;
 
@@ -1026,6 +1029,9 @@ class InvoiceBuilderPage extends StatefulWidget {
     this.sourceInvoiceNumber,
     this.sourceInvoiceDocId,
     this.sourceInvoiceTotalAmount,
+    this.initialIsNegativeReceipt = false,
+    this.cancellationSourceDocumentId,
+    this.cancellationSourceDocumentNumber,
     this.initialLinkedDocuments = const [],
     this.returnDraftOnSend = false,
   });
@@ -1210,8 +1216,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         : null;
     final docType = _selectedDocType;
     final creditNoteLegalData = _creditNoteLegalData;
-    final signedTotalAmount = _totalAmount;
-    final totalEarnedDelta = docType == 'credit_note'
+    final signedTotalAmount = _signedTotalAmount;
+    final totalEarnedDelta = docType == 'credit_note' || _isNegativeReceipt
         ? -_totalAmount
         : _totalAmount;
     final calculatedVat = _vatAmount;
@@ -1237,10 +1243,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         'fileRef': logBucketRef.collection('files').doc(),
       };
     }).toList();
-    final paymentMethodsData = _paymentMethods
-        .map((entry) => entry.toMap())
-        .toList();
-    final paymentAmountTotal = _paymentMethodsAmountTotal();
+    final paymentMethodsData = _paymentMethodsForStorage();
+    final paymentAmountTotal = _signedPaymentMethodsAmountTotal;
     final hasDiscount = _hasDiscount && _manualDiscountAmount > 0;
     final discountAmount = hasDiscount ? _manualDiscountAmount : 0.0;
     final signedDiscountAmount = discountAmount == 0
@@ -1253,8 +1257,12 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     );
     final subtotalBeforeTax = _subtotalAmount;
     final subtotalAfterTax = _totalBeforeRoundingAmount;
-    final signedSubtotalBeforeTax = subtotalBeforeTax;
-    final signedSubtotalAfterTax = subtotalAfterTax;
+    final signedSubtotalBeforeTax = _isNegativeReceipt
+        ? -subtotalBeforeTax
+        : subtotalBeforeTax;
+    final signedSubtotalAfterTax = _isNegativeReceipt
+        ? -subtotalAfterTax
+        : subtotalAfterTax;
     final signedRoundingAmount = roundingAmount == 0
         ? 0.0
         : (docType == 'credit_note' ? roundingAmount : -roundingAmount);
@@ -1489,6 +1497,12 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         if (_showsDueDateSection && _selectedPaymentDueDate != null)
           'paymentDueDate': _paymentDueDateStorageValue(),
         'createdAt': timestamp,
+        if (_isNegativeReceipt) 'isCancellationDocument': true,
+        if (_isNegativeReceipt)
+          'cancellationSourceDocumentId': widget.cancellationSourceDocumentId,
+        if (_isNegativeReceipt)
+          'cancellationSourceDocumentNumber':
+              widget.cancellationSourceDocumentNumber,
         if (docType == 'invoice') 'paymentStatus': 'unpaid',
         if (docType == 'invoice') 'paidAmount': 0.0,
         if (docType == 'invoice_receipt') 'paymentStatus': 'paid',
@@ -1574,6 +1588,12 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'storagePath': '',
           'url': '',
           'timestamp': timestamp,
+          if (_isNegativeReceipt) 'isCancellationDocument': true,
+          if (_isNegativeReceipt)
+            'cancellationSourceDocumentId': widget.cancellationSourceDocumentId,
+          if (_isNegativeReceipt)
+            'cancellationSourceDocumentNumber':
+                widget.cancellationSourceDocumentNumber,
           if (docType == 'invoice') 'paymentStatus': 'unpaid',
           if (docType == 'invoice') 'paidAmount': 0.0,
           if (docType == 'invoice_receipt') 'paymentStatus': 'paid',
@@ -1664,6 +1684,14 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       );
     }
 
+    if (_isNegativeReceipt) {
+      await _markSourceReceiptCancelled(
+        userId: userId,
+        cancellationDocumentId: invoiceDocId,
+        cancellationDocumentNumber: nextDocumentNumber,
+      );
+    }
+
     return InvoiceBuilderDraftResult(
       url: downloadUrl,
       fileName: fileName,
@@ -1733,6 +1761,27 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     });
   }
 
+  Future<void> _markSourceReceiptCancelled({
+    required String userId,
+    required String cancellationDocumentId,
+    required String cancellationDocumentNumber,
+  }) async {
+    final sourceDocumentId = widget.cancellationSourceDocumentId?.trim();
+    if (sourceDocumentId == null || sourceDocumentId.isEmpty) return;
+
+    await FirebaseFirestore.instance
+        .collection('users')
+        .doc(userId)
+        .collection('invoices')
+        .doc(sourceDocumentId)
+        .set({
+          'cancellationStatus': 'cancelled',
+          'cancelledByDocumentId': cancellationDocumentId,
+          'cancelledByDocumentNumber': cancellationDocumentNumber,
+          'cancelledAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+  }
+
   String _labelForDocType(String docType) {
     switch (docType) {
       case 'quote':
@@ -1796,6 +1845,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   bool _roundTotalEnabled = true;
 
   bool get _isCreditNote => _selectedDocType == 'credit_note';
+  bool get _isNegativeReceipt =>
+      widget.initialIsNegativeReceipt && _selectedDocType == 'receipt';
   bool get _isQuoteLike =>
       _selectedDocType == 'quote' || _selectedDocType == 'work_order';
   bool get _showsDueDateSection =>
@@ -1987,7 +2038,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
 
   double get _totalAmount => _totalBeforeRoundingAmount - _roundingAmount;
 
-  double get _signedTotalAmount => _totalAmount;
+  double get _signedTotalAmount =>
+      _isNegativeReceipt ? -_totalAmount : _totalAmount;
 
   double get _signedRoundingAmount {
     return _roundingAmount == 0
@@ -1996,14 +2048,15 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   }
 
   double get _signedSubtotalAmount {
-    return _subtotalAmount;
+    return _isNegativeReceipt ? -_subtotalAmount : _subtotalAmount;
   }
 
   double get _signedVatAmount {
-    return _vatAmount;
+    return _isNegativeReceipt ? -_vatAmount : _vatAmount;
   }
 
-  double _signedItemTotal(InvoiceItem item) => _itemTotalAfterTax(item);
+  double _signedItemTotal(InvoiceItem item) =>
+      _isNegativeReceipt ? -_itemTotalAfterTax(item) : _itemTotalAfterTax(item);
 
   double _parseVatPercent(dynamic value) {
     final parsed = switch (value) {
@@ -2163,7 +2216,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     for (final data in widget.initialLinkedDocuments) {
       final document = _LinkedInvoiceDocument.fromMap(data);
       if (document.id.isNotEmpty &&
-          compatibleLinkedTypes.contains(document.docType)) {
+          (compatibleLinkedTypes.contains(document.docType) ||
+              (_isNegativeReceipt && document.docType == 'receipt'))) {
         _linkedDocuments[document.id] = document;
       }
     }
@@ -4804,6 +4858,21 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     return total;
   }
 
+  double get _signedPaymentMethodsAmountTotal => _isNegativeReceipt
+      ? -_paymentMethodsAmountTotal()
+      : _paymentMethodsAmountTotal();
+
+  List<Map<String, dynamic>> _paymentMethodsForStorage() {
+    return _paymentMethods.map((entry) {
+      final data = entry.toMap();
+      final amount = data['amount'];
+      if (_isNegativeReceipt && amount is num) {
+        data['amount'] = -amount.toDouble().abs();
+      }
+      return data;
+    }).toList();
+  }
+
   bool _validatePaymentMethods() {
     if (!_showsPaymentMethodSection) return true;
 
@@ -4985,7 +5054,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     String amountLabel(String raw) {
       final amount = _parsePaymentAmount(raw);
       if (amount == null) return '-';
-      return '₪ ${intl.NumberFormat('#,##0.00').format(amount)}';
+      final displayAmount = _isNegativeReceipt ? -amount.abs() : amount;
+      return '₪ ${intl.NumberFormat('#,##0.00').format(displayAmount)}';
     }
 
     pw.Widget cell(
@@ -5508,7 +5578,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         'fileName': '$finalName.pdf',
         'storagePath': storagePath,
         'url': downloadUrl,
-        'amount': _totalAmount,
+        'amount': _signedTotalAmount,
         'clientName': _clientNameController.text,
         'clientAddress': _clientAddressController.text,
         'clientPhone': _clientPhoneController.text,
@@ -5522,10 +5592,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         'paymentMethod': _paymentMethods.isNotEmpty
             ? _paymentMethods.first.method
             : 'cash',
-        'paymentMethods': _paymentMethods
-            .map((entry) => entry.toMap())
-            .toList(),
-        'paymentAmountTotal': _paymentMethodsAmountTotal(),
+        'paymentMethods': _paymentMethodsForStorage(),
+        'paymentAmountTotal': _signedPaymentMethodsAmountTotal,
         'priceTaxModeDefault': _selectedPriceTaxMode,
         'hasDiscount': _hasDiscount,
         'discountAmount': _manualDiscountAmount,
@@ -5541,6 +5609,12 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'sequenceNumber': _currentDocumentCounter,
         if (_creditNoteLegalData != null)
           'creditNoteLegal': _creditNoteLegalData,
+        if (_isNegativeReceipt) 'isCancellationDocument': true,
+        if (_isNegativeReceipt)
+          'cancellationSourceDocumentId': widget.cancellationSourceDocumentId,
+        if (_isNegativeReceipt)
+          'cancellationSourceDocumentNumber':
+              widget.cancellationSourceDocumentNumber,
       });
 
       if (counterRef != null && _currentDocumentCounter != null) {
@@ -5559,7 +5633,17 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       if (!_isQuoteLike) {
         await _addToTotalEarned(
           userId: currentUser.uid,
-          amount: _isCreditNote ? -_totalAmount : _totalAmount,
+          amount: _isCreditNote || _isNegativeReceipt
+              ? -_totalAmount
+              : _totalAmount,
+        );
+      }
+
+      if (_isNegativeReceipt) {
+        await _markSourceReceiptCancelled(
+          userId: currentUser.uid,
+          cancellationDocumentId: invoiceDocId,
+          cancellationDocumentNumber: _invoiceNumber,
         );
       }
 

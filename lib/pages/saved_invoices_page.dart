@@ -593,6 +593,99 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
     }
   }
 
+  Future<void> _openNegativeReceiptFromReceipt(
+    String sourceDocId,
+    Map<String, dynamic> savedData,
+    bool isRtl,
+  ) async {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) return;
+
+    try {
+      final navigator = Navigator.of(context);
+      final userRef = FirebaseFirestore.instance
+          .collection('users')
+          .doc(currentUser.uid);
+      final resolvedSourceDocId = (savedData['invoiceDocId'] ?? sourceDocId)
+          .toString()
+          .trim();
+      final detailRef = userRef.collection('invoices').doc(resolvedSourceDocId);
+      final results = await Future.wait([userRef.get(), detailRef.get()]);
+      final userData = results[0].data() ?? <String, dynamic>{};
+      final detailData = results[1].data() ?? savedData;
+      final amount = ((detailData['amount'] as num?)?.toDouble() ?? 0).abs();
+      if (amount <= 0) {
+        throw StateError('The receipt amount is missing.');
+      }
+
+      final invoiceNumber = (detailData['invoiceNumber'] ?? '')
+          .toString()
+          .trim();
+      final paymentMethods = detailData['paymentMethods'];
+      final firstPayment = paymentMethods is List && paymentMethods.isNotEmpty
+          ? Map<String, dynamic>.from(paymentMethods.first as Map)
+          : const <String, dynamic>{};
+      final paymentMethod =
+          (firstPayment['method'] ?? detailData['paymentMethod'] ?? 'cash')
+              .toString();
+      final clientName = (detailData['clientName'] ?? '').toString();
+      final clientPhone = (detailData['clientPhone'] ?? '').toString();
+      final clientEmail = (detailData['clientEmail'] ?? '').toString();
+      final clientAddress = (detailData['clientAddress'] ?? '').toString();
+      final workerName =
+          (userData['name'] ?? currentUser.displayName ?? 'Worker').toString();
+      final workerPhone = (userData['phone'] ?? userData['phoneNumber'] ?? '')
+          .toString();
+      final workerEmail = (userData['email'] ?? currentUser.email ?? '')
+          .toString();
+      final cancellationNote = isRtl
+          ? 'קבלה מבטלת עבור קבלה מספר $invoiceNumber'
+          : 'Cancellation receipt for Receipt #$invoiceNumber';
+
+      if (!mounted) return;
+      await navigator.push(
+        MaterialPageRoute(
+          builder: (_) => InvoiceBuilderPage(
+            workerName: workerName,
+            workerPhone: workerPhone.isEmpty ? null : workerPhone,
+            workerEmail: workerEmail.isEmpty ? null : workerEmail,
+            receiverName: clientName.isEmpty ? null : clientName,
+            receiverPhone: clientPhone.isEmpty ? null : clientPhone,
+            receiverEmail: clientEmail.isEmpty ? null : clientEmail,
+            receiverAddress: clientAddress.isEmpty ? null : clientAddress,
+            initialSavedClientId:
+                (detailData['savedClientId'] ?? detailData['clientUid'] ?? '')
+                    .toString(),
+            initialClientTaxId: (detailData['clientTaxId'] ?? '').toString(),
+            initialClientExternalNumber:
+                (detailData['externalClientNumber'] ?? '').toString(),
+            initialDocType: 'receipt',
+            initialNotes: cancellationNote,
+            initialPaymentMethod: paymentMethod,
+            initialPaymentAmount: amount,
+            initialIsNegativeReceipt: true,
+            cancellationSourceDocumentId: resolvedSourceDocId,
+            cancellationSourceDocumentNumber: invoiceNumber,
+            initialLinkedDocuments: [
+              _linkedDocumentSeed(resolvedSourceDocId, detailData),
+            ],
+          ),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            isRtl
+                ? 'לא הצלחנו לפתוח קבלה מבטלת עבור המסמך הזה.'
+                : 'Could not open a cancellation receipt for this document.',
+          ),
+        ),
+      );
+    }
+  }
+
   Future<void> _openDocumentFromSavedDocument({
     required String sourceDocId,
     required Map<String, dynamic> savedData,
@@ -1190,6 +1283,12 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                     docType == 'invoice_receipt');
                             final canCreateReceipt =
                                 !isReceivedScope && docType == 'invoice';
+                            final canCancelReceipt =
+                                !isReceivedScope &&
+                                docType == 'receipt' &&
+                                data['isCancellationDocument'] != true &&
+                                (data['cancellationStatus'] ?? '') !=
+                                    'cancelled';
                             final isProformaInvoice =
                                 !isReceivedScope &&
                                 docType == 'transaction_account';
@@ -1208,6 +1307,7 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                 (docType == 'quote' || docType == 'work_order');
                             final hasCreateDocumentActions =
                                 canCreateCreditNote ||
+                                canCancelReceipt ||
                                 isProformaInvoice ||
                                 isWorkOrder ||
                                 isQuote;
@@ -1596,8 +1696,8 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                             ),
                                             label: Text(
                                               isRtl
-                                                  ? 'צור הודעת זיכוי'
-                                                  : 'Create Credit Note',
+                                                  ? 'בטל מסמך'
+                                                  : 'Cancel Document',
                                             ),
                                             style: TextButton.styleFrom(
                                               foregroundColor: accent,
@@ -1609,6 +1709,38 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                             ),
                                           ),
                                         ],
+                                      ),
+                                    ],
+                                    if (createActionsExpanded &&
+                                        canCancelReceipt) ...[
+                                      const SizedBox(height: 12),
+                                      Align(
+                                        alignment:
+                                            AlignmentDirectional.centerStart,
+                                        child: TextButton.icon(
+                                          onPressed: () =>
+                                              _openNegativeReceiptFromReceipt(
+                                                invoiceDoc.id,
+                                                data,
+                                                isRtl,
+                                              ),
+                                          icon: const Icon(
+                                            Icons.assignment_return_rounded,
+                                            size: 18,
+                                          ),
+                                          label: Text(
+                                            isRtl
+                                                ? 'בטל מסמך'
+                                                : 'Cancel Document',
+                                          ),
+                                          style: TextButton.styleFrom(
+                                            foregroundColor: accent,
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 0,
+                                              vertical: 4,
+                                            ),
+                                          ),
+                                        ),
                                       ),
                                     ],
                                     if (createActionsExpanded &&
