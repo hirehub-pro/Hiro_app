@@ -25,6 +25,7 @@ import 'package:untitled1/services/invoice_builder_lock_service.dart';
 import 'package:untitled1/services/invoice_builder_verification_session.dart';
 import 'package:untitled1/services/client_service.dart';
 import 'package:untitled1/services/app_navigation_service.dart';
+import 'package:untitled1/pages/chat_page.dart';
 import 'package:xml/xml.dart';
 
 class _BankBranch {
@@ -5107,6 +5108,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         } else {
           await _showContactPickerAndSend(savedInvoice: savedDraftResult);
         }
+        return;
       }
 
       await _loadCurrentDocumentNumber();
@@ -5389,14 +5391,21 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     }
 
     if (widget.receiverId != null) {
+      bool sent;
       if (savedInvoice != null) {
-        _sendSavedInvoiceToContact(
+        sent = await _sendSavedInvoiceToContact(
           widget.receiverId!,
           widget.receiverName ?? "User",
           savedInvoice,
         );
       } else {
-        _sendToContact(widget.receiverId!, widget.receiverName ?? "User");
+        sent = await _sendToContact(
+          widget.receiverId!,
+          widget.receiverName ?? "User",
+        );
+      }
+      if (sent && mounted) {
+        Navigator.pop(context);
       }
       return;
     }
@@ -5406,7 +5415,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
 
     final strings = _getLocalizedStrings(context, listen: false);
 
-    showModalBottomSheet(
+    final recipient = await showModalBottomSheet<MapEntry<String, String>>(
       context: context,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
@@ -5451,11 +5460,11 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                       itemBuilder: (context, index) {
                         final data =
                             rooms[index].data() as Map<String, dynamic>;
-                        final otherId = (data['users'] as List).firstWhere(
-                          (id) => id != user.uid,
-                        );
+                        final otherId = (data['users'] as List)
+                            .firstWhere((id) => id != user.uid)
+                            .toString();
                         final otherName =
-                            data['user_names']?[otherId] ?? "User";
+                            data['user_names']?[otherId]?.toString() ?? "User";
 
                         return ListTile(
                           leading: CircleAvatar(
@@ -5463,23 +5472,16 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                               0xFF1976D2,
                             ).withValues(alpha: 0.1),
                             child: Text(
-                              otherName[0].toUpperCase(),
+                              (otherName.isEmpty ? '?' : otherName[0])
+                                  .toUpperCase(),
                               style: const TextStyle(color: Color(0xFF1976D2)),
                             ),
                           ),
                           title: Text(otherName),
-                          onTap: () {
-                            Navigator.pop(context);
-                            if (savedInvoice != null) {
-                              _sendSavedInvoiceToContact(
-                                otherId,
-                                otherName,
-                                savedInvoice,
-                              );
-                            } else {
-                              _sendToContact(otherId, otherName);
-                            }
-                          },
+                          onTap: () => Navigator.pop(
+                            context,
+                            MapEntry(otherId, otherName),
+                          ),
                         );
                       },
                     );
@@ -5490,6 +5492,29 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           ),
         );
       },
+    );
+
+    if (!mounted || recipient == null) return;
+
+    final sent = savedInvoice != null
+        ? await _sendSavedInvoiceToContact(
+            recipient.key,
+            recipient.value,
+            savedInvoice,
+          )
+        : await _sendToContact(recipient.key, recipient.value);
+    if (!sent || !mounted) return;
+
+    unawaited(
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ChatPage(
+            receiverId: recipient.key,
+            receiverName: recipient.value,
+          ),
+        ),
+      ),
     );
   }
 
