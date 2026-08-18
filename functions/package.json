@@ -8,7 +8,8 @@
   "scripts": {
     "deploy": "firebase deploy --only functions",
     "serve": "firebase emulators:start --only functions",
-    "test": "node --test"
+    "test": "node --test",
+    "test:rules": "node --test firestore.rules.test.js"
   },
   "dependencies": {
     "@apple/app-store-server-library": "^1.6.0",

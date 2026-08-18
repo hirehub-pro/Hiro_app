@@ -32,6 +32,9 @@ const {
   validateTaxInvoiceAllocation,
 } = require("./tax_invoice_security");
 const {
+  taxAuthorityTokenDocumentPath,
+} = require("./tax_authority_token_security");
+const {
   AppStoreServerAPIClient,
   AutoRenewStatus,
   Environment,
@@ -614,11 +617,7 @@ exports.taxesOAuthCallback = onRequest(
           ) :
           null,
       };
-      const tokenRefs = taxAuthorityTokenRefs(userId);
-      const tokenBatch = db.batch();
-      tokenBatch.set(tokenRefs.userOAuthRef, tokenRecord, {merge: true});
-      tokenBatch.set(tokenRefs.secureTokenRef, tokenRecord, {merge: true});
-      await tokenBatch.commit();
+      await taxAuthorityTokenRef(userId).set(tokenRecord, {merge: true});
       await docRef.update({consumedAt: admin.firestore.Timestamp.now()});
 
       logger.info("Stored Tax Authority OAuth callback code", {
@@ -1105,10 +1104,8 @@ exports.getTaxAuthorityConnectionStatus = onCall(
         };
       }
 
-      const tokenDocuments = await loadTaxAuthorityTokenDocuments(
-          request.auth.uid,
-      );
-      const tokenSnap = tokenDocuments.activeSnap;
+      const tokenRef = taxAuthorityTokenRef(request.auth.uid);
+      const tokenSnap = await tokenRef.get();
       const data = tokenSnap.data() || {};
       const hasAccessToken =
         normalizeString(data.access_token).trim().length > 0;
@@ -1127,10 +1124,7 @@ exports.getTaxAuthorityConnectionStatus = onCall(
         !expiryMissing &&
         !expired;
       const connectionFlagNeedsUpdate =
-        (tokenDocuments.userOAuthSnap.exists &&
-          tokenDocuments.userOAuthSnap.data()?.connected !== false) ||
-        (tokenDocuments.secureTokenSnap.exists &&
-          tokenDocuments.secureTokenSnap.data()?.connected !== false);
+        tokenSnap.exists && data.connected !== false;
 
       if (tokenSnap.exists && !connected && connectionFlagNeedsUpdate) {
         const disconnectedUpdate = {
@@ -1144,22 +1138,7 @@ exports.getTaxAuthorityConnectionStatus = onCall(
                 "business-id-mismatch" :
                 "access-token-missing",
         };
-        const batch = admin.firestore().batch();
-        if (tokenDocuments.userOAuthSnap.exists) {
-          batch.set(
-              tokenDocuments.userOAuthRef,
-              disconnectedUpdate,
-              {merge: true},
-          );
-        }
-        if (tokenDocuments.secureTokenSnap.exists) {
-          batch.set(
-              tokenDocuments.secureTokenRef,
-              disconnectedUpdate,
-              {merge: true},
-          );
-        }
-        await batch.commit();
+        await tokenRef.set(disconnectedUpdate, {merge: true});
       }
 
       return {
@@ -3707,8 +3686,8 @@ async function postTaxAuthorityTokenForm(params, operationName) {
 }
 
 async function getTaxAuthorityTokenData(userId, businessId) {
-  const tokenDocuments = await loadTaxAuthorityTokenDocuments(userId);
-  const tokenSnap = tokenDocuments.activeSnap;
+  const tokenRef = taxAuthorityTokenRef(userId);
+  const tokenSnap = await tokenRef.get();
   if (!tokenSnap.exists) {
     throw new HttpsError(
         "failed-precondition",
@@ -3742,22 +3721,7 @@ async function getTaxAuthorityTokenData(userId, businessId) {
         "token-expired" :
         "token-expiry-missing",
     };
-    const batch = admin.firestore().batch();
-    if (tokenDocuments.userOAuthSnap.exists) {
-      batch.set(
-          tokenDocuments.userOAuthRef,
-          disconnectedUpdate,
-          {merge: true},
-      );
-    }
-    if (tokenDocuments.secureTokenSnap.exists) {
-      batch.set(
-          tokenDocuments.secureTokenRef,
-          disconnectedUpdate,
-          {merge: true},
-      );
-    }
-    await batch.commit();
+    await tokenRef.set(disconnectedUpdate, {merge: true});
     throw new HttpsError(
         "failed-precondition",
         "Tax Authority OAuth authorization has expired. " +
@@ -3768,32 +3732,8 @@ async function getTaxAuthorityTokenData(userId, businessId) {
   return {accessToken, tokenData};
 }
 
-function taxAuthorityTokenRefs(userId) {
-  const db = admin.firestore();
-  const userOAuthRef = db
-      .collection("users")
-      .doc(userId)
-      .collection("tax_authority")
-      .doc("oauth");
-  const secureTokenRef = db
-      .collection("taxAuthorityOAuthTokens")
-      .doc(userId);
-  return {userOAuthRef, secureTokenRef};
-}
-
-async function loadTaxAuthorityTokenDocuments(userId) {
-  const {userOAuthRef, secureTokenRef} = taxAuthorityTokenRefs(userId);
-  const [userOAuthSnap, secureTokenSnap] = await Promise.all([
-    userOAuthRef.get(),
-    secureTokenRef.get(),
-  ]);
-  return {
-    userOAuthRef,
-    secureTokenRef,
-    userOAuthSnap,
-    secureTokenSnap,
-    activeSnap: userOAuthSnap.exists ? userOAuthSnap : secureTokenSnap,
-  };
+function taxAuthorityTokenRef(userId) {
+  return admin.firestore().doc(taxAuthorityTokenDocumentPath(userId));
 }
 
 async function callTaxAuthorityMultiApproval({accessToken, payload}) {

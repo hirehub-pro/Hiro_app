@@ -33,7 +33,7 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return isAuthenticated() && request.auth.token.admin == true;
+      return isAuthenticated() && request.auth.token.get('admin', false) == true;
     }
 
     function isDocOwner() {
@@ -171,8 +171,50 @@ service cloud.firestore {
         'subscriptionSource', 'subscriptionStatus',
         'subscriptionTransactionDate', 'subscriptionUpdatedAt',
         'subscriptionVerificationFreshUntil', 'subscriptionVerifiedAt',
-        'avgRating', 'reviewCount', 'createdAt', 'uid'
+        'avgRating', 'reviewCount', 'emailVerified', 'createdAt', 'uid'
       ]);
+    }
+
+    function validOwnerUserUpdate() {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      return changed.hasOnly([
+        'name', 'phone', 'optionalPhone', 'email', 'updatedAt',
+        'profileImageUrl', 'description', 'town', 'lat', 'lng',
+        'workCenterLat', 'workCenterLng', 'workRadius', 'professions',
+        'spokenLanguages', 'socialLinks', 'disabledDays', 'hideSchedule',
+        'notificationsEnabled', 'activeLocationId', 'activeLocationLabel',
+        'activeLocationSource', 'activeLocationUpdatedAt', 'activeSearchLat',
+        'activeSearchLng', 'businessId', 'businessLogoUrl', 'dealerType',
+        'isInChatPage', 'activeChatUpdatedAt', 'accountingExportSettings',
+        'ugcTermsAcceptedAt', 'ugcTermsVersion'
+      ]) &&
+      (!changed.hasAny(['name']) ||
+        (request.resource.data.name is string &&
+          request.resource.data.name.size() >= 1 &&
+          request.resource.data.name.size() <= 100)) &&
+      (!changed.hasAny(['phone']) || optionalString(request.resource.data, 'phone', 32)) &&
+      (!changed.hasAny(['optionalPhone']) || optionalString(request.resource.data, 'optionalPhone', 32)) &&
+      (!changed.hasAny(['email']) || optionalEmail(request.resource.data, 'email')) &&
+      (!changed.hasAny(['updatedAt']) || optionalTimestamp(request.resource.data, 'updatedAt')) &&
+      (!changed.hasAny(['profileImageUrl']) || optionalUrl(request.resource.data, 'profileImageUrl', 2048)) &&
+      (!changed.hasAny(['description']) || optionalString(request.resource.data, 'description', 2000)) &&
+      (!changed.hasAny(['town']) || optionalString(request.resource.data, 'town', 120)) &&
+      (!changed.hasAny(['lat']) || optionalNumber(request.resource.data, 'lat', -90, 90)) &&
+      (!changed.hasAny(['lng']) || optionalNumber(request.resource.data, 'lng', -180, 180)) &&
+      (!changed.hasAny(['workCenterLat']) || optionalNumber(request.resource.data, 'workCenterLat', -90, 90)) &&
+      (!changed.hasAny(['workCenterLng']) || optionalNumber(request.resource.data, 'workCenterLng', -180, 180)) &&
+      (!changed.hasAny(['workRadius']) || optionalNumber(request.resource.data, 'workRadius', 0, 1000000)) &&
+      (!changed.hasAny(['professions']) || optionalList(request.resource.data, 'professions', 50)) &&
+      (!changed.hasAny(['spokenLanguages']) || optionalList(request.resource.data, 'spokenLanguages', 30)) &&
+      (!changed.hasAny(['socialLinks']) || optionalMap(request.resource.data, 'socialLinks', 20)) &&
+      (!changed.hasAny(['disabledDays']) || optionalList(request.resource.data, 'disabledDays', 31)) &&
+      (!changed.hasAny(['hideSchedule']) || optionalBool(request.resource.data, 'hideSchedule')) &&
+      (!changed.hasAny(['notificationsEnabled']) || optionalBool(request.resource.data, 'notificationsEnabled')) &&
+      (!changed.hasAny(['businessId']) || optionalString(request.resource.data, 'businessId', 32)) &&
+      (!changed.hasAny(['businessLogoUrl']) || optionalUrl(request.resource.data, 'businessLogoUrl', 2048)) &&
+      (!changed.hasAny(['dealerType']) || optionalString(request.resource.data, 'dealerType', 40)) &&
+      (!changed.hasAny(['isInChatPage']) || optionalBool(request.resource.data, 'isInChatPage')) &&
+      (!changed.hasAny(['accountingExportSettings']) || optionalMap(request.resource.data, 'accountingExportSettings', 30));
     }
 
     function validInvoice(data, userId) {
@@ -366,7 +408,8 @@ service cloud.firestore {
         'requestDateTo', 'requestTimeFrom', 'requestTimeTo', 'isPinned',
         'likes', 'likedBy', 'timestamp'
       ]) && data.keys().hasAll(['authorUid', 'title', 'content', 'timestamp']) &&
-      data.authorUid == request.auth.uid &&
+      data.authorUid is string && data.authorUid.size() >= 20 &&
+      data.authorUid.size() <= 128 &&
       data.title is string && data.title.size() >= 1 && data.title.size() <= 240 &&
       data.content is string && data.content.size() <= 10000 &&
       data.timestamp is timestamp && optionalString(data, 'authorName', 100) &&
@@ -381,13 +424,29 @@ service cloud.firestore {
       optionalList(data, 'likedBy', 10000);
     }
 
+    function validBlogLikeChange() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['likes', 'likedBy']) &&
+        request.resource.data.likes is int && resource.data.likes is int &&
+        request.resource.data.likedBy is list && resource.data.likedBy is list &&
+        ((request.auth.uid in request.resource.data.likedBy &&
+            !(request.auth.uid in resource.data.likedBy) &&
+            request.resource.data.likes == resource.data.likes + 1 &&
+            request.resource.data.likedBy.size() == resource.data.likedBy.size() + 1) ||
+          (!(request.auth.uid in request.resource.data.likedBy) &&
+            request.auth.uid in resource.data.likedBy &&
+            request.resource.data.likes == resource.data.likes - 1 &&
+            request.resource.data.likedBy.size() == resource.data.likedBy.size() - 1));
+    }
+
     function validBlogComment(data) {
       return data.keys().hasOnly([
         'authorUid', 'authorName', 'authorRole', 'text', 'timestamp', 'isBid',
         'bidPrice', 'quoteDocType', 'quoteDocumentNumber', 'quoteFileName',
         'quoteItems', 'quoteUrl'
       ]) && data.keys().hasAll(['authorUid', 'text', 'timestamp']) &&
-      data.authorUid == request.auth.uid &&
+      data.authorUid is string && data.authorUid.size() >= 20 &&
+      data.authorUid.size() <= 128 &&
       data.text is string && data.text.size() <= 5000 &&
       data.timestamp is timestamp && optionalString(data, 'authorName', 100) &&
       optionalString(data, 'authorRole', 40) && optionalBool(data, 'isBid') &&
@@ -449,10 +508,11 @@ service cloud.firestore {
       allow read: if isOwner(userId) || isAdmin();
       allow create: if isOwner(userId) && validUser(request.resource.data) &&
         uidUnchanged() && request.resource.data.role == 'customer' &&
+        request.resource.data.get('emailVerified', false) == false &&
         recentTimestamp(request.resource.data, 'createdAt');
-      allow update: if isAdmin() && validUser(request.resource.data) ||
-        (isOwner(userId) && validUser(request.resource.data) &&
-          isDocOwner() && uidNotModified() && userServerFieldsUnchanged());
+      allow update: if (isAdmin() && validUser(request.resource.data)) ||
+        (isOwner(userId) && isDocOwner() && uidNotModified() &&
+          userServerFieldsUnchanged() && validOwnerUserUpdate());
       allow delete: if isOwner(userId) || isAdmin();
 
       match /invoices/{invoiceId} {
@@ -645,17 +705,18 @@ service cloud.firestore {
     match /blog_posts/{postId} {
       allow read: if isAuthenticated();
       allow create: if isAuthenticated() && validBlogPost(request.resource.data) &&
+        request.resource.data.authorUid == request.auth.uid &&
         recentTimestamp(request.resource.data, 'timestamp');
       allow update: if isAuthenticated() && validBlogPost(request.resource.data) &&
         request.resource.data.authorUid == resource.data.authorUid &&
         (request.auth.uid == resource.data.authorUid ||
-          request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['likes', 'likedBy']));
+          validBlogLikeChange());
       allow delete: if isAuthenticated() && request.auth.uid == resource.data.authorUid;
 
       match /blog_comments/{commentId} {
         allow read: if isAuthenticated();
         allow create: if isAuthenticated() && validBlogComment(request.resource.data) &&
+          request.resource.data.authorUid == request.auth.uid &&
           recentTimestamp(request.resource.data, 'timestamp');
         allow update: if isAuthenticated() &&
           request.auth.uid == resource.data.authorUid &&
