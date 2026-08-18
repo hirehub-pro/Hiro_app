@@ -1,0 +1,752 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed data model
+    // ===============================================================
+    // users/{uid}: private account, PII, location, verification and
+    // subscription data. Owner/admin only. Privilege and subscription fields
+    // are immutable to the owner.
+    // users/{uid}/invoices/{id}: owner documents. Tax allocation, numbering,
+    // finalization, signing and email-delivery fields are server controlled.
+    // users/{uid}/counters/{id}: owner-readable sequence state. Initialization
+    // is server-only; later increments must be linked to a matching invoice.
+    // users/{uid}/tax_authority and invoiceBuilderVerifications: server-only.
+    // users/{uid}/receivedInvoices: owner-read, server-write mirror.
+    // chat_rooms/{id}/messages/{id}: room participants only.
+    // blog_posts and nested blog_comments: authenticated community content,
+    // with author identity and bounded content validation.
+    // reports/accountDeletionFeedback: authenticated create, admin review.
+    // metadata/admin_activity/OAuth/subscription events/signing requests:
+    // server/admin controlled.
+
+    // ===============================================================
+    // Helpers
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && request.auth.token.admin == true;
+    }
+
+    function isDocOwner() {
+      return isAuthenticated() &&
+        resource.data.get('uid', '') == request.auth.uid;
+    }
+
+    function uidUnchanged() {
+      return !('uid' in request.resource.data) ||
+        request.resource.data.uid == request.auth.uid;
+    }
+
+    function uidNotModified() {
+      return !('uid' in request.resource.data) ||
+        request.resource.data.uid == resource.data.get('uid', request.auth.uid);
+    }
+
+    function optionalString(data, field, maxLength) {
+      return !(field in data) ||
+        (data[field] is string && data[field].size() <= maxLength);
+    }
+
+    function optionalNumber(data, field, minValue, maxValue) {
+      return !(field in data) ||
+        (data[field] is number && data[field] >= minValue &&
+          data[field] <= maxValue);
+    }
+
+    function optionalBool(data, field) {
+      return !(field in data) || data[field] is bool;
+    }
+
+    function optionalTimestamp(data, field) {
+      return !(field in data) || data[field] is timestamp;
+    }
+
+    function optionalList(data, field, maxSize) {
+      return !(field in data) ||
+        (data[field] is list && data[field].size() <= maxSize);
+    }
+
+    function optionalMap(data, field, maxSize) {
+      return !(field in data) ||
+        (data[field] is map && data[field].size() <= maxSize);
+    }
+
+    function optionalUrl(data, field, maxLength) {
+      return !(field in data) ||
+        (data[field] is string && data[field].size() <= maxLength &&
+          (data[field] == '' || data[field].matches('^https://.*')));
+    }
+
+    function optionalEmail(data, field) {
+      return !(field in data) ||
+        (data[field] is string && data[field].size() <= 254 &&
+          (data[field] == '' ||
+            data[field].matches('^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$')));
+    }
+
+    function recentTimestamp(data, field) {
+      return field in data && data[field] is timestamp &&
+        data[field] <= request.time &&
+        data[field] >= request.time - duration.value(5, 'm');
+    }
+
+    function validUser(data) {
+      return data.keys().hasOnly([
+        'uid', 'name', 'phone', 'optionalPhone', 'email', 'emailVerified',
+        'role', 'createdAt', 'updatedAt', 'profileImageUrl', 'description',
+        'town', 'lat', 'lng', 'workCenterLat', 'workCenterLng', 'workRadius',
+        'professions', 'spokenLanguages', 'socialLinks', 'disabledDays',
+        'hideSchedule', 'notificationsEnabled', 'activeLocationId',
+        'activeLocationLabel', 'activeLocationSource', 'activeLocationUpdatedAt',
+        'activeSearchLat', 'activeSearchLng', 'businessId', 'businessLogoUrl',
+        'dealerType', 'businessVerificationStatus', 'verifiedAt', 'isVerified',
+        'isapproved', 'avgRating', 'reviewCount', 'isInChatPage',
+        'activeChatUpdatedAt', 'isPro', 'isSubscribed', 'isVIP',
+        'subscriptionAccountToken', 'subscriptionCanceled', 'subscriptionDate',
+        'subscriptionExpiresAt', 'subscriptionOwnershipKey',
+        'subscriptionPlatform', 'subscriptionProductId',
+        'subscriptionProviderState', 'subscriptionPurchaseId',
+        'subscriptionPurchaseOrderId', 'subscriptionPurchaseToken',
+        'subscriptionSource', 'subscriptionStatus',
+        'subscriptionTransactionDate', 'subscriptionUpdatedAt',
+        'subscriptionVerificationFreshUntil', 'subscriptionVerifiedAt',
+        'accountingExportSettings', 'ugcTermsAcceptedAt', 'ugcTermsVersion'
+      ]) &&
+      data.keys().hasAll(['uid', 'name', 'role', 'createdAt']) &&
+      data.uid is string && data.uid.size() >= 20 && data.uid.size() <= 128 &&
+      data.name is string && data.name.size() >= 1 && data.name.size() <= 100 &&
+      data.role in ['customer', 'worker', 'admin'] &&
+      data.createdAt is timestamp &&
+      optionalString(data, 'phone', 32) &&
+      optionalString(data, 'optionalPhone', 32) &&
+      optionalEmail(data, 'email') &&
+      optionalString(data, 'description', 2000) &&
+      optionalString(data, 'town', 120) &&
+      optionalString(data, 'businessId', 32) &&
+      optionalString(data, 'dealerType', 40) &&
+      optionalString(data, 'businessVerificationStatus', 40) &&
+      optionalUrl(data, 'profileImageUrl', 2048) &&
+      optionalUrl(data, 'businessLogoUrl', 2048) &&
+      optionalNumber(data, 'lat', -90, 90) &&
+      optionalNumber(data, 'lng', -180, 180) &&
+      optionalNumber(data, 'workCenterLat', -90, 90) &&
+      optionalNumber(data, 'workCenterLng', -180, 180) &&
+      optionalNumber(data, 'workRadius', 0, 1000000) &&
+      optionalNumber(data, 'avgRating', 0, 5) &&
+      optionalNumber(data, 'reviewCount', 0, 100000000) &&
+      optionalList(data, 'professions', 50) &&
+      optionalList(data, 'spokenLanguages', 30) &&
+      optionalList(data, 'disabledDays', 31) &&
+      optionalMap(data, 'socialLinks', 20) &&
+      optionalMap(data, 'accountingExportSettings', 30) &&
+      optionalBool(data, 'emailVerified') &&
+      optionalBool(data, 'hideSchedule') &&
+      optionalBool(data, 'notificationsEnabled') &&
+      optionalBool(data, 'isVerified') &&
+      optionalBool(data, 'isapproved') &&
+      optionalBool(data, 'isInChatPage') &&
+      optionalBool(data, 'isPro') &&
+      optionalBool(data, 'isSubscribed') &&
+      optionalBool(data, 'isVIP');
+    }
+
+    function userServerFieldsUnchanged() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+        'role', 'isapproved', 'isVerified', 'verifiedAt',
+        'businessVerificationStatus', 'isPro', 'isSubscribed', 'isVIP',
+        'subscriptionAccountToken', 'subscriptionCanceled', 'subscriptionDate',
+        'subscriptionExpiresAt', 'subscriptionOwnershipKey',
+        'subscriptionPlatform', 'subscriptionProductId',
+        'subscriptionProviderState', 'subscriptionPurchaseId',
+        'subscriptionPurchaseOrderId', 'subscriptionPurchaseToken',
+        'subscriptionSource', 'subscriptionStatus',
+        'subscriptionTransactionDate', 'subscriptionUpdatedAt',
+        'subscriptionVerificationFreshUntil', 'subscriptionVerifiedAt',
+        'avgRating', 'reviewCount', 'createdAt', 'uid'
+      ]);
+    }
+
+    function validInvoice(data, userId) {
+      return data.keys().hasOnly([
+        'type', 'docType', 'name', 'baseName', 'receiverName', 'fileName',
+        'url', 'storagePath', 'amount', 'vatAmount', 'clientName',
+        'clientAddress', 'clientPhone', 'clientEmail', 'clientTaxId',
+        'externalClientNumber', 'savedClientId', 'linkedDocuments',
+        'linkedDocumentIds', 'items', 'priceTaxModeDefault', 'hasDiscount',
+        'discountAmount', 'roundTotalEnabled', 'roundingAmount', 'notes',
+        'paymentMethod', 'paymentMethods', 'paymentAmountTotal', 'date',
+        'paymentDueDate', 'invoiceDocId', 'invoiceNumber', 'sequenceNumber',
+        'createdAt', 'sourceInvoiceNumber', 'sourceInvoiceDocId',
+        'sourceInvoiceTotalAmount', 'creditNoteLegal',
+        'isCancellationDocument', 'cancellationSourceDocumentId',
+        'cancellationSourceDocumentNumber', 'cancellationStatus',
+        'cancelledByDocumentId', 'cancelledByDocumentNumber', 'cancelledAt',
+        'paymentStatus', 'paidAmount', 'allocationNumber',
+        'taxAuthorityAllocationNumber', 'taxAuthorityAllocation',
+        'taxAuthorityAllocationRequest', 'authoritativeTaxInvoice',
+        'documentStatus', 'finalizedAt', 'finalPdf', 'signatureStatus',
+        'signingRequestId', 'signingRequestedAt', 'signingUrl', 'signedAt',
+        'signerName', 'invoiceEmailStatus', 'invoiceEmailAttemptedAt',
+        'invoiceEmailSentAt', 'invoiceEmailId', 'invoiceEmailIds',
+        'invoiceEmailError'
+      ]) &&
+      data.keys().hasAll(['type', 'docType', 'invoiceDocId', 'createdAt']) &&
+      data.type is string && data.type.size() <= 40 &&
+      data.docType is string && data.docType.size() <= 40 &&
+      data.invoiceDocId is string && data.invoiceDocId.size() <= 180 &&
+      data.createdAt is timestamp &&
+      optionalString(data, 'name', 240) && optionalString(data, 'fileName', 240) &&
+      optionalString(data, 'clientName', 200) &&
+      optionalString(data, 'clientAddress', 500) &&
+      optionalString(data, 'clientPhone', 32) &&
+      optionalEmail(data, 'clientEmail') &&
+      optionalString(data, 'clientTaxId', 32) &&
+      optionalString(data, 'notes', 4000) &&
+      optionalString(data, 'invoiceNumber', 40) &&
+      optionalString(data, 'paymentStatus', 30) &&
+      optionalUrl(data, 'url', 4096) &&
+      (!( 'storagePath' in data) ||
+        (data.storagePath is string && data.storagePath.size() <= 512 &&
+          (data.storagePath == '' ||
+            data.storagePath.matches('^invoices/' + userId + '/[^/]+\\.pdf$')))) &&
+      optionalNumber(data, 'amount', -1000000000000, 1000000000000) &&
+      optionalNumber(data, 'vatAmount', -1000000000000, 1000000000000) &&
+      optionalNumber(data, 'discountAmount', 0, 1000000000000) &&
+      optionalNumber(data, 'roundingAmount', -1000000, 1000000) &&
+      optionalNumber(data, 'paidAmount', 0, 1000000000000) &&
+      optionalNumber(data, 'sequenceNumber', 1, 999999999) &&
+      optionalList(data, 'items', 500) &&
+      optionalList(data, 'linkedDocuments', 100) &&
+      optionalList(data, 'linkedDocumentIds', 100) &&
+      optionalList(data, 'paymentMethods', 100) &&
+      optionalMap(data, 'creditNoteLegal', 40) &&
+      optionalBool(data, 'hasDiscount') &&
+      optionalBool(data, 'roundTotalEnabled') &&
+      optionalBool(data, 'isCancellationDocument');
+    }
+
+    function invoiceServerFields() {
+      return [
+        'allocationNumber', 'taxAuthorityAllocationNumber',
+        'taxAuthorityAllocation', 'taxAuthorityAllocationRequest',
+        'authoritativeTaxInvoice', 'documentStatus', 'finalizedAt', 'finalPdf',
+        'signatureStatus', 'signingRequestId', 'signingRequestedAt',
+        'signingUrl', 'signedAt', 'signerName', 'invoiceEmailStatus',
+        'invoiceEmailAttemptedAt', 'invoiceEmailSentAt', 'invoiceEmailId',
+        'invoiceEmailIds', 'invoiceEmailError'
+      ];
+    }
+
+    function validClientInvoiceCreate(data, userId) {
+      return validInvoice(data, userId) &&
+        !data.keys().hasAny(invoiceServerFields());
+    }
+
+    function validClientInvoiceUpdate(userId) {
+      return validInvoice(request.resource.data, userId) &&
+        !request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny(invoiceServerFields()) &&
+        request.resource.data.invoiceDocId == resource.data.invoiceDocId &&
+        request.resource.data.docType == resource.data.docType &&
+        request.resource.data.type == resource.data.type &&
+        request.resource.data.createdAt == resource.data.createdAt &&
+        request.resource.data.get('invoiceNumber', '') ==
+          resource.data.get('invoiceNumber', '') &&
+        request.resource.data.get('sequenceNumber', 0) ==
+          resource.data.get('sequenceNumber', 0);
+    }
+
+    function validCounter(data) {
+      return data.keys().hasOnly([
+        'value', 'docType', 'updatedAt', 'initializedAt',
+        'lastInvoiceDocId', 'lastSequenceNumber'
+      ]) &&
+      data.keys().hasAll(['value', 'docType', 'updatedAt']) &&
+      data.value is int && data.value >= 1 && data.value <= 999999999 &&
+      data.docType is string && data.docType.size() <= 40 &&
+      data.updatedAt is timestamp &&
+      optionalTimestamp(data, 'initializedAt') &&
+      optionalString(data, 'lastInvoiceDocId', 180) &&
+      optionalNumber(data, 'lastSequenceNumber', 1, 999999999);
+    }
+
+    function validCounterIncrement(userId) {
+      let invoiceId = request.resource.data.get('lastInvoiceDocId', '');
+      let invoicePath = /databases/$(database)/documents/users/$(userId)/invoices/$(invoiceId);
+      return validCounter(request.resource.data) &&
+        request.resource.data.value == resource.data.value + 1 &&
+        request.resource.data.lastSequenceNumber == resource.data.value &&
+        invoiceId.size() > 0 && existsAfter(invoicePath) &&
+        getAfter(invoicePath).data.invoiceDocId == invoiceId &&
+        getAfter(invoicePath).data.sequenceNumber == resource.data.value &&
+        getAfter(invoicePath).data.docType == request.resource.data.docType;
+    }
+
+    function validClient(data) {
+      return data.keys().hasOnly([
+        'name', 'nameLowercase', 'phone', 'phones', 'email', 'emails',
+        'address', 'taxId', 'notes', 'externalClientNumber', 'linkedUserId',
+        'clientSource', 'contactDetails', 'createdAt', 'updatedAt'
+      ]) && data.keys().hasAll(['name', 'createdAt']) &&
+      data.name is string && data.name.size() >= 1 && data.name.size() <= 200 &&
+      optionalString(data, 'nameLowercase', 200) &&
+      optionalString(data, 'phone', 32) && optionalList(data, 'phones', 20) &&
+      optionalEmail(data, 'email') && optionalList(data, 'emails', 20) &&
+      optionalString(data, 'address', 500) &&
+      optionalString(data, 'taxId', 32) && optionalString(data, 'notes', 4000) &&
+      optionalString(data, 'externalClientNumber', 40) &&
+      optionalString(data, 'linkedUserId', 128) &&
+      optionalString(data, 'clientSource', 80) &&
+      optionalMap(data, 'contactDetails', 30) &&
+      data.createdAt is timestamp && optionalTimestamp(data, 'updatedAt');
+    }
+
+    function validPublicProject(data) {
+      return data.keys().hasOnly([
+        'description', 'imageUrl', 'imageUrls', 'mediaTypes', 'hasVideo',
+        'commentsCount', 'timestamp'
+      ]) && data.keys().hasAll(['description', 'timestamp']) &&
+      data.description is string && data.description.size() <= 4000 &&
+      data.timestamp is timestamp && optionalUrl(data, 'imageUrl', 2048) &&
+      optionalList(data, 'imageUrls', 20) && optionalList(data, 'mediaTypes', 20) &&
+      optionalBool(data, 'hasVideo') &&
+      optionalNumber(data, 'commentsCount', 0, 1000000);
+    }
+
+    function validReview(data, targetUserId) {
+      return data.keys().hasOnly([
+        'userId', 'reviewerId', 'reviewerName', 'targetUserId', 'rating',
+        'comment', 'text', 'createdAt', 'timestamp', 'projectId', 'reply'
+      ]) &&
+      data.rating is number && data.rating >= 1 && data.rating <= 5 &&
+      optionalString(data, 'comment', 4000) && optionalString(data, 'text', 4000) &&
+      optionalString(data, 'reviewerName', 100) &&
+      optionalString(data, 'projectId', 180) &&
+      optionalString(data, 'reply', 4000) &&
+      (data.get('targetUserId', targetUserId) == targetUserId) &&
+      (data.get('reviewerId', data.get('userId', '')) == request.auth.uid) &&
+      (optionalTimestamp(data, 'createdAt') && optionalTimestamp(data, 'timestamp'));
+    }
+
+    function validNotification(data) {
+      return data.keys().hasOnly([
+        'title', 'body', 'message', 'type', 'url', 'isRead', 'read',
+        'timestamp', 'createdAt', 'fromId', 'fromUserId', 'fromName',
+        'fromUserName', 'fromLocation', 'roomId', 'chatPartnerId',
+        'chatPartnerName', 'messageId', 'requestId', 'requestOwnerId',
+        'requestUrl', 'workerId', 'workerName', 'workerNotificationId',
+        'workerRequestToMeId', 'invoiceDocId', 'status', 'date',
+        'requestedFrom', 'requestedTo', 'profession', 'jobDescription',
+        'serviceLocationType', 'locationName', 'latitude', 'longitude',
+        'mapUrl', 'images', 'videos', 'media', 'cancelledAt'
+      ]) &&
+      optionalString(data, 'title', 240) && optionalString(data, 'body', 4000) &&
+      optionalString(data, 'message', 4000) && optionalString(data, 'type', 80) &&
+      optionalUrl(data, 'url', 4096) && optionalBool(data, 'isRead') &&
+      optionalBool(data, 'read') && optionalTimestamp(data, 'timestamp') &&
+      optionalTimestamp(data, 'createdAt') &&
+      optionalList(data, 'images', 20) && optionalList(data, 'videos', 20) &&
+      optionalList(data, 'media', 40);
+    }
+
+    function validBlogPost(data) {
+      return data.keys().hasOnly([
+        'authorUid', 'authorName', 'title', 'content', 'category', 'profession',
+        'professionLabel', 'imageUrl', 'imageUrls', 'mediaTypes', 'location',
+        'locationLat', 'locationLng', 'isJobRequest', 'requestDateFrom',
+        'requestDateTo', 'requestTimeFrom', 'requestTimeTo', 'isPinned',
+        'likes', 'likedBy', 'timestamp'
+      ]) && data.keys().hasAll(['authorUid', 'title', 'content', 'timestamp']) &&
+      data.authorUid == request.auth.uid &&
+      data.title is string && data.title.size() >= 1 && data.title.size() <= 240 &&
+      data.content is string && data.content.size() <= 10000 &&
+      data.timestamp is timestamp && optionalString(data, 'authorName', 100) &&
+      optionalString(data, 'category', 100) && optionalString(data, 'profession', 120) &&
+      optionalString(data, 'professionLabel', 120) &&
+      optionalUrl(data, 'imageUrl', 2048) && optionalList(data, 'imageUrls', 20) &&
+      optionalList(data, 'mediaTypes', 20) && optionalString(data, 'location', 300) &&
+      optionalNumber(data, 'locationLat', -90, 90) &&
+      optionalNumber(data, 'locationLng', -180, 180) &&
+      optionalBool(data, 'isJobRequest') && optionalBool(data, 'isPinned') &&
+      optionalNumber(data, 'likes', 0, 100000000) &&
+      optionalList(data, 'likedBy', 10000);
+    }
+
+    function validBlogComment(data) {
+      return data.keys().hasOnly([
+        'authorUid', 'authorName', 'authorRole', 'text', 'timestamp', 'isBid',
+        'bidPrice', 'quoteDocType', 'quoteDocumentNumber', 'quoteFileName',
+        'quoteItems', 'quoteUrl'
+      ]) && data.keys().hasAll(['authorUid', 'text', 'timestamp']) &&
+      data.authorUid == request.auth.uid &&
+      data.text is string && data.text.size() <= 5000 &&
+      data.timestamp is timestamp && optionalString(data, 'authorName', 100) &&
+      optionalString(data, 'authorRole', 40) && optionalBool(data, 'isBid') &&
+      optionalNumber(data, 'bidPrice', 0, 1000000000000) &&
+      optionalList(data, 'quoteItems', 500) && optionalUrl(data, 'quoteUrl', 4096);
+    }
+
+    function validChatRoom(data) {
+      return data.keys().hasOnly([
+        'id', 'users', 'userNames', 'user_names', 'lastMessage',
+        'lastMessageTime', 'lastTimestamp', 'unreadCount', 'isSupportRoom',
+        'supportType'
+      ]) && data.keys().hasAll(['users']) && data.users is list &&
+      data.users.size() >= 1 && data.users.size() <= 3 &&
+      request.auth.uid in data.users && optionalString(data, 'id', 300) &&
+      optionalString(data, 'lastMessage', 4000) &&
+      optionalTimestamp(data, 'lastMessageTime') &&
+      optionalTimestamp(data, 'lastTimestamp') &&
+      optionalMap(data, 'userNames', 3) && optionalMap(data, 'user_names', 3) &&
+      optionalMap(data, 'unreadCount', 3) && optionalBool(data, 'isSupportRoom') &&
+      optionalString(data, 'supportType', 80);
+    }
+
+    function validMessage(data, roomId) {
+      return data.keys().hasOnly([
+        'senderId', 'receiverId', 'text', 'message', 'type', 'url', 'fileUrl',
+        'fileName', 'timestamp', 'isRead', 'isSystem', 'invoiceDocId',
+        'requestId', 'requestOwnerId', 'requestUrl', 'workerNotificationId',
+        'signedDocument', 'signingRequest'
+      ]) && data.keys().hasAll(['senderId', 'timestamp']) &&
+      data.senderId == request.auth.uid && data.timestamp is timestamp &&
+      optionalString(data, 'receiverId', 128) && optionalString(data, 'text', 10000) &&
+      optionalString(data, 'message', 10000) && optionalString(data, 'type', 80) &&
+      optionalUrl(data, 'url', 4096) && optionalUrl(data, 'fileUrl', 4096) &&
+      optionalString(data, 'fileName', 240) && optionalBool(data, 'isRead') &&
+      optionalBool(data, 'isSystem') && optionalMap(data, 'signedDocument', 30) &&
+      optionalMap(data, 'signingRequest', 30) &&
+      get(/databases/$(database)/documents/chat_rooms/$(roomId)).data.users
+        .hasAll([request.auth.uid]);
+    }
+
+    function validReport(data) {
+      return data.keys().hasOnly([
+        'reporterId', 'reportedId', 'reportType', 'reason', 'details',
+        'subject', 'source', 'attachments', 'status', 'timestamp'
+      ]) && data.keys().hasAll(['reporterId', 'reason', 'timestamp']) &&
+      data.reporterId == request.auth.uid &&
+      data.reason is string && data.reason.size() >= 1 && data.reason.size() <= 1000 &&
+      data.timestamp is timestamp && optionalString(data, 'details', 10000) &&
+      optionalString(data, 'subject', 300) && optionalString(data, 'source', 100) &&
+      optionalList(data, 'attachments', 10) &&
+      data.get('status', 'open') == 'open';
+    }
+
+    // ===============================================================
+    // Private accounts and user-owned data
+    // ===============================================================
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId) && validUser(request.resource.data) &&
+        uidUnchanged() && request.resource.data.role == 'customer' &&
+        recentTimestamp(request.resource.data, 'createdAt');
+      allow update: if isAdmin() && validUser(request.resource.data) ||
+        (isOwner(userId) && validUser(request.resource.data) &&
+          isDocOwner() && uidNotModified() && userServerFieldsUnchanged());
+      allow delete: if isOwner(userId) || isAdmin();
+
+      match /invoices/{invoiceId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) &&
+          validClientInvoiceCreate(request.resource.data, userId) &&
+          request.resource.data.invoiceDocId == invoiceId;
+        allow update: if isOwner(userId) && validClientInvoiceUpdate(userId);
+        allow delete: if isOwner(userId) &&
+          !('taxAuthorityAllocationRequest' in resource.data) &&
+          resource.data.docType in ['quote', 'work_order'];
+      }
+
+      match /counters/{counterId} {
+        allow read: if isOwner(userId);
+        allow create: if false;
+        allow update: if isOwner(userId) && validCounterIncrement(userId);
+        allow delete: if false;
+      }
+
+      match /tax_authority/{document=**} {
+        allow read, write: if false;
+      }
+
+      match /invoiceBuilderVerifications/{document=**} {
+        allow read, write: if false;
+      }
+
+      match /receivedInvoices/{invoiceId} {
+        allow read: if isOwner(userId);
+        allow write: if false;
+      }
+
+      match /clients/{clientId} {
+        allow read, delete: if isOwner(userId);
+        allow create, update: if isOwner(userId) && validClient(request.resource.data);
+      }
+
+      match /projects/{projectId} {
+        allow read: if isAuthenticated();
+        allow create, update: if isOwner(userId) &&
+          validPublicProject(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+
+      match /reviews/{reviewId} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated() && validReview(request.resource.data, userId);
+        allow update: if isOwner(userId) && validReview(request.resource.data, userId);
+        allow delete: if isOwner(userId) ||
+          (isAuthenticated() &&
+            resource.data.get('reviewerId', resource.data.get('userId', '')) ==
+              request.auth.uid);
+      }
+
+      match /comments/{commentId} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated() &&
+          request.resource.data.keys().hasOnly([
+            'userId', 'authorUid', 'name', 'text', 'comment', 'timestamp'
+          ]) &&
+          request.resource.data.get('userId',
+            request.resource.data.get('authorUid', '')) == request.auth.uid &&
+          optionalString(request.resource.data, 'name', 100) &&
+          optionalString(request.resource.data, 'text', 5000) &&
+          optionalString(request.resource.data, 'comment', 5000) &&
+          recentTimestamp(request.resource.data, 'timestamp');
+        allow update: if false;
+        allow delete: if isOwner(userId) ||
+          (isAuthenticated() &&
+            resource.data.get('userId', resource.data.get('authorUid', '')) ==
+              request.auth.uid);
+      }
+
+      match /notifications/{notificationId} {
+        allow read, delete: if isOwner(userId);
+        allow create: if isAuthenticated() && validNotification(request.resource.data) &&
+          request.resource.data.get('fromUserId',
+            request.resource.data.get('fromId', request.auth.uid)) == request.auth.uid;
+        allow update: if isOwner(userId) && validNotification(request.resource.data) &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['isRead', 'read']);
+      }
+
+      match /deviceTokens/{tokenId} {
+        allow read, delete: if isOwner(userId);
+        allow create, update: if isOwner(userId) &&
+          request.resource.data.keys().hasOnly([
+            'token', 'platform', 'createdAt', 'updatedAt', 'lastSeenAt'
+          ]) && request.resource.data.token is string &&
+          request.resource.data.token.size() >= 20 &&
+          request.resource.data.token.size() <= 4096 &&
+          optionalString(request.resource.data, 'platform', 40) &&
+          optionalTimestamp(request.resource.data, 'createdAt') &&
+          optionalTimestamp(request.resource.data, 'updatedAt') &&
+          optionalTimestamp(request.resource.data, 'lastSeenAt');
+      }
+
+      match /verification_info/{verificationId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create, update, delete: if isAdmin();
+      }
+
+      match /invoice_builder_lock/{lockId} {
+        allow read, delete: if isOwner(userId);
+        allow create, update: if isOwner(userId) &&
+          request.resource.data.keys().hasOnly([
+            'ownerUid', 'sessionId', 'deviceId', 'acquiredAt', 'expiresAt',
+            'updatedAt'
+          ]) && request.resource.data.ownerUid == userId &&
+          request.resource.data.sessionId is string &&
+          request.resource.data.sessionId.size() <= 200 &&
+          optionalString(request.resource.data, 'deviceId', 300) &&
+          optionalTimestamp(request.resource.data, 'acquiredAt') &&
+          request.resource.data.expiresAt is timestamp &&
+          optionalTimestamp(request.resource.data, 'updatedAt');
+      }
+
+      match /saved_locations/{locationId} {
+        allow read, delete: if isOwner(userId);
+        allow create, update: if isOwner(userId) &&
+          request.resource.data.keys().hasOnly([
+            'name', 'label', 'address', 'latitude', 'longitude', 'lat', 'lng',
+            'isDefault', 'createdAt', 'updatedAt'
+          ]) && optionalString(request.resource.data, 'name', 120) &&
+          optionalString(request.resource.data, 'label', 120) &&
+          optionalString(request.resource.data, 'address', 500) &&
+          optionalNumber(request.resource.data, 'latitude', -90, 90) &&
+          optionalNumber(request.resource.data, 'longitude', -180, 180) &&
+          optionalNumber(request.resource.data, 'lat', -90, 90) &&
+          optionalNumber(request.resource.data, 'lng', -180, 180) &&
+          optionalBool(request.resource.data, 'isDefault') &&
+          optionalTimestamp(request.resource.data, 'createdAt') &&
+          optionalTimestamp(request.resource.data, 'updatedAt');
+      }
+
+      match /favorites/{favoriteId} {
+        allow read, delete: if isOwner(userId);
+        allow create, update: if isOwner(userId) &&
+          request.resource.data.keys().hasOnly([
+            'userId', 'workerId', 'targetUid', 'addedAt', 'createdAt'
+          ]) &&
+          request.resource.data.get('userId',
+            request.resource.data.get('workerId',
+              request.resource.data.get('targetUid', ''))) == favoriteId &&
+          (optionalTimestamp(request.resource.data, 'addedAt') &&
+            optionalTimestamp(request.resource.data, 'createdAt'));
+      }
+
+      match /likedBy/{likerId} {
+        allow read: if isOwner(userId) || isOwner(likerId);
+        allow create, update: if isOwner(likerId) &&
+          request.resource.data.keys().hasOnly([
+            'userId', 'workerId', 'targetUid', 'addedAt', 'createdAt'
+          ]);
+        allow delete: if isOwner(likerId) || isOwner(userId);
+      }
+
+      match /Schedule/{scheduleId} {
+        allow read: if isOwner(userId) || isAuthenticated();
+        allow create, update: if isOwner(userId) &&
+          request.resource.data.keys().hasOnly([
+            'allReminders', 'availableDates', 'dayNotes', 'defaultWorkingHours',
+            'disabledDays', 'hideSchedule', 'partialWorkDays', 'reminderDates',
+            'vacations', 'updatedAt'
+          ]) && optionalList(request.resource.data, 'allReminders', 1000) &&
+          optionalList(request.resource.data, 'availableDates', 1000) &&
+          optionalMap(request.resource.data, 'dayNotes', 400) &&
+          optionalMap(request.resource.data, 'defaultWorkingHours', 14) &&
+          optionalList(request.resource.data, 'disabledDays', 400) &&
+          optionalBool(request.resource.data, 'hideSchedule') &&
+          optionalMap(request.resource.data, 'partialWorkDays', 400) &&
+          optionalList(request.resource.data, 'reminderDates', 1000) &&
+          optionalList(request.resource.data, 'vacations', 400) &&
+          optionalTimestamp(request.resource.data, 'updatedAt');
+        allow delete: if isOwner(userId);
+      }
+
+      match /{ownerCollection}/{document=**} {
+        allow read, write: if isOwner(userId) && ownerCollection in [
+          'ProRating', 'RequestToMe', 'VPD', 'clientNumbers', 'clientTaxIds',
+          'logs', 'subscriptionPayments'
+        ];
+      }
+    }
+
+    // ===============================================================
+    // Community content
+    // ===============================================================
+    match /blog_posts/{postId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && validBlogPost(request.resource.data) &&
+        recentTimestamp(request.resource.data, 'timestamp');
+      allow update: if isAuthenticated() && validBlogPost(request.resource.data) &&
+        request.resource.data.authorUid == resource.data.authorUid &&
+        (request.auth.uid == resource.data.authorUid ||
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['likes', 'likedBy']));
+      allow delete: if isAuthenticated() && request.auth.uid == resource.data.authorUid;
+
+      match /blog_comments/{commentId} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated() && validBlogComment(request.resource.data) &&
+          recentTimestamp(request.resource.data, 'timestamp');
+        allow update: if isAuthenticated() &&
+          request.auth.uid == resource.data.authorUid &&
+          validBlogComment(request.resource.data) &&
+          request.resource.data.authorUid == resource.data.authorUid;
+        allow delete: if isAuthenticated() &&
+          (request.auth.uid == resource.data.authorUid ||
+            request.auth.uid ==
+              get(/databases/$(database)/documents/blog_posts/$(postId)).data.authorUid);
+      }
+    }
+
+    match /chat_rooms/{roomId} {
+      allow read: if isAuthenticated() && request.auth.uid in resource.data.users;
+      allow create: if isAuthenticated() && validChatRoom(request.resource.data);
+      allow update: if isAuthenticated() && request.auth.uid in resource.data.users &&
+        validChatRoom(request.resource.data) &&
+        request.resource.data.users == resource.data.users;
+      allow delete: if false;
+
+      match /messages/{messageId} {
+        allow read: if isAuthenticated() &&
+          request.auth.uid in
+            get(/databases/$(database)/documents/chat_rooms/$(roomId)).data.users;
+        allow create: if isAuthenticated() && validMessage(request.resource.data, roomId);
+        allow update: if isAuthenticated() &&
+          request.auth.uid in
+            get(/databases/$(database)/documents/chat_rooms/$(roomId)).data.users &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead']) &&
+          request.resource.data.senderId == resource.data.senderId;
+        allow delete: if false;
+      }
+    }
+
+    match /reports/{reportId} {
+      allow create: if isAuthenticated() && validReport(request.resource.data) &&
+        recentTimestamp(request.resource.data, 'timestamp');
+      allow read, update, delete: if isAdmin();
+    }
+
+    match /accountDeletionFeedback/{feedbackId} {
+      allow create: if isAuthenticated() &&
+        request.resource.data.keys().hasOnly([
+          'userId', 'reason', 'details', 'createdAt'
+        ]) && request.resource.data.userId == request.auth.uid &&
+        request.resource.data.reason is string &&
+        request.resource.data.reason.size() <= 1000 &&
+        optionalString(request.resource.data, 'details', 5000) &&
+        recentTimestamp(request.resource.data, 'createdAt');
+      allow read, update, delete: if isAdmin();
+    }
+
+    match /professions/{professionId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /system_announcements/{announcementId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /metadata/{document=**} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /admin_activity/{document=**} {
+      allow read, write: if isAdmin();
+    }
+
+    // Server-only security and lifecycle collections.
+    match /taxAuthorityOAuthStates/{document=**} {
+      allow read, write: if false;
+    }
+    match /taxAuthorityOAuthCallbacks/{document=**} {
+      allow read, write: if false;
+    }
+    match /taxAuthorityOAuthTokens/{document=**} {
+      allow read, write: if false;
+    }
+    match /subscriptionNotificationEvents/{document=**} {
+      allow read, write: if false;
+    }
+    match /documentSigningRequests/{document=**} {
+      allow read, write: if false;
+    }
+
+    // Default deny: every path not explicitly modeled above is inaccessible.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

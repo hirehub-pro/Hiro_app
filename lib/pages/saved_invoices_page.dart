@@ -245,6 +245,37 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
     }
   }
 
+  String _documentWorkflowLabel(String status, bool isRtl) {
+    switch (status) {
+      case 'reserved':
+        return isRtl ? 'המספר נשמר' : 'Number reserved';
+      case 'allocating':
+        return isRtl ? 'מבקש הקצאה' : 'Requesting allocation';
+      case 'allocation_approved':
+        return isRtl ? 'ממתין לסיום' : 'Finishing document';
+      case 'allocation_failed':
+        return isRtl ? 'ההקצאה נכשלה' : 'Allocation failed';
+      case 'needs_reconciliation':
+        return isRtl ? 'נדרשת בדיקה' : 'Needs review';
+      case 'finalized':
+        return isRtl ? 'הושלם' : 'Finalized';
+      default:
+        return isRtl ? 'בתהליך' : 'Processing';
+    }
+  }
+
+  Color _documentWorkflowColor(String status) {
+    switch (status) {
+      case 'finalized':
+        return const Color(0xFF15803D);
+      case 'allocation_failed':
+      case 'needs_reconciliation':
+        return const Color(0xFFB91C1C);
+      default:
+        return const Color(0xFFD97706);
+    }
+  }
+
   Future<void> _generateSigningLink(String invoiceDocId, bool isRtl) async {
     if (_generatingSigningLinks.contains(invoiceDocId)) return;
 
@@ -1235,7 +1266,12 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
             }).toList();
 
             final totalAmount = docs.fold<double>(0, (runningTotal, doc) {
-              final amount = (doc.data()['amount'] as num?)?.toDouble() ?? 0;
+              final data = doc.data();
+              if (data['taxAuthorityAllocationRequest'] is Map &&
+                  data['documentStatus'] != 'finalized') {
+                return runningTotal;
+              }
+              final amount = (data['amount'] as num?)?.toDouble() ?? 0;
               return runningTotal + amount;
             });
 
@@ -1429,14 +1465,26 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                             final fileName = (data['fileName'] ?? '$name.pdf')
                                 .toString();
                             final url = (data['url'] ?? '').toString();
+                            final hasTaxWorkflow =
+                                data['taxAuthorityAllocationRequest'] is Map;
+                            final documentStatus =
+                                (data['documentStatus'] ?? '')
+                                    .toString()
+                                    .trim();
+                            final isFinalizedTaxDocument =
+                                !hasTaxWorkflow ||
+                                documentStatus == 'finalized';
                             final createdAt = data['createdAt'] as Timestamp?;
                             final amount = (data['amount'] as num?)?.toDouble();
                             final canCreateCreditNote =
                                 !isReceivedScope &&
+                                isFinalizedTaxDocument &&
                                 (docType == 'invoice' ||
                                     docType == 'invoice_receipt');
                             final canCreateReceipt =
-                                !isReceivedScope && docType == 'invoice';
+                                !isReceivedScope &&
+                                isFinalizedTaxDocument &&
+                                docType == 'invoice';
                             final canCancelReceipt =
                                 !isReceivedScope &&
                                 docType == 'receipt' &&
@@ -1508,7 +1556,9 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                             return InkWell(
                               borderRadius: BorderRadius.circular(22),
                               onTap: () {
-                                if (url.isEmpty) return;
+                                if (!isFinalizedTaxDocument || url.isEmpty) {
+                                  return;
+                                }
                                 Navigator.push(
                                   context,
                                   MaterialPageRoute(
@@ -1621,6 +1671,41 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                                           color: Color(
                                                             0xFF475569,
                                                           ),
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  if (hasTaxWorkflow)
+                                                    Container(
+                                                      padding:
+                                                          const EdgeInsets.symmetric(
+                                                            horizontal: 10,
+                                                            vertical: 5,
+                                                          ),
+                                                      decoration: BoxDecoration(
+                                                        color:
+                                                            _documentWorkflowColor(
+                                                              documentStatus,
+                                                            ).withValues(
+                                                              alpha: 0.12,
+                                                            ),
+                                                        borderRadius:
+                                                            BorderRadius.circular(
+                                                              999,
+                                                            ),
+                                                      ),
+                                                      child: Text(
+                                                        _documentWorkflowLabel(
+                                                          documentStatus,
+                                                          isRtl,
+                                                        ),
+                                                        style: TextStyle(
+                                                          color:
+                                                              _documentWorkflowColor(
+                                                                documentStatus,
+                                                              ),
+                                                          fontSize: 11,
+                                                          fontWeight:
+                                                              FontWeight.w700,
                                                         ),
                                                       ),
                                                     ),

@@ -294,6 +294,8 @@ class _TaxAuthorityAllocationResult {
   final String? confirmationNumber;
   final String? invoiceId;
   final String? transactionId;
+  final Map<String, dynamic> reservation;
+  final String payloadHash;
   final Map<String, dynamic> raw;
 
   const _TaxAuthorityAllocationResult({
@@ -302,6 +304,8 @@ class _TaxAuthorityAllocationResult {
     this.confirmationNumber,
     this.invoiceId,
     this.transactionId,
+    required this.reservation,
+    required this.payloadHash,
   });
 
   Map<String, dynamic> toMap() => {
@@ -311,6 +315,8 @@ class _TaxAuthorityAllocationResult {
     if (invoiceId != null && invoiceId!.isNotEmpty) 'invoiceId': invoiceId,
     if (transactionId != null && transactionId!.isNotEmpty)
       'transactionId': transactionId,
+    'reservation': reservation,
+    'payloadHash': payloadHash,
     'raw': raw,
     'requestedAt': FieldValue.serverTimestamp(),
   };
@@ -1312,6 +1318,37 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     final allocationNumber = taxAuthorityAllocation?['confirmationNumber']
         ?.toString()
         .trim();
+    final allocationReservationValue = taxAuthorityAllocation?['reservation'];
+    final allocationReservation = allocationReservationValue is Map
+        ? Map<String, dynamic>.from(allocationReservationValue)
+        : null;
+    final reservedDocumentNumber = allocationReservation?['documentNumber']
+        ?.toString()
+        .trim();
+    final reservedInvoiceDocId = allocationReservation?['invoiceDocId']
+        ?.toString()
+        .trim();
+    final reservedDocType = allocationReservation?['docType']
+        ?.toString()
+        .trim();
+    final reservedSequenceNumber =
+        (allocationReservation?['sequenceNumber'] as num?)?.toInt();
+    final allocationPayloadHash = taxAuthorityAllocation?['payloadHash']
+        ?.toString()
+        .trim();
+    final hasAllocationReservation =
+        allocationNumber != null &&
+        allocationNumber.isNotEmpty &&
+        reservedDocumentNumber != null &&
+        reservedDocumentNumber.isNotEmpty &&
+        reservedInvoiceDocId != null &&
+        reservedInvoiceDocId.isNotEmpty &&
+        reservedDocType != null &&
+        reservedDocType.isNotEmpty &&
+        reservedSequenceNumber != null &&
+        reservedSequenceNumber > 0 &&
+        allocationPayloadHash != null &&
+        allocationPayloadHash.isNotEmpty;
 
     if (docType == 'quote' || docType == 'work_order') {
       final fileName =
@@ -1418,12 +1455,54 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         logCounterSnaps.add(await transaction.get(logBucketRef));
       }
 
+      DocumentSnapshot<Map<String, dynamic>>? reservedInvoiceSnap;
+      if (hasAllocationReservation) {
+        reservedInvoiceSnap = await transaction.get(
+          invoicesRef.doc(reservedInvoiceDocId),
+        );
+      }
+
       final storedNextNumber = counterSnap.exists
           ? ((counterSnap.data() as Map<String, dynamic>)['value'] as num?)
                 ?.toInt()
           : null;
 
-      if (assignedSequenceNumber != null &&
+      if (hasAllocationReservation) {
+        if (reservedDocType != docType ||
+            reservedDocumentNumber != assignedDocumentNumber ||
+            reservedSequenceNumber != assignedSequenceNumber ||
+            reservedInvoiceDocId !=
+                _invoiceDocIdFor(docType, assignedDocumentNumber)) {
+          throw StateError(
+            'The Tax Authority reservation does not match this document.',
+          );
+        }
+        if (storedNextNumber != reservedSequenceNumber + 1) {
+          throw StateError(
+            'The reserved document counter changed. Refresh and try again.',
+          );
+        }
+        final reservedData = reservedInvoiceSnap?.data();
+        final requestValue = reservedData?['taxAuthorityAllocationRequest'];
+        final requestData = requestValue is Map
+            ? Map<String, dynamic>.from(requestValue)
+            : const <String, dynamic>{};
+        final storedAllocationValue = reservedData?['taxAuthorityAllocation'];
+        final storedAllocation = storedAllocationValue is Map
+            ? Map<String, dynamic>.from(storedAllocationValue)
+            : const <String, dynamic>{};
+        if (reservedInvoiceSnap?.exists != true ||
+            requestData['status'] != 'approved' ||
+            requestData['payloadHash'] != allocationPayloadHash ||
+            storedAllocation['confirmationNumber']?.toString() !=
+                allocationNumber) {
+          throw StateError(
+            'The Tax Authority reservation could not be verified.',
+          );
+        }
+        nextNumber = reservedSequenceNumber;
+        nextDocumentNumber = reservedDocumentNumber;
+      } else if (assignedSequenceNumber != null &&
           assignedSequenceNumber > 0 &&
           assignedDocumentNumber.isNotEmpty) {
         if (storedNextNumber != null &&
@@ -1443,11 +1522,15 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
 
       invoiceDocId = _invoiceDocIdFor(docType, nextDocumentNumber);
 
-      transaction.set(counterRef, {
-        'value': nextNumber + 1,
-        'docType': docType,
-        'updatedAt': timestamp,
-      }, SetOptions(merge: true));
+      if (!hasAllocationReservation) {
+        transaction.set(counterRef, {
+          'value': nextNumber + 1,
+          'docType': docType,
+          'lastInvoiceDocId': invoiceDocId,
+          'lastSequenceNumber': nextNumber,
+          'updatedAt': timestamp,
+        }, SetOptions(merge: true));
+      }
 
       final invoiceData = {
         'type': docType,
@@ -1511,7 +1594,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
             ? null
             : {'creditNoteLegal': creditNoteLegalData},
       };
-      if (taxAuthorityAllocation != null) {
+      if (taxAuthorityAllocation != null && !hasAllocationReservation) {
         invoiceData['taxAuthorityAllocation'] = taxAuthorityAllocation;
       }
       if (allocationNumber != null && allocationNumber.isNotEmpty) {
@@ -1520,7 +1603,11 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       }
 
       final invoiceDoc = invoicesRef.doc(invoiceDocId);
-      transaction.set(invoiceDoc, invoiceData);
+      transaction.set(
+        invoiceDoc,
+        invoiceData,
+        SetOptions(merge: hasAllocationReservation),
+      );
       transaction.set(invoiceTotalsRef, {
         docType: FieldValue.increment(1),
         'updatedAt': timestamp,
@@ -1636,7 +1723,10 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     final ref = firebase_storage.FirebaseStorage.instance.ref().child(
       storagePath,
     );
-    await ref.putData(uploadPdfBytes);
+    await ref.putData(
+      uploadPdfBytes,
+      firebase_storage.SettableMetadata(contentType: 'application/pdf'),
+    );
     final downloadUrl = await ref.getDownloadURL();
     final clientName = _clientNameController.text.trim();
     final savedInvoiceName = clientName.isNotEmpty
@@ -1689,6 +1779,13 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         userId: userId,
         cancellationDocumentId: invoiceDocId,
         cancellationDocumentNumber: nextDocumentNumber,
+      );
+    }
+
+    if (hasAllocationReservation) {
+      await _finalizeTaxAuthorityDocument(
+        draftId: invoiceDocId,
+        storagePath: storagePath,
       );
     }
 
@@ -3332,33 +3429,44 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     }
 
     final invoiceDocId = _invoiceDocIdFor(_selectedDocType, _invoiceNumber);
-    final callable = _functions.httpsCallable('requestTaxInvoiceAllocation');
+    final invoicePayload = {
+      'invoice_id': invoiceDocId,
+      'invoice_type': _taxAuthorityInvoiceType(),
+      'vat_number': int.parse(businessVatNumber),
+      'user_name': (_workerName == null || _workerName!.isEmpty)
+          ? 'Hiro'
+          : _workerName,
+      'invoice_reference_number': _invoiceNumber,
+      'customer_vat_number': int.parse(customerVatNumber),
+      'customer_name': _clientNameController.text.trim(),
+      'invoice_date': _invoiceDateIsoValue(),
+      'invoice_issuance_date': _invoiceDateIsoValue(),
+      'accounting_software_number': _sandboxAccountingSoftwareNumber,
+      'amount_before_discount': _itemsSubtotalBeforeTax,
+      'discount': _discountAmount,
+      'payment_amount': _subtotalAmount,
+      'vat_amount': _vatAmount,
+      'payment_amount_including_vat': _totalBeforeRoundingAmount,
+      'invoice_note': _notesController.text.trim(),
+      'action': 0,
+      'items': _taxAuthorityItemsPayload(),
+    };
+    final createDraft = _functions.httpsCallable('createTaxInvoiceDraft');
+    final requestAllocation = _functions.httpsCallable(
+      'requestTaxInvoiceAllocation',
+    );
     final HttpsCallableResult<Map<String, dynamic>> result;
     try {
-      result = await callable.call<Map<String, dynamic>>({
+      final draftResult = await createDraft.call<Map<String, dynamic>>({
         'invoiceDocId': invoiceDocId,
-        'invoice': {
-          'invoice_id': invoiceDocId,
-          'invoice_type': _taxAuthorityInvoiceType(),
-          'vat_number': int.parse(businessVatNumber),
-          'user_name': (_workerName == null || _workerName!.isEmpty)
-              ? 'Hiro'
-              : _workerName,
-          'invoice_reference_number': _invoiceNumber,
-          'customer_vat_number': int.parse(customerVatNumber),
-          'customer_name': _clientNameController.text.trim(),
-          'invoice_date': _invoiceDateIsoValue(),
-          'invoice_issuance_date': _invoiceDateIsoValue(),
-          'accounting_software_number': _sandboxAccountingSoftwareNumber,
-          'amount_before_discount': _itemsSubtotalBeforeTax,
-          'discount': _discountAmount,
-          'payment_amount': _subtotalAmount,
-          'vat_amount': _vatAmount,
-          'payment_amount_including_vat': _totalBeforeRoundingAmount,
-          'invoice_note': _notesController.text.trim(),
-          'action': 0,
-          'items': _taxAuthorityItemsPayload(),
-        },
+        'invoice': invoicePayload,
+      });
+      final draftId = draftResult.data['draftId']?.toString().trim();
+      if (draftId == null || draftId.isEmpty) {
+        throw StateError(strings['tax_authority_allocation_failed']!);
+      }
+      result = await requestAllocation.call<Map<String, dynamic>>({
+        'draftId': draftId,
       });
     } on FirebaseFunctionsException catch (e) {
       if (e.code == 'failed-precondition' &&
@@ -3374,10 +3482,17 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     }
     final data = Map<String, dynamic>.from(result.data);
     final confirmationNumber = data['confirmationNumber']?.toString().trim();
+    final reservationValue = data['reservation'];
+    final reservation = reservationValue is Map
+        ? Map<String, dynamic>.from(reservationValue)
+        : const <String, dynamic>{};
+    final payloadHash = data['payloadHash']?.toString().trim() ?? '';
 
     if (data['approved'] != true ||
         confirmationNumber == null ||
-        confirmationNumber.isEmpty) {
+        confirmationNumber.isEmpty ||
+        reservation.isEmpty ||
+        payloadHash.isEmpty) {
       throw StateError(strings['tax_authority_allocation_failed']!);
     }
 
@@ -3386,8 +3501,24 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       confirmationNumber: confirmationNumber,
       invoiceId: data['invoiceId']?.toString(),
       transactionId: data['transactionId']?.toString(),
+      reservation: reservation,
+      payloadHash: payloadHash,
       raw: data,
     );
+  }
+
+  Future<void> _finalizeTaxAuthorityDocument({
+    required String draftId,
+    required String storagePath,
+  }) async {
+    final callable = _functions.httpsCallable('finalizeTaxInvoiceDocument');
+    final result = await callable.call<Map<String, dynamic>>({
+      'draftId': draftId,
+      'storagePath': storagePath,
+    });
+    if (result.data['finalized'] != true) {
+      throw StateError('The Tax Authority invoice could not be finalized.');
+    }
   }
 
   String? _taxAuthorityErrorMessageFromDetails(dynamic details) {
@@ -4535,16 +4666,18 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
 
     final startNumber = int.parse(controller.text.trim());
     try {
-      await ref.set({
-        'value': startNumber,
+      final callable = _functions.httpsCallable('initializeDocumentCounter');
+      final result = await callable.call<Map<String, dynamic>>({
         'docType': _selectedDocType,
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+        'startNumber': startNumber,
+      });
+      final assignedNumber = (result.data['value'] as num?)?.toInt();
+      if (assignedNumber == null || assignedNumber < 1) return false;
 
       if (!mounted) return false;
       setState(() {
-        _currentDocumentCounter = startNumber;
-        _invoiceNumber = _formatDocumentNumber(startNumber);
+        _currentDocumentCounter = assignedNumber;
+        _invoiceNumber = _formatDocumentNumber(assignedNumber);
         _isLoadingCounterAssignment = false;
       });
       return true;
@@ -5621,6 +5754,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         await counterRef.set({
           'value': _currentDocumentCounter! + 1,
           'docType': _selectedDocType,
+          'lastInvoiceDocId': invoiceDocId,
+          'lastSequenceNumber': _currentDocumentCounter,
           'updatedAt': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
         if (mounted) {

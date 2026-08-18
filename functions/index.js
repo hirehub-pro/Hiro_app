@@ -23,6 +23,14 @@ const {
   isTerminalInvoiceEmailStatus,
   sendInvoiceEmailDeliveries,
 } = require("./email_saved_invoice");
+const {ownedInvoicePdfPath} = require("./document_security");
+const {
+  taxAuthorityFailureState,
+  taxInvoiceDraftSignature,
+  taxInvoicePayloadHash,
+  validTaxInvoiceDraftSignature,
+  validateTaxInvoiceAllocation,
+} = require("./tax_invoice_security");
 const {
   AppStoreServerAPIClient,
   AutoRenewStatus,
@@ -55,6 +63,7 @@ const TAX_AUTH_SANDBOX_TOKEN_FALLBACK_URL =
   "https://ita-api.taxes.gov.il/shaam/tsandbox/longtimetoken/oauth2/token";
 const TAX_AUTH_SANDBOX_MULTI_APPROVAL_URL =
   "https://openapi.taxes.gov.il/shaam/tsandbox/Multi-invoices/v2/MultiApproval";
+const TAX_AUTH_SANDBOX_ACCOUNTING_SOFTWARE_NUMBER = 987654321;
 const TAX_AUTH_REDIRECT_URI =
   "https://me-west1-hire-hub-fe6c4.cloudfunctions.net/taxesOAuthCallback";
 const TAX_AUTH_APP_RETURN_URI = "hiro://tax-authority-connected";
@@ -82,6 +91,17 @@ const REQUEST_EXPIRY_TIME_ZONE = "Asia/Jerusalem";
 const INVOICE_BUILDER_EMAIL_CODE_TTL_MS = 10 * 60 * 1000;
 const INVOICE_BUILDER_EMAIL_CODE_RESEND_DELAY_MS = 60 * 1000;
 const INVOICE_BUILDER_EMAIL_CODE_MAX_ATTEMPTS = 5;
+
+function assertOwnedInvoicePdfPath(storagePath, userId) {
+  const path = ownedInvoicePdfPath(storagePath, userId);
+  if (!path) {
+    throw new HttpsError(
+        "permission-denied",
+        "The document file does not belong to the authenticated user.",
+    );
+  }
+  return path;
+}
 
 function invoiceBuilderEmailCodeHash(code) {
   return crypto.createHash("sha256").update(code).digest("hex");
@@ -200,13 +220,17 @@ exports.createDocumentSigningRequest = onCall(
 
       const invoice = invoiceSnap.data() || {};
       const docType = normalizeString(invoice.docType || invoice.type);
-      const storagePath = normalizeString(invoice.storagePath).trim();
-      if (!["quote", "work_order"].includes(docType) || !storagePath) {
+      const rawStoragePath = normalizeString(invoice.storagePath).trim();
+      if (!["quote", "work_order"].includes(docType) || !rawStoragePath) {
         throw new HttpsError(
             "failed-precondition",
             "Only saved quotes and work orders can be sent for signature.",
         );
       }
+      const storagePath = assertOwnedInvoicePdfPath(
+          rawStoragePath,
+          workerId,
+      );
 
       if (receiverId) {
         const roomId = [workerId, receiverId].sort().join("_");
@@ -610,7 +634,7 @@ exports.taxesOAuthCallback = onRequest(
     },
 );
 
-exports.requestTaxInvoiceAllocation = onCall(
+exports.createTaxInvoiceDraft = onCall(
     {
       region: "me-west1",
       secrets: [TAX_AUTH_CLIENT_ID, TAX_AUTH_CLIENT_SECRET],
@@ -630,35 +654,433 @@ exports.requestTaxInvoiceAllocation = onCall(
             "The invoice VAT ID does not match your verified business ID.",
         );
       }
+      payload.vat_number = Number(businessId);
+      payload.invoices_list[0].vat_number = Number(businessId);
+      payload.invoices_list[0].accounting_software_number =
+        TAX_AUTH_SANDBOX_ACCOUNTING_SOFTWARE_NUMBER;
 
-      const tokenData = await getTaxAuthorityTokenData(auth.uid, businessId);
-      const response = await callTaxAuthorityMultiApproval({
-        accessToken: tokenData.accessToken,
-        payload,
-      });
-
-      const approval = extractTaxAuthorityApproval(response, payload);
       const invoiceDocId = normalizeString(request.data?.invoiceDocId).trim();
-      if (invoiceDocId) {
-        await admin.firestore()
-            .collection("users")
-            .doc(auth.uid)
-            .collection("invoices")
-            .doc(invoiceDocId)
-            .set({
-              taxAuthorityAllocation: {
-                ...approval,
-                rawResponse: response,
-                requestedAt: admin.firestore.Timestamp.now(),
-                environment: "sandbox",
-              },
-            }, {merge: true});
+      let reservation;
+      try {
+        reservation = validateTaxInvoiceAllocation({
+          payload,
+          invoiceDocId,
+          currentYear: Number(new Intl.DateTimeFormat("en", {
+            year: "numeric",
+            timeZone: REQUEST_EXPIRY_TIME_ZONE,
+          }).format(new Date())),
+        });
+      } catch (error) {
+        throw new HttpsError("invalid-argument", error.message);
       }
 
+      const db = admin.firestore();
+      const userRef = db.collection("users").doc(auth.uid);
+      const invoiceRef = userRef.collection("invoices").doc(invoiceDocId);
+      const counterRef = userRef.collection("counters")
+          .doc(`document_counter_${reservation.docType}`);
+      const payloadHash = taxInvoicePayloadHash(payload);
+      const serverSignature = taxInvoiceDraftSignature({
+        secret: TAX_AUTH_CLIENT_SECRET.value(),
+        userId: auth.uid,
+        reservation,
+        payloadHash,
+      });
+      // Verify the OAuth connection before consuming an official document
+      // number. The allocation callable will verify it again before use.
+      await getTaxAuthorityTokenData(auth.uid, businessId);
+      const now = admin.firestore.Timestamp.now();
+
+      const claim = await db.runTransaction(async (transaction) => {
+        const [counterSnap, invoiceSnap] = await Promise.all([
+          transaction.get(counterRef),
+          transaction.get(invoiceRef),
+        ]);
+        const existing = invoiceSnap.data() || {};
+        const existingRequest = existing.taxAuthorityAllocationRequest || {};
+        if (existingRequest.payloadHash) {
+          if (existingRequest.payloadHash !== payloadHash) {
+            throw new HttpsError(
+                "already-exists",
+                "This document number is already reserved for different invoice data.",
+            );
+          }
+          if (existingRequest.serverSignature !== serverSignature) {
+            throw new HttpsError(
+                "failed-precondition",
+                "The stored Tax Authority draft failed integrity verification.",
+            );
+          }
+          return {
+            status: normalizeString(existing.documentStatus).trim(),
+            allocation: existing.taxAuthorityAllocation || null,
+          };
+        }
+
+        if (invoiceSnap.exists) {
+          throw new HttpsError(
+              "already-exists",
+              "This document number has already been saved.",
+          );
+        }
+        const storedNextNumber = Number(counterSnap.data()?.value);
+        if (!Number.isSafeInteger(storedNextNumber) || storedNextNumber < 1) {
+          throw new HttpsError(
+              "failed-precondition",
+              "Set the starting document number before requesting an allocation.",
+          );
+        }
+        if (storedNextNumber !== reservation.sequenceNumber) {
+          throw new HttpsError(
+              "failed-precondition",
+              "The document number changed. Refresh the invoice and try again.",
+          );
+        }
+
+        transaction.set(counterRef, {
+          value: reservation.sequenceNumber + 1,
+          docType: reservation.docType,
+          updatedAt: now,
+        }, {merge: true});
+        transaction.create(invoiceRef, {
+          type: reservation.docType,
+          docType: reservation.docType,
+          invoiceDocId,
+          invoiceNumber: reservation.documentNumber,
+          sequenceNumber: reservation.sequenceNumber,
+          documentStatus: "reserved",
+          authoritativeTaxInvoice: payload,
+          taxAuthorityAllocationRequest: {
+            payloadHash,
+            serverSignature,
+            status: "reserved",
+            attempts: 0,
+            reservedAt: now,
+            environment: "sandbox",
+          },
+          createdAt: now,
+        });
+        return {status: "reserved", allocation: null};
+      });
+
       return {
-        ...approval,
-        response,
+        draftId: invoiceDocId,
+        reservation,
+        payloadHash,
+        status: claim.status,
+        allocation: claim.allocation,
       };
+    },
+);
+
+exports.initializeDocumentCounter = onCall(
+    {region: "me-west1"},
+    async (request) => {
+      const userId = request.auth?.uid;
+      if (!userId) {
+        throw new HttpsError("unauthenticated", "Authentication required.");
+      }
+      const docType = requiredString(request.data?.docType, "docType");
+      const allowedDocTypes = new Set([
+        "invoice",
+        "invoice_receipt",
+        "receipt",
+        "credit_note",
+        "transaction_account",
+      ]);
+      if (!allowedDocTypes.has(docType)) {
+        throw new HttpsError("invalid-argument", "Unsupported document type.");
+      }
+      const startNumber = requiredInt(
+          request.data?.startNumber,
+          "startNumber",
+      );
+      if (startNumber < 1 || startNumber > 999999999) {
+        throw new HttpsError(
+            "invalid-argument",
+            "The starting document number is outside the allowed range.",
+        );
+      }
+      const counterId = docType === "transaction_account" ?
+        "document_counter_transaction_account" :
+        `document_counter_${docType}`;
+      const counterRef = admin.firestore().collection("users").doc(userId)
+          .collection("counters").doc(counterId);
+      const value = await admin.firestore().runTransaction(
+          async (transaction) => {
+            const snap = await transaction.get(counterRef);
+            const existingValue = Number(snap.data()?.value);
+            if (snap.exists && Number.isSafeInteger(existingValue) &&
+                existingValue > 0) {
+              return existingValue;
+            }
+            transaction.create(counterRef, {
+              value: startNumber,
+              docType,
+              initializedAt: admin.firestore.FieldValue.serverTimestamp(),
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+            return startNumber;
+          },
+      );
+      return {value, docType, alreadyInitialized: value !== startNumber};
+    },
+);
+
+exports.requestTaxInvoiceAllocation = onCall(
+    {
+      region: "me-west1",
+      secrets: [TAX_AUTH_CLIENT_ID, TAX_AUTH_CLIENT_SECRET],
+    },
+    async (request) => {
+      const auth = request.auth;
+      if (!auth?.uid) {
+        throw new HttpsError("unauthenticated", "Authentication required.");
+      }
+      const draftId = requiredString(request.data?.draftId, "draftId");
+      if (draftId.includes("/") || draftId.length > 180) {
+        throw new HttpsError("invalid-argument", "Invalid Tax Authority draft ID.");
+      }
+
+      const db = admin.firestore();
+      const invoiceRef = db.collection("users").doc(auth.uid)
+          .collection("invoices").doc(draftId);
+      const businessId = await getVerifiedTaxAuthorityBusinessId(auth.uid);
+      const tokenData = await getTaxAuthorityTokenData(auth.uid, businessId);
+      const now = admin.firestore.Timestamp.now();
+
+      const claim = await db.runTransaction(async (transaction) => {
+        const invoiceSnap = await transaction.get(invoiceRef);
+        if (!invoiceSnap.exists) {
+          throw new HttpsError("not-found", "Tax Authority draft not found.");
+        }
+        const draft = invoiceSnap.data() || {};
+        const payload = draft.authoritativeTaxInvoice;
+        const allocationRequest = draft.taxAuthorityAllocationRequest || {};
+        const reservation = {
+          docType: draft.docType,
+          documentNumber: draft.invoiceNumber,
+          sequenceNumber: draft.sequenceNumber,
+          invoiceDocId: draftId,
+        };
+        if (!payload || !allocationRequest.payloadHash ||
+            taxInvoicePayloadHash(payload) !== allocationRequest.payloadHash ||
+            !validTaxInvoiceDraftSignature({
+              secret: TAX_AUTH_CLIENT_SECRET.value(),
+              userId: auth.uid,
+              reservation,
+              payloadHash: allocationRequest.payloadHash,
+            }, allocationRequest.serverSignature)) {
+          throw new HttpsError(
+              "failed-precondition",
+              "The authoritative Tax Authority draft is invalid.",
+          );
+        }
+        if (normalizeBusinessId(payload.vat_number) !== businessId) {
+          throw new HttpsError(
+              "permission-denied",
+              "The draft VAT ID does not match your verified business ID.",
+          );
+        }
+        if (["allocation_approved", "finalized"].includes(
+          normalizeString(draft.documentStatus).trim(),
+        ) && draft.taxAuthorityAllocation?.approved === true) {
+          return {
+            cached: true,
+            payload,
+            payloadHash: allocationRequest.payloadHash,
+            allocation: draft.taxAuthorityAllocation,
+            reservation,
+          };
+        }
+        if (allocationRequest.status === "allocating") {
+          throw new HttpsError(
+              "aborted",
+              "An allocation request for this document is already in progress.",
+          );
+        }
+        if (!["reserved", "failed"].includes(allocationRequest.status)) {
+          throw new HttpsError(
+              "failed-precondition",
+              "This draft cannot request an allocation in its current state.",
+          );
+        }
+        transaction.update(invoiceRef, {
+          documentStatus: "allocating",
+          "taxAuthorityAllocationRequest.status": "allocating",
+          "taxAuthorityAllocationRequest.lastAttemptAt": now,
+          "taxAuthorityAllocationRequest.attempts":
+            admin.firestore.FieldValue.increment(1),
+        });
+        return {
+          cached: false,
+          payload,
+          payloadHash: allocationRequest.payloadHash,
+          allocation: null,
+          reservation,
+        };
+      });
+
+      if (claim.cached) {
+        return {
+          ...claim.allocation,
+          reservation: claim.reservation,
+          payloadHash: claim.payloadHash,
+          cached: true,
+        };
+      }
+
+      try {
+        const response = await callTaxAuthorityMultiApproval({
+          accessToken: tokenData.accessToken,
+          payload: claim.payload,
+        });
+        const approval = extractTaxAuthorityApproval(response, claim.payload);
+        if (approval.approved !== true || !approval.confirmationNumber) {
+          throw new HttpsError(
+              "failed-precondition",
+              "The Tax Authority did not approve an allocation number.",
+              {definitive: true, errors: approval.errors},
+          );
+        }
+        const storedAllocation = {
+          ...approval,
+          rawResponse: response,
+          requestedAt: admin.firestore.Timestamp.now(),
+          environment: "sandbox",
+        };
+        await invoiceRef.update({
+          documentStatus: "allocation_approved",
+          taxAuthorityAllocation: storedAllocation,
+          "taxAuthorityAllocationRequest.status": "approved",
+          "taxAuthorityAllocationRequest.completedAt":
+            admin.firestore.Timestamp.now(),
+        });
+
+        return {
+          ...approval,
+          response,
+          reservation: claim.reservation,
+          payloadHash: claim.payloadHash,
+          cached: false,
+        };
+      } catch (error) {
+        const failureState = taxAuthorityFailureState(error);
+        await invoiceRef.update({
+          documentStatus: failureState === "failed" ?
+            "allocation_failed" : "needs_reconciliation",
+          "taxAuthorityAllocationRequest.status": failureState,
+          "taxAuthorityAllocationRequest.failedAt":
+            admin.firestore.Timestamp.now(),
+          "taxAuthorityAllocationRequest.lastError":
+            normalizeString(error?.message).slice(0, 500),
+        });
+        throw error;
+      }
+    },
+);
+
+exports.finalizeTaxInvoiceDocument = onCall(
+    {
+      region: "me-west1",
+      secrets: [TAX_AUTH_CLIENT_SECRET],
+    },
+    async (request) => {
+      const userId = request.auth?.uid;
+      if (!userId) {
+        throw new HttpsError("unauthenticated", "Authentication required.");
+      }
+      const draftId = requiredString(request.data?.draftId, "draftId");
+      if (draftId.includes("/") || draftId.length > 180) {
+        throw new HttpsError("invalid-argument", "Invalid Tax Authority draft ID.");
+      }
+      const storagePath = assertOwnedInvoicePdfPath(
+          request.data?.storagePath,
+          userId,
+      );
+      const bucket = admin.storage().bucket();
+      let metadata;
+      try {
+        [metadata] = await bucket.file(storagePath).getMetadata();
+      } catch (error) {
+        throw new HttpsError(
+            "failed-precondition",
+            "The final invoice PDF has not been uploaded.",
+        );
+      }
+      const size = Number(metadata.size);
+      if (metadata.contentType !== "application/pdf" ||
+          !Number.isFinite(size) || size < 1 || size > 25 * 1024 * 1024) {
+        throw new HttpsError(
+            "invalid-argument",
+            "The final document must be a PDF no larger than 25 MB.",
+        );
+      }
+
+      const invoiceRef = admin.firestore().collection("users").doc(userId)
+          .collection("invoices").doc(draftId);
+      const result = await admin.firestore().runTransaction(
+          async (transaction) => {
+            const snap = await transaction.get(invoiceRef);
+            if (!snap.exists) {
+              throw new HttpsError("not-found", "Tax Authority draft not found.");
+            }
+            const invoice = snap.data() || {};
+            const allocationRequest =
+              invoice.taxAuthorityAllocationRequest || {};
+            const reservation = {
+              docType: invoice.docType,
+              documentNumber: invoice.invoiceNumber,
+              sequenceNumber: invoice.sequenceNumber,
+              invoiceDocId: draftId,
+            };
+            if (!invoice.authoritativeTaxInvoice ||
+                taxInvoicePayloadHash(invoice.authoritativeTaxInvoice) !==
+                  allocationRequest.payloadHash ||
+                !validTaxInvoiceDraftSignature({
+                  secret: TAX_AUTH_CLIENT_SECRET.value(),
+                  userId,
+                  reservation,
+                  payloadHash: allocationRequest.payloadHash,
+                }, allocationRequest.serverSignature)) {
+              throw new HttpsError(
+                  "failed-precondition",
+                  "The Tax Authority draft failed integrity verification.",
+              );
+            }
+            if (invoice.documentStatus === "finalized") {
+              if (invoice.storagePath !== storagePath) {
+                throw new HttpsError(
+                    "already-exists",
+                    "This invoice was finalized with a different PDF.",
+                );
+              }
+              return {alreadyFinalized: true};
+            }
+            if (invoice.documentStatus !== "allocation_approved" ||
+                invoice.taxAuthorityAllocation?.approved !== true ||
+                !invoice.taxAuthorityAllocation?.confirmationNumber) {
+              throw new HttpsError(
+                  "failed-precondition",
+                  "The invoice must have an approved allocation before finalization.",
+              );
+            }
+            transaction.update(invoiceRef, {
+              documentStatus: "finalized",
+              storagePath,
+              fileName: path.posix.basename(storagePath),
+              finalizedAt: admin.firestore.FieldValue.serverTimestamp(),
+              finalPdf: {
+                storagePath,
+                size,
+                contentType: metadata.contentType,
+                generation: normalizeString(metadata.generation),
+              },
+            });
+            return {alreadyFinalized: false};
+          },
+      );
+      return {finalized: true, draftId, storagePath, ...result};
     },
 );
 
@@ -911,6 +1333,10 @@ exports.syncReceivedInvoices = onCall(
           const mirrorId = `${senderUserRef.id}_${doc.id}`;
           mirrorIds.add(mirrorId);
           const data = doc.data() || {};
+          if (data.taxAuthorityAllocationRequest &&
+              data.documentStatus !== "finalized") {
+            continue;
+          }
           writer.set(db.collection("users")
               .doc(uid)
               .collection("receivedInvoices")
@@ -951,11 +1377,21 @@ exports.mirrorReceivedInvoice = onDocumentWritten(
       const senderUserId = event.params.senderUserId;
       const invoiceId = event.params.invoiceId;
 
-      const beforeRecipients = beforeData ?
-        await findInvoiceRecipientUserIds(beforeData.clientPhone, senderUserId) :
+      const visibleBeforeData = beforeData?.taxAuthorityAllocationRequest &&
+        beforeData.documentStatus !== "finalized" ? null : beforeData;
+      const visibleAfterData = afterData?.taxAuthorityAllocationRequest &&
+        afterData.documentStatus !== "finalized" ? null : afterData;
+      const beforeRecipients = visibleBeforeData ?
+        await findInvoiceRecipientUserIds(
+            visibleBeforeData.clientPhone,
+            senderUserId,
+        ) :
         [];
-      const afterRecipients = afterData ?
-        await findInvoiceRecipientUserIds(afterData.clientPhone, senderUserId) :
+      const afterRecipients = visibleAfterData ?
+        await findInvoiceRecipientUserIds(
+            visibleAfterData.clientPhone,
+            senderUserId,
+        ) :
         [];
 
       const db = admin.firestore();
@@ -974,9 +1410,9 @@ exports.mirrorReceivedInvoice = onDocumentWritten(
         writeCount += 1;
       }
 
-      if (afterData) {
+      if (visibleAfterData) {
         const mirrorData = {
-          ...afterData,
+          ...visibleAfterData,
           sourceUserId: senderUserId,
           sourceInvoiceId: invoiceId,
           invoiceDocId: afterData.invoiceDocId || invoiceId,
@@ -1142,12 +1578,31 @@ exports.emailSavedInvoice = onDocumentWritten(
     async (event) => {
       const invoice = event.data?.after?.data();
       if (!invoice) return;
+      if (invoice.taxAuthorityAllocationRequest &&
+          invoice.documentStatus !== "finalized") {
+        return;
+      }
 
-      const storagePath = normalizeString(invoice.storagePath).trim();
-      if (!storagePath) return;
+      const rawStoragePath = normalizeString(invoice.storagePath).trim();
+      if (!rawStoragePath) return;
 
       const db = admin.firestore();
       const invoiceRef = event.data.after.ref;
+      const userId = event.params.userId;
+      const storagePath = ownedInvoicePdfPath(rawStoragePath, userId);
+      if (!storagePath) {
+        if (normalizeString(invoice.invoiceEmailStatus).trim() !== "failed") {
+          await invoiceRef.update({
+            invoiceEmailStatus: "failed",
+            invoiceEmailError: "Invalid document storage path.",
+          });
+        }
+        logger.warn("Rejected invoice email with an invalid storage path", {
+          userId,
+          invoiceId: event.params.invoiceId,
+        });
+        return;
+      }
       const claimed = await db.runTransaction(async (transaction) => {
         const latest = await transaction.get(invoiceRef);
         const status = normalizeString(
@@ -1165,7 +1620,6 @@ exports.emailSavedInvoice = onDocumentWritten(
       if (!claimed) return;
 
       try {
-        const userId = event.params.userId;
         const userSnap = await db.collection("users").doc(userId).get();
         const verificationSnap = await userSnap.ref
             .collection("verification_info").doc("latest").get();
@@ -3364,7 +3818,10 @@ async function callTaxAuthorityMultiApproval({accessToken, payload}) {
     throw new HttpsError(
         "failed-precondition",
         authorityMessage,
-        responsePayload,
+        {
+          authorityStatus: response.status,
+          authorityResponse: responsePayload,
+        },
     );
   }
 
@@ -3762,11 +4219,10 @@ function signingTokenFromRequest(req) {
 }
 
 async function streamSigningPdf(res, signingRequest) {
-  const storagePath = normalizeString(signingRequest.storagePath).trim();
-  if (!storagePath) {
-    res.status(404).send("Document not found");
-    return;
-  }
+  const storagePath = assertOwnedInvoicePdfPath(
+      signingRequest.storagePath,
+      normalizeString(signingRequest.workerId).trim(),
+  );
   const [bytes] = await admin.storage().bucket().file(storagePath).download();
   res.set({
     "Content-Type": "application/pdf",
@@ -3780,7 +4236,11 @@ async function streamSigningPdf(res, signingRequest) {
 
 async function signAndReplacePdf(signingRequest, signatureBytes, signerName) {
   const bucket = admin.storage().bucket();
-  const file = bucket.file(signingRequest.storagePath);
+  const storagePath = assertOwnedInvoicePdfPath(
+      signingRequest.storagePath,
+      normalizeString(signingRequest.workerId).trim(),
+  );
+  const file = bucket.file(storagePath);
   const [originalBytes] = await file.download();
   const [existingMetadata] = await file.getMetadata();
   const pdfDocument = await PDFDocument.load(originalBytes);
@@ -3911,7 +4371,7 @@ async function signAndReplacePdf(signingRequest, signatureBytes, signerName) {
     metadata: {metadata},
   });
   const token = metadata.firebaseStorageDownloadTokens;
-  const encodedPath = encodeURIComponent(signingRequest.storagePath);
+  const encodedPath = encodeURIComponent(storagePath);
   return {
     url: `https://firebasestorage.googleapis.com/v0/b/${
       bucket.name
