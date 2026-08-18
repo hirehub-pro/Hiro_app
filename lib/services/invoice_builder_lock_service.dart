@@ -5,6 +5,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+enum InvoiceBuilderLockAcquireResult { acquired, occupied, unavailable }
+
 /// A short-lived, per-device lease for the Invoice Builder.
 ///
 /// The document path and field names are shared with the Hiro website; keep
@@ -12,7 +14,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 class InvoiceBuilderLockService {
   InvoiceBuilderLockService({FirebaseFirestore? firestore, FirebaseAuth? auth})
     : _firestore = firestore ?? FirebaseFirestore.instance,
-      _auth = auth ?? FirebaseAuth.instance;
+      _auth = auth ?? FirebaseAuth.instance,
+      _sessionId = _generateRandomId();
 
   static const _deviceIdPreferenceKey = 'invoice_builder_device_id';
   static const _leaseDuration = Duration(seconds: 60);
@@ -20,8 +23,11 @@ class InvoiceBuilderLockService {
 
   final FirebaseFirestore _firestore;
   final FirebaseAuth _auth;
+  final String _sessionId;
 
   String? _deviceId;
+  String? _userId;
+  Object? _lastOperationError;
   DocumentReference<Map<String, dynamic>>? _lockRef;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _subscription;
   Timer? _renewalTimer;
@@ -31,11 +37,12 @@ class InvoiceBuilderLockService {
   /// Called when this device no longer owns the lock.
   void Function()? onLeaseLost;
 
-  Future<bool> acquire() async {
-    if (_released) return false;
+  Future<InvoiceBuilderLockAcquireResult> acquire() async {
+    if (_released) return InvoiceBuilderLockAcquireResult.unavailable;
     final user = _auth.currentUser;
-    if (user == null) return false;
+    if (user == null) return InvoiceBuilderLockAcquireResult.unavailable;
 
+    _userId = user.uid;
     _deviceId = await _getDeviceId();
     _lockRef = _firestore
         .collection('users')
@@ -43,22 +50,29 @@ class InvoiceBuilderLockService {
         .collection('invoice_builder_lock')
         .doc('active');
 
+    _lastOperationError = null;
     final acquired = await _claimOrRenew();
-    if (!acquired) return false;
+    if (!acquired) {
+      return _lastOperationError == null
+          ? InvoiceBuilderLockAcquireResult.occupied
+          : InvoiceBuilderLockAcquireResult.unavailable;
+    }
 
     // A transaction result alone is not enough to unlock the UI: make sure
     // the committed document is visible from the Firestore server first.
     // This prevents cached/offline state from granting access on two clients.
-    if (!await _confirmOwnershipFromServer()) return false;
+    if (!await _confirmOwnershipFromServer()) {
+      return InvoiceBuilderLockAcquireResult.unavailable;
+    }
 
     _hasLease = true;
     if (_released) {
       await release();
-      return false;
+      return InvoiceBuilderLockAcquireResult.unavailable;
     }
     _listenForOwnershipChanges();
     _renewalTimer = Timer.periodic(_renewalInterval, (_) => _renew());
-    return true;
+    return InvoiceBuilderLockAcquireResult.acquired;
   }
 
   Future<void> _renew() async {
@@ -72,28 +86,44 @@ class InvoiceBuilderLockService {
   Future<bool> _claimOrRenew() async {
     final ref = _lockRef;
     final deviceId = _deviceId;
-    if (ref == null || deviceId == null) return false;
+    final userId = _userId;
+    if (ref == null || deviceId == null || userId == null) return false;
 
     try {
       return await _firestore.runTransaction((transaction) async {
         final snapshot = await transaction.get(ref);
         final data = snapshot.data();
-        final owner = data?['deviceId'] as String?;
-        final expiresAtMs = (data?['expiresAtMs'] as num?)?.toInt() ?? 0;
+        final ownerSessionId = data?['sessionId'] as String?;
+        final expiresAt = data?['expiresAt'];
+        final expiresAtMs = expiresAt is Timestamp
+            ? expiresAt.millisecondsSinceEpoch
+            : (data?['expiresAtMs'] as num?)?.toInt() ?? 0;
         final nowMs = DateTime.now().millisecondsSinceEpoch;
 
-        if (snapshot.exists && owner != deviceId && expiresAtMs > nowMs) {
+        if (snapshot.exists &&
+            ownerSessionId != _sessionId &&
+            expiresAtMs > nowMs) {
           return false;
         }
 
+        final sameSession = ownerSessionId == _sessionId;
+        final existingAcquiredAt = data?['acquiredAt'];
         transaction.set(ref, {
+          'ownerUid': userId,
+          'sessionId': _sessionId,
           'deviceId': deviceId,
-          'expiresAtMs': nowMs + _leaseDuration.inMilliseconds,
+          'acquiredAt': sameSession && existingAcquiredAt is Timestamp
+              ? existingAcquiredAt
+              : FieldValue.serverTimestamp(),
+          'expiresAt': Timestamp.fromMillisecondsSinceEpoch(
+            nowMs + _leaseDuration.inMilliseconds,
+          ),
           'updatedAt': FieldValue.serverTimestamp(),
         });
         return true;
       });
-    } catch (_) {
+    } catch (error) {
+      _lastOperationError = error;
       // An offline transaction cannot safely establish exclusive ownership.
       return false;
     }
@@ -101,17 +131,20 @@ class InvoiceBuilderLockService {
 
   Future<bool> _confirmOwnershipFromServer() async {
     final ref = _lockRef;
-    final deviceId = _deviceId;
-    if (ref == null || deviceId == null) return false;
+    final userId = _userId;
+    if (ref == null || userId == null) return false;
 
     try {
       final snapshot = await ref.get(const GetOptions(source: Source.server));
       final data = snapshot.data();
-      final owner = data?['deviceId'] as String?;
-      final expiresAtMs = (data?['expiresAtMs'] as num?)?.toInt() ?? 0;
-      return owner == deviceId &&
-          expiresAtMs > DateTime.now().millisecondsSinceEpoch;
-    } catch (_) {
+      final expiresAt = data?['expiresAt'];
+      return data?['ownerUid'] == userId &&
+          data?['sessionId'] == _sessionId &&
+          expiresAt is Timestamp &&
+          expiresAt.millisecondsSinceEpoch >
+              DateTime.now().millisecondsSinceEpoch;
+    } catch (error) {
+      _lastOperationError = error;
       // Never grant or retain exclusive access from cache-only state.
       return false;
     }
@@ -120,12 +153,11 @@ class InvoiceBuilderLockService {
   void _listenForOwnershipChanges() {
     _subscription?.cancel();
     final ref = _lockRef;
-    final deviceId = _deviceId;
-    if (ref == null || deviceId == null) return;
+    if (ref == null) return;
 
     _subscription = ref.snapshots().listen((snapshot) {
-      final owner = snapshot.data()?['deviceId'] as String?;
-      if (!snapshot.exists || owner != deviceId) {
+      final ownerSessionId = snapshot.data()?['sessionId'] as String?;
+      if (!snapshot.exists || ownerSessionId != _sessionId) {
         _loseLease();
       }
     }, onError: (_) => _loseLease());
@@ -148,14 +180,13 @@ class InvoiceBuilderLockService {
 
     if (!_hasLease) return;
     final ref = _lockRef;
-    final deviceId = _deviceId;
     _hasLease = false;
-    if (ref == null || deviceId == null) return;
+    if (ref == null) return;
 
     try {
       await _firestore.runTransaction((transaction) async {
         final snapshot = await transaction.get(ref);
-        if (snapshot.data()?['deviceId'] == deviceId) {
+        if (snapshot.data()?['sessionId'] == _sessionId) {
           transaction.delete(ref);
         }
       });
@@ -169,12 +200,16 @@ class InvoiceBuilderLockService {
     final existing = preferences.getString(_deviceIdPreferenceKey);
     if (existing != null && existing.isNotEmpty) return existing;
 
+    final generated = _generateRandomId();
+    await preferences.setString(_deviceIdPreferenceKey, generated);
+    return generated;
+  }
+
+  static String _generateRandomId() {
     final random = Random.secure();
-    final generated = List<String>.generate(
+    return List<String>.generate(
       32,
       (_) => random.nextInt(16).toRadixString(16),
     ).join();
-    await preferences.setString(_deviceIdPreferenceKey, generated);
-    return generated;
   }
 }

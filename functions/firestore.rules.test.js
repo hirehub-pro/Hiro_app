@@ -12,6 +12,7 @@ const {
   getDoc,
   serverTimestamp,
   setDoc,
+  Timestamp,
   updateDoc,
   writeBatch,
 } = require("firebase/firestore");
@@ -189,6 +190,52 @@ test("keeps OAuth and verification secrets inaccessible to clients", {
   await assertFails(getDoc(doc(db, `taxAuthorityOAuthTokens/${uid}`)));
   await assertFails(setDoc(doc(db, `users/${uid}/invoiceBuilderVerifications/emailCode`), {
     codeHash: "fake",
+  }));
+});
+
+test("enforces invoice-builder lock ownership and expiry", {
+  skip: !emulatorAvailable,
+}, async () => {
+  const uid = "lock-owner-id-000000001";
+  const db = testEnv.authenticatedContext(uid).firestore();
+  const lockRef = doc(db, `users/${uid}/invoice_builder_lock/active`);
+  const futureExpiry = () => Timestamp.fromMillis(Date.now() + 60000);
+
+  await assertSucceeds(setDoc(lockRef, {
+    ownerUid: uid,
+    sessionId: "session-a-0000000000000001",
+    deviceId: "device-a-0000000000000001",
+    acquiredAt: serverTimestamp(),
+    expiresAt: futureExpiry(),
+    updatedAt: serverTimestamp(),
+  }));
+  await assertSucceeds(updateDoc(lockRef, {
+    expiresAt: futureExpiry(),
+    updatedAt: serverTimestamp(),
+  }));
+  await assertFails(updateDoc(lockRef, {
+    sessionId: "session-b-0000000000000002",
+    deviceId: "device-b-0000000000000002",
+    acquiredAt: serverTimestamp(),
+    expiresAt: futureExpiry(),
+    updatedAt: serverTimestamp(),
+  }));
+
+  await seed(`users/${uid}/invoice_builder_lock/active`, {
+    ownerUid: uid,
+    sessionId: "expired-session-00000000001",
+    deviceId: "expired-device-00000000001",
+    acquiredAt: new Date(Date.now() - 120000),
+    expiresAt: new Date(Date.now() - 60000),
+    updatedAt: new Date(Date.now() - 60000),
+  });
+  await assertSucceeds(setDoc(lockRef, {
+    ownerUid: uid,
+    sessionId: "session-b-0000000000000002",
+    deviceId: "device-b-0000000000000002",
+    acquiredAt: serverTimestamp(),
+    expiresAt: futureExpiry(),
+    updatedAt: serverTimestamp(),
   }));
 });
 

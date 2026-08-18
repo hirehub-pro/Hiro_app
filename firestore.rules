@@ -333,6 +333,33 @@ service cloud.firestore {
         getAfter(invoicePath).data.docType == request.resource.data.docType;
     }
 
+    function validInvoiceBuilderLock(data, userId) {
+      return data.keys().hasOnly([
+        'ownerUid', 'sessionId', 'deviceId', 'acquiredAt', 'expiresAt',
+        'updatedAt'
+      ]) && data.keys().hasAll([
+        'ownerUid', 'sessionId', 'deviceId', 'acquiredAt', 'expiresAt',
+        'updatedAt'
+      ]) && data.ownerUid == userId &&
+      data.sessionId is string && data.sessionId.size() >= 16 &&
+      data.sessionId.size() <= 200 &&
+      data.deviceId is string && data.deviceId.size() >= 16 &&
+      data.deviceId.size() <= 300 &&
+      data.acquiredAt is timestamp && data.expiresAt is timestamp &&
+      data.updatedAt is timestamp && data.expiresAt > request.time &&
+      data.expiresAt <= request.time + duration.value(2, 'm') &&
+      recentTimestamp(data, 'updatedAt');
+    }
+
+    function validInvoiceBuilderLockUpdate(data, userId) {
+      let sameSession = resource.data.get('sessionId', '') == data.sessionId;
+      let legacyOrExpired = !('expiresAt' in resource.data) ||
+        resource.data.expiresAt <= request.time;
+      return validInvoiceBuilderLock(data, userId) &&
+        ((sameSession && data.acquiredAt == resource.data.acquiredAt) ||
+          (legacyOrExpired && recentTimestamp(data, 'acquiredAt')));
+    }
+
     function validClient(data) {
       return data.keys().hasOnly([
         'name', 'nameLowercase', 'phone', 'phones', 'email', 'emails',
@@ -618,17 +645,11 @@ service cloud.firestore {
 
       match /invoice_builder_lock/{lockId} {
         allow read, delete: if isOwner(userId);
-        allow create, update: if isOwner(userId) &&
-          request.resource.data.keys().hasOnly([
-            'ownerUid', 'sessionId', 'deviceId', 'acquiredAt', 'expiresAt',
-            'updatedAt'
-          ]) && request.resource.data.ownerUid == userId &&
-          request.resource.data.sessionId is string &&
-          request.resource.data.sessionId.size() <= 200 &&
-          optionalString(request.resource.data, 'deviceId', 300) &&
-          optionalTimestamp(request.resource.data, 'acquiredAt') &&
-          request.resource.data.expiresAt is timestamp &&
-          optionalTimestamp(request.resource.data, 'updatedAt');
+        allow create: if isOwner(userId) &&
+          validInvoiceBuilderLock(request.resource.data, userId) &&
+          recentTimestamp(request.resource.data, 'acquiredAt');
+        allow update: if isOwner(userId) &&
+          validInvoiceBuilderLockUpdate(request.resource.data, userId);
       }
 
       match /saved_locations/{locationId} {

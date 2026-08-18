@@ -2925,9 +2925,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
 
   Future<void> _acquireInvoiceBuilderLock() async {
     _invoiceBuilderLock.onLeaseLost = _handleInvoiceBuilderLockLost;
-    final acquired = await _invoiceBuilderLock.acquire();
+    final lockResult = await _invoiceBuilderLock.acquire();
     if (!mounted) return;
-    if (acquired) {
+    if (lockResult == InvoiceBuilderLockAcquireResult.acquired) {
       setState(() {
         _isAcquiringLock = false;
         _hasInvoiceBuilderLock = true;
@@ -2936,7 +2936,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     }
 
     setState(() => _isAcquiringLock = false);
-    _showInvoiceBuilderLockedMessage();
+    _showInvoiceBuilderLockedMessage(
+      unavailable: lockResult == InvoiceBuilderLockAcquireResult.unavailable,
+    );
   }
 
   void _handleInvoiceBuilderLockLost() {
@@ -2945,7 +2947,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     _showInvoiceBuilderLockedMessage();
   }
 
-  Future<void> _showInvoiceBuilderLockedMessage() async {
+  Future<void> _showInvoiceBuilderLockedMessage({
+    bool unavailable = false,
+  }) async {
     if (!mounted || _lockLostDialogShown) return;
     _lockLostDialogShown = true;
     final strings = _withRequiredDefaults(
@@ -2970,12 +2974,16 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           ),
         ),
         title: Text(
-          strings['invoice_builder_locked_title']!,
+          unavailable
+              ? strings['invoice_builder_unavailable_title']!
+              : strings['invoice_builder_locked_title']!,
           textAlign: TextAlign.center,
           style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
         ),
         content: Text(
-          strings['invoice_builder_locked']!,
+          unavailable
+              ? strings['invoice_builder_unavailable']!
+              : strings['invoice_builder_locked']!,
           textAlign: TextAlign.center,
           style: const TextStyle(height: 1.45, color: Color(0xFF475569)),
         ),
@@ -4330,6 +4338,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'invoice_builder_locked':
           'Invoice Builder is currently open on another device. Close it there, then try again.',
       'invoice_builder_locked_action': 'Back',
+      'invoice_builder_unavailable_title': 'Invoice Builder Unavailable',
+      'invoice_builder_unavailable':
+          'The lock could not be verified. Check your connection and permissions, then try again.',
       'ok': 'OK',
       'preparing': 'Preparing document...',
       'doc_type': 'Document Type',
