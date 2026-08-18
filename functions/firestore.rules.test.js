@@ -113,12 +113,30 @@ test("blocks cross-user invoices and protected allocation fields", {
   await assertFails(getDoc(doc(other, `users/${uid}/invoices/${invoiceId}`)));
   await assertFails(updateDoc(ref, {documentStatus: "finalized"}));
   await assertFails(updateDoc(ref, {allocationNumber: "FAKE-1"}));
+  await assertFails(updateDoc(ref, {
+    taxInvoicePresentation: {clientEmail: "attacker@example.com"},
+  }));
 
   const fakeId = "invoice_2026-0002";
   await assertFails(setDoc(doc(owner, `users/${uid}/invoices/${fakeId}`), {
     ...validInvoice(fakeId, 2),
     taxAuthorityAllocationRequest: {status: "approved"},
   }));
+
+  const finalizedId = "invoice_2026-0003";
+  await seed(`users/${uid}/invoices/${finalizedId}`, {
+    ...validInvoice(finalizedId, 3),
+    documentStatus: "finalized",
+    taxAuthorityAllocationRequest: {status: "finalized"},
+    allocationNumber: "SERVER-ALLOCATION",
+    storagePath: `invoices/${uid}/tax_invoice_2026-0003.pdf`,
+    fileName: "tax_invoice_2026-0003.pdf",
+    url: "https://example.com/server-document.pdf",
+  });
+  await assertFails(updateDoc(
+      doc(owner, `users/${uid}/invoices/${finalizedId}`),
+      {storagePath: `invoices/${uid}/replacement.pdf`},
+  ));
 });
 
 test("rejects foreign invoice storage paths", {

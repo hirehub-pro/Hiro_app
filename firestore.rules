@@ -235,7 +235,8 @@ service cloud.firestore {
         'paymentStatus', 'paidAmount', 'allocationNumber',
         'taxAuthorityAllocationNumber', 'taxAuthorityAllocation',
         'taxAuthorityAllocationRequest', 'authoritativeTaxInvoice',
-        'documentStatus', 'finalizedAt', 'finalPdf', 'signatureStatus',
+        'taxInvoicePresentation', 'documentStatus', 'finalizedAt', 'finalPdf',
+        'authoritativeServerDocument', 'serverDocument', 'signatureStatus',
         'signingRequestId', 'signingRequestedAt', 'signingUrl', 'signedAt',
         'signerName', 'invoiceEmailStatus', 'invoiceEmailAttemptedAt',
         'invoiceEmailSentAt', 'invoiceEmailId', 'invoiceEmailIds',
@@ -280,7 +281,9 @@ service cloud.firestore {
       return [
         'allocationNumber', 'taxAuthorityAllocationNumber',
         'taxAuthorityAllocation', 'taxAuthorityAllocationRequest',
-        'authoritativeTaxInvoice', 'documentStatus', 'finalizedAt', 'finalPdf',
+        'authoritativeTaxInvoice', 'taxInvoicePresentation', 'documentStatus',
+        'authoritativeServerDocument', 'serverDocument', 'finalizedAt',
+        'finalPdf',
         'signatureStatus', 'signingRequestId', 'signingRequestedAt',
         'signingUrl', 'signedAt', 'signerName', 'invoiceEmailStatus',
         'invoiceEmailAttemptedAt', 'invoiceEmailSentAt', 'invoiceEmailId',
@@ -295,6 +298,9 @@ service cloud.firestore {
 
     function validClientInvoiceUpdate(userId) {
       return validInvoice(request.resource.data, userId) &&
+        !(resource.data.get('documentStatus', '') == 'finalized' &&
+          ('taxAuthorityAllocationRequest' in resource.data ||
+            'serverDocument' in resource.data)) &&
         !request.resource.data.diff(resource.data).affectedKeys()
           .hasAny(invoiceServerFields()) &&
         request.resource.data.invoiceDocId == resource.data.invoiceDocId &&

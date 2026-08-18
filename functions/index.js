@@ -35,6 +35,15 @@ const {
   taxAuthorityTokenDocumentPath,
 } = require("./tax_authority_token_security");
 const {
+  normalizeServerDocumentRequest,
+  serverDocumentPdfPayload,
+} = require("./server_document");
+const {
+  buildTaxInvoicePdf,
+  normalizeTaxInvoicePresentation,
+  validateTaxInvoicePresentation,
+} = require("./tax_invoice_pdf");
+const {
   AppStoreServerAPIClient,
   AutoRenewStatus,
   Environment,
@@ -633,6 +642,576 @@ exports.taxesOAuthCallback = onRequest(
     },
 );
 
+async function serverDocumentContext(userId) {
+  const db = admin.firestore();
+  const userRef = db.collection("users").doc(userId);
+  const [userSnap, verificationSnap, systemSnap] = await Promise.all([
+    userRef.get(),
+    userRef.collection("verification_info").doc("latest").get(),
+    db.collection("metadata").doc("system").get(),
+  ]);
+  const user = userSnap.data() || {};
+  const verification = verificationSnap.data() || {};
+  if (user.isapproved !== true ||
+      normalizeString(verification.status).trim() !== "approved") {
+    throw new HttpsError(
+        "failed-precondition",
+        "An approved business is required to create documents.",
+    );
+  }
+  const vatPercentValue = Number(systemSnap.data()?.vatPercent);
+  const vatPercent = Number.isFinite(vatPercentValue) &&
+      vatPercentValue > 0 && vatPercentValue <= 100 ? vatPercentValue : 17;
+  const businessId = normalizeBusinessId(
+      verification.businessId || user.businessId,
+  );
+  let logoBytes = null;
+  try {
+    [logoBytes] = await admin.storage().bucket()
+        .file(`business_logos/${userId}.jpg`).download();
+  } catch (error) {
+    // A logo is optional and must never block document creation.
+  }
+  return {
+    dealerType: normalizeString(
+        verification.dealerType || user.dealerType,
+    ).trim() || "exempt",
+    vatPercent,
+    business: {
+      name: normalizeString(
+          verification.businessName || user.businessName || user.name,
+      ).trim() || "Hiro",
+      businessId,
+      address: normalizeString(
+          verification.address || user.businessAddress || user.address,
+      ).trim(),
+      dealerType: normalizeString(
+          verification.dealerType || user.dealerType,
+      ).trim() || "exempt",
+      phone: normalizeString(user.phone || user.optionalPhone).trim(),
+      email: normalizeString(user.email).trim(),
+      logoBytes,
+    },
+  };
+}
+
+function serverDocumentBucket(docType) {
+  return {
+    transaction_account: "transaction_account",
+    receipt: "receipts",
+    credit_note: "credit_notes",
+    invoice_receipt: "invoice_tax_receipt",
+    invoice: "invoices",
+  }[docType] || null;
+}
+
+function serverDocumentDisplayType(docType) {
+  return {
+    quote: "Quote",
+    work_order: "Work Order",
+    transaction_account: "Transaction Account",
+    invoice: "Invoice",
+    invoice_receipt: "Invoice Receipt",
+    credit_note: "Credit Note",
+    receipt: "Receipt",
+  }[docType] || "Document";
+}
+
+function serverDocumentResponse(data, document) {
+  return {
+    url: normalizeString(data.url).trim(),
+    fileName: normalizeString(data.fileName).trim(),
+    storagePath: normalizeString(data.storagePath).trim(),
+    invoiceDocId: document.invoiceDocId,
+    documentNumber: document.documentNumber || null,
+    amount: Number(data.amount),
+    docType: document.docType,
+    items: Array.isArray(data.items) ? data.items : [],
+  };
+}
+
+function serverDocumentStoredFields({
+  document,
+  business,
+  fileName,
+  storagePath,
+  downloadUrl,
+  size,
+  generation,
+}) {
+  const signedAmount = document.isNegativeReceipt ?
+    -document.finalTotal : document.finalTotal;
+  const clientName = document.client.name;
+  const displayType = serverDocumentDisplayType(document.docType);
+  const name = document.documentNumber ?
+    `${displayType} #${document.documentNumber}` +
+      (clientName ? ` - ${clientName}` : "") :
+    displayType + (clientName ? ` - ${clientName}` : "");
+  const items = document.items.map((item) => ({
+    description: item.description,
+    quantity: item.quantity,
+    price: item.originalPrice,
+    priceTaxMode: item.priceTaxMode,
+  }));
+  const date = document.date.replaceAll("-", "");
+  const paymentDueDate = document.paymentDueDate ?
+    document.paymentDueDate.replaceAll("-", "") : null;
+  return {
+    type: document.docType,
+    docType: document.docType,
+    name,
+    fileName,
+    url: downloadUrl,
+    storagePath,
+    amount: signedAmount,
+    vatAmount: document.vatAmount,
+    clientName,
+    clientAddress: document.client.address,
+    clientPhone: document.client.phone,
+    clientEmail: document.client.email,
+    clientTaxId: document.client.id,
+    externalClientNumber: document.client.externalClientNumber,
+    ...(document.client.savedClientId ?
+      {savedClientId: document.client.savedClientId} : {}),
+    linkedDocuments: document.linkedDocuments,
+    linkedDocumentIds: document.linkedDocumentIds,
+    items,
+    priceTaxModeDefault: document.priceTaxModeDefault,
+    hasDiscount: document.discount > 0,
+    discountAmount: document.discount,
+    roundTotalEnabled: document.roundTotalEnabled,
+    roundingAmount: document.roundingAmount,
+    notes: document.notes,
+    paymentMethod: document.paymentMethods[0]?.method || "cash",
+    paymentMethods: document.paymentMethods,
+    paymentAmountTotal: roundMoney(document.isNegativeReceipt ?
+      -document.paymentMethods.reduce((sum, method) => sum + method.amount, 0) :
+      document.paymentMethods.reduce((sum, method) => sum + method.amount, 0)),
+    ...(document.sourceInvoiceNumber ?
+      {sourceInvoiceNumber: document.sourceInvoiceNumber} : {}),
+    ...(document.sourceInvoiceDocId ?
+      {sourceInvoiceDocId: document.sourceInvoiceDocId} : {}),
+    ...(document.documentNumber ?
+      {invoiceNumber: document.documentNumber} : {}),
+    ...(document.sequenceNumber != null ?
+      {sequenceNumber: document.sequenceNumber} : {}),
+    invoiceDocId: document.invoiceDocId,
+    date,
+    ...(paymentDueDate ? {paymentDueDate} : {}),
+    ...(document.isNegativeReceipt ? {
+      isCancellationDocument: true,
+      cancellationSourceDocumentId: document.cancellationSourceDocumentId,
+      cancellationSourceDocumentNumber:
+        document.cancellationSourceDocumentNumber,
+    } : {}),
+    ...(document.docType === "invoice" ? {
+      paymentStatus: "unpaid",
+      paidAmount: 0,
+    } : {}),
+    ...(document.docType === "invoice_receipt" ? {
+      paymentStatus: "paid",
+      paidAmount: Math.abs(signedAmount),
+    } : {}),
+    ...(document.creditNoteLegal ?
+      {creditNoteLegal: document.creditNoteLegal} : {}),
+    authoritativeServerDocument: document,
+    serverDocument: {
+      operationId: document.operationId,
+      payloadHash: document.payloadHash,
+      status: "finalized",
+      generatedBy: "server",
+      finalizedAt: admin.firestore.FieldValue.serverTimestamp(),
+    },
+    documentStatus: "finalized",
+    finalizedAt: admin.firestore.FieldValue.serverTimestamp(),
+    finalPdf: {
+      storagePath,
+      size,
+      contentType: "application/pdf",
+      generation,
+      generatedBy: "server",
+    },
+  };
+}
+
+function serverDocumentLogFields({userId, document, business, stored, bucket}) {
+  const signedAmount = Number(stored.amount);
+  const signedSubtotal = document.isNegativeReceipt ?
+    -document.paymentAmount : document.paymentAmount;
+  const signedBeforeRounding = document.isNegativeReceipt ?
+    -document.beforeRounding : document.beforeRounding;
+  return {
+    userId,
+    bucket,
+    docType: document.docType,
+    documentNumber: document.sequenceNumber,
+    sequenceNumber: document.sequenceNumber,
+    invoiceDocId: document.invoiceDocId,
+    date: stored.date,
+    issueDate: stored.date,
+    ...(stored.paymentDueDate ?
+      {paymentDueDate: stored.paymentDueDate} : {}),
+    clientDetails: {
+      id: document.client.id || document.client.name || null,
+      name: document.client.name,
+      address: document.client.address,
+      phone: document.client.phone,
+      email: document.client.email,
+    },
+    businessDetails: {
+      businessId: business.businessId,
+      businessAddress: business.address,
+      dealerType: business.dealerType,
+      isBusinessVerified: true,
+    },
+    amount: signedAmount,
+    subtotalBeforeTax: signedSubtotal,
+    subtotalAfterTax: signedBeforeRounding,
+    vatAmount: document.vatAmount,
+    grandTotal: signedAmount,
+    discountAmount: document.docType === "credit_note" ?
+      document.discount : -document.discount,
+    roundingAmount: document.roundingAmount === 0 ? 0 :
+      (document.docType === "credit_note" ?
+        document.roundingAmount : -document.roundingAmount),
+    clientName: document.client.name,
+    clientAddress: document.client.address,
+    clientPhone: document.client.phone,
+    clientEmail: document.client.email,
+    externalClientNumber: document.client.externalClientNumber,
+    ...(document.client.savedClientId ?
+      {savedClientId: document.client.savedClientId} : {}),
+    linkedDocuments: document.linkedDocuments,
+    linkedDocumentIds: document.linkedDocumentIds,
+    paymentMethod: stored.paymentMethod,
+    paymentMethods: stored.paymentMethods,
+    paymentAmountTotal: stored.paymentAmountTotal,
+    sourceInvoiceNumber: document.sourceInvoiceNumber,
+    sourceInvoiceDocId: document.sourceInvoiceDocId,
+    items: document.items.map((item) => ({
+      description: item.description,
+      quantity: item.quantity,
+      unitPrice: roundMoney(
+          item.price_per_unit * (1 + item.vat_rate / 100),
+      ),
+      unitPriceWithoutTax: item.price_per_unit,
+      discount: -Math.abs(item.discount),
+      taxPaid: item.vat_amount,
+      total: roundMoney(item.total_amount + item.vat_amount),
+      priceTaxMode: item.priceTaxMode,
+    })),
+    fileName: stored.fileName,
+    storagePath: stored.storagePath,
+    url: stored.url,
+    timestamp: admin.firestore.FieldValue.serverTimestamp(),
+    ...(document.isNegativeReceipt ? {
+      isCancellationDocument: true,
+      cancellationSourceDocumentId: document.cancellationSourceDocumentId,
+      cancellationSourceDocumentNumber:
+        document.cancellationSourceDocumentNumber,
+    } : {}),
+    ...(document.docType === "invoice" ? {
+      paymentStatus: "unpaid",
+      paidAmount: 0,
+    } : {}),
+    ...(document.docType === "invoice_receipt" ? {
+      paymentStatus: "paid",
+      paidAmount: Math.abs(signedAmount),
+    } : {}),
+    ...(document.creditNoteLegal ?
+      {creditNoteLegal: document.creditNoteLegal} : {}),
+  };
+}
+
+exports.createServerDocument = onCall(
+    {
+      region: "me-west1",
+      timeoutSeconds: 120,
+      memory: "512MiB",
+    },
+    async (request) => {
+      const userId = request.auth?.uid;
+      if (!userId) {
+        throw new HttpsError("unauthenticated", "Authentication required.");
+      }
+      const context = await serverDocumentContext(userId);
+      let document;
+      try {
+        document = normalizeServerDocumentRequest(request.data, {
+          dealerType: context.dealerType,
+          vatPercent: context.vatPercent,
+        });
+      } catch (error) {
+        throw new HttpsError("invalid-argument", error.message);
+      }
+
+      const db = admin.firestore();
+      const userRef = db.collection("users").doc(userId);
+      const invoiceRef = userRef.collection("invoices")
+          .doc(document.invoiceDocId);
+      const counterRef = document.sequential ? userRef.collection("counters")
+          .doc(`document_counter_${document.docType}`) : null;
+      const now = admin.firestore.Timestamp.now();
+      const reservation = await db.runTransaction(async (transaction) => {
+        const invoiceSnap = await transaction.get(invoiceRef);
+        const counterSnap = counterRef ? await transaction.get(counterRef) : null;
+        if (invoiceSnap.exists) {
+          const existing = invoiceSnap.data() || {};
+          const workflow = existing.serverDocument || {};
+          if (workflow.payloadHash !== document.payloadHash) {
+            throw new HttpsError(
+                "already-exists",
+                "This document ID is already reserved for different data.",
+            );
+          }
+          if (existing.documentStatus === "finalized") {
+            return {cached: true, data: existing};
+          }
+          const startedAt = toDate(workflow.startedAt);
+          const stale = !startedAt || Date.now() - startedAt.getTime() > 5 * 60 * 1000;
+          if (workflow.status === "processing" && !stale) {
+            throw new HttpsError(
+                "aborted",
+                "This document is already being generated.",
+            );
+          }
+          transaction.update(invoiceRef, {
+            documentStatus: "processing",
+            "serverDocument.status": "processing",
+            "serverDocument.startedAt": now,
+            "serverDocument.attempts":
+              admin.firestore.FieldValue.increment(1),
+          });
+          return {cached: false};
+        }
+        if (counterRef) {
+          const storedNext = Number(counterSnap?.data()?.value);
+          if (!Number.isSafeInteger(storedNext) ||
+              storedNext !== document.sequenceNumber) {
+            throw new HttpsError(
+                "failed-precondition",
+                "The document number changed. Refresh and try again.",
+            );
+          }
+          transaction.update(counterRef, {
+            value: document.sequenceNumber + 1,
+            docType: document.docType,
+            lastInvoiceDocId: document.invoiceDocId,
+            lastSequenceNumber: document.sequenceNumber,
+            updatedAt: now,
+          });
+        }
+        transaction.create(invoiceRef, {
+          type: document.docType,
+          docType: document.docType,
+          invoiceDocId: document.invoiceDocId,
+          ...(document.documentNumber ?
+            {invoiceNumber: document.documentNumber} : {}),
+          ...(document.sequenceNumber != null ?
+            {sequenceNumber: document.sequenceNumber} : {}),
+          authoritativeServerDocument: document,
+          serverDocument: {
+            operationId: document.operationId,
+            payloadHash: document.payloadHash,
+            status: "processing",
+            attempts: 1,
+            startedAt: now,
+          },
+          documentStatus: "processing",
+          createdAt: now,
+        });
+        return {cached: false};
+      });
+      if (reservation.cached) {
+        return {
+          finalized: true,
+          cached: true,
+          document: serverDocumentResponse(reservation.data, document),
+        };
+      }
+
+      try {
+        const payload = serverDocumentPdfPayload(
+            document,
+            context.business.businessId,
+        );
+        const presentation = {
+          clientAddress: document.client.address,
+          clientPhone: document.client.phone,
+          clientEmail: document.client.email,
+          externalClientNumber: document.client.externalClientNumber,
+          savedClientId: document.client.savedClientId,
+          priceTaxModeDefault: document.priceTaxModeDefault,
+          roundTotalEnabled: document.roundTotalEnabled,
+          paymentDueDate: document.paymentDueDate,
+          paymentMethods: document.paymentMethods,
+        };
+        const pdfBytes = await buildTaxInvoicePdf({
+          payload,
+          allocation: null,
+          reservation: {
+            docType: document.docType,
+            documentNumber: document.documentNumber,
+            sequenceNumber: document.sequenceNumber,
+            invoiceDocId: document.invoiceDocId,
+          },
+          business: context.business,
+          presentation,
+        });
+        if (pdfBytes.length < 1 || pdfBytes.length > 25 * 1024 * 1024) {
+          throw new Error("The generated PDF has an invalid size.");
+        }
+        const safeId = document.invoiceDocId.replace(/[^A-Za-z0-9_-]/g, "_");
+        const fileName = `server_document_${safeId}.pdf`;
+        const storagePath = `invoices/${userId}/${fileName}`;
+        const file = admin.storage().bucket().file(storagePath);
+        let token = null;
+        try {
+          const [existingMetadata] = await file.getMetadata();
+          token = normalizeString(
+              existingMetadata.metadata?.firebaseStorageDownloadTokens,
+          ).split(",")[0].trim();
+        } catch (error) {
+          // Missing deterministic output is expected on the first attempt.
+        }
+        token = token || crypto.randomUUID();
+        await file.save(pdfBytes, {
+          resumable: false,
+          validation: "crc32c",
+          metadata: {
+            contentType: "application/pdf",
+            cacheControl: "private, max-age=0, no-transform",
+            contentDisposition: `attachment; filename="${fileName}"`,
+            metadata: {
+              firebaseStorageDownloadTokens: token,
+              invoiceDocId: document.invoiceDocId,
+              ownerUid: userId,
+              generatedBy: "server",
+            },
+          },
+        });
+        const [metadata] = await file.getMetadata();
+        const downloadUrl = taxInvoiceDownloadUrl(
+            admin.storage().bucket().name,
+            storagePath,
+            token,
+        );
+        const stored = serverDocumentStoredFields({
+          document,
+          business: context.business,
+          fileName,
+          storagePath,
+          downloadUrl,
+          size: Number(metadata.size),
+          generation: normalizeString(metadata.generation),
+        });
+        const bucket = serverDocumentBucket(document.docType);
+        const logBucketRef = bucket ? userRef.collection("logs").doc(bucket) : null;
+        const sourceId = document.isNegativeReceipt ?
+          document.cancellationSourceDocumentId : document.sourceInvoiceDocId;
+        const sourceRef = sourceId ? userRef.collection("invoices").doc(sourceId) : null;
+        await db.runTransaction(async (transaction) => {
+          const latestSnap = await transaction.get(invoiceRef);
+          const logBucketSnap = logBucketRef ?
+            await transaction.get(logBucketRef) : null;
+          const sourceSnap = sourceRef ? await transaction.get(sourceRef) : null;
+          const latest = latestSnap.data() || {};
+          if (latest.documentStatus === "finalized") return;
+          if (latest.serverDocument?.payloadHash !== document.payloadHash) {
+            throw new HttpsError(
+                "failed-precondition",
+                "The stored document failed integrity verification.",
+            );
+          }
+          if (sourceRef && !sourceSnap?.exists) {
+            throw new HttpsError(
+                "failed-precondition",
+                "The linked source document no longer exists.",
+            );
+          }
+          transaction.set(invoiceRef, stored, {merge: true});
+          if (logBucketRef) {
+            const logCounter = Number(logBucketSnap?.data()?.value || 0) + 1;
+            transaction.set(logBucketRef, {
+              value: logCounter,
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+              docType: bucket,
+            }, {merge: true});
+            transaction.set(
+                logBucketRef.collection("files").doc(document.invoiceDocId),
+                {
+                  ...serverDocumentLogFields({
+                    userId,
+                    document,
+                    business: context.business,
+                    stored,
+                    bucket,
+                  }),
+                  counter: logCounter,
+                },
+            );
+          }
+          if (!["quote", "work_order"].includes(document.docType)) {
+            transaction.set(db.collection("metadata").doc("invoice_counts"), {
+              [document.docType]: admin.firestore.FieldValue.increment(1),
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            }, {merge: true});
+          }
+          if (!["quote", "work_order", "transaction_account"].includes(
+            document.docType,
+          )) {
+            const financialDelta = document.docType === "credit_note" ||
+                document.isNegativeReceipt ?
+              -document.finalTotal : document.finalTotal;
+            transaction.set(userRef.collection("metadata")
+                .doc("financial_summary"), {
+              totalEarned: admin.firestore.FieldValue.increment(financialDelta),
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            }, {merge: true});
+          }
+          if (sourceRef && document.docType === "receipt" &&
+              !document.isNegativeReceipt) {
+            const source = sourceSnap.data() || {};
+            const sourceAmount = Math.abs(Number(source.amount) || 0);
+            const paidAmount = Math.min(
+                sourceAmount,
+                Number(source.paidAmount || 0) + document.finalTotal,
+            );
+            transaction.update(sourceRef, {
+              paidAmount,
+              paymentStatus: paidAmount + 0.01 >= sourceAmount ?
+                "paid" : "partial",
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+          }
+          if (sourceRef && document.isNegativeReceipt) {
+            transaction.update(sourceRef, {
+              cancellationStatus: "cancelled",
+              cancelledByDocumentId: document.invoiceDocId,
+              cancelledByDocumentNumber: document.documentNumber,
+              cancelledAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+          }
+        });
+        return {
+          finalized: true,
+          cached: false,
+          document: serverDocumentResponse(stored, document),
+        };
+      } catch (error) {
+        await invoiceRef.update({
+          documentStatus: "generation_failed",
+          "serverDocument.status": "failed",
+          "serverDocument.lastError":
+            normalizeString(error?.message).slice(0, 500),
+          "serverDocument.failedAt":
+            admin.firestore.FieldValue.serverTimestamp(),
+        });
+        throw error;
+      }
+    },
+);
+
 exports.createTaxInvoiceDraft = onCall(
     {
       region: "me-west1",
@@ -645,6 +1224,9 @@ exports.createTaxInvoiceDraft = onCall(
       }
 
       const payload = normalizeTaxInvoiceAllocationPayload(request.data || {});
+      const presentation = normalizeTaxInvoicePresentation(
+          request.data?.presentation,
+      );
       const businessId = await getVerifiedTaxAuthorityBusinessId(auth.uid);
       const payloadBusinessId = normalizeBusinessId(payload.vat_number);
       if (payloadBusinessId !== businessId) {
@@ -669,6 +1251,11 @@ exports.createTaxInvoiceDraft = onCall(
             timeZone: REQUEST_EXPIRY_TIME_ZONE,
           }).format(new Date())),
         });
+      } catch (error) {
+        throw new HttpsError("invalid-argument", error.message);
+      }
+      try {
+        validateTaxInvoicePresentation({presentation, payload, reservation});
       } catch (error) {
         throw new HttpsError("invalid-argument", error.message);
       }
@@ -749,6 +1336,7 @@ exports.createTaxInvoiceDraft = onCall(
           sequenceNumber: reservation.sequenceNumber,
           documentStatus: "reserved",
           authoritativeTaxInvoice: payload,
+          taxInvoicePresentation: presentation,
           taxAuthorityAllocationRequest: {
             payloadHash,
             serverSignature,
@@ -830,6 +1418,8 @@ exports.requestTaxInvoiceAllocation = onCall(
     {
       region: "me-west1",
       secrets: [TAX_AUTH_CLIENT_ID, TAX_AUTH_CLIENT_SECRET],
+      timeoutSeconds: 120,
+      memory: "512MiB",
     },
     async (request) => {
       const auth = request.auth;
@@ -921,10 +1511,18 @@ exports.requestTaxInvoiceAllocation = onCall(
       });
 
       if (claim.cached) {
+        const document = await finalizeAllocatedTaxInvoice({
+          userId: auth.uid,
+          invoiceRef,
+          payload: claim.payload,
+          allocation: claim.allocation,
+          reservation: claim.reservation,
+        });
         return {
           ...claim.allocation,
           reservation: claim.reservation,
           payloadHash: claim.payloadHash,
+          document,
           cached: true,
         };
       }
@@ -956,14 +1554,43 @@ exports.requestTaxInvoiceAllocation = onCall(
             admin.firestore.Timestamp.now(),
         });
 
+        let document;
+        try {
+          document = await finalizeAllocatedTaxInvoice({
+            userId: auth.uid,
+            invoiceRef,
+            payload: claim.payload,
+            allocation: storedAllocation,
+            reservation: claim.reservation,
+          });
+        } catch (error) {
+          await invoiceRef.update({
+            documentStatus: "allocation_approved",
+            "taxAuthorityAllocationRequest.finalizationError":
+              normalizeString(error?.message).slice(0, 500),
+            "taxAuthorityAllocationRequest.finalizationFailedAt":
+              admin.firestore.Timestamp.now(),
+          });
+          throw new HttpsError(
+              "internal",
+              "The allocation was approved, but the final invoice could not " +
+                "be generated. Saving again will safely resume it.",
+              {allocationApproved: true},
+          );
+        }
+
         return {
           ...approval,
           response,
           reservation: claim.reservation,
           payloadHash: claim.payloadHash,
+          document,
           cached: false,
         };
       } catch (error) {
+        if (error?.details?.allocationApproved === true) {
+          throw error;
+        }
         const failureState = taxAuthorityFailureState(error);
         await invoiceRef.update({
           documentStatus: failureState === "failed" ?
@@ -983,6 +1610,8 @@ exports.finalizeTaxInvoiceDocument = onCall(
     {
       region: "me-west1",
       secrets: [TAX_AUTH_CLIENT_SECRET],
+      timeoutSeconds: 120,
+      memory: "512MiB",
     },
     async (request) => {
       const userId = request.auth?.uid;
@@ -993,95 +1622,406 @@ exports.finalizeTaxInvoiceDocument = onCall(
       if (draftId.includes("/") || draftId.length > 180) {
         throw new HttpsError("invalid-argument", "Invalid Tax Authority draft ID.");
       }
-      const storagePath = assertOwnedInvoicePdfPath(
-          request.data?.storagePath,
-          userId,
-      );
-      const bucket = admin.storage().bucket();
-      let metadata;
-      try {
-        [metadata] = await bucket.file(storagePath).getMetadata();
-      } catch (error) {
-        throw new HttpsError(
-            "failed-precondition",
-            "The final invoice PDF has not been uploaded.",
-        );
-      }
-      const size = Number(metadata.size);
-      if (metadata.contentType !== "application/pdf" ||
-          !Number.isFinite(size) || size < 1 || size > 25 * 1024 * 1024) {
-        throw new HttpsError(
-            "invalid-argument",
-            "The final document must be a PDF no larger than 25 MB.",
-        );
-      }
-
       const invoiceRef = admin.firestore().collection("users").doc(userId)
           .collection("invoices").doc(draftId);
-      const result = await admin.firestore().runTransaction(
-          async (transaction) => {
-            const snap = await transaction.get(invoiceRef);
-            if (!snap.exists) {
-              throw new HttpsError("not-found", "Tax Authority draft not found.");
-            }
-            const invoice = snap.data() || {};
-            const allocationRequest =
-              invoice.taxAuthorityAllocationRequest || {};
-            const reservation = {
-              docType: invoice.docType,
-              documentNumber: invoice.invoiceNumber,
-              sequenceNumber: invoice.sequenceNumber,
-              invoiceDocId: draftId,
-            };
-            if (!invoice.authoritativeTaxInvoice ||
-                taxInvoicePayloadHash(invoice.authoritativeTaxInvoice) !==
-                  allocationRequest.payloadHash ||
-                !validTaxInvoiceDraftSignature({
-                  secret: TAX_AUTH_CLIENT_SECRET.value(),
-                  userId,
-                  reservation,
-                  payloadHash: allocationRequest.payloadHash,
-                }, allocationRequest.serverSignature)) {
-              throw new HttpsError(
-                  "failed-precondition",
-                  "The Tax Authority draft failed integrity verification.",
-              );
-            }
-            if (invoice.documentStatus === "finalized") {
-              if (invoice.storagePath !== storagePath) {
-                throw new HttpsError(
-                    "already-exists",
-                    "This invoice was finalized with a different PDF.",
-                );
-              }
-              return {alreadyFinalized: true};
-            }
-            if (invoice.documentStatus !== "allocation_approved" ||
-                invoice.taxAuthorityAllocation?.approved !== true ||
-                !invoice.taxAuthorityAllocation?.confirmationNumber) {
-              throw new HttpsError(
-                  "failed-precondition",
-                  "The invoice must have an approved allocation before finalization.",
-              );
-            }
-            transaction.update(invoiceRef, {
-              documentStatus: "finalized",
-              storagePath,
-              fileName: path.posix.basename(storagePath),
-              finalizedAt: admin.firestore.FieldValue.serverTimestamp(),
-              finalPdf: {
-                storagePath,
-                size,
-                contentType: metadata.contentType,
-                generation: normalizeString(metadata.generation),
-              },
-            });
-            return {alreadyFinalized: false};
-          },
-      );
-      return {finalized: true, draftId, storagePath, ...result};
+      const snap = await invoiceRef.get();
+      if (!snap.exists) {
+        throw new HttpsError("not-found", "Tax Authority draft not found.");
+      }
+      const invoice = snap.data() || {};
+      const allocationRequest = invoice.taxAuthorityAllocationRequest || {};
+      const reservation = {
+        docType: invoice.docType,
+        documentNumber: invoice.invoiceNumber,
+        sequenceNumber: invoice.sequenceNumber,
+        invoiceDocId: draftId,
+      };
+      if (!invoice.authoritativeTaxInvoice ||
+          taxInvoicePayloadHash(invoice.authoritativeTaxInvoice) !==
+            allocationRequest.payloadHash ||
+          !validTaxInvoiceDraftSignature({
+            secret: TAX_AUTH_CLIENT_SECRET.value(),
+            userId,
+            reservation,
+            payloadHash: allocationRequest.payloadHash,
+          }, allocationRequest.serverSignature)) {
+        throw new HttpsError(
+            "failed-precondition",
+            "The Tax Authority draft failed integrity verification.",
+        );
+      }
+      if (!["allocation_approved", "finalized"].includes(
+        normalizeString(invoice.documentStatus).trim(),
+      ) || invoice.taxAuthorityAllocation?.approved !== true ||
+          !invoice.taxAuthorityAllocation?.confirmationNumber) {
+        throw new HttpsError(
+            "failed-precondition",
+            "The invoice must have an approved allocation before finalization.",
+        );
+      }
+      const document = await finalizeAllocatedTaxInvoice({
+        userId,
+        invoiceRef,
+        payload: invoice.authoritativeTaxInvoice,
+        allocation: invoice.taxAuthorityAllocation,
+        reservation,
+      });
+      return {finalized: true, draftId, document};
     },
 );
+
+async function taxInvoiceBusinessProfile(userId, expectedBusinessId) {
+  const userRef = admin.firestore().collection("users").doc(userId);
+  const [userSnap, verificationSnap] = await Promise.all([
+    userRef.get(),
+    userRef.collection("verification_info").doc("latest").get(),
+  ]);
+  const user = userSnap.data() || {};
+  const verification = verificationSnap.data() || {};
+  const businessId = normalizeBusinessId(
+      verification.businessId || user.businessId,
+  );
+  if (!businessId || businessId !== normalizeBusinessId(expectedBusinessId)) {
+    throw new HttpsError(
+        "failed-precondition",
+        "The verified business details changed before PDF generation.",
+    );
+  }
+  let logoBytes = null;
+  try {
+    [logoBytes] = await admin.storage().bucket()
+        .file(`business_logos/${userId}.jpg`).download();
+  } catch (error) {
+    // A business logo is optional and must never block a legal document.
+  }
+  return {
+    name: normalizeString(
+        verification.businessName || user.businessName || user.name,
+    ).trim() || "Hiro",
+    businessId,
+    address: normalizeString(
+        verification.address || user.businessAddress || user.address,
+    ).trim(),
+    dealerType: normalizeString(
+        verification.dealerType || user.dealerType,
+    ).trim() || "licensed",
+    phone: normalizeString(user.phone || user.optionalPhone).trim(),
+    email: normalizeString(user.email).trim(),
+    logoBytes,
+  };
+}
+
+function taxInvoiceDownloadUrl(bucketName, storagePath, token) {
+  return "https://firebasestorage.googleapis.com/v0/b/" +
+    `${encodeURIComponent(bucketName)}/o/${encodeURIComponent(storagePath)}` +
+    `?alt=media&token=${encodeURIComponent(token)}`;
+}
+
+function taxInvoiceStorageFields({
+  payload,
+  allocation,
+  reservation,
+  presentation,
+  business,
+  fileName,
+  storagePath,
+  downloadUrl,
+  size,
+  generation,
+}) {
+  const invoice = payload.invoices_list[0];
+  const totalBeforeRounding = roundMoney(invoice.payment_amount_including_vat);
+  const roundingAmount = presentation.roundTotalEnabled ?
+    roundMoney(totalBeforeRounding - Math.floor(totalBeforeRounding)) : 0;
+  const total = roundMoney(totalBeforeRounding - roundingAmount);
+  const date = normalizeString(invoice.invoice_date).replaceAll("-", "");
+  const paymentDueDate = presentation.paymentDueDate ?
+    presentation.paymentDueDate.replaceAll("-", "") : null;
+  const clientName = normalizeString(invoice.customer_name).trim();
+  const displayType = reservation.docType === "invoice_receipt" ?
+    "Invoice Receipt" : "Invoice";
+  const items = invoice.items.map((item) => ({
+    description: normalizeString(item.description).trim(),
+    quantity: Number(item.quantity),
+    price: Number(item.price_per_unit),
+    priceTaxMode: "before_tax",
+  }));
+  const logItems = invoice.items.map((item) => ({
+    description: normalizeString(item.description).trim(),
+    quantity: Number(item.quantity),
+    unitPrice: roundMoney(
+        Number(item.price_per_unit) * (1 + Number(item.vat_rate) / 100),
+    ),
+    unitPriceWithoutTax: Number(item.price_per_unit),
+    discount: -Math.abs(Number(item.discount || 0)),
+    taxPaid: Number(item.vat_amount),
+    total: roundMoney(Number(item.total_amount) + Number(item.vat_amount)),
+    priceTaxMode: "before_tax",
+  }));
+  const paymentMethods = reservation.docType === "invoice_receipt" ?
+    presentation.paymentMethods : [];
+  const paymentAmountTotal = roundMoney(
+      paymentMethods.reduce((total, entry) => total + Number(entry.amount), 0),
+  );
+  const name = clientName ?
+    `${displayType} #${reservation.documentNumber} - ${clientName}` :
+    `${displayType} #${reservation.documentNumber}`;
+  return {
+    invoice: {
+      type: reservation.docType,
+      docType: reservation.docType,
+      name,
+      fileName,
+      url: downloadUrl,
+      storagePath,
+      amount: total,
+      vatAmount: Number(invoice.vat_amount),
+      clientName,
+      clientAddress: presentation.clientAddress,
+      clientPhone: presentation.clientPhone,
+      clientEmail: presentation.clientEmail,
+      clientTaxId: String(invoice.customer_vat_number),
+      externalClientNumber: presentation.externalClientNumber,
+      ...(presentation.savedClientId ?
+        {savedClientId: presentation.savedClientId} : {}),
+      linkedDocuments: [],
+      linkedDocumentIds: [],
+      items,
+      priceTaxModeDefault: presentation.priceTaxModeDefault,
+      hasDiscount: Number(invoice.discount) > 0,
+      discountAmount: Number(invoice.discount),
+      roundTotalEnabled: presentation.roundTotalEnabled,
+      roundingAmount,
+      notes: normalizeString(invoice.invoice_note).trim(),
+      paymentMethod: paymentMethods[0]?.method || "cash",
+      paymentMethods,
+      paymentAmountTotal,
+      invoiceNumber: reservation.documentNumber,
+      sequenceNumber: reservation.sequenceNumber,
+      invoiceDocId: reservation.invoiceDocId,
+      date,
+      ...(paymentDueDate ? {paymentDueDate} : {}),
+      paymentStatus: reservation.docType === "invoice" ? "unpaid" : "paid",
+      paidAmount: reservation.docType === "invoice" ? 0 : Math.abs(total),
+      allocationNumber: allocation.confirmationNumber,
+      taxAuthorityAllocationNumber: allocation.confirmationNumber,
+      documentStatus: "finalized",
+      taxAuthorityAllocationRequest: {
+        status: "finalized",
+        finalizedAt: admin.firestore.FieldValue.serverTimestamp(),
+        finalizationError: admin.firestore.FieldValue.delete(),
+        finalizationFailedAt: admin.firestore.FieldValue.delete(),
+      },
+      finalizedAt: admin.firestore.FieldValue.serverTimestamp(),
+      finalPdf: {
+        storagePath,
+        size,
+        contentType: "application/pdf",
+        generation,
+        generatedBy: "server",
+      },
+    },
+    log: {
+      userId: null,
+      bucket: reservation.docType === "invoice_receipt" ?
+        "invoice_tax_receipt" : "invoices",
+      docType: reservation.docType,
+      documentNumber: reservation.sequenceNumber,
+      sequenceNumber: reservation.sequenceNumber,
+      invoiceDocId: reservation.invoiceDocId,
+      date,
+      issueDate: date,
+      ...(paymentDueDate ? {paymentDueDate} : {}),
+      clientDetails: {
+        id: String(invoice.customer_vat_number),
+        name: clientName,
+        address: presentation.clientAddress,
+        phone: presentation.clientPhone,
+        email: presentation.clientEmail,
+      },
+      businessDetails: {
+        businessId: business.businessId,
+        businessAddress: business.address,
+        dealerType: business.dealerType,
+        isBusinessVerified: true,
+      },
+      amount: total,
+      subtotalBeforeTax: Number(invoice.payment_amount),
+      subtotalAfterTax: totalBeforeRounding,
+      vatAmount: Number(invoice.vat_amount),
+      grandTotal: total,
+      discountAmount: -Math.abs(Number(invoice.discount)),
+      roundingAmount: roundingAmount === 0 ? 0 : -roundingAmount,
+      clientName,
+      clientAddress: presentation.clientAddress,
+      clientPhone: presentation.clientPhone,
+      clientEmail: presentation.clientEmail,
+      externalClientNumber: presentation.externalClientNumber,
+      ...(presentation.savedClientId ?
+        {savedClientId: presentation.savedClientId} : {}),
+      linkedDocuments: [],
+      linkedDocumentIds: [],
+      paymentMethod: paymentMethods[0]?.method || "cash",
+      paymentMethods,
+      paymentAmountTotal,
+      items: logItems,
+      fileName,
+      storagePath,
+      url: downloadUrl,
+      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      paymentStatus: reservation.docType === "invoice" ? "unpaid" : "paid",
+      paidAmount: reservation.docType === "invoice" ? 0 : Math.abs(total),
+      taxAuthorityAllocation: allocation,
+      allocationNumber: allocation.confirmationNumber,
+      taxAuthorityAllocationNumber: allocation.confirmationNumber,
+    },
+    total,
+  };
+}
+
+async function finalizeAllocatedTaxInvoice({
+  userId,
+  invoiceRef,
+  payload,
+  allocation,
+  reservation,
+}) {
+  const currentSnap = await invoiceRef.get();
+  const current = currentSnap.data() || {};
+  if (current.documentStatus === "finalized" && current.storagePath) {
+    return {
+      url: normalizeString(current.url).trim(),
+      fileName: normalizeString(current.fileName).trim(),
+      storagePath: normalizeString(current.storagePath).trim(),
+      invoiceDocId: reservation.invoiceDocId,
+      documentNumber: reservation.documentNumber,
+      amount: Number(current.amount),
+      docType: reservation.docType,
+      items: Array.isArray(current.items) ? current.items : [],
+    };
+  }
+  if (current.taxAuthorityAllocation?.confirmationNumber !==
+      allocation.confirmationNumber) {
+    throw new HttpsError(
+        "failed-precondition",
+        "The approved allocation does not match the stored invoice.",
+    );
+  }
+
+  const presentation = normalizeTaxInvoicePresentation(
+      current.taxInvoicePresentation,
+  );
+  const business = await taxInvoiceBusinessProfile(userId, payload.vat_number);
+  const pdfBytes = await buildTaxInvoicePdf({
+    payload,
+    allocation,
+    reservation,
+    presentation,
+    business,
+  });
+  if (pdfBytes.length < 1 || pdfBytes.length > 25 * 1024 * 1024) {
+    throw new Error("The generated invoice PDF has an invalid size.");
+  }
+
+  const fileName = `tax_invoice_${reservation.documentNumber}.pdf`;
+  const storagePath = `invoices/${userId}/${fileName}`;
+  const file = admin.storage().bucket().file(storagePath);
+  let token = null;
+  try {
+    const [existingMetadata] = await file.getMetadata();
+    token = normalizeString(
+        existingMetadata.metadata?.firebaseStorageDownloadTokens,
+    ).split(",")[0].trim();
+  } catch (error) {
+    // A missing deterministic object is the normal first-generation case.
+  }
+  token = token || crypto.randomUUID();
+  await file.save(pdfBytes, {
+    resumable: false,
+    validation: "crc32c",
+    metadata: {
+      contentType: "application/pdf",
+      cacheControl: "private, max-age=0, no-transform",
+      contentDisposition: `attachment; filename="${fileName}"`,
+      metadata: {
+        firebaseStorageDownloadTokens: token,
+        invoiceDocId: reservation.invoiceDocId,
+        ownerUid: userId,
+        generatedBy: "server",
+      },
+    },
+  });
+  const [metadata] = await file.getMetadata();
+  const downloadUrl = taxInvoiceDownloadUrl(
+      admin.storage().bucket().name,
+      storagePath,
+      token,
+  );
+  const fields = taxInvoiceStorageFields({
+    payload,
+    allocation,
+    reservation,
+    presentation,
+    business,
+    fileName,
+    storagePath,
+    downloadUrl,
+    size: Number(metadata.size),
+    generation: normalizeString(metadata.generation),
+  });
+  fields.log.userId = userId;
+
+  const db = admin.firestore();
+  await db.runTransaction(async (transaction) => {
+    const logBucketRef = db.collection("users").doc(userId)
+        .collection("logs").doc(fields.log.bucket);
+    const [latestSnap, logBucketSnap] = await Promise.all([
+      transaction.get(invoiceRef),
+      transaction.get(logBucketRef),
+    ]);
+    const latest = latestSnap.data() || {};
+    if (latest.documentStatus === "finalized") return;
+    if (latest.documentStatus !== "allocation_approved" ||
+        latest.taxAuthorityAllocation?.confirmationNumber !==
+          allocation.confirmationNumber) {
+      throw new HttpsError(
+          "failed-precondition",
+          "The invoice is no longer ready for finalization.",
+      );
+    }
+    const logCounter = Number(logBucketSnap.data()?.value || 0) + 1;
+    transaction.set(invoiceRef, fields.invoice, {merge: true});
+    transaction.set(logBucketRef, {
+      value: logCounter,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      docType: fields.log.bucket,
+    }, {merge: true});
+    transaction.set(
+        logBucketRef.collection("files").doc(reservation.invoiceDocId),
+        {...fields.log, counter: logCounter},
+    );
+    transaction.set(db.collection("metadata").doc("invoice_counts"), {
+      [reservation.docType]: admin.firestore.FieldValue.increment(1),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, {merge: true});
+    transaction.set(db.collection("users").doc(userId)
+        .collection("metadata").doc("financial_summary"), {
+      totalEarned: admin.firestore.FieldValue.increment(fields.total),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, {merge: true});
+  });
+
+  return {
+    url: downloadUrl,
+    fileName,
+    storagePath,
+    invoiceDocId: reservation.invoiceDocId,
+    documentNumber: reservation.documentNumber,
+    amount: fields.total,
+    docType: reservation.docType,
+    items: fields.invoice.items,
+  };
+}
 
 exports.getTaxAuthorityConnectionStatus = onCall(
     {

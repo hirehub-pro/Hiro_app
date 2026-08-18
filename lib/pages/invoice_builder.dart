@@ -289,37 +289,42 @@ class InvoiceBuilderDraftResult {
   });
 }
 
-class _TaxAuthorityAllocationResult {
-  final bool approved;
-  final String? confirmationNumber;
-  final String? invoiceId;
-  final String? transactionId;
-  final Map<String, dynamic> reservation;
-  final String payloadHash;
-  final Map<String, dynamic> raw;
+class _ServerDocumentResult {
+  final Map<String, dynamic> document;
 
-  const _TaxAuthorityAllocationResult({
-    required this.approved,
-    required this.raw,
-    this.confirmationNumber,
-    this.invoiceId,
-    this.transactionId,
-    required this.reservation,
-    required this.payloadHash,
-  });
+  const _ServerDocumentResult({required this.document});
 
-  Map<String, dynamic> toMap() => {
-    'approved': approved,
-    if (confirmationNumber != null && confirmationNumber!.isNotEmpty)
-      'confirmationNumber': confirmationNumber,
-    if (invoiceId != null && invoiceId!.isNotEmpty) 'invoiceId': invoiceId,
-    if (transactionId != null && transactionId!.isNotEmpty)
-      'transactionId': transactionId,
-    'reservation': reservation,
-    'payloadHash': payloadHash,
-    'raw': raw,
-    'requestedAt': FieldValue.serverTimestamp(),
-  };
+  InvoiceBuilderDraftResult? toDraftResult() {
+    final url = document['url']?.toString().trim() ?? '';
+    final fileName = document['fileName']?.toString().trim() ?? '';
+    final invoiceDocId = document['invoiceDocId']?.toString().trim() ?? '';
+    final storagePath = document['storagePath']?.toString().trim() ?? '';
+    final docType = document['docType']?.toString().trim() ?? '';
+    final amount = (document['amount'] as num?)?.toDouble();
+    final rawItems = document['items'];
+    if (url.isEmpty ||
+        fileName.isEmpty ||
+        invoiceDocId.isEmpty ||
+        storagePath.isEmpty ||
+        docType.isEmpty ||
+        amount == null ||
+        rawItems is! List) {
+      return null;
+    }
+    return InvoiceBuilderDraftResult(
+      url: url,
+      fileName: fileName,
+      invoiceDocId: invoiceDocId,
+      storagePath: storagePath,
+      amount: amount,
+      docType: docType,
+      documentNumber: document['documentNumber']?.toString(),
+      items: rawItems
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList(growable: false),
+    );
+  }
 }
 
 class _LinkedDocumentsDialog extends StatefulWidget {
@@ -1357,7 +1362,10 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       final ref = firebase_storage.FirebaseStorage.instance.ref().child(
         storagePath,
       );
-      await ref.putData(pdfBytes);
+      await ref.putData(
+        pdfBytes,
+        firebase_storage.SettableMetadata(contentType: 'application/pdf'),
+      );
       final downloadUrl = await ref.getDownloadURL();
       final quoteDocRef = invoicesRef.doc();
       final clientName = _clientNameController.text.trim();
@@ -1782,13 +1790,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       );
     }
 
-    if (hasAllocationReservation) {
-      await _finalizeTaxAuthorityDocument(
-        draftId: invoiceDocId,
-        storagePath: storagePath,
-      );
-    }
-
     return InvoiceBuilderDraftResult(
       url: downloadUrl,
       fileName: fileName,
@@ -1929,6 +1930,10 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   final List<InvoiceItem> _items = [];
   bool _isPreparing = false;
   bool _hasSavedDocument = false;
+  late final String _serverDocumentOperationId = FirebaseFirestore.instance
+      .collection('_document_operations')
+      .doc()
+      .id;
   String _invoiceNumber = "";
   int? _currentDocumentCounter;
   bool _isLoadingCounterAssignment = false;
@@ -3426,7 +3431,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     }).toList();
   }
 
-  Future<_TaxAuthorityAllocationResult> _requestTaxAuthorityAllocation() async {
+  Future<_ServerDocumentResult> _requestTaxAuthorityAllocation() async {
     final strings = _withRequiredDefaults(
       _getLocalizedStrings(context, listen: false),
     );
@@ -3468,6 +3473,21 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       final draftResult = await createDraft.call<Map<String, dynamic>>({
         'invoiceDocId': invoiceDocId,
         'invoice': invoicePayload,
+        'presentation': {
+          'clientAddress': _clientAddressController.text.trim(),
+          'clientPhone': _clientPhoneController.text.trim(),
+          'clientEmail': _clientEmailController.text.trim(),
+          'externalClientNumber': _selectedSavedClientExternalNumber ?? '',
+          if (_selectedSavedClientId != null)
+            'savedClientId': _selectedSavedClientId,
+          'priceTaxModeDefault': _selectedPriceTaxMode,
+          'roundTotalEnabled': _roundTotalEnabled,
+          if (_selectedPaymentDueDate != null)
+            'paymentDueDate': intl.DateFormat(
+              'yyyy-MM-dd',
+            ).format(_selectedPaymentDueDate!),
+          'paymentMethods': _paymentMethodsForStorage(),
+        },
       });
       final draftId = draftResult.data['draftId']?.toString().trim();
       if (draftId == null || draftId.isEmpty) {
@@ -3495,38 +3515,88 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         ? Map<String, dynamic>.from(reservationValue)
         : const <String, dynamic>{};
     final payloadHash = data['payloadHash']?.toString().trim() ?? '';
+    final documentValue = data['document'];
+    final document = documentValue is Map
+        ? Map<String, dynamic>.from(documentValue)
+        : const <String, dynamic>{};
 
     if (data['approved'] != true ||
         confirmationNumber == null ||
         confirmationNumber.isEmpty ||
         reservation.isEmpty ||
-        payloadHash.isEmpty) {
+        payloadHash.isEmpty ||
+        document.isEmpty) {
       throw StateError(strings['tax_authority_allocation_failed']!);
     }
 
-    return _TaxAuthorityAllocationResult(
-      approved: data['approved'] == true,
-      confirmationNumber: confirmationNumber,
-      invoiceId: data['invoiceId']?.toString(),
-      transactionId: data['transactionId']?.toString(),
-      reservation: reservation,
-      payloadHash: payloadHash,
-      raw: data,
-    );
+    return _ServerDocumentResult(document: document);
   }
 
-  Future<void> _finalizeTaxAuthorityDocument({
-    required String draftId,
-    required String storagePath,
-  }) async {
-    final callable = _functions.httpsCallable('finalizeTaxInvoiceDocument');
+  Future<_ServerDocumentResult> _createServerDocument() async {
+    final strings = _withRequiredDefaults(
+      _getLocalizedStrings(context, listen: false),
+    );
+    final callable = _functions.httpsCallable('createServerDocument');
     final result = await callable.call<Map<String, dynamic>>({
-      'draftId': draftId,
-      'storagePath': storagePath,
+      'operationId': _serverDocumentOperationId,
+      'docType': _selectedDocType,
+      'documentNumber': _invoiceNumber.trim(),
+      'sequenceNumber': _currentDocumentCounter,
+      'date': _invoiceDateIsoValue(),
+      if (_selectedPaymentDueDate != null)
+        'paymentDueDate': intl.DateFormat(
+          'yyyy-MM-dd',
+        ).format(_selectedPaymentDueDate!),
+      'client': {
+        'id': _clientIdController.text.trim(),
+        'name': _clientNameController.text.trim(),
+        'address': _clientAddressController.text.trim(),
+        'phone': _clientPhoneController.text.trim(),
+        'email': _clientEmailController.text.trim(),
+        'externalClientNumber': _selectedSavedClientExternalNumber ?? '',
+        if (_selectedSavedClientId != null)
+          'savedClientId': _selectedSavedClientId,
+      },
+      'items': _items
+          .map(
+            (item) => {
+              'description': item.description,
+              'quantity': item.quantity,
+              'price': item.price,
+              'priceTaxMode': item.isPriceBeforeTax
+                  ? 'before_tax'
+                  : 'after_tax',
+            },
+          )
+          .toList(growable: false),
+      'discountAmount': _manualDiscountAmount,
+      'roundTotalEnabled': _roundTotalEnabled,
+      'priceTaxModeDefault': _selectedPriceTaxMode,
+      'notes': _notesController.text.trim(),
+      'paymentMethods': _paymentMethods
+          .map((entry) => entry.toMap())
+          .toList(growable: false),
+      'linkedDocuments': _linkedDocumentReferences,
+      'sourceInvoiceNumber': widget.sourceInvoiceNumber,
+      'sourceInvoiceDocId': widget.sourceInvoiceDocId,
+      'isNegativeReceipt': _isNegativeReceipt,
+      'cancellationSourceDocumentId': widget.cancellationSourceDocumentId,
+      'cancellationSourceDocumentNumber':
+          widget.cancellationSourceDocumentNumber,
+      if (_creditNoteLegalData != null)
+        'creditNoteLegal': _creditNoteLegalData,
     });
-    if (result.data['finalized'] != true) {
-      throw StateError('The Tax Authority invoice could not be finalized.');
+    final documentValue = result.data['document'];
+    final document = documentValue is Map
+        ? Map<String, dynamic>.from(documentValue)
+        : const <String, dynamic>{};
+    if (result.data['finalized'] != true || document.isEmpty) {
+      throw StateError(
+        strings['tax_authority_allocation_failed'] ??
+            'The document could not be generated.',
+      );
     }
+    return _ServerDocumentResult(document: document);
   }
 
   String? _taxAuthorityErrorMessageFromDetails(dynamic details) {
@@ -5443,7 +5513,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                 : _handleBuilderBack,
             onSave: () async {
               var finalPdfBytes = pdfBytes;
-              Map<String, dynamic>? taxAuthorityAllocation;
+              late final _ServerDocumentResult serverResult;
 
               if (_requiresTaxAuthorityAllocation) {
                 final strings = _withRequiredDefaults(
@@ -5462,21 +5532,27 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                     ),
                   );
                 }
-                final allocation = await _requestTaxAuthorityAllocation();
-                taxAuthorityAllocation = allocation.toMap();
-                final allocatedPdfBytes = await _getGeneratedPdfBytes(
-                  allocationNumber: allocation.confirmationNumber,
-                );
-                if (allocatedPdfBytes == null) {
-                  throw StateError(strings['tax_authority_allocation_failed']!);
-                }
-                finalPdfBytes = allocatedPdfBytes;
+                serverResult = await _requestTaxAuthorityAllocation();
+              } else {
+                serverResult = await _createServerDocument();
               }
-
-              savedDraftResult = await _createInvoiceAndLog(
-                pdfBytes: finalPdfBytes,
-                taxAuthorityAllocation: taxAuthorityAllocation,
-              );
+              savedDraftResult = serverResult.toDraftResult();
+              if (savedDraftResult == null) {
+                throw StateError('The server did not return a final document.');
+              }
+              try {
+                final serverPdfBytes = await firebase_storage
+                    .FirebaseStorage
+                    .instance
+                    .ref()
+                    .child(savedDraftResult!.storagePath)
+                    .getData(25 * 1024 * 1024);
+                if (serverPdfBytes != null) {
+                  finalPdfBytes = serverPdfBytes;
+                }
+              } catch (error) {
+                dev.log('Could not refresh server PDF preview: $error');
+              }
               if (savedDraftResult != null) {
                 _markDocumentSaved();
                 _showInvoiceEmailDeliveryToast(savedDraftResult!);
@@ -5712,7 +5788,10 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       final ref = firebase_storage.FirebaseStorage.instance.ref().child(
         storagePath,
       );
-      await ref.putData(pdfBytes);
+      await ref.putData(
+        pdfBytes,
+        firebase_storage.SettableMetadata(contentType: 'application/pdf'),
+      );
       final downloadUrl = await ref.getDownloadURL();
 
       await invoiceRef.set({

@@ -1,0 +1,41 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isClientGeneratedInvoice(fileName) {
+      return !fileName.matches('^(tax_invoice_|server_document_).*');
+    }
+
+    function isValidInvoicePdf() {
+      return request.resource != null &&
+        request.resource.size > 0 &&
+        request.resource.size <= 25 * 1024 * 1024 &&
+        request.resource.contentType == 'application/pdf';
+    }
+
+    // Allocation invoice names are reserved for the Admin SDK. Clients may
+    // continue uploading ordinary quotes, receipts and non-allocation PDFs.
+    match /invoices/{userId}/{fileName} {
+      allow read: if isOwner(userId);
+      allow create, update: if isOwner(userId) &&
+        isClientGeneratedInvoice(fileName) && isValidInvoicePdf();
+      allow delete: if isOwner(userId) && isClientGeneratedInvoice(fileName);
+    }
+
+    // Preserve the current behavior of unrelated Storage features. These
+    // paths should be tightened separately once their ownership model is
+    // inventoried; this fallback deliberately excludes all invoice objects.
+    match /{topLevel}/{allPaths=**} {
+      allow read: if topLevel != 'invoices';
+      allow write: if topLevel != 'invoices' && isAuthenticated();
+    }
+  }
+}
