@@ -109,7 +109,7 @@ test("blocks cross-user invoices and protected allocation fields", {
   const other = testEnv.authenticatedContext(otherUid).firestore();
   const invoiceId = "invoice_2026-0001";
   const ref = doc(owner, `users/${uid}/invoices/${invoiceId}`);
-  await assertSucceeds(setDoc(ref, validInvoice(invoiceId)));
+  await seed(`users/${uid}/invoices/${invoiceId}`, validInvoice(invoiceId));
   await assertFails(getDoc(doc(other, `users/${uid}/invoices/${invoiceId}`)));
   await assertFails(updateDoc(ref, {documentStatus: "finalized"}));
   await assertFails(updateDoc(ref, {allocationNumber: "FAKE-1"}));
@@ -122,6 +122,13 @@ test("blocks cross-user invoices and protected allocation fields", {
     ...validInvoice(fakeId, 2),
     taxAuthorityAllocationRequest: {status: "approved"},
   }));
+  await assertFails(setDoc(doc(owner, `users/${uid}/invoices/quote_fake`), {
+    type: "quote",
+    docType: "quote",
+    invoiceDocId: "quote_fake",
+    createdAt: serverTimestamp(),
+    serverDocument: {status: "finalized", generatedBy: "server"},
+  }));
 
   const finalizedId = "invoice_2026-0003";
   await seed(`users/${uid}/invoices/${finalizedId}`, {
@@ -129,6 +136,7 @@ test("blocks cross-user invoices and protected allocation fields", {
     documentStatus: "finalized",
     taxAuthorityAllocationRequest: {status: "finalized"},
     allocationNumber: "SERVER-ALLOCATION",
+    serverDocument: {status: "finalized", generatedBy: "server"},
     storagePath: `invoices/${uid}/tax_invoice_2026-0003.pdf`,
     fileName: "tax_invoice_2026-0003.pdf",
     url: "https://example.com/server-document.pdf",
@@ -154,7 +162,7 @@ test("rejects foreign invoice storage paths", {
   }));
 });
 
-test("denies counter creation/reset and allows one invoice-bound increment", {
+test("denies client document creation and all counter changes", {
   skip: !emulatorAvailable,
 }, async () => {
   const uid = "counter-owner-id-00001";
@@ -189,7 +197,7 @@ test("denies counter creation/reset and allows one invoice-bound increment", {
     lastSequenceNumber: 1,
     updatedAt: serverTimestamp(),
   });
-  await assertSucceeds(batch.commit());
+  await assertFails(batch.commit());
   await assertFails(updateDoc(doc(db, counterPath), {
     value: 3,
     docType: "invoice",

@@ -54,7 +54,8 @@ function normalizePaymentMethods(value) {
   return value.slice(0, 20).map((raw, index) => {
     const data = raw && typeof raw === "object" ? raw : {};
     const method = string(data.method, 24, "cash");
-    if (!["cash", "credit", "check", "transfer"].includes(method)) {
+    if (!["cash", "credit", "check", "transfer", "bit", "paybox",
+      "other", "withholding_tax"].includes(method)) {
       throw new Error(`Payment method ${index + 1} is unsupported.`);
     }
     const amount = money(finite(data.amount, `Payment ${index + 1} amount`));
@@ -121,6 +122,32 @@ function normalizeLinkedDocuments(value) {
   }).filter((entry) => entry.invoiceDocId);
 }
 
+function normalizeDocumentLogo(data) {
+  const mode = ["default", "none", "inline"].includes(data.documentLogoMode) ?
+    data.documentLogoMode : "default";
+  if (mode !== "inline") return {mode, hash: null, bytes: null};
+  const encoded = typeof data.documentLogoBase64 === "string" ?
+    data.documentLogoBase64.trim() : "";
+  if (!encoded || encoded.length > 4 * 1024 * 1024 ||
+      !/^[A-Za-z0-9+/]+={0,2}$/.test(encoded)) {
+    throw new Error("The document logo is invalid or too large.");
+  }
+  const bytes = Buffer.from(encoded, "base64");
+  const isJpeg = bytes.length >= 3 && bytes[0] === 0xff &&
+    bytes[1] === 0xd8 && bytes[2] === 0xff;
+  const isPng = bytes.length >= 8 &&
+    bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+  if (bytes.length < 1 || bytes.length > 3 * 1024 * 1024 ||
+      (!isJpeg && !isPng)) {
+    throw new Error("The document logo must be a JPEG or PNG under 3 MB.");
+  }
+  return {
+    mode,
+    hash: crypto.createHash("sha256").update(bytes).digest("hex"),
+    bytes,
+  };
+}
+
 function calculatedItems(items, discount, usesVat, vatRate) {
   const gross = items.reduce((total, item) => total + item.grossBeforeTax, 0);
   let remainingDiscount = discount;
@@ -161,6 +188,10 @@ function normalizeServerDocumentRequest(raw, {dealerType, vatPercent}) {
   if (sequential && (sequenceNumber < 1 ||
       !/^\d{4}-\d{4,}$/.test(documentNumber))) {
     throw new Error("The reserved document number is invalid.");
+  }
+  if (sequential && Number(documentNumber.split("-").at(-1)) !==
+      sequenceNumber) {
+    throw new Error("The reserved document number does not match its sequence.");
   }
   const invoiceDocId = sequential ?
     `${docType}_${documentNumber}` : `${docType}_${operationId}`;
@@ -231,6 +262,10 @@ function normalizeServerDocumentRequest(raw, {dealerType, vatPercent}) {
     data.isNegativeReceipt === true;
   const client = data.client && typeof data.client === "object" ?
     data.client : {};
+  const clientEmail = string(client.email, 254).toLowerCase();
+  if (clientEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clientEmail)) {
+    throw new Error("The client email address is invalid.");
+  }
   const linkedDocuments = normalizeLinkedDocuments(data.linkedDocuments);
   const credit = data.creditNoteLegal &&
       typeof data.creditNoteLegal === "object" ? data.creditNoteLegal : {};
@@ -245,6 +280,7 @@ function normalizeServerDocumentRequest(raw, {dealerType, vatPercent}) {
       !creditNoteLegal.creditReason)) {
     throw new Error("Credit-note legal references are required.");
   }
+  const documentLogo = normalizeDocumentLogo(data);
   const canonical = {
     operationId,
     docType,
@@ -261,7 +297,7 @@ function normalizeServerDocumentRequest(raw, {dealerType, vatPercent}) {
       name: string(client.name, 200),
       address: string(client.address, 500),
       phone: string(client.phone, 32),
-      email: string(client.email, 254).toLowerCase(),
+      email: clientEmail,
       externalClientNumber: string(client.externalClientNumber, 40),
       savedClientId: optionalString(client.savedClientId, 180),
     },
@@ -292,9 +328,19 @@ function normalizeServerDocumentRequest(raw, {dealerType, vatPercent}) {
         40,
     ),
     creditNoteLegal,
+    documentLogoMode: documentLogo.mode,
+    documentLogoHash: documentLogo.hash,
   };
+  if (isNegativeReceipt && (!canonical.cancellationSourceDocumentId ||
+      !canonical.cancellationSourceDocumentNumber)) {
+    throw new Error("A cancellation receipt must identify its source receipt.");
+  }
   canonical.payloadHash = crypto.createHash("sha256")
       .update(JSON.stringify(canonical)).digest("hex");
+  Object.defineProperty(canonical, "documentLogoBytes", {
+    value: documentLogo.bytes,
+    enumerable: false,
+  });
   return canonical;
 }
 

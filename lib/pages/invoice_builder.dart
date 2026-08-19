@@ -1,10 +1,10 @@
 import 'dart:developer' as dev;
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:pdf/pdf.dart' as pdf;
-import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:intl/intl.dart' as intl;
 import 'package:image_picker/image_picker.dart';
@@ -168,103 +168,8 @@ Map<String, List<_BankBranch>> _parseBankBranches(String xmlText) {
 class _SavedInvoiceResult {
   final String url;
   final String fileName;
-  final bool wasCreated;
 
-  const _SavedInvoiceResult({
-    required this.url,
-    required this.fileName,
-    required this.wasCreated,
-  });
-}
-
-class _PdfTypography {
-  const _PdfTypography({
-    required this.interLight,
-    required this.interRegular,
-    required this.interMedium,
-    required this.interSemiBold,
-    required this.interBold,
-    required this.rubikRegular,
-  });
-
-  final pw.Font interLight;
-  final pw.Font interRegular;
-  final pw.Font interMedium;
-  final pw.Font interSemiBold;
-  final pw.Font interBold;
-  final pw.Font rubikRegular;
-
-  pw.TextStyle _inter(
-    pw.Font font,
-    double fontSizePx,
-    double lineHeightPx, {
-    pdf.PdfColor? color,
-  }) => pw.TextStyle(
-    font: font,
-    // The design specification uses CSS pixels, while PDF dimensions use
-    // points. At 96 dpi, 1 px equals 0.75 pt.
-    fontSize: fontSizePx * 0.75,
-    height: lineHeightPx / fontSizePx,
-    color: color,
-    // Inter does not contain Hebrew glyphs. Rubik keeps Hebrew PDF content
-    // renderable, followed by the PDF package's generic sans-serif fallback.
-    fontFallback: [rubikRegular, pw.Font.helvetica()],
-  );
-
-  pw.TextStyle _rubik(
-    double fontSizePx,
-    double lineHeightPx, {
-    pdf.PdfColor? color,
-  }) => pw.TextStyle(
-    font: rubikRegular,
-    fontSize: fontSizePx * 0.75,
-    height: lineHeightPx / fontSizePx,
-    color: color,
-    fontFallback: [pw.Font.helvetica()],
-  );
-
-  pw.TextStyle documentTitle({pdf.PdfColor? color}) =>
-      _inter(interLight, 37, 42, color: color);
-  pw.TextStyle documentSubtitle({pdf.PdfColor? color}) =>
-      _inter(interLight, 21, 25, color: color);
-  pw.TextStyle issueDetails({pdf.PdfColor? color}) =>
-      _inter(interRegular, 16, 21, color: color);
-  pw.TextStyle cardHeading({pdf.PdfColor? color}) =>
-      _inter(interRegular, 17, 20, color: color);
-  pw.TextStyle cardName({pdf.PdfColor? color}) =>
-      _inter(interMedium, 20, 24, color: color);
-  pw.TextStyle cardDetails({pdf.PdfColor? color}) =>
-      _inter(interRegular, 15, 18, color: color);
-  pw.TextStyle itemHeader({pdf.PdfColor? color}) =>
-      _inter(interRegular, 16, 20, color: color);
-  pw.TextStyle itemRow({pdf.PdfColor? color}) =>
-      _inter(interRegular, 15, 18, color: color);
-  pw.TextStyle totalNormal({pdf.PdfColor? color}) =>
-      _inter(interRegular, 15, 18, color: color);
-  pw.TextStyle finalTotal({pdf.PdfColor? color}) =>
-      _inter(interBold, 20, 24, color: color);
-  pw.TextStyle dueDate({pdf.PdfColor? color}) =>
-      _inter(interRegular, 15, 18, color: color);
-  pw.TextStyle notesHeading({pdf.PdfColor? color}) =>
-      _inter(interSemiBold, 13, 20, color: color);
-  pw.TextStyle notesContent({pdf.PdfColor? color}) =>
-      _inter(interRegular, 13, 20, color: color);
-  pw.TextStyle paymentSectionHeading({pdf.PdfColor? color}) =>
-      _inter(interBold, 16, 20, color: color);
-  pw.TextStyle paymentTitle({pdf.PdfColor? color}) =>
-      _inter(interBold, 14, 18, color: color);
-  pw.TextStyle paymentHeader({pdf.PdfColor? color}) =>
-      _inter(interBold, 11, 14, color: color);
-  pw.TextStyle paymentValue({pdf.PdfColor? color}) =>
-      _inter(interRegular, 12, 16, color: color);
-  pw.TextStyle paymentAmount({pdf.PdfColor? color}) =>
-      _inter(interSemiBold, 12, 16, color: color);
-  pw.TextStyle footerTitle({pdf.PdfColor? color}) =>
-      _rubik(21, 24, color: color);
-  pw.TextStyle footerHelper({pdf.PdfColor? color}) =>
-      _rubik(11, 16, color: color);
-  pw.TextStyle footerPageNumber({pdf.PdfColor? color}) =>
-      _rubik(13, 20, color: color);
+  const _SavedInvoiceResult({required this.url, required this.fileName});
 }
 
 class InvoiceBuilderDraftResult {
@@ -1122,35 +1027,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     }
   }
 
-  List<Map<String, String>> _logTargetsForDocType(String docType) {
-    switch (docType) {
-      case 'quote':
-      case 'work_order':
-        return const [];
-      case 'transaction_account':
-        return [
-          {'bucket': 'transaction_account'},
-        ];
-      case 'receipt':
-        return [
-          {'bucket': 'receipts'},
-        ];
-      case 'credit_note':
-        return [
-          {'bucket': 'credit_notes'},
-        ];
-      case 'invoice_receipt':
-        return [
-          {'bucket': 'invoice_tax_receipt'},
-        ];
-      case 'invoice':
-      default:
-        return [
-          {'bucket': 'invoices'},
-        ];
-    }
-  }
-
   String _counterDocIdForType(String docType) =>
       docType == 'transaction_account'
       ? 'document_counter_transaction_account'
@@ -1171,11 +1047,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   String _formatDocumentNumber(int counter) {
     final year = intl.DateFormat('yyyy').format(DateTime.now());
     return '$year-${counter.toString().padLeft(4, '0')}';
-  }
-
-  String _invoiceNumberForPdf(String documentNumber) {
-    final sequence = documentNumber.split('-').last;
-    return int.tryParse(sequence)?.toString() ?? sequence;
   }
 
   String _invoiceDocIdFor(String docType, String documentNumber) {
@@ -1210,6 +1081,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     }
   }
 
+  /* Legacy client-side document finalization removed from execution.
   /// Atomic Firestore transaction for invoice creation and logging
   Future<InvoiceBuilderDraftResult?> _createInvoiceAndLog({
     required Uint8List pdfBytes,
@@ -1879,6 +1751,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'cancelledAt': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
   }
+  */
 
   String _labelForDocType(String docType) {
     switch (docType) {
@@ -1991,9 +1864,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       .values
       .map((document) => document.toReferenceMap())
       .toList(growable: false);
-
-  List<String> get _linkedDocumentIds =>
-      _linkedDocuments.keys.toList(growable: false);
 
   String _linkedDocumentTitle(
     Map<String, String> strings,
@@ -2149,14 +2019,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         : (_isCreditNote ? _roundingAmount : -_roundingAmount);
   }
 
-  double get _signedSubtotalAmount {
-    return _isNegativeReceipt ? -_subtotalAmount : _subtotalAmount;
-  }
-
-  double get _signedVatAmount {
-    return _isNegativeReceipt ? -_vatAmount : _vatAmount;
-  }
-
   double _signedItemTotal(InvoiceItem item) =>
       _isNegativeReceipt ? -_itemTotalAfterTax(item) : _itemTotalAfterTax(item);
 
@@ -2189,19 +2051,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     return intl.DateFormat('yyyy-MM-dd').format(_selectedInvoiceDate);
   }
 
-  String _formattedVatPercent() {
-    final percent = _vatRate * 100;
-    final rounded = percent.toStringAsFixed(2);
-    return rounded.contains('.')
-        ? rounded.replaceFirst(RegExp(r'\.?0+$'), '')
-        : rounded;
-  }
-
-  String _vatLabel(bool isRtl) {
-    final percent = _formattedVatPercent();
-    return isRtl ? 'מע"מ ($percent%):' : 'VAT ($percent%):';
-  }
-
   String _previewFileName() {
     if (_invoiceNumber.isNotEmpty) {
       return '$_invoiceNumber.pdf';
@@ -2212,16 +2061,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
 
   String _formattedInvoiceDate() {
     return intl.DateFormat('dd-MM-yyyy').format(_selectedInvoiceDate);
-  }
-
-  String _invoiceDateStorageValue() {
-    return intl.DateFormat('yyyyMMdd').format(_selectedInvoiceDate);
-  }
-
-  String _paymentDueDateStorageValue() {
-    final dueDate = _selectedPaymentDueDate;
-    if (dueDate == null) return '';
-    return intl.DateFormat('yyyyMMdd').format(dueDate);
   }
 
   String _formattedPaymentDueDate() {
@@ -2248,9 +2087,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
 
   // State for dealer logic
   String _dealerType = 'exempt';
-  String? _businessName;
   String? _businessId;
-  String? _businessAddress;
   String? _workerName;
   String? _verifiedBusinessLogoUrl;
   bool _isBusinessVerified = false;
@@ -2259,9 +2096,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   bool _invoiceLogoTouched = false;
   Uint8List? _businessLogoBytes;
 
-  _PdfTypography? _cachedPdfTypography;
-  pw.MemoryImage? _cachedLogo;
-  pw.MemoryImage? _cachedAppIcon;
   Map<String, String>? _cachedStrings;
   String? _lastLocale;
   late final Future<SubscriptionAccessState> _accessFuture;
@@ -2326,7 +2160,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     _prefillClientBusinessIdFromReceiver();
     _fetchWorkerInfo();
     _loadVatRate();
-    _loadAssets();
     _loadBankBranches();
   }
 
@@ -3251,9 +3084,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                     .toString()
                     .trim();
             setState(() {
-              _businessName = vData?['businessName']?.toString().trim();
               _businessId = vData?['businessId'];
-              _businessAddress = vData?['address'];
               _dealerType = vData?['dealerType'] ?? 'exempt';
               _verifiedBusinessLogoUrl = businessLogoUrl.isEmpty
                   ? null
@@ -3328,31 +3159,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       methodEntry.dispose();
     }
     super.dispose();
-  }
-
-  Future<void> _loadAssets() async {
-    try {
-      final fontAssets = await Future.wait([
-        rootBundle.load('assets/fonts/Inter-Light.ttf'),
-        rootBundle.load('assets/fonts/Inter-Regular.ttf'),
-        rootBundle.load('assets/fonts/Inter-Medium.ttf'),
-        rootBundle.load('assets/fonts/Inter-SemiBold.ttf'),
-        rootBundle.load('assets/fonts/Inter-Bold.ttf'),
-        rootBundle.load('assets/fonts/Rubik-VariableFont_wght.ttf'),
-      ]);
-      _cachedPdfTypography = _PdfTypography(
-        interLight: pw.Font.ttf(fontAssets[0]),
-        interRegular: pw.Font.ttf(fontAssets[1]),
-        interMedium: pw.Font.ttf(fontAssets[2]),
-        interSemiBold: pw.Font.ttf(fontAssets[3]),
-        interBold: pw.Font.ttf(fontAssets[4]),
-        rubikRegular: pw.Font.ttf(fontAssets[5]),
-      );
-      final appIconData = await rootBundle.load('assets/icon/app_icon.jpg');
-      _cachedAppIcon = pw.MemoryImage(appIconData.buffer.asUint8List());
-    } catch (e) {
-      dev.log("Font load failed: $e");
-    }
   }
 
   Future<bool> _isTaxAuthorityConnected() async {
@@ -3431,6 +3237,23 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     }).toList();
   }
 
+  Map<String, dynamic> _documentLogoServerPayload() {
+    if (!_invoiceLogoTouched) {
+      return const {'documentLogoMode': 'default'};
+    }
+    final bytes = _businessLogoBytes;
+    if (bytes == null || bytes.isEmpty) {
+      return const {'documentLogoMode': 'none'};
+    }
+    if (bytes.length > 3 * 1024 * 1024) {
+      throw StateError('The selected document logo must be smaller than 3 MB.');
+    }
+    return {
+      'documentLogoMode': 'inline',
+      'documentLogoBase64': base64Encode(bytes),
+    };
+  }
+
   Future<_ServerDocumentResult> _requestTaxAuthorityAllocation() async {
     final strings = _withRequiredDefaults(
       _getLocalizedStrings(context, listen: false),
@@ -3487,6 +3310,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
               'yyyy-MM-dd',
             ).format(_selectedPaymentDueDate!),
           'paymentMethods': _paymentMethodsForStorage(),
+          ..._documentLogoServerPayload(),
         },
       });
       final draftId = draftResult.data['draftId']?.toString().trim();
@@ -3532,12 +3356,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     return _ServerDocumentResult(document: document);
   }
 
-  Future<_ServerDocumentResult> _createServerDocument() async {
-    final strings = _withRequiredDefaults(
-      _getLocalizedStrings(context, listen: false),
-    );
-    final callable = _functions.httpsCallable('createServerDocument');
-    final result = await callable.call<Map<String, dynamic>>({
+  Map<String, dynamic> _serverDocumentRequestPayload() {
+    return {
       'operationId': _serverDocumentOperationId,
       'docType': _selectedDocType,
       'documentNumber': _invoiceNumber.trim(),
@@ -3583,9 +3403,37 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'cancellationSourceDocumentId': widget.cancellationSourceDocumentId,
       'cancellationSourceDocumentNumber':
           widget.cancellationSourceDocumentNumber,
-      if (_creditNoteLegalData != null)
-        'creditNoteLegal': _creditNoteLegalData,
-    });
+      if (_creditNoteLegalData != null) 'creditNoteLegal': _creditNoteLegalData,
+      ..._documentLogoServerPayload(),
+    };
+  }
+
+  Future<Uint8List> _createServerDocumentPreview() async {
+    final callable = _functions.httpsCallable('previewServerDocument');
+    final result = await callable.call<Map<String, dynamic>>(
+      _serverDocumentRequestPayload(),
+    );
+    final encoded = result.data['pdfBase64']?.toString().trim();
+    if (result.data['previewOnly'] != true ||
+        encoded == null ||
+        encoded.isEmpty) {
+      throw StateError('The server did not return a document preview.');
+    }
+    final bytes = base64Decode(encoded);
+    if (bytes.length < 4 || String.fromCharCodes(bytes.take(4)) != '%PDF') {
+      throw StateError('The server returned an invalid document preview.');
+    }
+    return bytes;
+  }
+
+  Future<_ServerDocumentResult> _createServerDocument() async {
+    final strings = _withRequiredDefaults(
+      _getLocalizedStrings(context, listen: false),
+    );
+    final callable = _functions.httpsCallable('createServerDocument');
+    final result = await callable.call<Map<String, dynamic>>(
+      _serverDocumentRequestPayload(),
+    );
     final documentValue = result.data['document'];
     final document = documentValue is Map
         ? Map<String, dynamic>.from(documentValue)
@@ -3597,6 +3445,30 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       );
     }
     return _ServerDocumentResult(document: document);
+  }
+
+  Future<_ServerDocumentResult> _finalizeDocumentOnServer({
+    bool showAllocationFeedback = true,
+  }) async {
+    if (!_requiresTaxAuthorityAllocation) {
+      return _createServerDocument();
+    }
+
+    final strings = _withRequiredDefaults(
+      _getLocalizedStrings(context, listen: false),
+    );
+    final connected = await _isTaxAuthorityConnected();
+    if (!connected) {
+      throw StateError(strings['tax_authority_not_connected']!);
+    }
+    if (showAllocationFeedback && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(strings['tax_authority_requesting_allocation']!),
+        ),
+      );
+    }
+    return _requestTaxAuthorityAllocation();
   }
 
   String? _taxAuthorityErrorMessageFromDetails(dynamic details) {
@@ -3637,7 +3509,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
 
       setState(() {
         _businessLogoBytes = bytes;
-        _cachedLogo = bytes == null ? null : pw.MemoryImage(bytes);
         _isLoadingBusinessLogo = false;
       });
     } catch (e) {
@@ -3660,7 +3531,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     setState(() {
       _invoiceLogoTouched = true;
       _businessLogoBytes = bytes;
-      _cachedLogo = pw.MemoryImage(bytes);
     });
   }
 
@@ -3668,7 +3538,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     setState(() {
       _invoiceLogoTouched = true;
       _businessLogoBytes = null;
-      _cachedLogo = null;
     });
   }
 
@@ -4795,22 +4664,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     }
   }
 
-  Future<Uint8List?> _getGeneratedPdfBytes({String? allocationNumber}) async {
+  Future<Uint8List?> _getGeneratedPdfBytes() async {
     if (_items.isEmpty && _selectedDocType != 'receipt') return null;
-
-    try {
-      if (_cachedPdfTypography == null) await _loadAssets();
-      return await _generatePdf(
-        pdf.PdfPageFormat.a4,
-        _cachedPdfTypography!,
-        _cachedLogo,
-        appIcon: _cachedAppIcon,
-        allocationNumber: allocationNumber,
-      );
-    } catch (e) {
-      dev.log("Error generating PDF: $e");
-      return null;
-    }
+    return _createServerDocumentPreview();
   }
 
   Widget _buildBusinessLogoSection(Map<String, String> strings) {
@@ -5072,10 +4928,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     return total;
   }
 
-  double get _signedPaymentMethodsAmountTotal => _isNegativeReceipt
-      ? -_paymentMethodsAmountTotal()
-      : _paymentMethodsAmountTotal();
-
   List<Map<String, dynamic>> _paymentMethodsForStorage() {
     return _paymentMethods.map((entry) {
       final data = entry.toMap();
@@ -5177,282 +5029,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     return true;
   }
 
-  pw.Widget _pdfLabelValue({
-    required String label,
-    required String value,
-    required pw.TextStyle style,
-    pw.TextDirection valueDirection = pw.TextDirection.ltr,
-  }) {
-    final cleanLabel = label.trim().replaceFirst(RegExp(r':\s*$'), '');
-    return pw.Directionality(
-      textDirection: pw.TextDirection.rtl,
-      child: pw.Row(
-        mainAxisSize: pw.MainAxisSize.min,
-        crossAxisAlignment: pw.CrossAxisAlignment.start,
-        children: [
-          pw.Text('$cleanLabel:', style: style),
-          pw.SizedBox(width: 3),
-          pw.Directionality(
-            textDirection: valueDirection,
-            child: pw.Text(value, style: style, textDirection: valueDirection),
-          ),
-        ],
-      ),
-    );
-  }
-
-  pw.Widget _pdfDocumentTitle({
-    required String documentType,
-    required String documentNumber,
-    required pw.TextStyle style,
-  }) {
-    if (documentNumber.trim().isEmpty) {
-      return pw.Directionality(
-        textDirection: pw.TextDirection.rtl,
-        child: pw.Text(documentType, style: style),
-      );
-    }
-
-    return pw.Directionality(
-      textDirection: pw.TextDirection.rtl,
-      child: pw.Row(
-        mainAxisSize: pw.MainAxisSize.min,
-        children: [
-          pw.Text('$documentType מספר', style: style),
-          pw.SizedBox(width: 7),
-          pw.Directionality(
-            textDirection: pw.TextDirection.ltr,
-            child: pw.Text(
-              documentNumber,
-              style: style,
-              textDirection: pw.TextDirection.ltr,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  List<pw.Widget> _buildPaymentTablesPdf(_PdfTypography typography) {
-    final grouped = <String, List<_PaymentMethodEntry>>{};
-    for (final payment in _paymentMethods) {
-      grouped.putIfAbsent(payment.method, () => []).add(payment);
-    }
-    if (grouped.isEmpty) return const [];
-
-    String valueOrDash(String value) =>
-        value.trim().isEmpty ? '-' : value.trim();
-    final tables = <pw.Widget>[
-      pw.Padding(
-        padding: const pw.EdgeInsets.symmetric(horizontal: 14),
-        child: pw.Align(
-          alignment: pw.Alignment.centerRight,
-          child: pw.Text(
-            'אמצעי תשלום',
-            textAlign: pw.TextAlign.right,
-            style: typography.paymentSectionHeading(
-              color: pdf.PdfColors.grey900,
-            ),
-          ),
-        ),
-      ),
-      pw.SizedBox(height: 7),
-    ];
-    const titleBackground = pdf.PdfColor(0.922, 0.961, 0.996);
-    const headerBackground = pdf.PdfColor(0.973, 0.984, 0.996);
-    const darkBlue = pdf.PdfColor(0.078, 0.329, 0.698);
-    const headerTextColor = pdf.PdfColor(0.22, 0.25, 0.30);
-    const bodyTextColor = pdf.PdfColor(0.18, 0.20, 0.23);
-    const borderColor = pdf.PdfColor(0.82, 0.88, 0.94);
-
-    String amountLabel(String raw) {
-      final amount = _parsePaymentAmount(raw);
-      if (amount == null) return '-';
-      final displayAmount = _isNegativeReceipt ? -amount.abs() : amount;
-      return '₪ ${intl.NumberFormat('#,##0.00').format(displayAmount)}';
-    }
-
-    pw.Widget cell(
-      String text, {
-      bool isHeader = false,
-      bool isAmount = false,
-      pdf.PdfColor color = bodyTextColor,
-    }) {
-      return pw.Container(
-        alignment: pw.Alignment.center,
-        padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 8),
-        child: pw.Text(
-          text,
-          maxLines: 2,
-          textAlign: pw.TextAlign.center,
-          style: isHeader
-              ? typography.paymentHeader(color: color)
-              : isAmount
-              ? typography.paymentAmount(color: color)
-              : typography.paymentValue(color: color),
-        ),
-      );
-    }
-
-    for (final group in grouped.entries) {
-      final isTransfer = group.key == 'transfer';
-      final isCheck = group.key == 'check';
-      final isCredit = group.key == 'credit';
-      final headers = <String>['תאריך', 'סכום'];
-      if (isTransfer || isCheck) {
-        headers.addAll(['שם הבנק', 'סניף', 'מספר חשבון']);
-      }
-      if (isCheck) headers.add('מספר צ׳ק');
-      if (isCredit) {
-        headers.addAll(['סוג כרטיס', 'מספר כרטיס', 'תוקף', 'מספר תשלומים']);
-      }
-      headers.add('פרטים נוספים');
-
-      final rows = group.value.map((payment) {
-        final row = <String>[
-          _formattedInvoiceDate(),
-          amountLabel(payment.amountController.text),
-        ];
-        if (isTransfer || isCheck) {
-          final bank = isTransfer
-              ? payment.transferBankController.text
-              : payment.checkBankController.text;
-          final branch = isTransfer
-              ? payment.transferBranchController.text
-              : payment.checkBranchController.text;
-          final account = isTransfer
-              ? payment.transferAccountController.text
-              : payment.checkAccountController.text;
-          row.addAll([
-            valueOrDash(bank),
-            valueOrDash(branch),
-            valueOrDash(account),
-          ]);
-        }
-        if (isCheck) row.add(valueOrDash(payment.checkNumberController.text));
-        if (isCredit) {
-          row.addAll([
-            valueOrDash(payment.cardNameController.text),
-            valueOrDash(payment.cardNumberController.text),
-            valueOrDash(payment.cardExpirationController.text),
-            payment.installmentsController.text.trim().isEmpty
-                ? '1'
-                : valueOrDash(payment.installmentsController.text),
-          ]);
-        }
-        row.add('-');
-        return row;
-      }).toList();
-
-      final renderedHeaders = headers.reversed.toList();
-      final renderedRows = rows.map((row) => row.reversed.toList()).toList();
-      final amountColumnIndex = renderedHeaders.indexOf('סכום');
-      final columnWidths = <int, pw.TableColumnWidth>{};
-      for (var index = 0; index < renderedHeaders.length; index++) {
-        columnWidths[index] = const pw.FlexColumnWidth();
-      }
-
-      tables.add(
-        pw.Padding(
-          padding: const pw.EdgeInsets.symmetric(horizontal: 14),
-          child: pw.Container(
-            width: double.infinity,
-            decoration: pw.BoxDecoration(
-              color: pdf.PdfColors.white,
-              borderRadius: pw.BorderRadius.circular(7),
-              border: pw.Border.all(color: borderColor, width: 0.6),
-            ),
-            child: pw.Stack(
-              children: [
-                pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-                  children: [
-                    pw.Container(
-                      padding: const pw.EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 7,
-                      ),
-                      decoration: const pw.BoxDecoration(
-                        color: titleBackground,
-                        borderRadius: pw.BorderRadius.only(
-                          topLeft: pw.Radius.circular(7),
-                          topRight: pw.Radius.circular(7),
-                        ),
-                      ),
-                      child: _pdfLabelValue(
-                        label: 'אמצעי תשלום',
-                        value: _paymentMethodLabel(true, group.key),
-                        valueDirection:
-                            group.key == 'bit' || group.key == 'paybox'
-                            ? pw.TextDirection.ltr
-                            : pw.TextDirection.rtl,
-                        style: typography.paymentTitle(color: darkBlue),
-                      ),
-                    ),
-                    pw.Table(
-                      columnWidths: columnWidths,
-                      border: const pw.TableBorder(
-                        horizontalInside: pw.BorderSide(
-                          color: borderColor,
-                          width: 0.45,
-                        ),
-                      ),
-                      children: [
-                        pw.TableRow(
-                          decoration: const pw.BoxDecoration(
-                            color: headerBackground,
-                          ),
-                          children: renderedHeaders
-                              .map(
-                                (header) => cell(
-                                  header,
-                                  isHeader: true,
-                                  color: headerTextColor,
-                                ),
-                              )
-                              .toList(),
-                        ),
-                        ...renderedRows.map(
-                          (row) => pw.TableRow(
-                            decoration: const pw.BoxDecoration(
-                              color: pdf.PdfColors.white,
-                            ),
-                            children: List.generate(
-                              row.length,
-                              (index) => cell(
-                                row[index],
-                                isAmount: index == amountColumnIndex,
-                                color: bodyTextColor,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-                pw.Positioned(
-                  left: 0,
-                  top: 0,
-                  right: 0,
-                  bottom: 0,
-                  child: pw.Container(
-                    decoration: pw.BoxDecoration(
-                      borderRadius: pw.BorderRadius.circular(7),
-                      border: pw.Border.all(color: borderColor, width: 0.8),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-      tables.add(pw.SizedBox(height: 10));
-    }
-    return tables;
-  }
-
   Future<void> _openPreviewPage() async {
     if (_items.isEmpty && _selectedDocType != 'receipt') {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -5512,46 +5088,21 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                 ? null
                 : _handleBuilderBack,
             onSave: () async {
-              var finalPdfBytes = pdfBytes;
-              late final _ServerDocumentResult serverResult;
-
-              if (_requiresTaxAuthorityAllocation) {
-                final strings = _withRequiredDefaults(
-                  _getLocalizedStrings(context, listen: false),
-                );
-                final connected = await _isTaxAuthorityConnected();
-                if (!connected) {
-                  throw StateError(strings['tax_authority_not_connected']!);
-                }
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        strings['tax_authority_requesting_allocation']!,
-                      ),
-                    ),
-                  );
-                }
-                serverResult = await _requestTaxAuthorityAllocation();
-              } else {
-                serverResult = await _createServerDocument();
-              }
+              final serverResult = await _finalizeDocumentOnServer();
               savedDraftResult = serverResult.toDraftResult();
               if (savedDraftResult == null) {
                 throw StateError('The server did not return a final document.');
               }
-              try {
-                final serverPdfBytes = await firebase_storage
-                    .FirebaseStorage
-                    .instance
-                    .ref()
-                    .child(savedDraftResult!.storagePath)
-                    .getData(25 * 1024 * 1024);
-                if (serverPdfBytes != null) {
-                  finalPdfBytes = serverPdfBytes;
-                }
-              } catch (error) {
-                dev.log('Could not refresh server PDF preview: $error');
+              final finalPdfBytes = await firebase_storage
+                  .FirebaseStorage
+                  .instance
+                  .ref()
+                  .child(savedDraftResult!.storagePath)
+                  .getData(25 * 1024 * 1024);
+              if (finalPdfBytes == null || finalPdfBytes.length < 4) {
+                throw StateError(
+                  'The final server document could not be downloaded.',
+                );
               }
               if (savedDraftResult != null) {
                 _markDocumentSaved();
@@ -5710,166 +5261,19 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     }
   }
 
-  Future<_SavedInvoiceResult?> _saveInvoicePdf(
-    Uint8List pdfBytes, {
-    String? receiverNameOverride,
+  Future<_SavedInvoiceResult?> _saveInvoicePdf({
     bool showFeedback = true,
   }) async {
     final assigned = await _ensureDocumentNumberAssigned();
     if (!assigned) return null;
 
-    final currentUser = FirebaseAuth.instance.currentUser;
-    if (currentUser == null) return null;
-
-    final receiverName = receiverNameOverride?.trim().isNotEmpty == true
-        ? receiverNameOverride!.trim()
-        : (widget.receiverName?.trim().isNotEmpty == true
-              ? widget.receiverName!.trim()
-              : (_clientNameController.text.trim().isNotEmpty
-                    ? _clientNameController.text.trim()
-                    : 'Client'));
-    final userInvoicesRef = FirebaseFirestore.instance
-        .collection('users')
-        .doc(currentUser.uid)
-        .collection('invoices');
-    final invoiceDocId = _requiresSequentialDocumentNumber
-        ? _invoiceDocIdFor(_selectedDocType, _invoiceNumber)
-        : userInvoicesRef.doc().id;
-    final invoiceRef = userInvoicesRef.doc(invoiceDocId);
-    final counterRef = _requiresSequentialDocumentNumber
-        ? _counterRefForDocType(_selectedDocType)
-        : null;
-
     try {
-      final existingByInvoice = _requiresSequentialDocumentNumber
-          ? await invoiceRef.get()
-          : null;
-      if (existingByInvoice?.exists == true) {
-        final existingData = existingByInvoice?.data() ?? <String, dynamic>{};
-        if (showFeedback && mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                Provider.of<LanguageProvider>(
-                          context,
-                          listen: false,
-                        ).locale.languageCode ==
-                        'he'
-                    ? 'החשבונית כבר נשמרה'
-                    : 'Invoice already saved',
-              ),
-            ),
-          );
-        }
-        _markDocumentSaved();
-        return _SavedInvoiceResult(
-          url: (existingData['url'] ?? '').toString(),
-          fileName: (existingData['fileName'] ?? _previewFileName()).toString(),
-          wasCreated: false,
-        );
-      }
-
-      final datePart = intl.DateFormat(
-        'yyyy-MM-dd',
-      ).format(_selectedInvoiceDate);
-      final baseName = '$receiverName $datePart';
-
-      final existing = await userInvoicesRef
-          .where('baseName', isEqualTo: baseName)
-          .get();
-
-      final suffixIndex = existing.docs.length + 1;
-      final finalName = suffixIndex == 1
-          ? baseName
-          : '$baseName ($suffixIndex)';
-      final safeName = _safeFileName(finalName);
-      final storagePath = 'invoices/${currentUser.uid}/$safeName.pdf';
-
-      final ref = firebase_storage.FirebaseStorage.instance.ref().child(
-        storagePath,
+      final serverResult = await _finalizeDocumentOnServer(
+        showAllocationFeedback: showFeedback,
       );
-      await ref.putData(
-        pdfBytes,
-        firebase_storage.SettableMetadata(contentType: 'application/pdf'),
-      );
-      final downloadUrl = await ref.getDownloadURL();
-
-      await invoiceRef.set({
-        'name': finalName,
-        'baseName': baseName,
-        'receiverName': receiverName,
-        'fileName': '$finalName.pdf',
-        'storagePath': storagePath,
-        'url': downloadUrl,
-        'amount': _signedTotalAmount,
-        'clientName': _clientNameController.text,
-        'clientAddress': _clientAddressController.text,
-        'clientPhone': _clientPhoneController.text,
-        'clientEmail': _clientEmailController.text.trim(),
-        'clientTaxId': _clientIdController.text.trim(),
-        'externalClientNumber': _selectedSavedClientExternalNumber ?? '',
-        if (_selectedSavedClientId != null)
-          'savedClientId': _selectedSavedClientId,
-        'linkedDocuments': _linkedDocumentReferences,
-        'linkedDocumentIds': _linkedDocumentIds,
-        'paymentMethod': _paymentMethods.isNotEmpty
-            ? _paymentMethods.first.method
-            : 'cash',
-        'paymentMethods': _paymentMethodsForStorage(),
-        'paymentAmountTotal': _signedPaymentMethodsAmountTotal,
-        'priceTaxModeDefault': _selectedPriceTaxMode,
-        'hasDiscount': _hasDiscount,
-        'discountAmount': _manualDiscountAmount,
-        'roundTotalEnabled': _roundTotalEnabled,
-        'roundingAmount': _roundingAmount,
-        'docType': _selectedDocType,
-        if (_showsDueDateSection && _selectedPaymentDueDate != null)
-          'paymentDueDate': _paymentDueDateStorageValue(),
-        'invoiceDocId': invoiceDocId,
-        'createdAt': FieldValue.serverTimestamp(),
-        if (_invoiceNumber.isNotEmpty) 'invoiceNumber': _invoiceNumber,
-        if (_currentDocumentCounter != null)
-          'sequenceNumber': _currentDocumentCounter,
-        if (_creditNoteLegalData != null)
-          'creditNoteLegal': _creditNoteLegalData,
-        if (_isNegativeReceipt) 'isCancellationDocument': true,
-        if (_isNegativeReceipt)
-          'cancellationSourceDocumentId': widget.cancellationSourceDocumentId,
-        if (_isNegativeReceipt)
-          'cancellationSourceDocumentNumber':
-              widget.cancellationSourceDocumentNumber,
-      });
-
-      if (counterRef != null && _currentDocumentCounter != null) {
-        await counterRef.set({
-          'value': _currentDocumentCounter! + 1,
-          'docType': _selectedDocType,
-          'lastInvoiceDocId': invoiceDocId,
-          'lastSequenceNumber': _currentDocumentCounter,
-          'updatedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-        if (mounted) {
-          setState(() {
-            _currentDocumentCounter = _currentDocumentCounter! + 1;
-            _invoiceNumber = _formatDocumentNumber(_currentDocumentCounter!);
-          });
-        }
-      }
-      if (!_isQuoteLike) {
-        await _addToTotalEarned(
-          userId: currentUser.uid,
-          amount: _isCreditNote || _isNegativeReceipt
-              ? -_totalAmount
-              : _totalAmount,
-        );
-      }
-
-      if (_isNegativeReceipt) {
-        await _markSourceReceiptCancelled(
-          userId: currentUser.uid,
-          cancellationDocumentId: invoiceDocId,
-          cancellationDocumentNumber: _invoiceNumber,
-        );
+      final saved = serverResult.toDraftResult();
+      if (saved == null || saved.url.isEmpty) {
+        throw StateError('The server did not return a final document.');
       }
 
       if (showFeedback && mounted) {
@@ -5889,12 +5293,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       }
 
       _markDocumentSaved();
+      _showInvoiceEmailDeliveryToast(saved);
 
-      return _SavedInvoiceResult(
-        url: downloadUrl,
-        fileName: '$finalName.pdf',
-        wasCreated: true,
-      );
+      return _SavedInvoiceResult(url: saved.url, fileName: saved.fileName);
     } catch (e) {
       dev.log('Save invoice error: $e');
       if (!mounted) return null;
@@ -5903,29 +5304,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       ).showSnackBar(const SnackBar(content: Text('Failed to save invoice.')));
       return null;
     }
-  }
-
-  Future<void> _addToTotalEarned({
-    required String userId,
-    required double amount,
-  }) async {
-    final totalEarnedRef = FirebaseFirestore.instance
-        .collection('users')
-        .doc(userId)
-        .collection('metadata')
-        .doc('financial_summary');
-
-    await totalEarnedRef.set({
-      'totalEarned': FieldValue.increment(amount),
-      'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
-  }
-
-  String _safeFileName(String input) {
-    return input
-        .replaceAll(RegExp(r'[\\/:*?"<>|]'), '_')
-        .replaceAll(RegExp(r'\s+'), '_')
-        .trim();
   }
 
   Future<MapEntry<String, String>?> _showContactPickerAndSend({
@@ -6375,19 +5753,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     }
 
     setState(() => _isPreparing = true);
-    final pdfBytes = await _getGeneratedPdfBytes();
-
-    if (pdfBytes == null) {
-      if (mounted) setState(() => _isPreparing = false);
-      return false;
-    }
 
     try {
-      final saved = await _saveInvoicePdf(
-        pdfBytes,
-        receiverNameOverride: receiverName,
-        showFeedback: false,
-      );
+      final saved = await _saveInvoicePdf(showFeedback: false);
       if (saved == null || saved.url.isEmpty) {
         if (mounted) setState(() => _isPreparing = false);
         return false;
@@ -6451,624 +5819,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       dev.log("Error sending PDF: $e");
       return false;
     }
-  }
-
-  Future<Uint8List> _generatePdf(
-    pdf.PdfPageFormat format,
-    _PdfTypography typography,
-    pw.MemoryImage? logo, {
-    pw.MemoryImage? appIcon,
-    String? allocationNumber,
-  }) async {
-    final doc = pw.Document();
-    final strings = _localizedStringsForLocale('he');
-
-    final isInvoice =
-        _selectedDocType == 'invoice' || _selectedDocType == 'invoice_receipt';
-    final docTitle = _selectedDocType == 'quote'
-        ? strings['quote']!
-        : _selectedDocType == 'work_order'
-        ? strings['work_order']!
-        : _selectedDocType == 'transaction_account'
-        ? strings['transaction_account']!
-        : _selectedDocType == 'receipt'
-        ? strings['receipt']!
-        : _selectedDocType == 'invoice'
-        ? strings['invoice']!
-        : _selectedDocType == 'invoice_receipt'
-        ? strings['invoice_receipt']!
-        : _selectedDocType == 'credit_note'
-        ? strings['credit_note']!
-        : strings['doc_type']!;
-    final cleanAllocationNumber = allocationNumber?.trim();
-    final generatedAt = intl.DateFormat(
-      'dd-MM-yyyy HH:mm',
-    ).format(DateTime.now());
-    final pdfInvoiceNumber = _invoiceNumberForPdf(_invoiceNumber);
-    final signingDocumentLabel = _invoiceNumber.isEmpty
-        ? docTitle
-        : '$docTitle $pdfInvoiceNumber';
-
-    doc.addPage(
-      pw.MultiPage(
-        pageFormat: format.copyWith(
-          marginTop: 1.5 * pdf.PdfPageFormat.cm,
-          marginBottom: 57,
-          marginLeft: 1.5 * pdf.PdfPageFormat.cm,
-          marginRight: 1.5 * pdf.PdfPageFormat.cm,
-        ),
-        theme: pw.ThemeData.withFont(
-          base: typography.interRegular,
-          bold: typography.interBold,
-          fontFallback: [typography.rubikRegular, pw.Font.helvetica()],
-        ),
-        header: (pw.Context context) => pw.Directionality(
-          textDirection: pw.TextDirection.rtl,
-          child: pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
-            children: [
-              pw.Container(
-                padding: const pw.EdgeInsets.symmetric(
-                  vertical: 12,
-                  horizontal: 16,
-                ),
-                decoration: pw.BoxDecoration(
-                  color: pdf.PdfColors.blue50,
-                  borderRadius: pw.BorderRadius.circular(12),
-                ),
-                child: pw.Row(
-                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                  crossAxisAlignment: pw.CrossAxisAlignment.start,
-                  children: [
-                    if (logo != null)
-                      pw.Container(
-                        margin: const pw.EdgeInsets.only(left: 18),
-                        child: pw.Image(
-                          logo,
-                          width: 112,
-                          height: 112,
-                          fit: pw.BoxFit.contain,
-                        ),
-                      ),
-                    pw.Expanded(
-                      child: pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.end,
-                        children: [
-                          _pdfDocumentTitle(
-                            documentType: docTitle,
-                            documentNumber: pdfInvoiceNumber,
-                            style: typography.documentTitle(
-                              color: pdf.PdfColors.blue900,
-                            ),
-                          ),
-                          pw.Text(
-                            strings['original']!,
-                            style: typography.documentSubtitle(
-                              color: pdf.PdfColors.blueGrey800,
-                            ),
-                          ),
-                          pw.SizedBox(height: 8),
-                          if (isInvoice &&
-                              cleanAllocationNumber != null &&
-                              cleanAllocationNumber.isNotEmpty)
-                            _pdfLabelValue(
-                              label:
-                                  strings['allocation_number'] ?? 'מספר הקצאה',
-                              value: cleanAllocationNumber,
-                              style: typography.issueDetails(
-                                color: pdf.PdfColors.blueGrey800,
-                              ),
-                            ),
-                          _pdfLabelValue(
-                            label: strings['date']!,
-                            value: _formattedInvoiceDate(),
-                            style: typography.issueDetails(
-                              color: pdf.PdfColors.blueGrey800,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              pw.SizedBox(height: 18),
-            ],
-          ),
-        ),
-        footer: (pw.Context context) => pw.Column(
-          mainAxisSize: pw.MainAxisSize.min,
-          children: [
-            pw.Directionality(
-              textDirection: pw.TextDirection.rtl,
-              child: pw.Column(
-                mainAxisSize: pw.MainAxisSize.min,
-                children: [
-                  pw.Divider(thickness: 0.8, color: pdf.PdfColors.blueGrey900),
-                  pw.SizedBox(height: 6),
-                  pw.Directionality(
-                    textDirection: pw.TextDirection.ltr,
-                    child: pw.Row(
-                      crossAxisAlignment: pw.CrossAxisAlignment.start,
-                      children: [
-                        pw.SizedBox(
-                          width: 220,
-                          child: pw.Align(
-                            alignment: pw.Alignment.centerLeft,
-                            child: pw.Directionality(
-                              textDirection: pw.TextDirection.rtl,
-                              child: pw.Column(
-                                crossAxisAlignment: pw.CrossAxisAlignment.start,
-                                children: [
-                                  pw.SizedBox(
-                                    width: double.infinity,
-                                    child: pw.Align(
-                                      alignment: pw.Alignment.centerLeft,
-                                      child: pw.Directionality(
-                                        textDirection: pw.TextDirection.rtl,
-                                        child: pw.Text(
-                                          'הופק ב $generatedAt | $signingDocumentLabel',
-                                          textAlign: pw.TextAlign.left,
-                                          style: typography.footerHelper(
-                                            color: pdf.PdfColors.blueGrey900,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                  pw.SizedBox(height: 7),
-                                  pw.SizedBox(
-                                    width: double.infinity,
-                                    child: pw.Align(
-                                      alignment: pw.Alignment.centerLeft,
-                                      child: pw.Directionality(
-                                        textDirection: pw.TextDirection.ltr,
-                                        child: pw.Text(
-                                          '${context.pageNumber} / ${context.pagesCount}',
-                                          style: typography.footerPageNumber(
-                                            color: pdf.PdfColors.blueGrey700,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                        pw.Spacer(),
-                        pw.SizedBox(
-                          width: 250,
-                          child: pw.Align(
-                            alignment: pw.Alignment.centerRight,
-                            child: pw.Directionality(
-                              textDirection: pw.TextDirection.rtl,
-                              child: pw.Column(
-                                crossAxisAlignment: pw.CrossAxisAlignment.end,
-                                children: [
-                                  pw.SizedBox(
-                                    width: double.infinity,
-                                    child: pw.Text(
-                                      'חתימה דיגיטלית מאובטחת',
-                                      textAlign: pw.TextAlign.right,
-                                      style: typography.footerTitle(
-                                        color: pdf.PdfColors.black,
-                                      ),
-                                    ),
-                                  ),
-                                  pw.SizedBox(height: 3),
-                                  pw.SizedBox(
-                                    width: double.infinity,
-                                    child: pw.Directionality(
-                                      textDirection: pw.TextDirection.ltr,
-                                      child: pw.Row(
-                                        mainAxisAlignment:
-                                            pw.MainAxisAlignment.end,
-                                        children: [
-                                          if (appIcon != null) ...[
-                                            pw.Image(
-                                              appIcon,
-                                              width: 20,
-                                              height: 20,
-                                              fit: pw.BoxFit.contain,
-                                            ),
-                                            pw.SizedBox(width: 4),
-                                          ],
-                                          pw.Directionality(
-                                            textDirection: pw.TextDirection.rtl,
-                                            child: pw.Text(
-                                              'מסמך ממוחשב הופק על ידי הירו',
-                                              style: typography.footerHelper(
-                                                color:
-                                                    pdf.PdfColors.blueGrey900,
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        build: (pw.Context context) => [
-          pw.Directionality(
-            textDirection: pw.TextDirection.rtl,
-            child: pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
-              children: [
-                // Business & Client Info
-                pw.Row(
-                  crossAxisAlignment: pw.CrossAxisAlignment.start,
-                  children: [
-                    // Business Details
-                    pw.Expanded(
-                      child: pw.Container(
-                        padding: const pw.EdgeInsets.all(10),
-                        decoration: pw.BoxDecoration(
-                          color: pdf.PdfColors.blue50,
-                          borderRadius: pw.BorderRadius.circular(8),
-                        ),
-                        child: pw.Column(
-                          crossAxisAlignment: pw.CrossAxisAlignment.start,
-                          children: [
-                            pw.Text(
-                              'פרטי העסק',
-                              style: typography.cardHeading(
-                                color: pdf.PdfColors.blue900,
-                              ),
-                            ),
-                            pw.SizedBox(height: 6),
-                            pw.Text(
-                              (_businessName == null || _businessName!.isEmpty)
-                                  ? widget.workerName
-                                  : _businessName!,
-                              style: typography.cardName(),
-                            ),
-                            pw.SizedBox(height: 4),
-                            _pdfLabelValue(
-                              label: _dealerType == 'company'
-                                  ? 'חברה בע״מ'
-                                  : _isLicensedDealerType
-                                  ? 'עוסק מורשה'
-                                  : 'עוסק פטור',
-                              value: _businessId ?? '',
-                              style: typography.cardDetails(),
-                            ),
-                            _pdfLabelValue(
-                              label: 'כתובת העסק',
-                              value: _businessAddress ?? '',
-                              valueDirection: pw.TextDirection.rtl,
-                              style: typography.cardDetails(),
-                            ),
-                            _pdfLabelValue(
-                              label: 'טלפון',
-                              value: widget.workerPhone ?? '',
-                              style: typography.cardDetails(),
-                            ),
-                            _pdfLabelValue(
-                              label: 'דוא״ל',
-                              value: widget.workerEmail ?? '',
-                              style: typography.cardDetails(),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    pw.SizedBox(width: 24),
-                    // Client Details
-                    pw.Expanded(
-                      child: pw.Container(
-                        padding: const pw.EdgeInsets.all(10),
-                        decoration: pw.BoxDecoration(
-                          color: pdf.PdfColors.grey100,
-                          borderRadius: pw.BorderRadius.circular(8),
-                        ),
-                        child: pw.Column(
-                          crossAxisAlignment: pw.CrossAxisAlignment.start,
-                          children: [
-                            pw.Text(
-                              'פרטי לקוח',
-                              style: typography.cardHeading(
-                                color: pdf.PdfColors.blue900,
-                              ),
-                            ),
-                            pw.SizedBox(height: 6),
-                            _pdfLabelValue(
-                              label: 'לכבוד',
-                              value: _clientNameController.text,
-                              valueDirection: pw.TextDirection.rtl,
-                              style: typography.cardName(),
-                            ),
-                            if (_clientIdController.text.trim().isNotEmpty)
-                              _pdfLabelValue(
-                                label: strings['client_id']!,
-                                value: _clientIdController.text.trim(),
-                                style: typography.cardDetails(),
-                              ),
-                            if (_clientPhoneController.text.isNotEmpty)
-                              _pdfLabelValue(
-                                label: 'טלפון',
-                                value: _clientPhoneController.text,
-                                style: typography.cardDetails(),
-                              ),
-                            if (_clientEmailController.text.trim().isNotEmpty)
-                              _pdfLabelValue(
-                                label: 'דוא״ל',
-                                value: _clientEmailController.text.trim(),
-                                style: typography.cardDetails(),
-                              ),
-                            if (_clientAddressController.text.isNotEmpty)
-                              _pdfLabelValue(
-                                label: 'כתובת',
-                                value: _clientAddressController.text,
-                                valueDirection: pw.TextDirection.rtl,
-                                style: typography.cardDetails(),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                pw.SizedBox(height: 28),
-                if (_selectedDocType == 'receipt') ...[
-                  ..._buildPaymentTablesPdf(typography),
-                  pw.SizedBox(height: 8),
-                ],
-                if (_selectedDocType != 'receipt') ...[
-                  // Items Table
-                  pw.TableHelper.fromTextArray(
-                    headers: [
-                      strings['desc']!,
-                      strings['qty']!,
-                      strings['price']!,
-                      strings['total']!,
-                    ],
-                    data: _items
-                        .map(
-                          (item) => [
-                            item.description,
-                            item.quantity.toString(),
-                            "${_unitPriceAfterTax(item).toStringAsFixed(2)} ₪",
-                            "${_signedItemTotal(item).toStringAsFixed(2)} ₪",
-                          ],
-                        )
-                        .toList(),
-                    headerStyle: typography.itemHeader(
-                      color: pdf.PdfColors.white,
-                    ),
-                    headerDecoration: const pw.BoxDecoration(
-                      color: pdf.PdfColors.blue,
-                    ),
-                    cellAlignment: pw.Alignment.centerRight,
-                    cellStyle: typography.itemRow(),
-                    columnWidths: {
-                      0: const pw.FlexColumnWidth(4),
-                      1: const pw.FixedColumnWidth(60),
-                      2: const pw.FixedColumnWidth(100),
-                      3: const pw.FixedColumnWidth(100),
-                    },
-                    border: pw.TableBorder.all(
-                      color: pdf.PdfColors.grey400,
-                      width: 0.5,
-                    ),
-                  ),
-                  pw.SizedBox(height: 18),
-                ],
-                // Summary Box
-                pw.Align(
-                  alignment: pw.Alignment.centerRight,
-                  child: pw.Container(
-                    padding: const pw.EdgeInsets.all(14),
-                    width: 260,
-                    decoration: pw.BoxDecoration(
-                      color: pdf.PdfColors.blue50,
-                      borderRadius: pw.BorderRadius.circular(10),
-                      border: pw.Border.all(color: pdf.PdfColors.blue100),
-                    ),
-                    child: pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.start,
-                      children: [
-                        if (_selectedDocType != 'receipt' &&
-                            _isLicensedDealerType) ...[
-                          pw.Row(
-                            mainAxisAlignment:
-                                pw.MainAxisAlignment.spaceBetween,
-                            children: [
-                              pw.Text(
-                                strings['subtotal']!,
-                                style: typography.totalNormal(),
-                              ),
-                              pw.Text(
-                                "${_signedSubtotalAmount.toStringAsFixed(2)} ₪",
-                                style: typography.totalNormal(),
-                              ),
-                            ],
-                          ),
-                          pw.SizedBox(height: 4),
-                          pw.Row(
-                            mainAxisAlignment:
-                                pw.MainAxisAlignment.spaceBetween,
-                            children: [
-                              pw.Text(
-                                _vatLabel(true),
-                                style: typography.totalNormal(),
-                              ),
-                              pw.Text(
-                                "${_signedVatAmount.toStringAsFixed(2)} ₪",
-                                style: typography.totalNormal(),
-                              ),
-                            ],
-                          ),
-                          pw.Divider(
-                            thickness: 1,
-                            color: pdf.PdfColors.grey400,
-                          ),
-                        ],
-                        if (_discountAmount > 0) ...[
-                          pw.Row(
-                            mainAxisAlignment:
-                                pw.MainAxisAlignment.spaceBetween,
-                            children: [
-                              pw.Text(
-                                strings['discount']!,
-                                style: typography.totalNormal(),
-                              ),
-                              pw.Text(
-                                "-${_discountAmount.toStringAsFixed(2)} ₪",
-                                style: typography.totalNormal(),
-                              ),
-                            ],
-                          ),
-                          pw.Divider(
-                            thickness: 1,
-                            color: pdf.PdfColors.grey400,
-                          ),
-                        ],
-                        if (_roundingAmount > 0) ...[
-                          pw.Row(
-                            mainAxisAlignment:
-                                pw.MainAxisAlignment.spaceBetween,
-                            children: [
-                              pw.Text(
-                                strings['rounding_amount']!,
-                                style: typography.totalNormal(),
-                              ),
-                              pw.Text(
-                                "${_signedRoundingAmount.toStringAsFixed(2)} ₪",
-                                style: typography.totalNormal(),
-                              ),
-                            ],
-                          ),
-                          pw.Divider(
-                            thickness: 1,
-                            color: pdf.PdfColors.grey400,
-                          ),
-                        ],
-                        pw.Row(
-                          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                          children: [
-                            pw.Text(
-                              _selectedDocType == 'receipt'
-                                  ? 'סה״כ שולם'
-                                  : strings['total']!,
-                              style: typography.finalTotal(
-                                color: pdf.PdfColors.blue900,
-                              ),
-                            ),
-                            pw.Text(
-                              "${_signedTotalAmount.toStringAsFixed(2)} ₪",
-                              style: typography.finalTotal(
-                                color: pdf.PdfColors.blue900,
-                              ),
-                            ),
-                          ],
-                        ),
-                        if (_showsDueDateSection &&
-                            _selectedPaymentDueDate != null) ...[
-                          pw.SizedBox(height: 8),
-                          pw.Row(
-                            mainAxisAlignment:
-                                pw.MainAxisAlignment.spaceBetween,
-                            children: [
-                              pw.Text(
-                                strings['payment_due_date']!,
-                                style: typography.dueDate(
-                                  color: pdf.PdfColors.blueGrey800,
-                                ),
-                              ),
-                              pw.Text(
-                                _formattedPaymentDueDate(),
-                                style: typography.dueDate(
-                                  color: pdf.PdfColors.blueGrey800,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ),
-                if (_selectedDocType == 'invoice_receipt') ...[
-                  pw.SizedBox(height: 18),
-                  ..._buildPaymentTablesPdf(typography),
-                ],
-                if (_notesController.text.isNotEmpty) ...[
-                  pw.Text(
-                    strings['notes']!,
-                    style: typography.notesHeading(
-                      color: pdf.PdfColors.blue900,
-                    ),
-                  ),
-                  pw.Container(
-                    width: double.infinity,
-                    padding: const pw.EdgeInsets.all(10),
-                    decoration: pw.BoxDecoration(
-                      border: pw.Border.all(color: pdf.PdfColors.grey300),
-                      borderRadius: const pw.BorderRadius.all(
-                        pw.Radius.circular(5),
-                      ),
-                    ),
-                    child: pw.Text(
-                      _notesController.text,
-                      style: typography.notesContent(),
-                    ),
-                  ),
-                  pw.SizedBox(height: 16),
-                ],
-              ],
-            ),
-          ),
-          if (_isQuoteLike) pw.NewPage(freeSpace: 42),
-          if (_isQuoteLike) pw.Spacer(),
-          if (_isQuoteLike)
-            pw.Directionality(
-              textDirection: pw.TextDirection.rtl,
-              child: pw.Container(
-                padding: const pw.EdgeInsets.only(bottom: 8),
-                child: pw.Row(
-                  mainAxisAlignment: pw.MainAxisAlignment.center,
-                  children: [
-                    pw.Text(
-                      'חתימה:',
-                      style: typography.dueDate(
-                        color: pdf.PdfColors.blueGrey800,
-                      ),
-                    ),
-                    pw.SizedBox(width: 6),
-                    pw.Container(
-                      width: 230,
-                      height: 12,
-                      decoration: const pw.BoxDecoration(
-                        border: pw.Border(
-                          bottom: pw.BorderSide(
-                            color: pdf.PdfColors.blueGrey800,
-                            width: 0.8,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-    return doc.save();
   }
 
   @override
@@ -7287,51 +6037,50 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                           _buildBusinessLogoSection(strings),
                           const SizedBox(height: 20),
                           // Client information
-                          if (_selectedDocType != 'quote') ...[
-                            const SizedBox(height: 20),
-                            _buildSectionCard(
-                              title: strings['client_info']!,
-                              icon: Icons.person_add_alt_1_rounded,
-                              children: [
-                                _buildClientPicker(strings),
-                                const SizedBox(height: 12),
-                                _buildTextField(
-                                  _clientIdController,
-                                  strings['client_id']!,
-                                  Icons.badge_outlined,
-                                  keyboardType: TextInputType.number,
-                                  inputFormatters: [
-                                    FilteringTextInputFormatter.digitsOnly,
-                                    LengthLimitingTextInputFormatter(9),
-                                  ],
-                                  enabled: false,
-                                ),
-                                const SizedBox(height: 12),
-                                _buildTextField(
-                                  _clientPhoneController,
-                                  strings['client_phone']!,
-                                  Icons.phone_outlined,
-                                  keyboardType: TextInputType.phone,
-                                  enabled: false,
-                                ),
-                                const SizedBox(height: 12),
-                                _buildTextField(
-                                  _clientEmailController,
-                                  strings['client_email']!,
-                                  Icons.email_outlined,
-                                  keyboardType: TextInputType.emailAddress,
-                                  enabled: false,
-                                ),
-                                const SizedBox(height: 12),
-                                _buildTextField(
-                                  _clientAddressController,
-                                  strings['client_address']!,
-                                  Icons.location_on_outlined,
-                                  enabled: false,
-                                ),
-                              ],
-                            ),
+                          _buildSectionCard(
+                            title: strings['client_info']!,
+                            icon: Icons.person_add_alt_1_rounded,
+                            children: [
+                              _buildClientPicker(strings),
+                              const SizedBox(height: 12),
+                              _buildTextField(
+                                _clientIdController,
+                                strings['client_id']!,
+                                Icons.badge_outlined,
+                                keyboardType: TextInputType.number,
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.digitsOnly,
+                                  LengthLimitingTextInputFormatter(9),
+                                ],
+                                enabled: false,
+                              ),
+                              const SizedBox(height: 12),
+                              _buildTextField(
+                                _clientPhoneController,
+                                strings['client_phone']!,
+                                Icons.phone_outlined,
+                                keyboardType: TextInputType.phone,
+                                enabled: false,
+                              ),
+                              const SizedBox(height: 12),
+                              _buildTextField(
+                                _clientEmailController,
+                                strings['client_email']!,
+                                Icons.email_outlined,
+                                keyboardType: TextInputType.emailAddress,
+                                enabled: false,
+                              ),
+                              const SizedBox(height: 12),
+                              _buildTextField(
+                                _clientAddressController,
+                                strings['client_address']!,
+                                Icons.location_on_outlined,
+                                enabled: false,
+                              ),
+                            ],
+                          ),
 
+                          if (_selectedDocType != 'quote') ...[
                             const SizedBox(height: 20),
                             _buildSectionCard(
                               title: strings['linked_documents']!,

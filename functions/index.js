@@ -642,6 +642,15 @@ exports.taxesOAuthCallback = onRequest(
     },
 );
 
+async function optionalStorageBytes(storagePath) {
+  try {
+    const [bytes] = await admin.storage().bucket().file(storagePath).download();
+    return bytes;
+  } catch (error) {
+    return null;
+  }
+}
+
 async function serverDocumentContext(userId) {
   const db = admin.firestore();
   const userRef = db.collection("users").doc(userId);
@@ -665,13 +674,10 @@ async function serverDocumentContext(userId) {
   const businessId = normalizeBusinessId(
       verification.businessId || user.businessId,
   );
-  let logoBytes = null;
-  try {
-    [logoBytes] = await admin.storage().bucket()
-        .file(`business_logos/${userId}.jpg`).download();
-  } catch (error) {
-    // A logo is optional and must never block document creation.
-  }
+  const [logoBytes, appIconBytes] = await Promise.all([
+    optionalStorageBytes(`business_logos/${userId}.jpg`),
+    optionalStorageBytes(EMAIL_APP_ICON_STORAGE_PATH),
+  ]);
   return {
     dealerType: normalizeString(
         verification.dealerType || user.dealerType,
@@ -691,8 +697,52 @@ async function serverDocumentContext(userId) {
       phone: normalizeString(user.phone || user.optionalPhone).trim(),
       email: normalizeString(user.email).trim(),
       logoBytes,
+      appIconBytes,
     },
   };
+}
+
+function serverDocumentPresentation(document) {
+  return {
+    clientAddress: document.client.address,
+    clientPhone: document.client.phone,
+    clientEmail: document.client.email,
+    externalClientNumber: document.client.externalClientNumber,
+    savedClientId: document.client.savedClientId,
+    priceTaxModeDefault: document.priceTaxModeDefault,
+    roundTotalEnabled: document.roundTotalEnabled,
+    paymentDueDate: document.paymentDueDate,
+    paymentMethods: document.paymentMethods,
+    isNegativeReceipt: document.isNegativeReceipt,
+  };
+}
+
+function serverDocumentRenderingBusiness(document, context) {
+  return {
+    ...context.business,
+    logoBytes: document.documentLogoMode === "none" ? null :
+      document.documentLogoMode === "inline" ?
+        document.documentLogoBytes : context.business.logoBytes,
+  };
+}
+
+async function generateServerDocumentPdf(document, context, previewOnly) {
+  return buildTaxInvoicePdf({
+    payload: serverDocumentPdfPayload(
+        document,
+        context.business.businessId,
+    ),
+    allocation: null,
+    reservation: {
+      docType: document.docType,
+      documentNumber: document.documentNumber,
+      sequenceNumber: document.sequenceNumber,
+      invoiceDocId: document.invoiceDocId,
+    },
+    business: serverDocumentRenderingBusiness(document, context),
+    presentation: serverDocumentPresentation(document),
+    previewOnly,
+  });
 }
 
 function serverDocumentBucket(docType) {
@@ -886,8 +936,10 @@ function serverDocumentLogFields({userId, document, business, stored, bucket}) {
     paymentMethod: stored.paymentMethod,
     paymentMethods: stored.paymentMethods,
     paymentAmountTotal: stored.paymentAmountTotal,
-    sourceInvoiceNumber: document.sourceInvoiceNumber,
-    sourceInvoiceDocId: document.sourceInvoiceDocId,
+    ...(document.sourceInvoiceNumber ?
+      {sourceInvoiceNumber: document.sourceInvoiceNumber} : {}),
+    ...(document.sourceInvoiceDocId ?
+      {sourceInvoiceDocId: document.sourceInvoiceDocId} : {}),
     items: document.items.map((item) => ({
       description: item.description,
       quantity: item.quantity,
@@ -922,6 +974,46 @@ function serverDocumentLogFields({userId, document, business, stored, bucket}) {
       {creditNoteLegal: document.creditNoteLegal} : {}),
   };
 }
+
+exports.previewServerDocument = onCall(
+    {
+      region: "me-west1",
+      timeoutSeconds: 120,
+      memory: "512MiB",
+    },
+    async (request) => {
+      const userId = request.auth?.uid;
+      if (!userId) {
+        throw new HttpsError("unauthenticated", "Authentication required.");
+      }
+      const context = await serverDocumentContext(userId);
+      let document;
+      try {
+        document = normalizeServerDocumentRequest(request.data, {
+          dealerType: context.dealerType,
+          vatPercent: context.vatPercent,
+        });
+      } catch (error) {
+        throw new HttpsError("invalid-argument", error.message);
+      }
+      const pdfBytes = await generateServerDocumentPdf(
+          document,
+          context,
+          true,
+      );
+      if (pdfBytes.length < 1 || pdfBytes.length > 8 * 1024 * 1024) {
+        throw new HttpsError(
+            "resource-exhausted",
+            "The generated preview PDF is too large.",
+        );
+      }
+      return {
+        pdfBase64: pdfBytes.toString("base64"),
+        fileName: `preview_${document.docType}.pdf`,
+        previewOnly: true,
+      };
+    },
+);
 
 exports.createServerDocument = onCall(
     {
@@ -1031,33 +1123,11 @@ exports.createServerDocument = onCall(
       }
 
       try {
-        const payload = serverDocumentPdfPayload(
+        const pdfBytes = await generateServerDocumentPdf(
             document,
-            context.business.businessId,
+            context,
+            false,
         );
-        const presentation = {
-          clientAddress: document.client.address,
-          clientPhone: document.client.phone,
-          clientEmail: document.client.email,
-          externalClientNumber: document.client.externalClientNumber,
-          savedClientId: document.client.savedClientId,
-          priceTaxModeDefault: document.priceTaxModeDefault,
-          roundTotalEnabled: document.roundTotalEnabled,
-          paymentDueDate: document.paymentDueDate,
-          paymentMethods: document.paymentMethods,
-        };
-        const pdfBytes = await buildTaxInvoicePdf({
-          payload,
-          allocation: null,
-          reservation: {
-            docType: document.docType,
-            documentNumber: document.documentNumber,
-            sequenceNumber: document.sequenceNumber,
-            invoiceDocId: document.invoiceDocId,
-          },
-          business: context.business,
-          presentation,
-        });
         if (pdfBytes.length < 1 || pdfBytes.length > 25 * 1024 * 1024) {
           throw new Error("The generated PDF has an invalid size.");
         }
@@ -1224,9 +1294,14 @@ exports.createTaxInvoiceDraft = onCall(
       }
 
       const payload = normalizeTaxInvoiceAllocationPayload(request.data || {});
-      const presentation = normalizeTaxInvoicePresentation(
-          request.data?.presentation,
-      );
+      let presentation;
+      try {
+        presentation = normalizeTaxInvoicePresentation(
+            request.data?.presentation,
+        );
+      } catch (error) {
+        throw new HttpsError("invalid-argument", error.message);
+      }
       const businessId = await getVerifiedTaxAuthorityBusinessId(auth.uid);
       const payloadBusinessId = normalizeBusinessId(payload.vat_number);
       if (payloadBusinessId !== businessId) {
@@ -1258,6 +1333,34 @@ exports.createTaxInvoiceDraft = onCall(
         validateTaxInvoicePresentation({presentation, payload, reservation});
       } catch (error) {
         throw new HttpsError("invalid-argument", error.message);
+      }
+
+      if (presentation.documentLogoMode === "inline") {
+        if (!presentation.documentLogoBytes) {
+          throw new HttpsError(
+              "invalid-argument",
+              "The selected document logo data is missing.",
+          );
+        }
+        const logoStoragePath = `document-assets/${auth.uid}/` +
+          `${invoiceDocId}_${presentation.documentLogoHash}`;
+        await admin.storage().bucket().file(logoStoragePath).save(
+            presentation.documentLogoBytes,
+            {
+              resumable: false,
+              validation: "crc32c",
+              metadata: {
+                contentType: "application/octet-stream",
+                cacheControl: "private, max-age=0, no-transform",
+                metadata: {
+                  ownerUid: auth.uid,
+                  invoiceDocId,
+                  generatedBy: "server-draft-logo",
+                },
+              },
+            },
+        );
+        presentation.documentLogoStoragePath = logoStoragePath;
       }
 
       const db = admin.firestore();
@@ -1687,13 +1790,10 @@ async function taxInvoiceBusinessProfile(userId, expectedBusinessId) {
         "The verified business details changed before PDF generation.",
     );
   }
-  let logoBytes = null;
-  try {
-    [logoBytes] = await admin.storage().bucket()
-        .file(`business_logos/${userId}.jpg`).download();
-  } catch (error) {
-    // A business logo is optional and must never block a legal document.
-  }
+  const [logoBytes, appIconBytes] = await Promise.all([
+    optionalStorageBytes(`business_logos/${userId}.jpg`),
+    optionalStorageBytes(EMAIL_APP_ICON_STORAGE_PATH),
+  ]);
   return {
     name: normalizeString(
         verification.businessName || user.businessName || user.name,
@@ -1708,6 +1808,7 @@ async function taxInvoiceBusinessProfile(userId, expectedBusinessId) {
     phone: normalizeString(user.phone || user.optionalPhone).trim(),
     email: normalizeString(user.email).trim(),
     logoBytes,
+    appIconBytes,
   };
 }
 
@@ -1908,10 +2009,31 @@ async function finalizeAllocatedTaxInvoice({
     );
   }
 
-  const presentation = normalizeTaxInvoicePresentation(
-      current.taxInvoicePresentation,
-  );
+  const storedPresentation = current.taxInvoicePresentation || {};
+  const presentation = normalizeTaxInvoicePresentation(storedPresentation);
   const business = await taxInvoiceBusinessProfile(userId, payload.vat_number);
+  if (presentation.documentLogoMode === "none") {
+    business.logoBytes = null;
+  } else if (presentation.documentLogoMode === "inline") {
+    const expectedPath = `document-assets/${userId}/` +
+      `${reservation.invoiceDocId}_${presentation.documentLogoHash}`;
+    if (storedPresentation.documentLogoStoragePath !== expectedPath) {
+      throw new HttpsError(
+          "failed-precondition",
+          "The document logo reference failed integrity verification.",
+      );
+    }
+    const documentLogoBytes = await optionalStorageBytes(expectedPath);
+    const documentLogoHash = documentLogoBytes ?
+      crypto.createHash("sha256").update(documentLogoBytes).digest("hex") : "";
+    if (!documentLogoBytes || documentLogoHash !== presentation.documentLogoHash) {
+      throw new HttpsError(
+          "failed-precondition",
+          "The selected document logo is no longer available.",
+      );
+    }
+    business.logoBytes = documentLogoBytes;
+  }
   const pdfBytes = await buildTaxInvoicePdf({
     payload,
     allocation,
@@ -2010,6 +2132,13 @@ async function finalizeAllocatedTaxInvoice({
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     }, {merge: true});
   });
+
+  if (presentation.documentLogoMode === "inline") {
+    await admin.storage().bucket()
+        .file(storedPresentation.documentLogoStoragePath)
+        .delete({ignoreNotFound: true})
+        .catch(() => {});
+  }
 
   return {
     url: downloadUrl,

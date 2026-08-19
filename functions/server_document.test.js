@@ -1,0 +1,134 @@
+"use strict";
+
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const {
+  normalizeServerDocumentRequest,
+  serverDocumentPdfPayload,
+} = require("./server_document");
+
+function base(overrides = {}) {
+  return {
+    operationId: "document_operation_0001",
+    docType: "invoice",
+    documentNumber: "2026-0042",
+    sequenceNumber: 42,
+    date: "2026-08-18",
+    client: {
+      id: "987654321",
+      name: "Test Client",
+      email: "client@example.com",
+    },
+    items: [{
+      description: "Service",
+      quantity: 2,
+      price: 118,
+      priceTaxMode: "after_tax",
+    }],
+    discountAmount: 10,
+    roundTotalEnabled: false,
+    paymentMethods: [],
+    ...overrides,
+  };
+}
+
+function normalize(input) {
+  return normalizeServerDocumentRequest(input, {
+    dealerType: "licensed",
+    vatPercent: 18,
+  });
+}
+
+test("calculates invoice totals on the server and ignores client totals", () => {
+  const document = normalize({
+    ...base(),
+    finalTotal: 0.01,
+    vatAmount: 999999,
+    paymentAmount: -100,
+  });
+  assert.equal(document.amountBeforeDiscount, 200);
+  assert.equal(document.discount, 10);
+  assert.equal(document.paymentAmount, 190);
+  assert.equal(document.vatAmount, 34.2);
+  assert.equal(document.finalTotal, 224.2);
+  assert.equal(document.items[0].price_per_unit, 100);
+});
+
+test("requires invoice-receipt payments to equal the calculated total", () => {
+  assert.throws(() => normalize(base({
+    docType: "invoice_receipt",
+    documentNumber: "2026-0043",
+    sequenceNumber: 43,
+    paymentMethods: [{method: "cash", amount: 1}],
+  })), /do not match/);
+
+  const document = normalize(base({
+    docType: "invoice_receipt",
+    documentNumber: "2026-0043",
+    sequenceNumber: 43,
+    paymentMethods: [{method: "cash", amount: 224.2}],
+  }));
+  assert.equal(document.finalTotal, 224.2);
+});
+
+test("builds receipts from payment methods without accepting line items", () => {
+  const document = normalize(base({
+    docType: "receipt",
+    documentNumber: "2026-0044",
+    sequenceNumber: 44,
+    items: [{description: "ignored", quantity: -10, price: -20}],
+    discountAmount: 999,
+    paymentMethods: [
+      {method: "cash", amount: 70},
+      {method: "transfer", amount: 30},
+    ],
+  }));
+  assert.equal(document.finalTotal, 100);
+  assert.equal(document.vatAmount, 0);
+  assert.deepEqual(document.items, []);
+});
+
+test("rejects mismatched numbers, invalid email, and incomplete cancellation", () => {
+  assert.throws(() => normalize(base({sequenceNumber: 41})), /sequence/);
+  assert.throws(() => normalize(base({
+    client: {name: "Test", email: "not-an-email"},
+  })), /email/);
+  assert.throws(() => normalize(base({
+    docType: "receipt",
+    documentNumber: "2026-0044",
+    sequenceNumber: 44,
+    isNegativeReceipt: true,
+    paymentMethods: [{method: "cash", amount: 100}],
+  })), /source receipt/);
+});
+
+test("requires credit-note legal references", () => {
+  assert.throws(() => normalize(base({
+    docType: "credit_note",
+    documentNumber: "2026-0045",
+    sequenceNumber: 45,
+  })), /legal references/);
+});
+
+test("maps authoritative data into the PDF payload", () => {
+  const document = normalize(base());
+  const payload = serverDocumentPdfPayload(document, "123456789");
+  assert.equal(payload.invoices_payment_amount, 190);
+  assert.equal(payload.invoices_vat_amount, 34.2);
+  assert.equal(payload.invoices_list[0].payment_amount_including_vat, 224.2);
+  assert.equal(payload.invoices_list[0].invoice_reference_number, "2026-0042");
+});
+
+test("hashes an inline logo but excludes its bytes from stored document data", () => {
+  const logoBytes = require("fs").readFileSync(
+      require("path").join(__dirname, "..", "assets", "icon", "app_icon.jpg"),
+  );
+  const document = normalize(base({
+    documentLogoMode: "inline",
+    documentLogoBase64: logoBytes.toString("base64"),
+  }));
+  assert.equal(document.documentLogoMode, "inline");
+  assert.match(document.documentLogoHash, /^[a-f0-9]{64}$/);
+  assert.ok(Buffer.isBuffer(document.documentLogoBytes));
+  assert.equal(Object.keys(document).includes("documentLogoBytes"), false);
+});
