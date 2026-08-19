@@ -71,6 +71,28 @@ test("requires invoice-receipt payments to equal the calculated total", () => {
   assert.equal(document.finalTotal, 224.2);
 });
 
+test("ignores empty payment rows for document types without payments", () => {
+  for (const docType of [
+    "quote",
+    "work_order",
+    "transaction_account",
+    "invoice",
+    "credit_note",
+  ]) {
+    const document = normalize(base({
+      docType,
+      paymentMethods: [{method: "cash"}],
+      ...(docType === "credit_note" ? {
+        creditNoteLegal: {
+          originalInvoiceNumber: "2026-0001",
+          creditReason: "Correction",
+        },
+      } : {}),
+    }));
+    assert.deepEqual(document.paymentMethods, [], docType);
+  }
+});
+
 test("builds receipts from payment methods without accepting line items", () => {
   const document = normalize(base({
     docType: "receipt",
@@ -102,12 +124,27 @@ test("rejects mismatched numbers, invalid email, and incomplete cancellation", (
   })), /source receipt/);
 });
 
-test("requires credit-note legal references", () => {
-  assert.throws(() => normalize(base({
+test("allows credit notes without legal references", () => {
+  const withoutReferences = normalize(base({
     docType: "credit_note",
     documentNumber: "2026-0045",
     sequenceNumber: 45,
-  })), /legal references/);
+  }));
+  assert.equal(withoutReferences.creditNoteLegal, null);
+
+  const withOptionalReferences = normalize(base({
+    docType: "credit_note",
+    documentNumber: "2026-0045",
+    sequenceNumber: 45,
+    creditNoteLegal: {
+      originalInvoiceNumber: "2026-0001",
+      creditReason: "Optional correction details",
+    },
+  }));
+  assert.equal(
+      withOptionalReferences.creditNoteLegal.originalInvoiceNumber,
+      "2026-0001",
+  );
 });
 
 test("maps authoritative data into the PDF payload", () => {

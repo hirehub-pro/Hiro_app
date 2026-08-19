@@ -207,7 +207,8 @@ function normalizeServerDocumentRequest(raw, {dealerType, vatPercent}) {
   if (!Number.isFinite(vatRate) || vatRate < 0 || vatRate > 1) {
     throw new Error("The configured VAT rate is invalid.");
   }
-  const paymentMethods = normalizePaymentMethods(data.paymentMethods);
+  const paymentMethods = PAYMENT_TYPES.has(docType) ?
+    normalizePaymentMethods(data.paymentMethods) : [];
   const rawDiscount = money(Number(data.discountAmount) || 0);
   let items = [];
   let amountBeforeDiscount;
@@ -269,17 +270,19 @@ function normalizeServerDocumentRequest(raw, {dealerType, vatPercent}) {
   const linkedDocuments = normalizeLinkedDocuments(data.linkedDocuments);
   const credit = data.creditNoteLegal &&
       typeof data.creditNoteLegal === "object" ? data.creditNoteLegal : {};
-  const creditNoteLegal = docType === "credit_note" ? {
+  const normalizedCreditNoteLegal = {
     originalInvoiceNumber: string(credit.originalInvoiceNumber, 40),
     originalInvoiceDate: string(credit.originalInvoiceDate, 20),
     creditReason: string(credit.creditReason, 1000),
     deliveryMethod: string(credit.deliveryMethod, 40),
     receiptConfirmation: string(credit.receiptConfirmation, 200),
-  } : null;
-  if (creditNoteLegal && (!creditNoteLegal.originalInvoiceNumber ||
-      !creditNoteLegal.creditReason)) {
-    throw new Error("Credit-note legal references are required.");
-  }
+  };
+  const hasCreditNoteReference = normalizedCreditNoteLegal
+      .originalInvoiceNumber || normalizedCreditNoteLegal.originalInvoiceDate ||
+    normalizedCreditNoteLegal.creditReason ||
+    normalizedCreditNoteLegal.receiptConfirmation;
+  const creditNoteLegal = docType === "credit_note" && hasCreditNoteReference ?
+    normalizedCreditNoteLegal : null;
   const documentLogo = normalizeDocumentLogo(data);
   const canonical = {
     operationId,

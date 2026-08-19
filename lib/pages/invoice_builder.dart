@@ -2075,13 +2075,25 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
 
   Map<String, dynamic>? get _creditNoteLegalData {
     if (!_isCreditNote) return null;
+    final originalInvoiceNumber = _creditOriginalInvoiceNumberController.text
+        .trim();
+    final originalInvoiceDate = _creditOriginalInvoiceDateController.text
+        .trim();
+    final creditReason = _creditReasonController.text.trim();
+    final receiptConfirmation = _creditReceiptConfirmationController.text
+        .trim();
+    if (originalInvoiceNumber.isEmpty &&
+        originalInvoiceDate.isEmpty &&
+        creditReason.isEmpty &&
+        receiptConfirmation.isEmpty) {
+      return null;
+    }
     return {
-      'originalInvoiceNumber': _creditOriginalInvoiceNumberController.text
-          .trim(),
-      'originalInvoiceDate': _creditOriginalInvoiceDateController.text.trim(),
-      'creditReason': _creditReasonController.text.trim(),
+      'originalInvoiceNumber': originalInvoiceNumber,
+      'originalInvoiceDate': originalInvoiceDate,
+      'creditReason': creditReason,
       'deliveryMethod': _selectedCreditDeliveryMethod,
-      'receiptConfirmation': _creditReceiptConfirmationController.text.trim(),
+      'receiptConfirmation': receiptConfirmation,
     };
   }
 
@@ -2846,6 +2858,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         ],
       ),
     );
+    _lockLostDialogShown = false;
     if (mounted) Navigator.of(context).pop();
   }
 
@@ -3309,7 +3322,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
             'paymentDueDate': intl.DateFormat(
               'yyyy-MM-dd',
             ).format(_selectedPaymentDueDate!),
-          'paymentMethods': _paymentMethodsForStorage(),
+          'paymentMethods': _showsPaymentMethodSection
+              ? _paymentMethodsForStorage()
+              : const <Map<String, dynamic>>[],
           ..._documentLogoServerPayload(),
         },
       });
@@ -3393,9 +3408,11 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'roundTotalEnabled': _roundTotalEnabled,
       'priceTaxModeDefault': _selectedPriceTaxMode,
       'notes': _notesController.text.trim(),
-      'paymentMethods': _paymentMethods
-          .map((entry) => entry.toMap())
-          .toList(growable: false),
+      'paymentMethods': _showsPaymentMethodSection
+          ? _paymentMethods
+                .map((entry) => entry.toMap())
+                .toList(growable: false)
+          : const <Map<String, dynamic>>[],
       'linkedDocuments': _linkedDocumentReferences,
       'sourceInvoiceNumber': widget.sourceInvoiceNumber,
       'sourceInvoiceDocId': widget.sourceInvoiceDocId,
@@ -3565,7 +3582,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'title': 'מפיק מסמכים עסקיים',
           'invoice_builder_locked_title': 'יוצר החשבוניות כבר בשימוש',
           'invoice_builder_locked':
-              'יוצר החשבוניות פתוח כעת במכשיר אחר. סגרו אותו במכשיר האחר ולאחר מכן נסו שוב.',
+              'יוצר החשבוניות פתוח כעת במכשיר אחר. סגרו אותו במכשיר האחר, המתינו מספר שניות ולאחר מכן נסו שוב.',
           'invoice_builder_locked_action': 'חזרה',
           'ok': 'אישור',
           'client_info': 'פרטי הלקוח:',
@@ -3713,7 +3730,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'title': 'منشئ المستندات التجارية',
           'invoice_builder_locked_title': 'منشئ الفواتير قيد الاستخدام',
           'invoice_builder_locked':
-              'منشئ الفواتير مفتوح حاليًا على جهاز آخر. أغلقه على الجهاز الآخر، ثم حاول مرة أخرى.',
+              'منشئ الفواتير مفتوح حاليًا على جهاز آخر. أغلقه على الجهاز الآخر، وانتظر بضع ثوانٍ، ثم حاول مرة أخرى.',
           'invoice_builder_locked_action': 'رجوع',
           'ok': 'حسنًا',
           'client_info': 'تفاصيل العميل:',
@@ -3849,7 +3866,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'title': 'Конструктор бизнес-документов',
           'invoice_builder_locked_title': 'Конструктор счетов уже используется',
           'invoice_builder_locked':
-              'Конструктор счетов сейчас открыт на другом устройстве. Закройте его там, затем повторите попытку.',
+              'Конструктор счетов сейчас открыт на другом устройстве. Закройте его там, подождите несколько секунд и повторите попытку.',
           'invoice_builder_locked_action': 'Назад',
           'ok': 'ОК',
           'client_info': 'Данные клиента:',
@@ -3988,7 +4005,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'title': 'የንግድ ሰነድ አዘጋጅ',
           'invoice_builder_locked_title': 'የኢንቮይስ አዘጋጁ በጥቅም ላይ ነው',
           'invoice_builder_locked':
-              'የኢንቮይስ አዘጋጁ አሁን በሌላ መሣሪያ ላይ ክፍት ነው። በዚያ መሣሪያ ላይ ይዝጉት እና ከዚያ እንደገና ይሞክሩ።',
+              'የኢንቮይስ አዘጋጁ አሁን በሌላ መሣሪያ ላይ ክፍት ነው። በዚያ መሣሪያ ላይ ይዝጉት፣ ጥቂት ሰከንዶች ይጠብቁና እንደገና ይሞክሩ።',
           'invoice_builder_locked_action': 'ተመለስ',
           'ok': 'እሺ',
           'client_info': 'የደንበኛ ዝርዝሮች:',
@@ -4121,7 +4138,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'title': 'Business Document Builder',
           'invoice_builder_locked_title': 'Invoice Builder Is In Use',
           'invoice_builder_locked':
-              'Invoice Builder is currently open on another device. Close it there, then try again.',
+              'Invoice Builder is currently open on another device. Close it there, wait a few seconds, then try again.',
           'invoice_builder_locked_action': 'Back',
           'ok': 'OK',
           'client_info': 'Client Details:',
@@ -4275,7 +4292,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'title': 'Business Document Builder',
       'invoice_builder_locked_title': 'Invoice Builder Is In Use',
       'invoice_builder_locked':
-          'Invoice Builder is currently open on another device. Close it there, then try again.',
+          'Invoice Builder is currently open on another device. Close it there, wait a few seconds, then try again.',
       'invoice_builder_locked_action': 'Back',
       'invoice_builder_unavailable_title': 'Invoice Builder Unavailable',
       'invoice_builder_unavailable':
@@ -4791,10 +4808,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     );
   }
 
-  bool _validateCreditNoteLegalFields() {
-    return true;
-  }
-
   bool _validateClientDetails() {
     final strings = _withRequiredDefaults(
       _getLocalizedStrings(context, listen: false),
@@ -5044,9 +5057,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       return;
     }
 
-    if (!_validateCreditNoteLegalFields()) {
-      return;
-    }
     if (!_validateDiscount()) {
       return;
     }
@@ -5735,9 +5745,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
 
   Future<bool> _sendToContact(String receiverId, String receiverName) async {
     if (!_validateClientDetails()) {
-      return false;
-    }
-    if (!_validateCreditNoteLegalFields()) {
       return false;
     }
     if (!_validateDiscount()) {
