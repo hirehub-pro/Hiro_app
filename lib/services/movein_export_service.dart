@@ -47,17 +47,24 @@ class MoveinExportService {
     required MoveinAccountingSettings settings,
     required Directory rootDirectory,
   }) async {
-    final snapshot = await firestore
-        .collectionGroup('files')
-        .where('bucket', whereIn: _supportedBuckets)
-        .where('userId', isEqualTo: userId)
-        .where('date', isGreaterThanOrEqualTo: fromDate)
-        .where('date', isLessThanOrEqualTo: toDate)
-        .orderBy('date')
-        .orderBy('timestamp')
-        .get();
-
-    final logs = _deduplicate(snapshot.docs);
+    final logsRef = firestore
+        .collection('users')
+        .doc(userId)
+        .collection('logs');
+    final snapshots = await Future.wait(
+      _supportedBuckets.map(
+        (bucket) => logsRef
+            .doc(bucket)
+            .collection('files')
+            .where('date', isGreaterThanOrEqualTo: fromDate)
+            .where('date', isLessThanOrEqualTo: toDate)
+            .orderBy('date')
+            .get(),
+      ),
+    );
+    final logs = _deduplicate([
+      for (final snapshot in snapshots) ...snapshot.docs,
+    ]);
     final invoiceData = await _loadInvoices(
       firestore: firestore,
       userId: userId,

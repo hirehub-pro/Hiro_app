@@ -416,16 +416,23 @@ class BkmvExportService {
     required String fromDate,
     required String toDate,
   }) async {
-    final snapshot = await firestore
-        .collectionGroup('files')
-        .where('bucket', whereIn: _bucketNames)
-        .where('userId', isEqualTo: userId)
-        .where('date', isGreaterThanOrEqualTo: fromDate)
-        .where('date', isLessThanOrEqualTo: toDate)
-        .orderBy('date')
-        .orderBy('timestamp')
-        .get();
-    return _mergeLogDocs(snapshot.docs);
+    final logsRef = firestore
+        .collection('users')
+        .doc(userId)
+        .collection('logs');
+    final snapshots = await Future.wait(
+      _bucketNames.map(
+        (bucket) => logsRef
+            .doc(bucket)
+            .collection('files')
+            .where('date', isGreaterThanOrEqualTo: fromDate)
+            .where('date', isLessThanOrEqualTo: toDate)
+            .orderBy('date')
+            .get(),
+      ),
+    );
+
+    return _mergeLogDocs([for (final snapshot in snapshots) ...snapshot.docs]);
   }
 
   static Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
