@@ -186,6 +186,12 @@
             color: var(--text-muted);
             font-size: 0.9rem;
         }
+
+        footer a {
+            color: var(--primary);
+            font-weight: 700;
+            text-decoration: none;
+        }
     </style>
 </head>
 <body>
@@ -328,6 +334,7 @@
 
     <footer>
         <p>&copy; 2023 hiro. All rights reserved.</p>
+        <p><a href="https://wa.me/972542978614" target="_blank" rel="noopener noreferrer">WhatsApp: 0542978614</a></p>
     </footer>
 
     <script>
@@ -367,7 +374,7 @@
             const l = labels[lang];
             const body = `${l[0]}: ${name}\n${l[1]}: ${contact}\n${l[2]}: ${reason}`;
 
-            const mailtoLink = `mailto:my.hire.hub@gmail.com?subject=${encodeURIComponent(subjects[lang])}&body=${encodeURIComponent(body)}`;
+            const mailtoLink = `mailto:support@hiro-services.com?subject=${encodeURIComponent(subjects[lang])}&body=${encodeURIComponent(body)}`;
 
             window.location.href = mailtoLink;
         }

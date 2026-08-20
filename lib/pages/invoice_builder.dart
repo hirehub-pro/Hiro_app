@@ -1003,6 +1003,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   bool _isEmailCodeSent = false;
   bool _obscureIdentityPassword = true;
   String? _identityVerificationError;
+  Timer? _identityResendTimer;
+  int _identityResendSecondsRemaining = 0;
 
   final FirebaseFunctions _functions = FirebaseFunctions.instanceFor(
     region: 'me-west1',
@@ -1080,678 +1082,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       ).showSnackBar(SnackBar(content: Text(message)));
     }
   }
-
-  /* Legacy client-side document finalization removed from execution.
-  /// Atomic Firestore transaction for invoice creation and logging
-  Future<InvoiceBuilderDraftResult?> _createInvoiceAndLog({
-    required Uint8List pdfBytes,
-    Map<String, dynamic>? taxAuthorityAllocation,
-  }) async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return null;
-    final userId = user.uid;
-    final dateStr = _invoiceDateStorageValue();
-    final timestamp = FieldValue.serverTimestamp();
-    final customerId = _clientIdController.text.trim().isNotEmpty
-        ? _clientIdController.text.trim()
-        : _clientNameController.text.isNotEmpty
-        ? _clientNameController.text
-        : null;
-    final docType = _selectedDocType;
-    final creditNoteLegalData = _creditNoteLegalData;
-    final signedTotalAmount = _signedTotalAmount;
-    final totalEarnedDelta = docType == 'credit_note' || _isNegativeReceipt
-        ? -_totalAmount
-        : _totalAmount;
-    final calculatedVat = _vatAmount;
-    final vatAmount = calculatedVat;
-    final logTargets = _logTargetsForDocType(docType);
-    final assignedSequenceNumber = _currentDocumentCounter;
-    final assignedDocumentNumber = _invoiceNumber.trim();
-
-    final userDoc = FirebaseFirestore.instance.collection('users').doc(userId);
-    final counterRef = userDoc
-        .collection('counters')
-        .doc(_counterDocIdForType(docType));
-    final invoicesRef = userDoc.collection('invoices');
-    final invoiceTotalsRef = FirebaseFirestore.instance
-        .collection('metadata')
-        .doc('invoice_counts');
-    final userLogsRef = userDoc.collection('logs');
-    final logEntries = logTargets.map((target) {
-      final logBucketRef = userLogsRef.doc(target['bucket']!);
-      return {
-        'bucket': target['bucket']!,
-        'bucketRef': logBucketRef,
-        'fileRef': logBucketRef.collection('files').doc(),
-      };
-    }).toList();
-    final paymentMethodsData = _paymentMethodsForStorage();
-    final paymentAmountTotal = _signedPaymentMethodsAmountTotal;
-    final hasDiscount = _hasDiscount && _manualDiscountAmount > 0;
-    final discountAmount = hasDiscount ? _manualDiscountAmount : 0.0;
-    final signedDiscountAmount = discountAmount == 0
-        ? 0.0
-        : (docType == 'credit_note' ? discountAmount : -discountAmount);
-    final roundingAmount = _roundingAmount;
-    final itemsNetTotal = _items.fold<double>(
-      0,
-      (runningTotal, item) => runningTotal + _itemTotalBeforeTax(item),
-    );
-    final subtotalBeforeTax = _subtotalAmount;
-    final subtotalAfterTax = _totalBeforeRoundingAmount;
-    final signedSubtotalBeforeTax = _isNegativeReceipt
-        ? -subtotalBeforeTax
-        : subtotalBeforeTax;
-    final signedSubtotalAfterTax = _isNegativeReceipt
-        ? -subtotalAfterTax
-        : subtotalAfterTax;
-    final signedRoundingAmount = roundingAmount == 0
-        ? 0.0
-        : (docType == 'credit_note' ? roundingAmount : -roundingAmount);
-    var remainingDiscount = discountAmount;
-    final logItems = _items.asMap().entries.map((entry) {
-      final index = entry.key;
-      final item = entry.value;
-      final isLastItem = index == _items.length - 1;
-      final lineSubtotalBeforeTax = _itemTotalBeforeTax(item);
-      final proportionalDiscount = hasDiscount && itemsNetTotal > 0
-          ? discountAmount * (lineSubtotalBeforeTax / itemsNetTotal)
-          : 0.0;
-      final lineDiscount = hasDiscount
-          ? (isLastItem ? remainingDiscount : proportionalDiscount)
-          : 0.0;
-      if (hasDiscount) {
-        remainingDiscount -= lineDiscount;
-      }
-      final lineTotalBeforeTax = lineSubtotalBeforeTax - lineDiscount;
-      final lineTaxPaid = _usesVat ? lineTotalBeforeTax * _vatRate : 0.0;
-      final lineTotalAfterTax = lineTotalBeforeTax + lineTaxPaid;
-
-      return {
-        'description': item.description,
-        'quantity': item.quantity,
-        'unitPrice': _unitPriceAfterTax(item),
-        'unitPriceWithoutTax': _unitPriceBeforeTax(item),
-        'discount': lineDiscount == 0 ? 0.0 : -lineDiscount,
-        'taxPaid': lineTaxPaid,
-        'total': lineTotalAfterTax,
-        'priceTaxMode': item.isPriceBeforeTax ? 'before_tax' : 'after_tax',
-      };
-    }).toList();
-    final clientDetails = {
-      'id': customerId,
-      'name': _clientNameController.text,
-      'address': _clientAddressController.text,
-      'phone': _clientPhoneController.text,
-      'email': _clientEmailController.text.trim(),
-    };
-    final businessDetails = {
-      'businessId': _businessId,
-      'businessAddress': _businessAddress,
-      'dealerType': _dealerType,
-      'isBusinessVerified': _isBusinessVerified,
-    };
-    final allocationNumber = taxAuthorityAllocation?['confirmationNumber']
-        ?.toString()
-        .trim();
-    final allocationReservationValue = taxAuthorityAllocation?['reservation'];
-    final allocationReservation = allocationReservationValue is Map
-        ? Map<String, dynamic>.from(allocationReservationValue)
-        : null;
-    final reservedDocumentNumber = allocationReservation?['documentNumber']
-        ?.toString()
-        .trim();
-    final reservedInvoiceDocId = allocationReservation?['invoiceDocId']
-        ?.toString()
-        .trim();
-    final reservedDocType = allocationReservation?['docType']
-        ?.toString()
-        .trim();
-    final reservedSequenceNumber =
-        (allocationReservation?['sequenceNumber'] as num?)?.toInt();
-    final allocationPayloadHash = taxAuthorityAllocation?['payloadHash']
-        ?.toString()
-        .trim();
-    final hasAllocationReservation =
-        allocationNumber != null &&
-        allocationNumber.isNotEmpty &&
-        reservedDocumentNumber != null &&
-        reservedDocumentNumber.isNotEmpty &&
-        reservedInvoiceDocId != null &&
-        reservedInvoiceDocId.isNotEmpty &&
-        reservedDocType != null &&
-        reservedDocType.isNotEmpty &&
-        reservedSequenceNumber != null &&
-        reservedSequenceNumber > 0 &&
-        allocationPayloadHash != null &&
-        allocationPayloadHash.isNotEmpty;
-
-    if (docType == 'quote' || docType == 'work_order') {
-      final fileName =
-          '${docType}_${userId}_${DateTime.now().millisecondsSinceEpoch}.pdf';
-      final storagePath = 'invoices/$userId/$fileName';
-      final ref = firebase_storage.FirebaseStorage.instance.ref().child(
-        storagePath,
-      );
-      await ref.putData(
-        pdfBytes,
-        firebase_storage.SettableMetadata(contentType: 'application/pdf'),
-      );
-      final downloadUrl = await ref.getDownloadURL();
-      final quoteDocRef = invoicesRef.doc();
-      final clientName = _clientNameController.text.trim();
-      final savedQuoteName = clientName.isNotEmpty
-          ? '${_labelForDocType(docType)} - $clientName'
-          : _labelForDocType(docType);
-      final quoteData = {
-        'type': docType,
-        'docType': docType,
-        'name': savedQuoteName,
-        'fileName': fileName,
-        'url': downloadUrl,
-        'storagePath': storagePath,
-        'amount': signedTotalAmount,
-        'vatAmount': vatAmount,
-        'clientName': _clientNameController.text,
-        'clientAddress': _clientAddressController.text,
-        'clientPhone': _clientPhoneController.text,
-        'clientEmail': _clientEmailController.text.trim(),
-        'clientTaxId': _clientIdController.text.trim(),
-        'externalClientNumber': _selectedSavedClientExternalNumber ?? '',
-        if (_selectedSavedClientId != null)
-          'savedClientId': _selectedSavedClientId,
-        'linkedDocuments': _linkedDocumentReferences,
-        'linkedDocumentIds': _linkedDocumentIds,
-        'items': _items
-            .map(
-              (item) => {
-                'description': item.description,
-                'quantity': item.quantity,
-                'price': item.price,
-                'priceTaxMode': item.isPriceBeforeTax
-                    ? 'before_tax'
-                    : 'after_tax',
-              },
-            )
-            .toList(),
-        'priceTaxModeDefault': _selectedPriceTaxMode,
-        'hasDiscount': _hasDiscount,
-        'discountAmount': _manualDiscountAmount,
-        'roundTotalEnabled': _roundTotalEnabled,
-        'roundingAmount': _roundingAmount,
-        'notes': _notesController.text,
-        'paymentMethod': _paymentMethods.isNotEmpty
-            ? _paymentMethods.first.method
-            : 'cash',
-        'paymentMethods': paymentMethodsData,
-        'paymentAmountTotal': paymentAmountTotal,
-        'date': dateStr,
-        if (_showsDueDateSection && _selectedPaymentDueDate != null)
-          'paymentDueDate': _paymentDueDateStorageValue(),
-        'invoiceDocId': quoteDocRef.id,
-        'createdAt': timestamp,
-      };
-      if (taxAuthorityAllocation != null) {
-        quoteData['taxAuthorityAllocation'] = taxAuthorityAllocation;
-      }
-      if (allocationNumber != null && allocationNumber.isNotEmpty) {
-        quoteData['allocationNumber'] = allocationNumber;
-        quoteData['taxAuthorityAllocationNumber'] = allocationNumber;
-      }
-      await quoteDocRef.set(quoteData);
-      return InvoiceBuilderDraftResult(
-        url: downloadUrl,
-        fileName: fileName,
-        invoiceDocId: quoteDocRef.id,
-        storagePath: storagePath,
-        amount: signedTotalAmount,
-        docType: docType,
-        items: _items
-            .map(
-              (item) => {
-                'description': item.description,
-                'quantity': item.quantity,
-                'price': item.price,
-                'priceTaxMode': item.isPriceBeforeTax
-                    ? 'before_tax'
-                    : 'after_tax',
-              },
-            )
-            .toList(),
-      );
-    }
-
-    late int nextNumber;
-    late String nextDocumentNumber;
-    late String invoiceDocId;
-
-    await FirebaseFirestore.instance.runTransaction((transaction) async {
-      final counterSnap = await transaction.get(counterRef);
-      final logCounterSnaps = <DocumentSnapshot<Map<String, dynamic>>>[];
-      for (final entry in logEntries) {
-        final logBucketRef =
-            entry['bucketRef']! as DocumentReference<Map<String, dynamic>>;
-        logCounterSnaps.add(await transaction.get(logBucketRef));
-      }
-
-      DocumentSnapshot<Map<String, dynamic>>? reservedInvoiceSnap;
-      if (hasAllocationReservation) {
-        reservedInvoiceSnap = await transaction.get(
-          invoicesRef.doc(reservedInvoiceDocId),
-        );
-      }
-
-      final storedNextNumber = counterSnap.exists
-          ? ((counterSnap.data() as Map<String, dynamic>)['value'] as num?)
-                ?.toInt()
-          : null;
-
-      if (hasAllocationReservation) {
-        if (reservedDocType != docType ||
-            reservedDocumentNumber != assignedDocumentNumber ||
-            reservedSequenceNumber != assignedSequenceNumber ||
-            reservedInvoiceDocId !=
-                _invoiceDocIdFor(docType, assignedDocumentNumber)) {
-          throw StateError(
-            'The Tax Authority reservation does not match this document.',
-          );
-        }
-        if (storedNextNumber != reservedSequenceNumber + 1) {
-          throw StateError(
-            'The reserved document counter changed. Refresh and try again.',
-          );
-        }
-        final reservedData = reservedInvoiceSnap?.data();
-        final requestValue = reservedData?['taxAuthorityAllocationRequest'];
-        final requestData = requestValue is Map
-            ? Map<String, dynamic>.from(requestValue)
-            : const <String, dynamic>{};
-        final storedAllocationValue = reservedData?['taxAuthorityAllocation'];
-        final storedAllocation = storedAllocationValue is Map
-            ? Map<String, dynamic>.from(storedAllocationValue)
-            : const <String, dynamic>{};
-        if (reservedInvoiceSnap?.exists != true ||
-            requestData['status'] != 'approved' ||
-            requestData['payloadHash'] != allocationPayloadHash ||
-            storedAllocation['confirmationNumber']?.toString() !=
-                allocationNumber) {
-          throw StateError(
-            'The Tax Authority reservation could not be verified.',
-          );
-        }
-        nextNumber = reservedSequenceNumber;
-        nextDocumentNumber = reservedDocumentNumber;
-      } else if (assignedSequenceNumber != null &&
-          assignedSequenceNumber > 0 &&
-          assignedDocumentNumber.isNotEmpty) {
-        if (storedNextNumber != null &&
-            storedNextNumber > 0 &&
-            storedNextNumber != assignedSequenceNumber) {
-          throw StateError(
-            'Document number changed before save. Please preview and save again.',
-          );
-        }
-        nextNumber = assignedSequenceNumber;
-        nextDocumentNumber = assignedDocumentNumber;
-      } else {
-        nextNumber = storedNextNumber ?? 1;
-        if (nextNumber < 1) nextNumber = 1;
-        nextDocumentNumber = _formatDocumentNumber(nextNumber);
-      }
-
-      invoiceDocId = _invoiceDocIdFor(docType, nextDocumentNumber);
-
-      if (!hasAllocationReservation) {
-        transaction.set(counterRef, {
-          'value': nextNumber + 1,
-          'docType': docType,
-          'lastInvoiceDocId': invoiceDocId,
-          'lastSequenceNumber': nextNumber,
-          'updatedAt': timestamp,
-        }, SetOptions(merge: true));
-      }
-
-      final invoiceData = {
-        'type': docType,
-        'docType': docType,
-        'amount': signedTotalAmount,
-        'vatAmount': vatAmount,
-        'clientName': _clientNameController.text,
-        'clientAddress': _clientAddressController.text,
-        'clientPhone': _clientPhoneController.text,
-        'clientEmail': _clientEmailController.text.trim(),
-        'clientTaxId': _clientIdController.text.trim(),
-        'externalClientNumber': _selectedSavedClientExternalNumber ?? '',
-        if (_selectedSavedClientId != null)
-          'savedClientId': _selectedSavedClientId,
-        'linkedDocuments': _linkedDocumentReferences,
-        'linkedDocumentIds': _linkedDocumentIds,
-        'items': _items
-            .map(
-              (item) => {
-                'description': item.description,
-                'quantity': item.quantity,
-                'price': item.price,
-                'priceTaxMode': item.isPriceBeforeTax
-                    ? 'before_tax'
-                    : 'after_tax',
-              },
-            )
-            .toList(),
-        'priceTaxModeDefault': _selectedPriceTaxMode,
-        'hasDiscount': _hasDiscount,
-        'discountAmount': _manualDiscountAmount,
-        'roundTotalEnabled': _roundTotalEnabled,
-        'roundingAmount': _roundingAmount,
-        'notes': _notesController.text,
-        'paymentMethod': _paymentMethods.isNotEmpty
-            ? _paymentMethods.first.method
-            : 'cash',
-        'paymentMethods': paymentMethodsData,
-        'paymentAmountTotal': paymentAmountTotal,
-        'sourceInvoiceNumber': widget.sourceInvoiceNumber,
-        'sourceInvoiceDocId': widget.sourceInvoiceDocId,
-        'sourceInvoiceTotalAmount': widget.sourceInvoiceTotalAmount,
-        'invoiceNumber': nextDocumentNumber,
-        'sequenceNumber': nextNumber,
-        'invoiceDocId': invoiceDocId,
-        'date': dateStr,
-        if (_showsDueDateSection && _selectedPaymentDueDate != null)
-          'paymentDueDate': _paymentDueDateStorageValue(),
-        'createdAt': timestamp,
-        if (_isNegativeReceipt) 'isCancellationDocument': true,
-        if (_isNegativeReceipt)
-          'cancellationSourceDocumentId': widget.cancellationSourceDocumentId,
-        if (_isNegativeReceipt)
-          'cancellationSourceDocumentNumber':
-              widget.cancellationSourceDocumentNumber,
-        if (docType == 'invoice') 'paymentStatus': 'unpaid',
-        if (docType == 'invoice') 'paidAmount': 0.0,
-        if (docType == 'invoice_receipt') 'paymentStatus': 'paid',
-        if (docType == 'invoice_receipt') 'paidAmount': signedTotalAmount.abs(),
-        ...?creditNoteLegalData == null
-            ? null
-            : {'creditNoteLegal': creditNoteLegalData},
-      };
-      if (taxAuthorityAllocation != null && !hasAllocationReservation) {
-        invoiceData['taxAuthorityAllocation'] = taxAuthorityAllocation;
-      }
-      if (allocationNumber != null && allocationNumber.isNotEmpty) {
-        invoiceData['allocationNumber'] = allocationNumber;
-        invoiceData['taxAuthorityAllocationNumber'] = allocationNumber;
-      }
-
-      final invoiceDoc = invoicesRef.doc(invoiceDocId);
-      transaction.set(
-        invoiceDoc,
-        invoiceData,
-        SetOptions(merge: hasAllocationReservation),
-      );
-      transaction.set(invoiceTotalsRef, {
-        docType: FieldValue.increment(1),
-        'updatedAt': timestamp,
-      }, SetOptions(merge: true));
-
-      // Keep a per-type counter and write each file entry under logs/<type>/files.
-      for (var i = 0; i < logEntries.length; i++) {
-        final entry = logEntries[i];
-        final logBucketRef =
-            entry['bucketRef']! as DocumentReference<Map<String, dynamic>>;
-        final logFileRef =
-            entry['fileRef']! as DocumentReference<Map<String, dynamic>>;
-        final logCounterSnap = logCounterSnaps[i];
-        int logCounter = 1;
-        if (logCounterSnap.exists) {
-          final logCounterData = logCounterSnap.data() as Map<String, dynamic>;
-          logCounter = (logCounterData['value'] as int? ?? 0) + 1;
-        }
-        transaction.set(logBucketRef, {
-          'value': logCounter,
-          'updatedAt': timestamp,
-          'docType': entry['bucket'],
-        }, SetOptions(merge: true));
-
-        final logData = {
-          'userId': userId,
-          'bucket': entry['bucket'],
-          'docType': docType,
-          'counter': logCounter,
-          'documentNumber': nextNumber,
-          'sequenceNumber': nextNumber,
-          'invoiceDocId': invoiceDocId,
-          'date': dateStr,
-          'issueDate': dateStr,
-          if (_showsDueDateSection && _selectedPaymentDueDate != null)
-            'paymentDueDate': _paymentDueDateStorageValue(),
-          'clientDetails': clientDetails,
-          'businessDetails': businessDetails,
-          'amount': signedTotalAmount,
-          'subtotalBeforeTax': signedSubtotalBeforeTax,
-          'subtotalAfterTax': signedSubtotalAfterTax,
-          'vatAmount': vatAmount,
-          'grandTotal': signedTotalAmount,
-          'discountAmount': signedDiscountAmount,
-          'roundingAmount': signedRoundingAmount,
-          'clientName': _clientNameController.text,
-          'clientAddress': _clientAddressController.text,
-          'clientPhone': _clientPhoneController.text,
-          'clientEmail': _clientEmailController.text.trim(),
-          'externalClientNumber': _selectedSavedClientExternalNumber ?? '',
-          if (_selectedSavedClientId != null)
-            'savedClientId': _selectedSavedClientId,
-          'linkedDocuments': _linkedDocumentReferences,
-          'linkedDocumentIds': _linkedDocumentIds,
-          'paymentMethod': _paymentMethods.isNotEmpty
-              ? _paymentMethods.first.method
-              : 'cash',
-          'paymentMethods': paymentMethodsData,
-          'paymentAmountTotal': paymentAmountTotal,
-          'sourceInvoiceNumber': widget.sourceInvoiceNumber,
-          'sourceInvoiceDocId': widget.sourceInvoiceDocId,
-          'sourceInvoiceTotalAmount': widget.sourceInvoiceTotalAmount,
-          'items': logItems,
-          'fileName': '',
-          'storagePath': '',
-          'url': '',
-          'timestamp': timestamp,
-          if (_isNegativeReceipt) 'isCancellationDocument': true,
-          if (_isNegativeReceipt)
-            'cancellationSourceDocumentId': widget.cancellationSourceDocumentId,
-          if (_isNegativeReceipt)
-            'cancellationSourceDocumentNumber':
-                widget.cancellationSourceDocumentNumber,
-          if (docType == 'invoice') 'paymentStatus': 'unpaid',
-          if (docType == 'invoice') 'paidAmount': 0.0,
-          if (docType == 'invoice_receipt') 'paymentStatus': 'paid',
-          if (docType == 'invoice_receipt')
-            'paidAmount': signedTotalAmount.abs(),
-          ...?creditNoteLegalData == null
-              ? null
-              : {'creditNoteLegal': creditNoteLegalData},
-        };
-        if (taxAuthorityAllocation != null) {
-          logData['taxAuthorityAllocation'] = taxAuthorityAllocation;
-        }
-        if (allocationNumber != null && allocationNumber.isNotEmpty) {
-          logData['allocationNumber'] = allocationNumber;
-          logData['taxAuthorityAllocationNumber'] = allocationNumber;
-        }
-        transaction.set(logFileRef, logData);
-      }
-    });
-
-    // Upload PDF to Storage (after transaction). Regenerate from the saved
-    // allocation number so Storage cannot receive stale pre-allocation bytes.
-    var uploadPdfBytes = pdfBytes;
-    if (allocationNumber != null && allocationNumber.isNotEmpty) {
-      final allocatedPdfBytes = await _getGeneratedPdfBytes(
-        allocationNumber: allocationNumber,
-      );
-      if (allocatedPdfBytes == null) {
-        throw StateError(
-          'Could not generate the invoice PDF with the Tax Authority allocation number.',
-        );
-      }
-      uploadPdfBytes = allocatedPdfBytes;
-    }
-
-    // Upload PDF to Storage (after transaction)
-    final fileName =
-        'invoice_${userId}_${DateTime.now().millisecondsSinceEpoch}.pdf';
-    final storagePath = 'invoices/$userId/$fileName';
-    final ref = firebase_storage.FirebaseStorage.instance.ref().child(
-      storagePath,
-    );
-    await ref.putData(
-      uploadPdfBytes,
-      firebase_storage.SettableMetadata(contentType: 'application/pdf'),
-    );
-    final downloadUrl = await ref.getDownloadURL();
-    final clientName = _clientNameController.text.trim();
-    final savedInvoiceName = clientName.isNotEmpty
-        ? '${_labelForDocType(docType)} #$nextDocumentNumber - $clientName'
-        : '${_labelForDocType(docType)} #$nextDocumentNumber';
-
-    await invoicesRef.doc(invoiceDocId).update({
-      'name': savedInvoiceName,
-      'fileName': fileName,
-      'url': downloadUrl,
-      'storagePath': storagePath,
-      if (allocationNumber != null && allocationNumber.isNotEmpty)
-        'allocationNumber': allocationNumber,
-      if (allocationNumber != null && allocationNumber.isNotEmpty)
-        'taxAuthorityAllocationNumber': allocationNumber,
-    });
-    if (docType != 'quote' &&
-        docType != 'work_order' &&
-        docType != 'transaction_account') {
-      await _addToTotalEarned(userId: userId, amount: totalEarnedDelta);
-    }
-    await Future.wait(
-      logEntries.map((entry) async {
-        final logFileRef =
-            entry['fileRef']! as DocumentReference<Map<String, dynamic>>;
-        await logFileRef.update({
-          'fileName': fileName,
-          'storagePath': storagePath,
-          'url': downloadUrl,
-          if (allocationNumber != null && allocationNumber.isNotEmpty)
-            'allocationNumber': allocationNumber,
-          if (allocationNumber != null && allocationNumber.isNotEmpty)
-            'taxAuthorityAllocationNumber': allocationNumber,
-        });
-      }),
-    );
-
-    if (docType == 'receipt' &&
-        widget.sourceInvoiceNumber != null &&
-        widget.sourceInvoiceDocId != null &&
-        widget.sourceInvoiceTotalAmount != null) {
-      await _updateLinkedInvoicePaymentStatus(
-        userId: userId,
-        paidAmount: paymentAmountTotal,
-      );
-    }
-
-    if (_isNegativeReceipt) {
-      await _markSourceReceiptCancelled(
-        userId: userId,
-        cancellationDocumentId: invoiceDocId,
-        cancellationDocumentNumber: nextDocumentNumber,
-      );
-    }
-
-    return InvoiceBuilderDraftResult(
-      url: downloadUrl,
-      fileName: fileName,
-      invoiceDocId: invoiceDocId,
-      storagePath: storagePath,
-      amount: signedTotalAmount,
-      docType: docType,
-      documentNumber: nextDocumentNumber,
-      items: _items
-          .map(
-            (item) => {
-              'description': item.description,
-              'quantity': item.quantity,
-              'price': item.price,
-              'priceTaxMode': item.isPriceBeforeTax
-                  ? 'before_tax'
-                  : 'after_tax',
-            },
-          )
-          .toList(),
-    );
-  }
-
-  Future<void> _updateLinkedInvoicePaymentStatus({
-    required String userId,
-    required double paidAmount,
-  }) async {
-    final sourceInvoiceNumber = widget.sourceInvoiceNumber?.trim();
-    final sourceInvoiceDocId = widget.sourceInvoiceDocId?.trim();
-    final sourceInvoiceTotalAmount = widget.sourceInvoiceTotalAmount;
-    if (sourceInvoiceNumber == null ||
-        sourceInvoiceNumber.isEmpty ||
-        sourceInvoiceDocId == null ||
-        sourceInvoiceDocId.isEmpty ||
-        sourceInvoiceTotalAmount == null ||
-        sourceInvoiceTotalAmount <= 0 ||
-        paidAmount <= 0) {
-      return;
-    }
-
-    final userRef = FirebaseFirestore.instance.collection('users').doc(userId);
-    final invoiceRef = userRef.collection('invoices').doc(sourceInvoiceDocId);
-
-    await FirebaseFirestore.instance.runTransaction((transaction) async {
-      final invoiceSnap = await transaction.get(invoiceRef);
-      final currentPaidAmount =
-          (invoiceSnap.data()?['paidAmount'] as num?)?.toDouble() ?? 0.0;
-      final nextPaidAmount = (currentPaidAmount + paidAmount).clamp(
-        0.0,
-        sourceInvoiceTotalAmount,
-      );
-      final nextStatus = nextPaidAmount <= 0
-          ? 'unpaid'
-          : (nextPaidAmount + 0.01 >= sourceInvoiceTotalAmount
-                ? 'paid'
-                : 'partial');
-
-      final paymentUpdate = {
-        'paidAmount': nextPaidAmount,
-        'paymentStatus': nextStatus,
-        'updatedAt': FieldValue.serverTimestamp(),
-      };
-
-      if (invoiceSnap.exists) {
-        transaction.set(invoiceRef, paymentUpdate, SetOptions(merge: true));
-      }
-    });
-  }
-
-  Future<void> _markSourceReceiptCancelled({
-    required String userId,
-    required String cancellationDocumentId,
-    required String cancellationDocumentNumber,
-  }) async {
-    final sourceDocumentId = widget.cancellationSourceDocumentId?.trim();
-    if (sourceDocumentId == null || sourceDocumentId.isEmpty) return;
-
-    await FirebaseFirestore.instance
-        .collection('users')
-        .doc(userId)
-        .collection('invoices')
-        .doc(sourceDocumentId)
-        .set({
-          'cancellationStatus': 'cancelled',
-          'cancelledByDocumentId': cancellationDocumentId,
-          'cancelledByDocumentNumber': cancellationDocumentNumber,
-          'cancelledAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-  }
-  */
 
   String _labelForDocType(String docType) {
     switch (docType) {
@@ -2198,6 +1528,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'email_code': 'Email verification code',
       'verify_code': 'Verify code and continue',
       'send_code': 'Send email code',
+      'send_again': 'Send again',
+      'send_again_in': 'Send again in {seconds}s',
       'enter_phone_password':
           'Enter your phone number and password to continue.',
       'password_sign_in_unavailable':
@@ -2239,6 +1571,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'email_code': 'קוד אימות מהדוא״ל',
       'verify_code': 'אימות הקוד והמשך',
       'send_code': 'שליחת קוד לדוא״ל',
+      'send_again': 'שליחה מחדש',
+      'send_again_in': 'שליחה מחדש בעוד {seconds} שנ׳',
       'enter_phone_password': 'יש להזין מספר טלפון וסיסמה כדי להמשיך.',
       'password_sign_in_unavailable':
           'התחברות באמצעות סיסמה אינה מופעלת בחשבון זה.',
@@ -2274,6 +1608,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'email_code': 'رمز التحقق من البريد الإلكتروني',
       'verify_code': 'تحقق من الرمز وتابع',
       'send_code': 'إرسال الرمز بالبريد الإلكتروني',
+      'send_again': 'إرسال مرة أخرى',
+      'send_again_in': 'إرسال مرة أخرى خلال {seconds} ث',
       'enter_phone_password': 'أدخل رقم هاتفك وكلمة المرور للمتابعة.',
       'password_sign_in_unavailable':
           'تسجيل الدخول بكلمة المرور غير مفعّل لهذا الحساب.',
@@ -2310,6 +1646,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'email_code': 'Код из электронной почты',
       'verify_code': 'Подтвердить код и продолжить',
       'send_code': 'Отправить код на почту',
+      'send_again': 'Отправить ещё раз',
+      'send_again_in': 'Повторная отправка через {seconds} с',
       'enter_phone_password':
           'Введите номер телефона и пароль, чтобы продолжить.',
       'password_sign_in_unavailable':
@@ -2348,6 +1686,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'email_code': 'የኢሜይል ማረጋገጫ ኮድ',
       'verify_code': 'ኮዱን አረጋግጥና ቀጥል',
       'send_code': 'ኮድ ወደ ኢሜይል ላክ',
+      'send_again': 'እንደገና ላክ',
+      'send_again_in': 'ከ{seconds} ሰከንድ በኋላ እንደገና ላክ',
       'enter_phone_password': 'ለመቀጠል ስልክ ቁጥርዎንና የይለፍ ቃልዎን ያስገቡ።',
       'password_sign_in_unavailable': 'ለዚህ መለያ በይለፍ ቃል መግባት አልነቃም።',
       'phone_mismatch': 'ስልክ ቁጥሩ ከዚህ መለያ ጋር አይዛመድም።',
@@ -2401,8 +1741,11 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           return sendingCode
               ? strings['cannot_send_code']!
               : strings['code_expired']!;
-        case 'unavailable':
         case 'deadline-exceeded':
+          return sendingCode
+              ? strings['service_unavailable']!
+              : strings['code_expired']!;
+        case 'unavailable':
         case 'internal':
           return strings['service_unavailable']!;
         default:
@@ -2417,6 +1760,61 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     }
 
     return sendingCode ? strings['send_failed']! : strings['code_failed']!;
+  }
+
+  void _startIdentityResendCooldown() {
+    _identityResendTimer?.cancel();
+    final availableAt = DateTime.now().add(const Duration(minutes: 1));
+    if (!mounted) return;
+    setState(() => _identityResendSecondsRemaining = 60);
+    _identityResendTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      final remaining = availableAt.difference(DateTime.now()).inSeconds + 1;
+      if (remaining <= 0) {
+        timer.cancel();
+        setState(() => _identityResendSecondsRemaining = 0);
+        return;
+      }
+      setState(() => _identityResendSecondsRemaining = remaining);
+    });
+  }
+
+  Future<void> _resendInvoiceBuilderEmailCode() async {
+    if (_isVerifyingIdentity || _identityResendSecondsRemaining > 0) return;
+    setState(() {
+      _isVerifyingIdentity = true;
+      _identityVerificationError = null;
+    });
+    try {
+      await _functions
+          .httpsCallable('sendInvoiceBuilderEmailCode')
+          .call<void>();
+      if (!mounted) return;
+      _identityEmailCodeController.clear();
+      setState(() => _isVerifyingIdentity = false);
+      _startIdentityResendCooldown();
+    } on FirebaseFunctionsException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _isVerifyingIdentity = false;
+        _identityVerificationError = _friendlyIdentityVerificationError(
+          error,
+          sendingCode: true,
+        );
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _isVerifyingIdentity = false;
+        _identityVerificationError = _friendlyIdentityVerificationError(
+          error,
+          sendingCode: true,
+        );
+      });
+    }
   }
 
   Future<void> _verifyIdentityForInvoiceBuilder() async {
@@ -2487,6 +1885,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         _isVerifyingIdentity = false;
         _isEmailCodeSent = true;
       });
+      _startIdentityResendCooldown();
     } on FirebaseAuthException catch (error) {
       if (!mounted) return;
       setState(() {
@@ -2542,9 +1941,11 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         throw StateError(strings['session_ended']!);
       }
       InvoiceBuilderVerificationSession.markVerified(userId);
+      _identityResendTimer?.cancel();
       setState(() {
         _isIdentityVerified = true;
         _isVerifyingIdentity = false;
+        _identityResendSecondsRemaining = 0;
       });
       unawaited(_acquireInvoiceBuilderLock());
     } on FirebaseFunctionsException catch (error) {
@@ -2677,6 +2078,22 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                               Icons.mark_email_read_outlined,
                             ),
                             border: const OutlineInputBorder(),
+                          ),
+                        ),
+                        TextButton.icon(
+                          onPressed:
+                              !_isVerifyingIdentity &&
+                                  _identityResendSecondsRemaining == 0
+                              ? _resendInvoiceBuilderEmailCode
+                              : null,
+                          icon: const Icon(Icons.refresh_rounded),
+                          label: Text(
+                            _identityResendSecondsRemaining > 0
+                                ? strings['send_again_in']!.replaceFirst(
+                                    '{seconds}',
+                                    '$_identityResendSecondsRemaining',
+                                  )
+                                : strings['send_again']!,
                           ),
                         ),
                       ],
@@ -3147,6 +2564,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   @override
   void dispose() {
     unawaited(_invoiceBuilderLock.release());
+    _identityResendTimer?.cancel();
     _identityPhoneController.dispose();
     _identityPasswordController.dispose();
     _identityEmailCodeController.dispose();

@@ -305,21 +305,25 @@ function drawInlineLabelValue(page, font, label, value, xRight, y, size,
 }
 
 function drawFooter(page, font, pageNumber, pageCount, generatedAt,
-    reservation, appIcon) {
+    reservation, appIcon, previewOnly) {
   page.drawLine({
     start: {x: MARGIN, y: 59},
     end: {x: A4.width - MARGIN, y: 59},
     thickness: 0.8,
     color: rgb(38 / 255, 50 / 255, 56 / 255),
   });
-  drawRight(page, font, "חתימה דיגיטלית מאובטחת",
+  const footerTitle = previewOnly ?
+    "טיוטה – לתצוגה מקדימה בלבד" : "חתימה דיגיטלית מאובטחת";
+  const footerHelper = previewOnly ?
+    "יש לשמור את המסמך כדי לאמת אותו ולהפיק מסמך תקף" :
+    "מסמך ממוחשב הופק על ידי הירו";
+  drawRight(page, font, footerTitle,
       A4.width - MARGIN, 37, 15.75, {color: TEXT});
   const signatureRight = A4.width - MARGIN;
-  const signatureHelper = "מסמך ממוחשב הופק על ידי הירו";
   const signatureHelperWidth = drawRight(
-      page, font, signatureHelper, signatureRight, 20, 8.25, {color: MUTED},
+      page, font, footerHelper, signatureRight, 20, 8.25, {color: MUTED},
   );
-  if (appIcon) {
+  if (appIcon && !previewOnly) {
     const scale = Math.min(20 / appIcon.width, 20 / appIcon.height);
     const iconWidth = appIcon.width * scale;
     page.drawImage(appIcon, {
@@ -855,6 +859,7 @@ async function buildTaxInvoicePdf({
         createdLabel,
         reservation,
         appIcon,
+        previewOnly,
     );
     if (previewOnly) {
       const watermark = visualText("לתצוגה מקדימה בלבד");

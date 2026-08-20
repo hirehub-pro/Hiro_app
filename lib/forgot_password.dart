@@ -196,7 +196,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
         'מספר טלפון: $phone\n\n'
         'אשמח לעזרתכם בשחזור הגישה לחשבון.';
     final uri = Uri.parse(
-      'mailto:my.hire.hub@gmail.com'
+      'mailto:support@hiro-services.com'
       '?subject=${Uri.encodeComponent(subject)}'
       '&body=${Uri.encodeComponent(body)}',
     );

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:untitled1/pages/help_page.dart';
 import 'package:untitled1/services/language_provider.dart';
 import 'package:untitled1/utils/constants.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -72,12 +73,16 @@ class _AboutPageState extends State<AboutPage>
           'open_link': 'פתח קישור',
           'contact_title': 'צור קשר',
           'developer': 'פותח על ידי צוות Hiro',
-          'contact': 'support@hirehub.com',
+          'contact': 'support@hiro-services.com',
           'contact_hint':
-              'לשאלות, תמיכה, דיווח על בעיה או בירור משפטי, אפשר ליצור קשר ישירות במייל.',
-          'email_action': 'שלח אימייל',
+              'לשאלות, תמיכה, דיווח על בעיה או בירור משפטי, בחרו את דרך הקשר שנוחה לכם.',
+          'email_action': 'דוא״ל',
+          'whatsapp_action': 'WhatsApp',
+          'app_chat_action': 'צ׳אט באפליקציה',
+          'whatsapp_number': '0542978614',
           'link_failed': 'לא הצלחנו לפתוח את הקישור כרגע.',
           'email_failed': 'לא הצלחנו לפתוח את אפליקציית האימייל.',
+          'whatsapp_failed': 'לא הצלחנו לפתוח את WhatsApp כרגע.',
         };
       case 'ar':
         return {
@@ -118,12 +123,16 @@ class _AboutPageState extends State<AboutPage>
           'open_link': 'افتح الرابط',
           'contact_title': 'تواصل معنا',
           'developer': 'تم التطوير بواسطة فريق Hiro',
-          'contact': 'support@hirehub.com',
+          'contact': 'support@hiro-services.com',
           'contact_hint':
-              'للاستفسارات أو الدعم أو الإبلاغ عن مشكلة أو مسألة قانونية، يمكنك التواصل مباشرة عبر البريد الإلكتروني.',
-          'email_action': 'إرسال بريد',
+              'للاستفسارات أو الدعم أو الإبلاغ عن مشكلة أو مسألة قانونية، اختر طريقة التواصل المناسبة لك.',
+          'email_action': 'البريد',
+          'whatsapp_action': 'WhatsApp',
+          'app_chat_action': 'دردشة التطبيق',
+          'whatsapp_number': '0542978614',
           'link_failed': 'تعذر فتح الرابط حاليًا.',
           'email_failed': 'تعذر فتح تطبيق البريد الإلكتروني.',
+          'whatsapp_failed': 'تعذر فتح WhatsApp حاليًا.',
         };
       case 'am':
         return {
@@ -163,12 +172,16 @@ class _AboutPageState extends State<AboutPage>
           'open_link': 'አገናኝ ክፈት',
           'contact_title': 'አግኙን',
           'developer': 'በ Hiro ቡድን የተገነባ',
-          'contact': 'support@hirehub.com',
+          'contact': 'support@hiro-services.com',
           'contact_hint':
-              'ለጥያቄ፣ ለድጋፍ፣ ለችግር ሪፖርት ወይም ለህጋዊ ጥያቄ በቀጥታ በኢሜይል ማግኘት ይችላሉ።',
-          'email_action': 'ኢሜይል ላክ',
+              'ለጥያቄ፣ ለድጋፍ፣ ለችግር ሪፖርት ወይም ለህጋዊ ጥያቄ የሚመችዎትን የመገናኛ መንገድ ይምረጡ።',
+          'email_action': 'ኢሜይል',
+          'whatsapp_action': 'WhatsApp',
+          'app_chat_action': 'የመተግበሪያ ቻት',
+          'whatsapp_number': '0542978614',
           'link_failed': 'አገናኙን አሁን መክፈት አልተቻለም።',
           'email_failed': 'የኢሜይል መተግበሪያውን መክፈት አልተቻለም።',
+          'whatsapp_failed': 'WhatsAppን አሁን መክፈት አልተቻለም።',
         };
       default:
         return {
@@ -212,12 +225,16 @@ class _AboutPageState extends State<AboutPage>
           'open_link': 'Open link',
           'contact_title': 'Contact',
           'developer': 'Developed by the Hiro Team',
-          'contact': 'support@hirehub.com',
+          'contact': 'support@hiro-services.com',
           'contact_hint':
-              'For questions, support, issue reports, or legal requests, you can contact us directly by email.',
-          'email_action': 'Send email',
+              'For questions, support, issue reports, or legal requests, choose the contact method that works best for you.',
+          'email_action': 'Email',
+          'whatsapp_action': 'WhatsApp',
+          'app_chat_action': 'App chat',
+          'whatsapp_number': '0542978614',
           'link_failed': 'Could not open the link right now.',
           'email_failed': 'Could not open your email app.',
+          'whatsapp_failed': 'Could not open WhatsApp right now.',
         };
     }
   }
@@ -877,10 +894,21 @@ class _AboutPageState extends State<AboutPage>
 
   Widget _buildContactCard(Map<String, String> strings) {
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
-        color: const Color(0xFF0F172A),
-        borderRadius: BorderRadius.circular(24),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF0F172A), Color(0xFF172554), Color(0xFF0C4A6E)],
+        ),
+        borderRadius: BorderRadius.circular(28),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x260F172A),
+            blurRadius: 24,
+            offset: Offset(0, 12),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -903,21 +931,12 @@ class _AboutPageState extends State<AboutPage>
           Text(
             strings['developer']!,
             style: const TextStyle(
-              color: Colors.white,
-              fontSize: 14,
+              color: Color(0xFFBAE6FD),
+              fontSize: 13,
               fontWeight: FontWeight.w700,
             ),
           ),
-          const SizedBox(height: 8),
-          Text(
-            strings['contact']!,
-            style: const TextStyle(
-              color: Color(0xFF7DD3FC),
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
           Text(
             strings['contact_hint']!,
             style: const TextStyle(
@@ -927,17 +946,113 @@ class _AboutPageState extends State<AboutPage>
             ),
           ),
           const SizedBox(height: 14),
-          OutlinedButton.icon(
-            onPressed: () => _openEmail(strings['email_failed']!),
-            icon: const Icon(Icons.mail_outline_rounded),
-            label: Text(strings['email_action']!),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: Colors.white,
-              side: const BorderSide(color: Color(0xFF334155)),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _buildContactDetail(Icons.email_outlined, strings['contact']!),
+              _buildContactDetail(
+                Icons.chat_rounded,
+                strings['whatsapp_number']!,
               ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          Container(height: 1, color: Colors.white.withValues(alpha: 0.14)),
+          const SizedBox(height: 18),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildContactAction(
+                label: strings['email_action']!,
+                icon: Icons.email_outlined,
+                backgroundColor: Colors.white,
+                foregroundColor: const Color(0xFF0F5CC0),
+                onTap: () => _openEmail(strings['email_failed']!),
+              ),
+              _buildContactAction(
+                label: strings['whatsapp_action']!,
+                icon: Icons.chat_rounded,
+                backgroundColor: const Color(0xFF25D366),
+                foregroundColor: Colors.white,
+                onTap: () => _openWhatsApp(strings['whatsapp_failed']!),
+              ),
+              _buildContactAction(
+                label: strings['app_chat_action']!,
+                icon: Icons.support_agent_rounded,
+                backgroundColor: const Color(0xFF7C3AED),
+                foregroundColor: Colors.white,
+                onTap: _openAppChat,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildContactDetail(IconData icon, String value) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: const Color(0xFF7DD3FC), size: 16),
+          const SizedBox(width: 7),
+          Text(
+            value,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildContactAction({
+    required String label,
+    required IconData icon,
+    required Color backgroundColor,
+    required Color foregroundColor,
+    required VoidCallback onTap,
+  }) {
+    return Expanded(
+      child: Column(
+        children: [
+          SizedBox(
+            width: 64,
+            height: 64,
+            child: Material(
+              color: backgroundColor,
+              elevation: 3,
+              shadowColor: Colors.black26,
+              shape: const CircleBorder(),
+              child: InkWell(
+                onTap: onTap,
+                customBorder: const CircleBorder(),
+                child: Icon(icon, color: foregroundColor, size: 28),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            label,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              height: 1.25,
             ),
           ),
         ],
@@ -969,5 +1084,25 @@ class _AboutPageState extends State<AboutPage>
         context,
       ).showSnackBar(SnackBar(content: Text(failureMessage)));
     }
+  }
+
+  Future<void> _openWhatsApp(String failureMessage) async {
+    final ok = await launchUrl(
+      Uri.parse('https://wa.me/972542978614'),
+      mode: LaunchMode.externalApplication,
+    );
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(failureMessage)));
+    }
+  }
+
+  void _openAppChat() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const HelpPage(openSupportChatOnLoad: true),
+      ),
+    );
   }
 }

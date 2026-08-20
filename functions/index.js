@@ -87,6 +87,11 @@ const GOOGLE_PLAY_SUBSCRIPTION_PRODUCT_IDS = new Set([
 ]);
 const PUBLIC_APP_ORIGIN = "https://hiro-services.com";
 const SIGNING_REQUEST_LIFETIME_DAYS = 30;
+// A signing link is a bearer capability, so only one submitted signature may
+// own it at a time. This lease is deliberately longer than the HTTP function
+// timeout to allow a crashed invocation to be retried without allowing a
+// concurrent signer to overwrite the document.
+const SIGNING_CLAIM_LIFETIME_MS = 5 * 60 * 1000;
 const SIGNING_FONT_PATH = path.join(
     __dirname,
     "assets",
@@ -322,10 +327,24 @@ exports.publicDocumentSigning = onRequest(
 
         const signingRequest = requestSnap.data() || {};
         const expiresAt = toDate(signingRequest.expiresAt);
-        if (!expiresAt || expiresAt.getTime() < Date.now()) {
+        if (!expiresAt || expiresAt.getTime() <= Date.now()) {
           res.status(410).send(renderSigningMessage(
               "תוקף הקישור פג",
               "יש לבקש מבעל המקצוע קישור חדש.",
+          ));
+          return;
+        }
+        if (signingRequest.status === "signed") {
+          res.status(410).send(renderSigningMessage(
+              "המסמך כבר נחתם",
+              "קישור החתימה אינו פעיל עוד.",
+          ));
+          return;
+        }
+        if (signingRequest.status === "signing" && req.method === "GET") {
+          res.status(409).send(renderSigningMessage(
+              "המסמך בתהליך חתימה",
+              "נא להמתין לסיום תהליך החתימה.",
           ));
           return;
         }
@@ -346,11 +365,6 @@ exports.publicDocumentSigning = onRequest(
           return;
         }
 
-        if (signingRequest.status === "signed") {
-          res.status(409).json({error: "המסמך כבר נחתם."});
-          return;
-        }
-
         const signatureData = normalizeString(req.body?.signature).trim();
         const signerName = normalizeString(req.body?.signerName)
             .trim()
@@ -368,34 +382,108 @@ exports.publicDocumentSigning = onRequest(
           return;
         }
 
-        const signedResult = await signAndReplacePdf(
-            signingRequest,
-            signatureBytes,
-            signerName,
-        );
-        const signedAt = admin.firestore.Timestamp.now();
         const db = admin.firestore();
+        const signingAttemptId = crypto.randomUUID();
+        const claim = await db.runTransaction(async (transaction) => {
+          const latestSnap = await transaction.get(requestRef);
+          if (!latestSnap.exists) return null;
+
+          const latest = latestSnap.data() || {};
+          const status = normalizeString(latest.status).trim();
+          const latestExpiresAt = toDate(latest.expiresAt);
+          if (!latestExpiresAt || latestExpiresAt.getTime() <= Date.now()) {
+            return null;
+          }
+          const claimExpiresAt = toDate(latest.signingClaimExpiresAt);
+          const staleClaim = status === "signing" &&
+            (!claimExpiresAt || claimExpiresAt.getTime() <= Date.now());
+          if (status === "signed" || (status !== "pending" && !staleClaim)) {
+            return null;
+          }
+
+          transaction.update(requestRef, {
+            status: "signing",
+            signingAttemptId,
+            signingStartedAt: admin.firestore.FieldValue.serverTimestamp(),
+            signingClaimExpiresAt: admin.firestore.Timestamp.fromMillis(
+                Date.now() + SIGNING_CLAIM_LIFETIME_MS,
+            ),
+          });
+          return latest;
+        });
+        if (!claim) {
+          res.status(409).json({
+            error: "המסמך כבר נחתם או שנמצא בתהליך חתימה.",
+          });
+          return;
+        }
+
+        const claimedSigningRequest = claim;
         const invoiceRef = db
             .collection("users")
-            .doc(signingRequest.workerId)
+            .doc(claimedSigningRequest.workerId)
             .collection("invoices")
-            .doc(signingRequest.invoiceDocId);
-        const batch = db.batch();
-        batch.set(requestRef, {
-          status: "signed",
-          signerName,
-          signedAt,
-          signedUrl: signedResult.url,
-        }, {merge: true});
-        batch.set(invoiceRef, {
-          url: signedResult.url,
-          signatureStatus: "signed",
-          signerName,
-          signedAt,
-        }, {merge: true});
-        await batch.commit();
+            .doc(claimedSigningRequest.invoiceDocId);
+        let signedResult;
+        let signedAt;
+        try {
+          signedResult = await signAndReplacePdf(
+              claimedSigningRequest,
+              signatureBytes,
+              signerName,
+          );
+          signedAt = admin.firestore.Timestamp.now();
+          await db.runTransaction(async (transaction) => {
+            const latestSnap = await transaction.get(requestRef);
+            const latest = latestSnap.data() || {};
+            if (latest.status !== "signing" ||
+                latest.signingAttemptId !== signingAttemptId) {
+              throw new HttpsError(
+                  "aborted",
+                  "The document signing claim was lost.",
+              );
+            }
+            transaction.set(requestRef, {
+              status: "signed",
+              signerName,
+              signedAt,
+              signedUrl: signedResult.url,
+              signingAttemptId: admin.firestore.FieldValue.delete(),
+              signingStartedAt: admin.firestore.FieldValue.delete(),
+              signingClaimExpiresAt: admin.firestore.FieldValue.delete(),
+            }, {merge: true});
+            transaction.set(invoiceRef, {
+              url: signedResult.url,
+              signatureStatus: "signed",
+              signerName,
+              signedAt,
+            }, {merge: true});
+          });
+        } catch (error) {
+          // Only the invocation that owns this lease can release it. A later
+          // attempt must never undo another signer's completed state.
+          await db.runTransaction(async (transaction) => {
+            const latestSnap = await transaction.get(requestRef);
+            const latest = latestSnap.data() || {};
+            if (latest.status === "signing" &&
+                latest.signingAttemptId === signingAttemptId) {
+              transaction.update(requestRef, {
+                status: "pending",
+                signingAttemptId: admin.firestore.FieldValue.delete(),
+                signingStartedAt: admin.firestore.FieldValue.delete(),
+                signingClaimExpiresAt: admin.firestore.FieldValue.delete(),
+              });
+            }
+          }).catch((releaseError) => {
+            logger.error("Could not release document signing claim", {
+              error: releaseError instanceof Error ?
+                releaseError.message : String(releaseError),
+            });
+          });
+          throw error;
+        }
 
-        await publishSignedDocument(signingRequest, {
+        await publishSignedDocument(claimedSigningRequest, {
           signerName,
           signedUrl: signedResult.url,
           signedAt,
@@ -416,6 +504,7 @@ exports.publicDocumentSigning = onRequest(
 exports.createTaxAuthorityAuthorizationUrl = onCall(
     {
       region: "me-west1",
+      minInstances: 1,
       secrets: [TAX_AUTH_CLIENT_ID],
     },
     async (request) => {
@@ -2605,7 +2694,7 @@ exports.verifyInvoiceBuilderEmailCode = onCall(
         return "verified";
       });
       if (result === "expired") {
-        throw new HttpsError("deadline-exceeded", "This code has expired. Request a new one.");
+        throw new HttpsError("failed-precondition", "This code has expired. Request a new one.");
       }
       if (result === "locked") {
         throw new HttpsError("permission-denied", "Too many incorrect attempts. Request a new code.");
@@ -5580,6 +5669,7 @@ function renderSigningPage(token, signingRequest) {
       <div class="footer-bottom">
         <p class="copyright">Hiro Ltd. Copyright 2012–2026</p>
         <nav class="footer-links" aria-label="קישורים משפטיים">
+          <a href="https://wa.me/972542978614" target="_blank" rel="noopener noreferrer">WhatsApp: 0542978614</a>
           <a href="${PUBLIC_APP_ORIGIN}/contact">יצירת קשר</a>
           <a href="${PUBLIC_APP_ORIGIN}/terms-of-service">תנאי שימוש</a>
           <a href="${PUBLIC_APP_ORIGIN}/privacy-policy">מדיניות פרטיות</a>

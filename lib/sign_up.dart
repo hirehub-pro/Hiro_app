@@ -1835,15 +1835,6 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
     return '+972$digits';
   }
 
-  Future<bool> _isPhoneRegistered(String normalizedPhone) async {
-    final snapshot = await FirebaseFirestore.instance
-        .collection('users')
-        .where('phone', isEqualTo: normalizedPhone)
-        .limit(1)
-        .get();
-    return snapshot.docs.isNotEmpty;
-  }
-
   String _phoneAlreadyExistsMessage() {
     final localeCode = Provider.of<LanguageProvider>(
       context,
@@ -1880,17 +1871,6 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
 
     setState(() => _loading = true);
     try {
-      final isRegistered = await _isPhoneRegistered(phone);
-      if (isRegistered) {
-        if (mounted) {
-          setState(() => _loading = false);
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text(_phoneAlreadyExistsMessage())));
-        }
-        return;
-      }
-
       await FirebaseAuth.instance.verifyPhoneNumber(
         phoneNumber: phone,
         forceResendingToken: _resendToken,
@@ -2191,6 +2171,27 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
   }
 
   Future<void> _onPhoneVerifiedAndSignedIn() async {
+    final phoneUser = FirebaseAuth.instance.currentUser;
+    if (phoneUser == null) return;
+
+    // A collection query by phone would either leak private account data or be
+    // denied by secure rules. Once phone ownership is verified, checking the
+    // caller's own UID document is both private and rules-compatible.
+    final existingProfile = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(phoneUser.uid)
+        .get();
+    if (existingProfile.exists && widget.pendingWorkerData == null) {
+      await FirebaseAuth.instance.signOut();
+      if (mounted) {
+        setState(() => _loading = false);
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_phoneAlreadyExistsMessage())));
+      }
+      return;
+    }
+
     final linkedPassword = await _linkEmailPasswordToCurrentUser();
     if (!linkedPassword) return;
 
@@ -2200,7 +2201,10 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
         )) {
       // Persist all entered data immediately after phone verification,
       // then continue the Pro subscription step.
-      await _commitUserDataToDatabase(navigateToHome: false);
+      final profileCreated = await _commitUserDataToDatabase(
+        navigateToHome: false,
+      );
+      if (!profileCreated) return;
       final workerPendingData = _buildWorkerPendingDataWithPhone();
       if (mounted) {
         setState(() {
@@ -2282,13 +2286,14 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
     }
   }
 
-  Future<void> _commitUserDataToDatabase({bool navigateToHome = true}) async {
+  Future<bool> _commitUserDataToDatabase({bool navigateToHome = true}) async {
     final strings = _getLocalizedStrings(context);
+    var writeStage = 'profile';
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) {
         setState(() => _loading = false);
-        return;
+        return false;
       }
 
       final firestore = FirebaseFirestore.instance;
@@ -2336,103 +2341,54 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
       };
 
       if (_userType == UserType.worker) {
-        final bool hasActiveSubscriptionFromPending =
-            SubscriptionAccessService.isEntitledSubscriptionStatus(
-              widget.pendingWorkerData?['subscriptionStatus']?.toString(),
-            );
-        final DateTime now = DateTime.now();
-        final DateTime defaultExpiry = now.add(const Duration(days: 30));
-        final DateTime? pendingDate = DateTime.tryParse(
-          widget.pendingWorkerData?['subscriptionDate']?.toString() ?? '',
-        );
-        final DateTime? pendingExpiry = DateTime.tryParse(
-          widget.pendingWorkerData?['subscriptionExpiresAt']?.toString() ?? '',
-        );
-
         userData.addAll({
           'professions': _selectedProfessions,
           'spokenLanguages': _selectedSpokenLanguages,
           'optionalPhone': _altPhoneController.text.trim(),
           'description': _descriptionController.text.trim(),
-          'isSubscribed': hasActiveSubscriptionFromPending,
-          'subscriptionStatus': hasActiveSubscriptionFromPending
-              ? 'active'
-              : 'inactive',
-          'subscriptionCanceled': false,
-          'subscriptionProductId':
-              widget.pendingWorkerData?['subscriptionProductId'],
-          'subscriptionPlatform':
-              widget.pendingWorkerData?['subscriptionPlatform'],
-          'subscriptionPurchaseId':
-              widget.pendingWorkerData?['subscriptionPurchaseId'],
-          'subscriptionPurchaseToken':
-              widget.pendingWorkerData?['subscriptionPurchaseToken'],
-          'subscriptionTransactionDate':
-              widget.pendingWorkerData?['subscriptionTransactionDate'],
           'workRadius': _workRadius,
           'hideSchedule': _hideSchedule,
           'disabledDays': _disabledDays,
-          'subscriptionDate': hasActiveSubscriptionFromPending
-              ? Timestamp.fromDate(pendingDate ?? now)
-              : null,
-          'subscriptionExpiresAt': hasActiveSubscriptionFromPending
-              ? Timestamp.fromDate(pendingExpiry ?? defaultExpiry)
-              : null,
-          'avgRating': 0.0,
-          'reviewCount': 0,
         });
       }
+      userData.removeWhere((_, value) => value == null);
 
       final userRef = firestore.collection('users').doc(user.uid);
-      final statsRef = firestore.collection('metadata').doc('stats');
-      final systemRef = firestore.collection('metadata').doc('system');
-      final targetRole = (userData['role'] ?? 'customer')
-          .toString()
-          .toLowerCase();
-
-      await firestore.runTransaction((tx) async {
-        final existingUserSnap = await tx.get(userRef);
-        final existingRole = (existingUserSnap.data()?['role'] ?? '')
-            .toString()
-            .toLowerCase();
-
-        tx.set(userRef, userData, SetOptions(merge: true));
-
-        final statsUpdates = <String, dynamic>{};
-        final systemUpdates = <String, dynamic>{};
-        if (!existingUserSnap.exists || existingRole.isEmpty) {
-          if (targetRole == 'worker') {
-            statsUpdates['totalWorkers'] = FieldValue.increment(1);
-            systemUpdates['workersCount'] = FieldValue.increment(1);
-          } else if (targetRole == 'customer') {
-            statsUpdates['totalCustomers'] = FieldValue.increment(1);
-          }
-        } else if (existingRole != targetRole) {
-          if (existingRole == 'worker') {
-            statsUpdates['totalWorkers'] = FieldValue.increment(-1);
-            systemUpdates['workersCount'] = FieldValue.increment(-1);
-          } else if (existingRole == 'customer') {
-            statsUpdates['totalCustomers'] = FieldValue.increment(-1);
-          }
-
-          if (targetRole == 'worker') {
-            statsUpdates['totalWorkers'] = FieldValue.increment(1);
-            systemUpdates['workersCount'] = FieldValue.increment(1);
-          } else if (targetRole == 'customer') {
-            statsUpdates['totalCustomers'] = FieldValue.increment(1);
-          }
-        }
-
-        if (statsUpdates.isNotEmpty) {
-          statsUpdates['updatedAt'] = FieldValue.serverTimestamp();
-          tx.set(statsRef, statsUpdates, SetOptions(merge: true));
-        }
-        if (systemUpdates.isNotEmpty) {
-          systemUpdates['updatedAt'] = FieldValue.serverTimestamp();
-          tx.set(systemRef, systemUpdates, SetOptions(merge: true));
-        }
-      });
+      final existingUserSnap = await userRef.get();
+      if (!existingUserSnap.exists) {
+        // Account totals and other global metadata are server-owned. Including
+        // them in this client write makes Firestore reject the whole account
+        // creation transaction.
+        await userRef.set(userData);
+      } else {
+        // Returning from subscription verification must only refresh fields
+        // that an account owner may edit. Entitlement, role, ratings and
+        // creation identity remain controlled by the backend/rules.
+        const ownerEditableFields = {
+          'name',
+          'email',
+          'phone',
+          'town',
+          'lat',
+          'lng',
+          'profileImageUrl',
+          'spokenLanguages',
+          'professions',
+          'optionalPhone',
+          'description',
+          'workRadius',
+          'hideSchedule',
+          'disabledDays',
+        };
+        final profileUpdates = <String, dynamic>{
+          for (final entry in userData.entries)
+            if (ownerEditableFields.contains(entry.key)) entry.key: entry.value,
+          'updatedAt': FieldValue.serverTimestamp(),
+        };
+        await userRef.set(profileUpdates, SetOptions(merge: true));
+      }
       if (_userType == UserType.worker) {
+        writeStage = 'schedule';
         await firestore
             .collection('users')
             .doc(user.uid)
@@ -2461,17 +2417,23 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
           (route) => false,
         );
       }
+      return true;
     } catch (e) {
+      debugPrint('SIGN-UP FIRESTORE ERROR [$writeStage]: $e');
       if (mounted) {
         setState(() => _loading = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              strings['db_error']!.replaceAll('{err}', e.toString()),
+              strings['db_error']!.replaceAll(
+                '{err}',
+                '[$writeStage] ${e.toString()}',
+              ),
             ),
           ),
         );
       }
+      return false;
     }
   }
 
