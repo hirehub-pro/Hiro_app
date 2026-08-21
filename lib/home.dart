@@ -76,6 +76,11 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   bool _isVip = false;
   bool _isBusinessVerified = false;
 
+  bool get _isGuest {
+    final user = FirebaseAuth.instance.currentUser;
+    return user == null || user.isAnonymous;
+  }
+
   AnimationController get _backgroundAnimationController {
     final controller = _backgroundController;
     if (controller != null) return controller;
@@ -1860,7 +1865,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   Future<void> _upgradeToWorkerFromHome(Map<String, dynamic> strings) async {
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
+    if (user == null || user.isAnonymous) return;
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -2357,7 +2362,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 _buildCategories(context, localized, theme),
-                                if (_userRole == 'customer') ...[
+                                if (_userRole == 'customer' && !_isGuest) ...[
                                   const SizedBox(height: 12),
                                   _buildCustomerProButton(localized),
                                 ],

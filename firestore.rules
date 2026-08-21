@@ -860,10 +860,7 @@ service cloud.firestore {
       }
 
       match /reviews/{reviewId} {
-        allow read: if isOwner(userId) ||
-          (isAuthenticated() &&
-            get(/databases/$(database)/documents/publicWorkerProfiles/$(userId))
-              .data.get('isSearchVisible', false) == true);
+        allow read: if isOwner(userId) || publicWorkerProfileVisible(userId);
         allow create: if isAuthenticated() && reviewId == request.auth.uid &&
           validReview(request.resource.data, userId) &&
           recentTimestamp(request.resource.data, 'timestamp');

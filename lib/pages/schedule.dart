@@ -3,9 +3,11 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:untitled1/services/language_provider.dart';
 import 'package:untitled1/pages/send_request.dart';
+import 'package:untitled1/sign_in.dart';
 import 'package:untitled1/utils/booking_mode.dart';
 
 class SchedulePage extends StatefulWidget {
@@ -35,6 +37,9 @@ class _SchedulePageState extends State<SchedulePage> {
   DateTime _selectedDay = DateTime.now();
   bool _isLoading = false;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseFunctions _functions = FirebaseFunctions.instanceFor(
+    region: 'me-west1',
+  );
 
   List<Map<String, dynamic>> _reminders = [];
   Map<String, List<Map<String, dynamic>>> _allReminders = {};
@@ -95,43 +100,62 @@ class _SchedulePageState extends State<SchedulePage> {
   Future<void> _fetchWorkerScheduleConfig() async {
     setState(() => _isLoading = true);
     try {
-      final doc = await _scheduleDoc.get();
-      if (doc.exists) {
-        final data = doc.data() as Map<String, dynamic>;
-        setState(() {
-          _hideScheduleFromOthers = data['hideSchedule'] ?? false;
-          _permanentlyDisabledDays = List<int>.from(data['disabledDays'] ?? []);
+      Map<String, dynamic>? data;
+      if (_isOwnSchedule) {
+        final doc = await _scheduleDoc.get();
+        if (doc.exists) {
+          data = doc.data() as Map<String, dynamic>;
+        }
+      } else {
+        final result = await _functions
+            .httpsCallable('getPublicWorkerSchedule')
+            .call<Map<String, dynamic>>({'workerId': widget.workerId});
+        final payload = Map<String, dynamic>.from(result.data);
+        if (payload['visible'] == true && payload['schedule'] is Map) {
+          data = Map<String, dynamic>.from(payload['schedule'] as Map);
+        } else if (mounted) {
+          setState(() => _hideScheduleFromOthers = true);
+        }
+      }
 
-          if (data.containsKey('availableDates')) {
-            _availableDates = List<String>.from(data['availableDates']);
+      if (data != null) {
+        final scheduleData = data;
+        setState(() {
+          _hideScheduleFromOthers = scheduleData['hideSchedule'] ?? false;
+          _permanentlyDisabledDays = List<int>.from(
+            scheduleData['disabledDays'] ?? [],
+          );
+
+          if (scheduleData.containsKey('availableDates')) {
+            _availableDates = List<String>.from(scheduleData['availableDates']);
           }
-          if (data.containsKey('reminderDates')) {
-            _reminderDates = List<String>.from(data['reminderDates']);
+          if (scheduleData.containsKey('reminderDates')) {
+            _reminderDates = List<String>.from(scheduleData['reminderDates']);
           }
-          if (data.containsKey('partialWorkDays')) {
-            _partialWorkDays = (data['partialWorkDays'] as Map).map(
+          if (scheduleData.containsKey('partialWorkDays')) {
+            _partialWorkDays = (scheduleData['partialWorkDays'] as Map).map(
               (k, v) => MapEntry(k.toString(), _normalizePartialRanges(v)),
             );
           }
-          if (data.containsKey('defaultWorkingHours')) {
+          if (scheduleData.containsKey('defaultWorkingHours')) {
             _defaultWorkingHours = Map<String, String>.from(
-              data['defaultWorkingHours'] as Map,
+              scheduleData['defaultWorkingHours'] as Map,
             );
           }
-          if (data.containsKey('vacations')) {
+          if (scheduleData.containsKey('vacations')) {
             _vacations = List<Map<String, String>>.from(
-              (data['vacations'] as List).map(
+              (scheduleData['vacations'] as List).map(
                 (v) => Map<String, String>.from(v),
               ),
             );
           }
 
-          if (data.containsKey('dayNotes')) {
-            _dayNotes = Map<String, String>.from(data['dayNotes']);
+          if (scheduleData.containsKey('dayNotes')) {
+            _dayNotes = Map<String, String>.from(scheduleData['dayNotes']);
           }
 
-          if (data.containsKey('allReminders')) {
-            _allReminders = (data['allReminders'] as Map).map(
+          if (scheduleData.containsKey('allReminders')) {
+            _allReminders = (scheduleData['allReminders'] as Map).map(
               (k, v) => MapEntry(
                 k.toString(),
                 (v as List)
@@ -149,10 +173,7 @@ class _SchedulePageState extends State<SchedulePage> {
           await _updateScheduleWidget();
         }
       }
-    } on FirebaseException catch (e) {
-      if (!_isOwnSchedule && e.code == 'permission-denied' && mounted) {
-        setState(() => _hideScheduleFromOthers = true);
-      }
+    } catch (e) {
       debugPrint("Error fetching worker config: $e");
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -436,6 +457,10 @@ class _SchedulePageState extends State<SchedulePage> {
               ? 'בקש תור בשעות האלו'
               : 'בקש שעות עבודה נוספות',
           'request_quote': 'בקש הצעת מחיר',
+          'sign_in_required': 'נדרשת התחברות',
+          'sign_in_required_message':
+              'יש להתחבר כדי לשלוח בקשת עבודה או הצעת מחיר.',
+          'sign_in': 'התחברות',
           'set_vacation': 'קבע חופשה',
           'on_vacation': 'בחופשה',
           'cancel_vacation': 'בטל חופשה',
@@ -494,6 +519,10 @@ class _SchedulePageState extends State<SchedulePage> {
               ? 'احجز خلال هذه الساعات'
               : 'اطلب ساعات عمل إضافية',
           'request_quote': 'طلب عرض سعر',
+          'sign_in_required': 'يلزم تسجيل الدخول',
+          'sign_in_required_message':
+              'يرجى تسجيل الدخول لإرسال طلب عمل أو طلب عرض سعر.',
+          'sign_in': 'تسجيل الدخول',
           'set_vacation': 'تحديد إجازة',
           'on_vacation': 'في إجازة',
           'cancel_vacation': 'إلغاء الإجازة',
@@ -551,6 +580,9 @@ class _SchedulePageState extends State<SchedulePage> {
               ? 'በእነዚህ ሰዓታት ቀጠሮ ያስይዙ'
               : 'ተጨማሪ የስራ ሰዓታት ይጠይቁ',
           'request_quote': 'የዋጋ ጥያቄ ላክ',
+          'sign_in_required': 'መግባት ያስፈልጋል',
+          'sign_in_required_message': 'የስራ ጥያቄ ወይም የዋጋ ጥያቄ ለመላክ ይግቡ።',
+          'sign_in': 'ግባ',
           'set_vacation': 'እረፍት አዘጋጅ',
           'on_vacation': 'በእረፍት ላይ',
           'cancel_vacation': 'እረፍት ሰርዝ',
@@ -608,6 +640,10 @@ class _SchedulePageState extends State<SchedulePage> {
               ? 'Записаться в эти часы'
               : 'Запросить дополнительные часы работы',
           'request_quote': 'Запросить цену',
+          'sign_in_required': 'Требуется вход',
+          'sign_in_required_message':
+              'Войдите, чтобы отправить запрос на работу или запрос цены.',
+          'sign_in': 'Войти',
           'set_vacation': 'Установить отпуск',
           'on_vacation': 'В отпуске',
           'cancel_vacation': 'Отменить отпуск',
@@ -672,6 +708,10 @@ class _SchedulePageState extends State<SchedulePage> {
               ? 'Book during these hours'
               : 'Request extra working hours',
           'request_quote': 'Request Quote',
+          'sign_in_required': 'Sign In Required',
+          'sign_in_required_message':
+              'Please sign in to send a work or quote request.',
+          'sign_in': 'Sign In',
           'set_vacation': 'Set Vacation',
           'on_vacation': 'On Vacation',
           'cancel_vacation': 'Cancel Vacation',
@@ -701,6 +741,37 @@ class _SchedulePageState extends State<SchedulePage> {
               'Failed to save working hours. Please try again.',
         };
     }
+  }
+
+  bool get _isSignedIn {
+    final user = _auth.currentUser;
+    return user != null && !user.isAnonymous;
+  }
+
+  void _showSignInRequiredDialog(Map<String, String> strings) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(strings['sign_in_required']!),
+        content: Text(strings['sign_in_required_message']!),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: Text(strings['cancel']!),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const SignInPage()),
+              );
+            },
+            child: Text(strings['sign_in']!),
+          ),
+        ],
+      ),
+    );
   }
 
   String _formatDefaultWorkingHours() {
@@ -2103,6 +2174,10 @@ class _SchedulePageState extends State<SchedulePage> {
               width: double.infinity,
               child: ElevatedButton(
                 onPressed: () {
+                  if (!_isSignedIn) {
+                    _showSignInRequiredDialog(strings);
+                    return;
+                  }
                   final partial = isWorking
                       ? _getPrimaryPartialRange(dateStr)
                       : null;
@@ -2145,6 +2220,10 @@ class _SchedulePageState extends State<SchedulePage> {
               width: double.infinity,
               child: OutlinedButton(
                 onPressed: () {
+                  if (!_isSignedIn) {
+                    _showSignInRequiredDialog(strings);
+                    return;
+                  }
                   Navigator.push(
                     context,
                     MaterialPageRoute(

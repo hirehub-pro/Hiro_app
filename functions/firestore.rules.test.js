@@ -175,6 +175,14 @@ test("exposes visible profiles while protecting server-managed fields", {
   )));
   await assertSucceeds(getDoc(doc(
       unauth,
+      "publicWorkerProfiles/visible-worker/reviews/reviewer-1",
+  )));
+  await assertSucceeds(getDocs(collection(
+      unauth,
+      "publicWorkerProfiles/visible-worker/reviews",
+  )));
+  await assertSucceeds(getDoc(doc(
+      unauth,
       "publicWorkerProfiles/visible-worker/projects/project-1/comments/comment-1",
   )));
   await assertFails(getDoc(doc(

@@ -38,6 +38,8 @@ const {
   PUBLIC_WORKER_PROFILE_COLLECTION,
   buildPublicWorkerProfile,
 } = require("./public_worker_profile");
+const {buildPublicSchedule} = require("./public_schedule");
+const {sumPublicProfileViews} = require("./public_profile_stats");
 const {
   normalizeServerDocumentRequest,
   serverDocumentPdfPayload,
@@ -2421,6 +2423,75 @@ exports.backfillPublicWorkerProfiles = onCall(
       }
 
       return {scanned, projected};
+    },
+);
+
+exports.getPublicWorkerSchedule = onCall(
+    {
+      region: "me-west1",
+    },
+    async (request) => {
+      const workerId = normalizeString(request.data?.workerId).trim();
+      if (!workerId || workerId.length > 128) {
+        throw new HttpsError("invalid-argument", "A valid worker ID is required.");
+      }
+
+      const db = admin.firestore();
+      const publicProfileRef = db
+          .collection(PUBLIC_WORKER_PROFILE_COLLECTION)
+          .doc(workerId);
+      const scheduleRef = publicProfileRef.collection("Schedule").doc("info");
+      const [profileSnap, scheduleSnap] = await Promise.all([
+        publicProfileRef.get(),
+        scheduleRef.get(),
+      ]);
+      const profile = profileSnap.data() || {};
+      const schedule = scheduleSnap.data() || {};
+
+      if (!profileSnap.exists ||
+          profile.isSearchVisible !== true ||
+          schedule.hideSchedule === true) {
+        return {visible: false};
+      }
+
+      return {
+        visible: true,
+        schedule: buildPublicSchedule(schedule),
+      };
+    },
+);
+
+exports.getPublicWorkerViewCount = onCall(
+    {
+      region: "me-west1",
+    },
+    async (request) => {
+      const workerId = normalizeString(request.data?.workerId).trim();
+      if (!workerId || workerId.length > 128) {
+        throw new HttpsError("invalid-argument", "A valid worker ID is required.");
+      }
+
+      const db = admin.firestore();
+      const profileSnap = await db
+          .collection(PUBLIC_WORKER_PROFILE_COLLECTION)
+          .doc(workerId)
+          .get();
+      if (!profileSnap.exists ||
+          profileSnap.data()?.isSearchVisible !== true) {
+        return {visible: false, viewsCount: 0};
+      }
+
+      const ratingsSnap = await db
+          .collection("users")
+          .doc(workerId)
+          .collection("ProRating")
+          .get();
+      return {
+        visible: true,
+        viewsCount: sumPublicProfileViews(
+            ratingsSnap.docs.map((document) => document.data()),
+        ),
+      };
     },
 );
 

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:untitled1/map/location_picker.dart';
@@ -17,6 +18,11 @@ class _LocationManagerPageState extends State<LocationManagerPage> {
   String _activeId = AppLocation.currentId;
   List<AppLocation> _saved = [];
   AppLocation? _currentDeviceLocation;
+
+  bool get _isGuest {
+    final user = FirebaseAuth.instance.currentUser;
+    return user == null || user.isAnonymous;
+  }
 
   Map<String, String> _strings(BuildContext context) {
     final code = Provider.of<LanguageProvider>(
@@ -433,6 +439,8 @@ class _LocationManagerPageState extends State<LocationManagerPage> {
   }
 
   Future<void> _openAddDialog() async {
+    if (_isGuest) return;
+
     final strings = _strings(context);
     final nameController = TextEditingController();
     LatLng? selectedPoint;
@@ -632,7 +640,7 @@ class _LocationManagerPageState extends State<LocationManagerPage> {
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: _openAddDialog,
+        onPressed: _isGuest ? null : _openAddDialog,
         icon: const Icon(Icons.add),
         label: Text(strings['add_location']!),
       ),

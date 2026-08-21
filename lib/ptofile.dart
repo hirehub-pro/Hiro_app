@@ -105,6 +105,8 @@ class _ProfileState extends State<Profile>
   List<Map<String, dynamic>> _userReviews = [];
   List<Map<String, dynamic>> _projects = [];
   int _viewsCount = 0;
+  int _publicReviewCount = 0;
+  double _publicAverageRating = 0;
   bool _isFavorite = false;
 
   bool _isOwnProfile = false;
@@ -285,6 +287,15 @@ class _ProfileState extends State<Profile>
       if (value is num) total += value.toInt();
     }
     return total;
+  }
+
+  Future<int> _readPublicViewCount(String userId) async {
+    final result = await _functions
+        .httpsCallable('getPublicWorkerViewCount')
+        .call<Map<String, dynamic>>({'workerId': userId});
+    if (result.data['visible'] != true) return 0;
+    final value = result.data['viewsCount'];
+    return value is num ? value.toInt() : 0;
   }
 
   void _checkInitialOwnership() {
@@ -532,23 +543,28 @@ class _ProfileState extends State<Profile>
         var canonicalHideSchedule = false;
         if ((data['role'] ?? '').toString().toLowerCase() == 'worker') {
           try {
-            final scheduleDoc = await _firestore
-                .collection('publicWorkerProfiles')
-                .doc(targetUid)
-                .collection('Schedule')
-                .doc('info')
-                .get();
-            canonicalHideSchedule = scheduleDoc.data()?['hideSchedule'] == true;
-          } on FirebaseException catch (error) {
-            if (!isOwnProfile && error.code == 'permission-denied') {
-              canonicalHideSchedule = true;
+            if (isOwnProfile) {
+              final scheduleDoc = await _firestore
+                  .collection('publicWorkerProfiles')
+                  .doc(targetUid)
+                  .collection('Schedule')
+                  .doc('info')
+                  .get();
+              canonicalHideSchedule =
+                  scheduleDoc.data()?['hideSchedule'] == true;
             } else {
-              rethrow;
+              final result = await _functions
+                  .httpsCallable('getPublicWorkerSchedule')
+                  .call<Map<String, dynamic>>({'workerId': targetUid});
+              canonicalHideSchedule = result.data['visible'] != true;
             }
+          } catch (error) {
+            if (!isOwnProfile) canonicalHideSchedule = true;
           }
         }
 
         String oldRole = _userRole;
+        final oldShouldShowSchedule = _shouldShowPublicScheduleSection;
         setState(() {
           _userName = data['name']?.toString() ?? "";
           _bio = data['description']?.toString() ?? "";
@@ -566,6 +582,8 @@ class _ProfileState extends State<Profile>
               : [];
           _socialLinks = _parseSocialLinks(data['socialLinks']);
           _viewsCount = 0;
+          _publicReviewCount = (data['reviewCount'] as num?)?.toInt() ?? 0;
+          _publicAverageRating = (data['avgRating'] as num?)?.toDouble() ?? 0;
           _userRole = data['role'] ?? 'customer';
           _hideSchedule = canonicalHideSchedule;
           _subscriptionStatus = isOwnProfile
@@ -596,7 +614,8 @@ class _ProfileState extends State<Profile>
           _proLng = data['lng']?.toDouble();
         });
 
-        if (oldRole != _userRole) {
+        if (oldRole != _userRole ||
+            oldShouldShowSchedule != _shouldShowPublicScheduleSection) {
           _initTabController();
         }
 
@@ -637,8 +656,8 @@ class _ProfileState extends State<Profile>
         if (isOwnProfile)
           _readTotalViewsFromProRatings(targetUid)
         else
-          Future<int>.value(0),
-        if (currentUser != null && !isOwnProfile)
+          _readPublicViewCount(targetUid),
+        if (currentUser != null && !currentUser.isAnonymous && !isOwnProfile)
           _firestore
               .collection('users')
               .doc(currentUser.uid)
@@ -652,7 +671,7 @@ class _ProfileState extends State<Profile>
         _userReviews = results[0] as List<Map<String, dynamic>>;
         _projects = results[1] as List<Map<String, dynamic>>;
         _viewsCount = results[2] as int;
-        if (currentUser != null && !isOwnProfile) {
+        if (currentUser != null && !currentUser.isAnonymous && !isOwnProfile) {
           _isFavorite = (results[3] as DocumentSnapshot).exists;
         }
       });
@@ -855,7 +874,7 @@ class _ProfileState extends State<Profile>
 
   Future<void> _toggleFavorite() async {
     final currentUser = FirebaseAuth.instance.currentUser;
-    if (currentUser == null) return;
+    if (currentUser == null || currentUser.isAnonymous) return;
 
     final targetUid = widget.userId;
     if (targetUid == null) return;
@@ -1893,11 +1912,13 @@ class _ProfileState extends State<Profile>
                                   _isFavorite
                                       ? Icons.favorite
                                       : Icons.favorite_border,
-                                  color: _isFavorite
+                                  color: _isGuest()
+                                      ? Colors.white38
+                                      : _isFavorite
                                       ? Colors.redAccent
                                       : Colors.white,
                                 ),
-                                onPressed: _toggleFavorite,
+                                onPressed: _isGuest() ? null : _toggleFavorite,
                               ),
                             if (!_isOwnProfile)
                               IconButton(
@@ -2088,14 +2109,14 @@ class _ProfileState extends State<Profile>
                                             strings['projects']!,
                                           ),
                                           _buildStatItem(
-                                            _userReviews.length.toString(),
+                                            _publicReviewCount.toString(),
                                             strings['reviews']!,
                                           ),
                                           _buildStatItem(
                                             _viewsCount.toString(),
                                             strings['views']!,
                                           ),
-                                          if (_userReviews.isNotEmpty)
+                                          if (_publicReviewCount > 0)
                                             _buildStatItem(
                                               _calculateAverageRating()
                                                   .toStringAsFixed(1),
@@ -2191,12 +2212,7 @@ class _ProfileState extends State<Profile>
   }
 
   double _calculateAverageRating() {
-    if (_userReviews.isEmpty) return 0.0;
-    double total = 0;
-    for (var r in _userReviews) {
-      total += (r['rating'] ?? 0).toDouble();
-    }
-    return total / _userReviews.length;
+    return _publicAverageRating;
   }
 
   Widget _buildStatItem(String value, String label) {
