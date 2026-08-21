@@ -170,7 +170,7 @@ class _SendRequestPageState extends State<SendRequestPage> {
   Future<void> _fetchProviderLocation() async {
     try {
       final workerDoc = await FirebaseFirestore.instance
-          .collection('users')
+          .collection('publicWorkerProfiles')
           .doc(widget.workerId)
           .get();
       final workerData = workerDoc.data();
@@ -997,7 +997,7 @@ class _SendRequestPageState extends State<SendRequestPage> {
       final userTown = userData?['town'];
 
       final workerDoc = await FirebaseFirestore.instance
-          .collection('users')
+          .collection('publicWorkerProfiles')
           .doc(widget.workerId)
           .get();
       if (!workerDoc.exists) {
@@ -1087,20 +1087,24 @@ class _SendRequestPageState extends State<SendRequestPage> {
         'type': widget.isQuoteRequest ? 'quote_request' : 'work_request',
         'fromId': user.uid,
         'fromName': userName,
-        'fromLocation': userTown,
-        'profession': professionLabel,
+        if (userTown != null && userTown.toString().trim().isNotEmpty)
+          'fromLocation': userTown.toString().trim(),
+        if (professionLabel != null && professionLabel.isNotEmpty)
+          'profession': professionLabel,
         'jobDescription': _descriptionController.text.trim(),
         'images': imageUrls,
-        'latitude': widget.isQuoteRequest || _customerTravels || _onlineOnly
-            ? null
-            : _selectedLocation?.latitude,
-        'longitude': widget.isQuoteRequest || _customerTravels || _onlineOnly
-            ? null
-            : _selectedLocation?.longitude,
-        'date': widget.isQuoteRequest ? null : dStr,
-        'requestedFrom': fStr,
-        'requestedTo': tStr,
-        'locationName': locationName,
+        if (!widget.isQuoteRequest &&
+            !_customerTravels &&
+            !_onlineOnly &&
+            _selectedLocation != null) ...{
+          'latitude': _selectedLocation!.latitude,
+          'longitude': _selectedLocation!.longitude,
+        },
+        if (!widget.isQuoteRequest) 'date': dStr,
+        if (fStr != null) 'requestedFrom': fStr,
+        if (tStr != null) 'requestedTo': tStr,
+        if (locationName != null && locationName.isNotEmpty)
+          'locationName': locationName,
         'serviceLocationType': serviceLocationType,
         'timestamp': FieldValue.serverTimestamp(),
         'status': 'pending',
@@ -1122,37 +1126,38 @@ class _SendRequestPageState extends State<SendRequestPage> {
       await batch.commit();
 
       final chatRoomId = _getChatRoomId(user.uid, widget.workerId);
+      final roomRef = firestore.collection('chat_rooms').doc(chatRoomId);
+      final roomSnapshot = await roomRef.get();
+      if (!roomSnapshot.exists) {
+        final roomUsers = [user.uid, widget.workerId]..sort();
+        await roomRef.set({
+          'users': roomUsers,
+          'userNames': {user.uid: userName, widget.workerId: widget.workerName},
+          'unreadCount': {user.uid: 0, widget.workerId: 0},
+          'lastMessage': '',
+          'lastTimestamp': FieldValue.serverTimestamp(),
+        });
+      }
       final chatMsg =
           '${strings['chat_request_msg']}$dStr\n${_descriptionController.text.trim()}';
 
-      await FirebaseFirestore.instance
-          .collection('chat_rooms')
-          .doc(chatRoomId)
-          .collection('messages')
-          .add({
-            'senderId': user.uid,
-            'receiverId': widget.workerId,
-            'message': chatMsg,
-            'type': 'request_link',
-            'requestId': requestId,
-            'requestOwnerId': user.uid,
-            'workerNotificationId': workerNotificationRef.id,
-            'timestamp': FieldValue.serverTimestamp(),
-            'isSystem': true,
-          });
+      await roomRef.collection('messages').add({
+        'senderId': user.uid,
+        'receiverId': widget.workerId,
+        'message': chatMsg,
+        'type': 'request_link',
+        'requestId': requestId,
+        'requestOwnerId': user.uid,
+        'workerNotificationId': workerNotificationRef.id,
+        'timestamp': FieldValue.serverTimestamp(),
+        'isSystem': true,
+      });
 
-      await FirebaseFirestore.instance
-          .collection('chat_rooms')
-          .doc(chatRoomId)
-          .set({
-            'lastMessage': chatMsg,
-            'lastTimestamp': FieldValue.serverTimestamp(),
-            'users': [user.uid, widget.workerId],
-            'userNames': {
-              user.uid: userName,
-              widget.workerId: widget.workerName,
-            },
-          }, SetOptions(merge: true));
+      await roomRef.set({
+        'lastMessage': chatMsg,
+        'lastTimestamp': FieldValue.serverTimestamp(),
+        'userNames': {user.uid: userName, widget.workerId: widget.workerName},
+      }, SetOptions(merge: true));
 
       await NotificationService.sendPushNotification(
         targetUserId: widget.workerId,

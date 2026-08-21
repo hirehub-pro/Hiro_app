@@ -638,7 +638,11 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
         _hasTotalEarnedValue = false;
       }
 
-      final reviewsSnapshot = await workerRef.collection('reviews').get();
+      final reviewsSnapshot = await firestore
+          .collection('publicWorkerProfiles')
+          .doc(widget.userId)
+          .collection('reviews')
+          .get();
       final proRatingSnapshot = await workerRef.collection('ProRating').get();
 
       if (_totalJobs == 0) {

@@ -36,11 +36,6 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.token.get('admin', false) == true;
     }
 
-    function isDocOwner() {
-      return isAuthenticated() &&
-        resource.data.get('uid', '') == request.auth.uid;
-    }
-
     function uidUnchanged() {
       return !('uid' in request.resource.data) ||
         request.resource.data.uid == request.auth.uid;
@@ -109,8 +104,9 @@ service cloud.firestore {
         'activeLocationLabel', 'activeLocationSource', 'activeLocationUpdatedAt',
         'activeSearchLat', 'activeSearchLng', 'businessId', 'businessLogoUrl',
         'dealerType', 'businessVerificationStatus', 'verifiedAt', 'isVerified',
-        'isapproved', 'avgRating', 'reviewCount', 'isInChatPage',
-        'activeChatUpdatedAt', 'isPro', 'isSubscribed', 'isVIP',
+        'isapproved', 'avgRating', 'reviewCount', 'totalStars',
+        'professionStats', 'ratingsUpdatedAt', 'isInChatPage',
+        'activeChatWith', 'activeChatUpdatedAt', 'isPro', 'isSubscribed', 'isVIP',
         'subscriptionAccountToken', 'subscriptionCanceled', 'subscriptionDate',
         'subscriptionExpiresAt', 'subscriptionOwnershipKey',
         'subscriptionPlatform', 'subscriptionProductId',
@@ -143,6 +139,11 @@ service cloud.firestore {
       optionalNumber(data, 'workRadius', 0, 1000000) &&
       optionalNumber(data, 'avgRating', 0, 5) &&
       optionalNumber(data, 'reviewCount', 0, 100000000) &&
+      optionalNumber(data, 'totalStars', 0, 500000000) &&
+      optionalMap(data, 'professionStats', 200) &&
+      optionalTimestamp(data, 'ratingsUpdatedAt') &&
+      optionalString(data, 'activeChatWith', 128) &&
+      optionalTimestamp(data, 'activeChatUpdatedAt') &&
       optionalList(data, 'professions', 50) &&
       optionalList(data, 'spokenLanguages', 30) &&
       optionalList(data, 'disabledDays', 31) &&
@@ -219,7 +220,8 @@ service cloud.firestore {
         'notificationsEnabled', 'activeLocationId', 'activeLocationLabel',
         'activeLocationSource', 'activeLocationUpdatedAt', 'activeSearchLat',
         'activeSearchLng', 'businessId', 'businessLogoUrl', 'dealerType',
-        'isInChatPage', 'activeChatUpdatedAt', 'accountingExportSettings',
+        'isInChatPage', 'activeChatWith', 'activeChatUpdatedAt',
+        'accountingExportSettings',
         'ugcTermsAcceptedAt', 'ugcTermsVersion'
       ]) &&
       (!changed.hasAny(['name']) ||
@@ -248,6 +250,8 @@ service cloud.firestore {
       (!changed.hasAny(['businessLogoUrl']) || optionalUrl(request.resource.data, 'businessLogoUrl', 2048)) &&
       (!changed.hasAny(['dealerType']) || optionalString(request.resource.data, 'dealerType', 40)) &&
       (!changed.hasAny(['isInChatPage']) || optionalBool(request.resource.data, 'isInChatPage')) &&
+      (!changed.hasAny(['activeChatWith']) || optionalString(request.resource.data, 'activeChatWith', 128)) &&
+      (!changed.hasAny(['activeChatUpdatedAt']) || optionalTimestamp(request.resource.data, 'activeChatUpdatedAt')) &&
       (!changed.hasAny(['accountingExportSettings']) || optionalMap(request.resource.data, 'accountingExportSettings', 30));
     }
 
@@ -419,26 +423,83 @@ service cloud.firestore {
       data.createdAt is timestamp && optionalTimestamp(data, 'updatedAt');
     }
 
+    function publicWorkerProfileVisible(userId) {
+      return exists(
+        /databases/$(database)/documents/publicWorkerProfiles/$(userId)
+      ) && get(
+        /databases/$(database)/documents/publicWorkerProfiles/$(userId)
+      ).data.get('isSearchVisible', false) == true;
+    }
+
+    function publicProjectExists(userId, projectId) {
+      return exists(
+        /databases/$(database)/documents/publicWorkerProfiles/$(userId)/projects/$(projectId)
+      );
+    }
+
     function validPublicProject(data) {
       return data.keys().hasOnly([
         'description', 'imageUrl', 'imageUrls', 'mediaTypes', 'hasVideo',
-        'commentsCount', 'timestamp'
+        'commentsCount', 'likesCount', 'timestamp'
       ]) && data.keys().hasAll(['description', 'timestamp']) &&
       data.description is string && data.description.size() <= 4000 &&
       data.timestamp is timestamp && optionalUrl(data, 'imageUrl', 2048) &&
-      optionalList(data, 'imageUrls', 20) && optionalList(data, 'mediaTypes', 20) &&
+      optionalList(data, 'imageUrls', 20) &&
+      (!('mediaTypes' in data) ||
+        (data.mediaTypes is list && data.mediaTypes.size() <= 20 &&
+          data.mediaTypes.toSet().hasOnly(['image', 'video']))) &&
       optionalBool(data, 'hasVideo') &&
-      optionalNumber(data, 'commentsCount', 0, 1000000);
+      optionalNumber(data, 'commentsCount', 0, 1000000) &&
+      optionalNumber(data, 'likesCount', 0, 1000000);
+    }
+
+    function validProjectComment(data) {
+      return data.keys().hasOnly([
+        'userId', 'userName', 'userImage', 'text', 'timestamp'
+      ]) && data.keys().hasAll([
+        'userId', 'userName', 'userImage', 'text', 'timestamp'
+      ]) && data.userId is string && data.userId.size() >= 20 &&
+      data.userId.size() <= 128 &&
+      data.userName is string && data.userName.size() >= 1 &&
+      data.userName.size() <= 100 &&
+      data.userImage is string && data.userImage.size() <= 2048 &&
+      (data.userImage == '' || data.userImage.matches('^https://.*')) &&
+      data.text is string && data.text.size() >= 1 && data.text.size() <= 4000 &&
+      data.timestamp is timestamp;
+    }
+
+    function validProjectLike(data) {
+      return data.keys().hasOnly(['userId', 'timestamp']) &&
+        data.keys().hasAll(['userId', 'timestamp']) &&
+        data.userId is string && data.userId.size() >= 20 &&
+        data.userId.size() <= 128 && data.timestamp is timestamp;
     }
 
     function validReview(data, targetUserId) {
       return data.keys().hasOnly([
-        'userId', 'reviewerId', 'reviewerName', 'targetUserId', 'rating',
-        'comment', 'text', 'createdAt', 'timestamp', 'projectId', 'reply'
+        'userId', 'reviewerId', 'userName', 'reviewerName',
+        'userProfileImage', 'targetUserId', 'profession', 'rating',
+        'priceRating', 'workRating', 'professionalismRating',
+        'serviceRating', 'timingRating', 'workQualityRating', 'comment',
+        'text', 'imageUrls', 'createdAt', 'timestamp', 'projectId', 'reply'
+      ]) && data.keys().hasAll([
+        'userId', 'profession', 'rating', 'priceRating', 'workRating',
+        'professionalismRating', 'comment', 'imageUrls', 'timestamp'
       ]) &&
       data.rating is number && data.rating >= 1 && data.rating <= 5 &&
+      data.priceRating is number && data.priceRating >= 1 && data.priceRating <= 5 &&
+      data.workRating is number && data.workRating >= 1 && data.workRating <= 5 &&
+      data.professionalismRating is number &&
+        data.professionalismRating >= 1 && data.professionalismRating <= 5 &&
       optionalString(data, 'comment', 4000) && optionalString(data, 'text', 4000) &&
+      optionalString(data, 'userName', 100) &&
       optionalString(data, 'reviewerName', 100) &&
+      optionalUrl(data, 'userProfileImage', 2048) &&
+      optionalString(data, 'profession', 120) &&
+      optionalNumber(data, 'serviceRating', 1, 5) &&
+      optionalNumber(data, 'timingRating', 1, 5) &&
+      optionalNumber(data, 'workQualityRating', 1, 5) &&
+      optionalList(data, 'imageUrls', 10) &&
       optionalString(data, 'projectId', 180) &&
       optionalString(data, 'reply', 4000) &&
       (data.get('targetUserId', targetUserId) == targetUserId) &&
@@ -456,15 +517,80 @@ service cloud.firestore {
         'workerRequestToMeId', 'invoiceDocId', 'status', 'date',
         'requestedFrom', 'requestedTo', 'profession', 'jobDescription',
         'serviceLocationType', 'locationName', 'latitude', 'longitude',
-        'mapUrl', 'images', 'videos', 'media', 'cancelledAt'
+        'mapUrl', 'images', 'videos', 'media', 'cancelledAt', 'price',
+        'description', 'quotePrice', 'quoteDescription', 'seenAt',
+        'reviewedAt', 'reviewedBy'
       ]) &&
       optionalString(data, 'title', 240) && optionalString(data, 'body', 4000) &&
       optionalString(data, 'message', 4000) && optionalString(data, 'type', 80) &&
       optionalUrl(data, 'url', 4096) && optionalBool(data, 'isRead') &&
       optionalBool(data, 'read') && optionalTimestamp(data, 'timestamp') &&
       optionalTimestamp(data, 'createdAt') &&
+      optionalTimestamp(data, 'cancelledAt') &&
+      optionalTimestamp(data, 'seenAt') &&
+      optionalTimestamp(data, 'reviewedAt') &&
+      optionalString(data, 'price', 80) &&
+      optionalString(data, 'description', 4000) &&
+      optionalString(data, 'quotePrice', 80) &&
+      optionalString(data, 'quoteDescription', 4000) &&
+      optionalString(data, 'reviewedBy', 128) &&
       optionalList(data, 'images', 20) && optionalList(data, 'videos', 20) &&
       optionalList(data, 'media', 40);
+    }
+
+    function validWorkRequest(data) {
+      return data.keys().hasOnly([
+        'requestId', 'workerId', 'workerName', 'workerNotificationId',
+        'workerRequestToMeId', 'type', 'fromId', 'fromName', 'fromLocation',
+        'profession', 'jobDescription', 'images', 'latitude', 'longitude',
+        'date', 'requestedFrom', 'requestedTo', 'locationName',
+        'serviceLocationType', 'timestamp', 'status', 'title', 'body',
+        'acceptedWindow', 'quotePrice', 'quoteDescription', 'quoteSentAt',
+        'seenAt', 'reviewedAt', 'reviewedBy', 'cancelledAt', 'updatedAt'
+      ]) && data.keys().hasAll([
+        'requestId', 'workerId', 'workerName', 'workerNotificationId',
+        'workerRequestToMeId', 'type', 'fromId', 'fromName',
+        'jobDescription', 'images', 'timestamp', 'status', 'title', 'body'
+      ]) &&
+      data.requestId is string && data.requestId.size() >= 1 &&
+      data.requestId.size() <= 180 &&
+      data.workerId is string && data.workerId.size() >= 20 &&
+      data.workerId.size() <= 128 &&
+      data.fromId is string && data.fromId.size() >= 20 &&
+      data.fromId.size() <= 128 &&
+      data.type in ['work_request', 'quote_request'] &&
+      data.status in ['pending', 'accepted', 'declined', 'rejected', 'cancelled'] &&
+      data.timestamp is timestamp &&
+      optionalString(data, 'workerName', 100) &&
+      optionalString(data, 'workerNotificationId', 180) &&
+      optionalString(data, 'workerRequestToMeId', 180) &&
+      optionalString(data, 'fromName', 100) &&
+      optionalString(data, 'fromLocation', 300) &&
+      optionalString(data, 'profession', 120) &&
+      optionalString(data, 'jobDescription', 10000) &&
+      optionalList(data, 'images', 20) &&
+      optionalNumber(data, 'latitude', -90, 90) &&
+      optionalNumber(data, 'longitude', -180, 180) &&
+      optionalString(data, 'date', 40) &&
+      optionalString(data, 'requestedFrom', 20) &&
+      optionalString(data, 'requestedTo', 20) &&
+      optionalString(data, 'locationName', 300) &&
+      optionalString(data, 'serviceLocationType', 80) &&
+      optionalString(data, 'title', 240) && optionalString(data, 'body', 4000) &&
+      optionalMap(data, 'acceptedWindow', 4) &&
+      optionalString(data, 'quotePrice', 80) &&
+      optionalString(data, 'quoteDescription', 4000) &&
+      optionalTimestamp(data, 'quoteSentAt') && optionalTimestamp(data, 'seenAt') &&
+      optionalTimestamp(data, 'reviewedAt') &&
+      optionalString(data, 'reviewedBy', 128) &&
+      optionalTimestamp(data, 'cancelledAt') && optionalTimestamp(data, 'updatedAt');
+    }
+
+    function workRequestIdentityUnchanged(data) {
+      return data.requestId == resource.data.requestId &&
+        data.workerId == resource.data.workerId &&
+        data.fromId == resource.data.fromId &&
+        data.timestamp == resource.data.timestamp;
     }
 
     function validBlogPost(data) {
@@ -545,7 +671,7 @@ service cloud.firestore {
         'senderId', 'receiverId', 'text', 'message', 'type', 'url', 'fileUrl',
         'fileName', 'timestamp', 'isRead', 'isSystem', 'invoiceDocId',
         'requestId', 'requestOwnerId', 'requestUrl', 'workerNotificationId',
-        'signedDocument', 'signingRequest'
+        'signedDocument', 'signingRequest', 'durationSeconds', 'mediaItems'
       ]) && data.keys().hasAll(['senderId', 'timestamp']) &&
       data.senderId == request.auth.uid && data.timestamp is timestamp &&
       optionalString(data, 'receiverId', 128) && optionalString(data, 'text', 10000) &&
@@ -554,8 +680,15 @@ service cloud.firestore {
       optionalString(data, 'fileName', 240) && optionalBool(data, 'isRead') &&
       optionalBool(data, 'isSystem') && optionalMap(data, 'signedDocument', 30) &&
       optionalMap(data, 'signingRequest', 30) &&
+      optionalNumber(data, 'durationSeconds', 0, 86400) &&
+      optionalList(data, 'mediaItems', 20) &&
+      optionalString(data, 'invoiceDocId', 180) &&
+      optionalString(data, 'requestId', 180) &&
+      optionalString(data, 'requestOwnerId', 128) &&
+      optionalUrl(data, 'requestUrl', 4096) &&
+      optionalString(data, 'workerNotificationId', 180) &&
       get(/databases/$(database)/documents/chat_rooms/$(roomId)).data.users
-        .hasAll([request.auth.uid]);
+        .hasAll([request.auth.uid, data.get('receiverId', request.auth.uid)]);
     }
 
     function validReport(data) {
@@ -568,15 +701,111 @@ service cloud.firestore {
       data.timestamp is timestamp && optionalString(data, 'details', 10000) &&
       optionalString(data, 'subject', 300) && optionalString(data, 'source', 100) &&
       optionalList(data, 'attachments', 10) &&
-      data.get('status', 'open') == 'open';
+        data.get('status', 'open') == 'open';
+    }
+
+    function validPublicSchedule(data) {
+      return data.keys().hasOnly([
+        'allReminders', 'availableDates', 'dayNotes', 'defaultWorkingHours',
+        'disabledDays', 'hideSchedule', 'partialWorkDays', 'reminderDates',
+        'vacations', 'updatedAt'
+      ]) && optionalMap(data, 'allReminders', 400) &&
+      optionalList(data, 'availableDates', 1000) &&
+      optionalMap(data, 'dayNotes', 400) &&
+      optionalMap(data, 'defaultWorkingHours', 14) &&
+      optionalList(data, 'disabledDays', 400) &&
+      optionalBool(data, 'hideSchedule') &&
+      optionalMap(data, 'partialWorkDays', 400) &&
+      optionalList(data, 'reminderDates', 1000) &&
+      optionalList(data, 'vacations', 400) &&
+      optionalTimestamp(data, 'updatedAt');
     }
 
     // ===============================================================
     // Public worker discovery projection
     // ===============================================================
     match /publicWorkerProfiles/{userId} {
-      allow get, list: if resource.data.get('isSearchVisible', false) == true;
+      allow get, list: if isAuthenticated() &&
+        resource.data.get('isSearchVisible', false) == true;
       allow create, update, delete: if false;
+
+      match /Schedule/{scheduleId} {
+        allow read: if isOwner(userId) ||
+          (isAuthenticated() &&
+            get(/databases/$(database)/documents/publicWorkerProfiles/$(userId))
+              .data.get('isSearchVisible', false) == true &&
+            get(/databases/$(database)/documents/publicWorkerProfiles/$(userId))
+              .data.get('hideSchedule', false) == false);
+        allow create, update: if isOwner(userId) &&
+          validPublicSchedule(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+
+      match /reviews/{reviewId} {
+        allow read: if isOwner(userId) ||
+          (isAuthenticated() &&
+            get(/databases/$(database)/documents/publicWorkerProfiles/$(userId))
+              .data.get('isSearchVisible', false) == true);
+        allow create: if isAuthenticated() && reviewId == request.auth.uid &&
+          validReview(request.resource.data, userId) &&
+          recentTimestamp(request.resource.data, 'timestamp');
+        allow update: if isAuthenticated() && reviewId == request.auth.uid &&
+          resource.data.get('reviewerId', resource.data.get('userId', '')) ==
+            request.auth.uid && validReview(request.resource.data, userId) &&
+          request.resource.data.get('reviewerId', request.resource.data.userId) ==
+            resource.data.get('reviewerId', resource.data.get('userId', ''));
+        allow delete: if isOwner(userId) ||
+          (isAuthenticated() &&
+            resource.data.get('reviewerId', resource.data.get('userId', '')) ==
+              request.auth.uid);
+      }
+
+      match /projects/{projectId} {
+        allow read: if isOwner(userId) || publicWorkerProfileVisible(userId);
+        allow create: if isOwner(userId) &&
+          validPublicProject(request.resource.data) &&
+          recentTimestamp(request.resource.data, 'timestamp');
+        allow update: if isOwner(userId) &&
+          validPublicProject(request.resource.data) &&
+          request.resource.data.timestamp == resource.data.timestamp &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'description', 'imageUrl', 'imageUrls', 'mediaTypes', 'hasVideo'
+          ]);
+        allow delete: if isOwner(userId);
+
+        match /comments/{commentId} {
+          allow read: if isOwner(userId) ||
+            (publicWorkerProfileVisible(userId) &&
+              publicProjectExists(userId, projectId));
+          allow create: if isAuthenticated() &&
+            (isOwner(userId) || publicWorkerProfileVisible(userId)) &&
+            publicProjectExists(userId, projectId) &&
+            request.resource.data.userId == request.auth.uid &&
+            validProjectComment(request.resource.data) &&
+            recentTimestamp(request.resource.data, 'timestamp');
+          allow update: if isAuthenticated() &&
+            (isOwner(userId) || publicWorkerProfileVisible(userId)) &&
+            publicProjectExists(userId, projectId) &&
+            resource.data.userId == request.auth.uid &&
+            request.resource.data.userId == resource.data.userId &&
+            request.resource.data.timestamp == resource.data.timestamp &&
+            validProjectComment(request.resource.data);
+          allow delete: if isAdmin() || isOwner(userId) ||
+            (isAuthenticated() && resource.data.userId == request.auth.uid);
+        }
+
+        match /likes/{likerId} {
+          allow get: if isOwner(userId) || isOwner(likerId);
+          allow list: if isOwner(userId);
+          allow create, update: if isOwner(likerId) &&
+            (isOwner(userId) || publicWorkerProfileVisible(userId)) &&
+            publicProjectExists(userId, projectId) &&
+            request.resource.data.userId == request.auth.uid &&
+            validProjectLike(request.resource.data) &&
+            recentTimestamp(request.resource.data, 'timestamp');
+          allow delete: if isOwner(userId) || isOwner(likerId);
+        }
+      }
     }
 
     // ===============================================================
@@ -588,7 +817,7 @@ service cloud.firestore {
         uidUnchanged() && validSelfServiceUserCreate(request.resource.data) &&
         recentTimestamp(request.resource.data, 'createdAt');
       allow update: if (isAdmin() && validUser(request.resource.data)) ||
-        (isOwner(userId) && isDocOwner() && uidNotModified() &&
+        (isOwner(userId) && uidNotModified() &&
           userServerFieldsUnchanged() && validOwnerUserUpdate());
       allow delete: if isOwner(userId) || isAdmin();
 
@@ -630,20 +859,13 @@ service cloud.firestore {
       }
 
       match /projects/{projectId} {
-        allow read: if isAuthenticated();
-        allow create, update: if isOwner(userId) &&
-          validPublicProject(request.resource.data);
-        allow delete: if isOwner(userId);
+        allow read: if isOwner(userId) || isAdmin();
+        allow create, update, delete: if false;
       }
 
       match /reviews/{reviewId} {
-        allow read: if isAuthenticated();
-        allow create: if isAuthenticated() && validReview(request.resource.data, userId);
-        allow update: if isOwner(userId) && validReview(request.resource.data, userId);
-        allow delete: if isOwner(userId) ||
-          (isAuthenticated() &&
-            resource.data.get('reviewerId', resource.data.get('userId', '')) ==
-              request.auth.uid);
+        allow read: if isOwner(userId) || isAdmin();
+        allow create, update, delete: if false;
       }
 
       match /comments/{commentId} {
@@ -672,7 +894,44 @@ service cloud.firestore {
             request.resource.data.get('fromId', request.auth.uid)) == request.auth.uid;
         allow update: if isOwner(userId) && validNotification(request.resource.data) &&
           request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['isRead', 'read']);
+            .hasOnly([
+              'isRead', 'read', 'status', 'seenAt', 'reviewedAt', 'reviewedBy'
+            ]);
+      }
+
+      match /requests/{requestId} {
+        allow read, delete: if isOwner(userId);
+        allow create: if isOwner(userId) &&
+          validWorkRequest(request.resource.data) &&
+          request.resource.data.fromId == request.auth.uid &&
+          request.resource.data.requestId == requestId &&
+          recentTimestamp(request.resource.data, 'timestamp');
+        allow update: if validWorkRequest(request.resource.data) &&
+          workRequestIdentityUnchanged(request.resource.data) &&
+          ((isOwner(userId) && request.resource.data.diff(resource.data)
+              .affectedKeys().hasOnly(['status', 'cancelledAt', 'updatedAt'])) ||
+            (isAuthenticated() && request.auth.uid == resource.data.workerId &&
+              request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                'status', 'acceptedWindow', 'quotePrice', 'quoteDescription',
+                'quoteSentAt', 'seenAt', 'reviewedAt', 'reviewedBy', 'updatedAt'
+              ])));
+      }
+
+      match /RequestToMe/{requestId} {
+        allow read, delete: if isOwner(userId);
+        allow update: if isOwner(userId) &&
+          validWorkRequest(request.resource.data) &&
+          workRequestIdentityUnchanged(request.resource.data) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status', 'acceptedWindow', 'quotePrice', 'quoteDescription',
+            'quoteSentAt', 'seenAt', 'reviewedAt', 'reviewedBy', 'updatedAt'
+          ]);
+        allow create: if isAuthenticated() &&
+          validWorkRequest(request.resource.data) &&
+          request.resource.data.fromId == request.auth.uid &&
+          request.resource.data.workerId == userId &&
+          request.resource.data.workerRequestToMeId == requestId &&
+          recentTimestamp(request.resource.data, 'timestamp');
       }
 
       match /deviceTokens/{tokenId} {
@@ -744,28 +1003,13 @@ service cloud.firestore {
       }
 
       match /Schedule/{scheduleId} {
-        allow read: if isOwner(userId) || isAuthenticated();
-        allow create, update: if isOwner(userId) &&
-          request.resource.data.keys().hasOnly([
-            'allReminders', 'availableDates', 'dayNotes', 'defaultWorkingHours',
-            'disabledDays', 'hideSchedule', 'partialWorkDays', 'reminderDates',
-            'vacations', 'updatedAt'
-          ]) && optionalList(request.resource.data, 'allReminders', 1000) &&
-          optionalList(request.resource.data, 'availableDates', 1000) &&
-          optionalMap(request.resource.data, 'dayNotes', 400) &&
-          optionalMap(request.resource.data, 'defaultWorkingHours', 14) &&
-          optionalList(request.resource.data, 'disabledDays', 400) &&
-          optionalBool(request.resource.data, 'hideSchedule') &&
-          optionalMap(request.resource.data, 'partialWorkDays', 400) &&
-          optionalList(request.resource.data, 'reminderDates', 1000) &&
-          optionalList(request.resource.data, 'vacations', 400) &&
-          optionalTimestamp(request.resource.data, 'updatedAt');
-        allow delete: if isOwner(userId);
+        allow read: if isOwner(userId) || isAdmin();
+        allow create, update, delete: if false;
       }
 
       match /{ownerCollection}/{document=**} {
         allow read, write: if isOwner(userId) && ownerCollection in [
-          'ProRating', 'RequestToMe', 'VPD', 'clientNumbers', 'clientTaxIds',
+          'ProRating', 'VPD', 'clientNumbers', 'clientTaxIds',
           'logs', 'subscriptionPayments'
         ];
       }
@@ -826,7 +1070,9 @@ service cloud.firestore {
     match /reports/{reportId} {
       allow create: if isAuthenticated() && validReport(request.resource.data) &&
         recentTimestamp(request.resource.data, 'timestamp');
-      allow read, update, delete: if isAdmin();
+      allow read: if isAdmin() ||
+        (isAuthenticated() && resource.data.reporterId == request.auth.uid);
+      allow update, delete: if isAdmin();
     }
 
     match /accountDeletionFeedback/{feedbackId} {

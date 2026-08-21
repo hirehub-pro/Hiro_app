@@ -327,9 +327,9 @@ class _AddProjectPageState extends State<AddProjectPage> {
         mediaUrls.add(url);
       }
 
-      // Save under 'users' collection sub-collection
+      // Projects are public worker content; private account data stays in users.
       await FirebaseFirestore.instance
-          .collection('users')
+          .collection('publicWorkerProfiles')
           .doc(user.uid)
           .collection('projects')
           .add({

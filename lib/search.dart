@@ -669,7 +669,7 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
 
         try {
           final scheduleDoc = await _firestore
-              .collection('users')
+              .collection('publicWorkerProfiles')
               .doc(uid)
               .collection('Schedule')
               .doc('info')

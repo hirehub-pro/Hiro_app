@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:provider/provider.dart';
@@ -81,7 +82,7 @@ class _ChatPageState extends State<ChatPage> {
   final Set<String> _failedDownloads = {};
   final Map<String, Future<String?>> _localResolveFutures = {};
   final List<_PendingMediaUpload> _pendingMediaUploads = [];
-  late Stream<QuerySnapshot> _messageStream;
+  Stream<QuerySnapshot>? _messageStream;
 
   // Selection Mode State
   bool _isSelectionMode = false;
@@ -127,14 +128,7 @@ class _ChatPageState extends State<ChatPage> {
     _checkUserType();
     final currentUserId = _auth.currentUser!.uid;
     final chatRoomId = _getChatRoomId(currentUserId, widget.receiverId);
-    _messageStream = _firestore
-        .collection('chat_rooms')
-        .doc(chatRoomId)
-        .collection('messages')
-        .orderBy('timestamp', descending: true)
-        .snapshots();
-    _resetUnreadCount(chatRoomId, currentUserId);
-    _setActiveChat(currentUserId);
+    unawaited(_initializeChatRoom(chatRoomId, currentUserId));
   }
 
   late final WidgetsBindingObserver _lifecycleObserver =
@@ -153,15 +147,52 @@ class _ChatPageState extends State<ChatPage> {
         },
       );
 
-  void _resetUnreadCount(String chatRoomId, String userId) {
-    _firestore.collection('chat_rooms').doc(chatRoomId).set({
-      'unreadCount': {userId: 0},
-    }, SetOptions(merge: true));
+  Future<void> _initializeChatRoom(String chatRoomId, String userId) async {
+    try {
+      await _ensureChatRoom();
+      if (!mounted) return;
+      setState(() {
+        _messageStream = _firestore
+            .collection('chat_rooms')
+            .doc(chatRoomId)
+            .collection('messages')
+            .orderBy('timestamp', descending: true)
+            .snapshots();
+      });
+      await _setActiveChat(userId);
+    } catch (error) {
+      debugPrint('Could not initialize chat room: $error');
+      if (mounted) setState(() {});
+    }
+  }
+
+  Future<void> _ensureChatRoom() async {
+    final callable = FirebaseFunctions.instanceFor(
+      region: 'me-west1',
+    ).httpsCallable('ensureChatRoom');
+    await callable.call<void>({
+      'receiverId': widget.receiverId,
+      'receiverName': widget.receiverName,
+    });
   }
 
   Future<DocumentSnapshot?> _getUserDoc(String uid) async {
     final doc = await _firestore.collection('users').doc(uid).get();
     return doc.exists ? doc : null;
+  }
+
+  Future<Map<String, dynamic>> _getContactDetails(String uid) async {
+    final currentUserId = _auth.currentUser?.uid;
+    if (currentUserId != null && currentUserId != uid) {
+      await _ensureChatRoom();
+    }
+    final callable = FirebaseFunctions.instanceFor(
+      region: 'me-west1',
+    ).httpsCallable('getProfileContactDetails');
+    final response = await callable.call<Map<String, dynamic>>({
+      'targetUserId': uid,
+    });
+    return response.data;
   }
 
   Future<void> _openInvoiceForChatContact() async {
@@ -170,51 +201,25 @@ class _ChatPageState extends State<ChatPage> {
 
     setState(() => _isOpeningInvoice = true);
     try {
-      final receiverFuture = _getUserDoc(widget.receiverId);
-      final verificationFuture = _firestore
-          .collection('users')
-          .doc(widget.receiverId)
-          .collection('verification_info')
-          .doc('latest')
-          .get();
+      final receiverFuture = _getContactDetails(widget.receiverId);
       final clientsFuture = _firestore
           .collection('users')
           .doc(currentUser.uid)
           .collection('clients')
           .get();
 
-      final receiverDoc = await receiverFuture;
+      final receiverData = await receiverFuture;
       final clientsSnapshot = await clientsFuture;
-      final receiverData = receiverDoc?.data() is Map<String, dynamic>
-          ? receiverDoc!.data() as Map<String, dynamic>
-          : <String, dynamic>{};
-      var verificationData = <String, dynamic>{};
-      try {
-        final verificationDoc = await verificationFuture;
-        verificationData = verificationDoc.data() ?? <String, dynamic>{};
-      } catch (error) {
-        debugPrint('Could not load receiver verification details: $error');
-      }
 
       final receiverName = (receiverData['name'] ?? widget.receiverName)
           .toString()
           .trim();
       final phone = (receiverData['phone'] ?? '').toString().trim();
       final email = (receiverData['email'] ?? '').toString().trim();
-      final address =
-          (verificationData['address'] ??
-                  receiverData['address'] ??
-                  receiverData['town'] ??
-                  '')
-              .toString()
-              .trim();
-      final taxId =
-          (verificationData['businessId'] ??
-                  receiverData['businessId'] ??
-                  receiverData['taxId'] ??
-                  '')
-              .toString()
-              .trim();
+      final address = (receiverData['address'] ?? receiverData['town'] ?? '')
+          .toString()
+          .trim();
+      final taxId = (receiverData['taxId'] ?? '').toString().trim();
       String? savedClientId;
       Map<String, dynamic>? savedClientData;
 
@@ -490,19 +495,6 @@ class _ChatPageState extends State<ChatPage> {
   }) async {
     try {
       final senderName = await _resolveSenderDisplayName(senderId);
-      final receiverDoc = await _firestore
-          .collection('users')
-          .doc(widget.receiverId)
-          .get();
-      final receiverData = receiverDoc.data() ?? {};
-      final bool receiverInThisChat =
-          receiverData['isInChatPage'] == true &&
-          receiverData['activeChatWith'] == senderId;
-
-      if (receiverInThisChat) {
-        return;
-      }
-
       await _firestore
           .collection('users')
           .doc(widget.receiverId)
@@ -616,19 +608,15 @@ class _ChatPageState extends State<ChatPage> {
       'receiverId': widget.receiverId,
       'message': text ?? '',
       'type': type,
-      'url': url,
-      'fileName': fileName,
+      if (url != null && url.isNotEmpty) 'url': url,
+      if (fileName != null && fileName.isNotEmpty) 'fileName': fileName,
       if (durationSeconds != null) 'durationSeconds': durationSeconds,
       if (mediaItems != null) 'mediaItems': mediaItems,
       'timestamp': FieldValue.serverTimestamp(),
     };
 
     try {
-      await _firestore
-          .collection('chat_rooms')
-          .doc(chatRoomId)
-          .collection('messages')
-          .add(messageData);
+      await _ensureChatRoom();
 
       String lastMsgDisplay = "";
       switch (type) {
@@ -651,19 +639,18 @@ class _ChatPageState extends State<ChatPage> {
           lastMsgDisplay = text ?? "";
       }
 
-      await _firestore.collection('chat_rooms').doc(chatRoomId).set({
+      final roomRef = _firestore.collection('chat_rooms').doc(chatRoomId);
+      final messageRef = roomRef.collection('messages').doc();
+      final batch = _firestore.batch();
+      batch.set(messageRef, messageData);
+      batch.update(roomRef, {
         'lastMessage': lastMsgDisplay,
         'lastTimestamp': FieldValue.serverTimestamp(),
-        'users': [currentUserId, widget.receiverId],
-        'user_names': {
-          currentUserId: _currentUserName ?? "User",
-          widget.receiverId: widget.receiverName,
-        },
-      }, SetOptions(merge: true));
-
-      await _firestore.collection('chat_rooms').doc(chatRoomId).update({
+        'user_names.$currentUserId': _currentUserName ?? 'User',
+        'user_names.${widget.receiverId}': widget.receiverName,
         'unreadCount.${widget.receiverId}': FieldValue.increment(1),
       });
+      await batch.commit();
 
       await _notifyReceiverIfNotInChat(
         senderId: currentUserId,
@@ -694,7 +681,10 @@ class _ChatPageState extends State<ChatPage> {
 
   Widget _buildChatHeaderTitle(bool isRtl) {
     return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-      stream: _firestore.collection('users').doc(widget.receiverId).snapshots(),
+      stream: _firestore
+          .collection('publicWorkerProfiles')
+          .doc(widget.receiverId)
+          .snapshots(),
       builder: (context, snapshot) {
         final data = snapshot.data?.data() ?? <String, dynamic>{};
         final displayName = (data['name'] ?? widget.receiverName).toString();
@@ -812,16 +802,15 @@ class _ChatPageState extends State<ChatPage> {
           IconButton(
             icon: const Icon(Icons.call_rounded, size: 22),
             onPressed: () async {
-              final userDoc = await _getUserDoc(widget.receiverId);
-              if (userDoc != null && userDoc.exists) {
-                final data = userDoc.data() as Map<String, dynamic>;
-                final phone = data['phone'];
-                if (phone != null) {
-                  final Uri url = Uri.parse("tel:$phone");
-                  if (await canLaunchUrl(url)) {
-                    await launchUrl(url);
-                  }
+              try {
+                final data = await _getContactDetails(widget.receiverId);
+                final phone = data['phone']?.toString().trim() ?? '';
+                if (phone.isNotEmpty) {
+                  final Uri url = Uri.parse('tel:$phone');
+                  if (await canLaunchUrl(url)) await launchUrl(url);
                 }
+              } catch (error) {
+                debugPrint('Could not load chat contact phone: $error');
               }
             },
           ),

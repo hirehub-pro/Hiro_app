@@ -74,264 +74,6 @@ class _AddReviewPageState extends State<AddReviewPage> {
     });
   }
 
-  String _docIdForProfession(String profession) {
-    return profession.trim().replaceAll('/', '_');
-  }
-
-  double _toDouble(dynamic value, {double fallback = 0.0}) {
-    if (value is num) return value.toDouble();
-    return fallback;
-  }
-
-  Map<String, double> _reviewMetrics(Map<String, dynamic> review) {
-    final overall = _toDouble(review['rating'], fallback: 0.0);
-    final price = _toDouble(review['priceRating'], fallback: overall);
-    final service = _toDouble(
-      review['serviceRating'],
-      fallback: _toDouble(review['professionalismRating'], fallback: overall),
-    );
-    final timing = _toDouble(review['timingRating'], fallback: overall);
-    final workQuality = _toDouble(
-      review['workQualityRating'],
-      fallback: _toDouble(review['workRating'], fallback: overall),
-    );
-
-    return {
-      'overall': overall,
-      'price': price,
-      'service': service,
-      'timing': timing,
-      'workQuality': workQuality,
-    };
-  }
-
-  Map<String, dynamic> _buildProfessionAggregateUpdate({
-    required String profession,
-    required int reviewCount,
-    required double totalStars,
-    required double totalPriceStars,
-    required double totalServiceStars,
-    required double totalTimingStars,
-    required double totalWorkQualityStars,
-  }) {
-    final safeCount = reviewCount < 0 ? 0 : reviewCount;
-    final divisor = safeCount == 0 ? 1 : safeCount;
-
-    return {
-      'profession': profession,
-      'reviewCount': safeCount,
-      'totalStars': totalStars < 0 ? 0.0 : totalStars,
-      'totalPriceStars': totalPriceStars < 0 ? 0.0 : totalPriceStars,
-      'totalServiceStars': totalServiceStars < 0 ? 0.0 : totalServiceStars,
-      'totalTimingStars': totalTimingStars < 0 ? 0.0 : totalTimingStars,
-      'totalWorkQualityStars': totalWorkQualityStars < 0
-          ? 0.0
-          : totalWorkQualityStars,
-      'avgOverallRating': safeCount == 0 ? 0.0 : totalStars / divisor,
-      'avgPriceRating': safeCount == 0 ? 0.0 : totalPriceStars / divisor,
-      'avgServiceRating': safeCount == 0 ? 0.0 : totalServiceStars / divisor,
-      'avgTimingRating': safeCount == 0 ? 0.0 : totalTimingStars / divisor,
-      'avgWorkQualityRating': safeCount == 0
-          ? 0.0
-          : totalWorkQualityStars / divisor,
-      'updatedAt': FieldValue.serverTimestamp(),
-    };
-  }
-
-  Future<void> _updateWorkerRatingAggregates({
-    required DocumentReference<Map<String, dynamic>> reviewRef,
-    required Map<String, dynamic> newReviewData,
-  }) async {
-    final firestore = FirebaseFirestore.instance;
-    final workerRef = firestore.collection('users').doc(widget.targetUserId);
-    final proRatingCol = workerRef.collection('ProRating');
-
-    await firestore.runTransaction((tx) async {
-      final workerSnap = await tx.get(workerRef);
-      final reviewSnap = await tx.get(reviewRef);
-
-      final existingReview = reviewSnap.data();
-      final oldProfession = (existingReview?['profession'] ?? '')
-          .toString()
-          .trim();
-      final newProfession = (newReviewData['profession'] ?? '')
-          .toString()
-          .trim();
-      if (newProfession.isEmpty) {
-        throw StateError('Review profession is required.');
-      }
-
-      final oldMetrics = existingReview == null
-          ? null
-          : _reviewMetrics(Map<String, dynamic>.from(existingReview));
-      final newMetrics = _reviewMetrics(newReviewData);
-
-      final oldProRef = oldProfession.isEmpty
-          ? null
-          : proRatingCol.doc(_docIdForProfession(oldProfession));
-      final newProRef = proRatingCol.doc(_docIdForProfession(newProfession));
-
-      DocumentSnapshot<Map<String, dynamic>>? oldProSnap;
-      if (oldProRef != null) {
-        oldProSnap = await tx.get(oldProRef);
-      }
-      final newProSnap = oldProfession == newProfession && oldProSnap != null
-          ? oldProSnap
-          : await tx.get(newProRef);
-
-      final workerData = workerSnap.data() ?? <String, dynamic>{};
-      final currentReviewCount =
-          (workerData['reviewCount'] as num?)?.toInt() ?? 0;
-      final currentTotalStars = _toDouble(
-        workerData['totalStars'],
-        fallback: 0.0,
-      );
-
-      int nextReviewCount = currentReviewCount;
-      double nextTotalStars = currentTotalStars;
-
-      if (oldMetrics == null) {
-        nextReviewCount += 1;
-      } else {
-        nextTotalStars -= oldMetrics['overall'] ?? 0.0;
-      }
-      nextTotalStars += newMetrics['overall'] ?? 0.0;
-
-      final safeReviewCount = nextReviewCount < 0 ? 0 : nextReviewCount;
-      final safeTotalStars = nextTotalStars < 0 ? 0.0 : nextTotalStars;
-      final nextAvgRating = safeReviewCount == 0
-          ? 0.0
-          : safeTotalStars / safeReviewCount;
-
-      final professionStats = Map<String, dynamic>.from(
-        (workerData['professionStats'] as Map<String, dynamic>?) ?? {},
-      );
-
-      if (oldProRef != null) {
-        final oldData = oldProSnap?.data() ?? <String, dynamic>{};
-        var oldCount = (oldData['reviewCount'] as num?)?.toInt() ?? 0;
-        var oldTotalStars = _toDouble(oldData['totalStars'], fallback: 0.0);
-        var oldTotalPriceStars = _toDouble(
-          oldData['totalPriceStars'],
-          fallback: oldTotalStars,
-        );
-        var oldTotalServiceStars = _toDouble(
-          oldData['totalServiceStars'],
-          fallback: oldTotalStars,
-        );
-        var oldTotalTimingStars = _toDouble(
-          oldData['totalTimingStars'],
-          fallback: oldTotalStars,
-        );
-        var oldTotalWorkQualityStars = _toDouble(
-          oldData['totalWorkQualityStars'],
-          fallback: oldTotalStars,
-        );
-
-        if (oldMetrics != null) {
-          oldCount -= 1;
-          oldTotalStars -= oldMetrics['overall'] ?? 0.0;
-          oldTotalPriceStars -= oldMetrics['price'] ?? 0.0;
-          oldTotalServiceStars -= oldMetrics['service'] ?? 0.0;
-          oldTotalTimingStars -= oldMetrics['timing'] ?? 0.0;
-          oldTotalWorkQualityStars -= oldMetrics['workQuality'] ?? 0.0;
-        }
-
-        if (oldProfession == newProfession) {
-          oldCount += 1;
-          oldTotalStars += newMetrics['overall'] ?? 0.0;
-          oldTotalPriceStars += newMetrics['price'] ?? 0.0;
-          oldTotalServiceStars += newMetrics['service'] ?? 0.0;
-          oldTotalTimingStars += newMetrics['timing'] ?? 0.0;
-          oldTotalWorkQualityStars += newMetrics['workQuality'] ?? 0.0;
-        }
-
-        final updatedOld = _buildProfessionAggregateUpdate(
-          profession: oldProfession,
-          reviewCount: oldCount,
-          totalStars: oldTotalStars,
-          totalPriceStars: oldTotalPriceStars,
-          totalServiceStars: oldTotalServiceStars,
-          totalTimingStars: oldTotalTimingStars,
-          totalWorkQualityStars: oldTotalWorkQualityStars,
-        );
-        tx.set(oldProRef, updatedOld, SetOptions(merge: true));
-
-        if ((updatedOld['reviewCount'] as int) == 0) {
-          professionStats.remove(oldProfession);
-        } else {
-          professionStats[oldProfession] = {
-            'avg': updatedOld['avgOverallRating'],
-            'count': updatedOld['reviewCount'],
-          };
-        }
-      }
-
-      if (oldProfession != newProfession) {
-        final newData = newProSnap.data() ?? <String, dynamic>{};
-        final updatedNew = _buildProfessionAggregateUpdate(
-          profession: newProfession,
-          reviewCount: ((newData['reviewCount'] as num?)?.toInt() ?? 0) + 1,
-          totalStars:
-              _toDouble(newData['totalStars'], fallback: 0.0) +
-              (newMetrics['overall'] ?? 0.0),
-          totalPriceStars:
-              _toDouble(newData['totalPriceStars'], fallback: 0.0) +
-              (newMetrics['price'] ?? 0.0),
-          totalServiceStars:
-              _toDouble(newData['totalServiceStars'], fallback: 0.0) +
-              (newMetrics['service'] ?? 0.0),
-          totalTimingStars:
-              _toDouble(newData['totalTimingStars'], fallback: 0.0) +
-              (newMetrics['timing'] ?? 0.0),
-          totalWorkQualityStars:
-              _toDouble(newData['totalWorkQualityStars'], fallback: 0.0) +
-              (newMetrics['workQuality'] ?? 0.0),
-        );
-        tx.set(newProRef, updatedNew, SetOptions(merge: true));
-        professionStats[newProfession] = {
-          'avg': updatedNew['avgOverallRating'],
-          'count': updatedNew['reviewCount'],
-        };
-      } else if (oldProRef == null) {
-        final newData = newProSnap.data() ?? <String, dynamic>{};
-        final updatedNew = _buildProfessionAggregateUpdate(
-          profession: newProfession,
-          reviewCount: ((newData['reviewCount'] as num?)?.toInt() ?? 0) + 1,
-          totalStars:
-              _toDouble(newData['totalStars'], fallback: 0.0) +
-              (newMetrics['overall'] ?? 0.0),
-          totalPriceStars:
-              _toDouble(newData['totalPriceStars'], fallback: 0.0) +
-              (newMetrics['price'] ?? 0.0),
-          totalServiceStars:
-              _toDouble(newData['totalServiceStars'], fallback: 0.0) +
-              (newMetrics['service'] ?? 0.0),
-          totalTimingStars:
-              _toDouble(newData['totalTimingStars'], fallback: 0.0) +
-              (newMetrics['timing'] ?? 0.0),
-          totalWorkQualityStars:
-              _toDouble(newData['totalWorkQualityStars'], fallback: 0.0) +
-              (newMetrics['workQuality'] ?? 0.0),
-        );
-        tx.set(newProRef, updatedNew, SetOptions(merge: true));
-        professionStats[newProfession] = {
-          'avg': updatedNew['avgOverallRating'],
-          'count': updatedNew['reviewCount'],
-        };
-      }
-
-      tx.set(reviewRef, newReviewData, SetOptions(merge: true));
-      tx.set(workerRef, {
-        'professionStats': professionStats,
-        'totalStars': safeTotalStars,
-        'avgRating': nextAvgRating,
-        'reviewCount': safeReviewCount,
-        'ratingsUpdatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-    });
-  }
-
   Future<void> _submitReview() async {
     final strings = _getLocalizedStrings();
     if (_commentController.text.trim().isEmpty) {
@@ -369,7 +111,8 @@ class _AddReviewPageState extends State<AddReviewPage> {
       final reviewData = {
         'userId': user.uid,
         'userName': user.displayName ?? "Anonymous",
-        'userProfileImage': user.photoURL,
+        if (user.photoURL != null && user.photoURL!.isNotEmpty)
+          'userProfileImage': user.photoURL,
         'profession': _selectedProfession,
         'rating': overallRating,
         'priceRating': _priceRating,
@@ -381,7 +124,7 @@ class _AddReviewPageState extends State<AddReviewPage> {
       };
 
       final reviewCollection = FirebaseFirestore.instance
-          .collection('users')
+          .collection('publicWorkerProfiles')
           .doc(widget.targetUserId)
           .collection('reviews');
       final reviewId = widget.existingReview != null
@@ -389,19 +132,7 @@ class _AddReviewPageState extends State<AddReviewPage> {
           : user.uid;
       final reviewRef = reviewCollection.doc(reviewId);
 
-      await _updateWorkerRatingAggregates(
-        reviewRef: reviewRef,
-        newReviewData: reviewData,
-      );
-
-      if (widget.existingReview == null) {
-        await FirebaseFirestore.instance
-            .collection('metadata')
-            .doc('system')
-            .set({
-              'reviewsCount': FieldValue.increment(1),
-            }, SetOptions(merge: true));
-      }
+      await reviewRef.set(reviewData);
 
       if (mounted) {
         Navigator.pop(context, true);

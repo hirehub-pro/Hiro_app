@@ -63,9 +63,9 @@ class _SchedulePageState extends State<SchedulePage> {
     return _permanentlyDisabledDays.contains(_storedWeekday(date));
   }
 
-  // Updated to use 'users' collection
+  // Public schedule data is stored alongside the public worker profile.
   DocumentReference get _scheduleDoc => _firestore
-      .collection('users')
+      .collection('publicWorkerProfiles')
       .doc(widget.workerId)
       .collection('Schedule')
       .doc('info');
@@ -95,6 +95,17 @@ class _SchedulePageState extends State<SchedulePage> {
   Future<void> _fetchWorkerScheduleConfig() async {
     setState(() => _isLoading = true);
     try {
+      if (!_isOwnSchedule) {
+        final publicProfile = await _firestore
+            .collection('publicWorkerProfiles')
+            .doc(widget.workerId)
+            .get();
+        if (publicProfile.data()?['hideSchedule'] == true) {
+          if (!mounted) return;
+          setState(() => _hideScheduleFromOthers = true);
+          return;
+        }
+      }
       final doc = await _scheduleDoc.get();
       if (doc.exists) {
         final data = doc.data() as Map<String, dynamic>;

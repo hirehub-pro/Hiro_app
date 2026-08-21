@@ -489,14 +489,6 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
     setState(() => _isLoading = true);
     final firestore = FirebaseFirestore.instance;
     try {
-      final clientDoc = await firestore.collection('users').doc(clientId).get();
-      if (!clientDoc.exists) {
-        if (mounted)
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text(strings['error_not_found']!)));
-        return;
-      }
       final notifTitle = strings['send_quote']!;
       final notifBody =
           "${user.displayName ?? 'The professional'} sent you a quote: $price";
@@ -749,14 +741,6 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
     final String date = widget.data['date'];
 
     try {
-      final clientDoc = await firestore.collection('users').doc(clientId).get();
-      if (!clientDoc.exists) {
-        if (mounted)
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text(strings['error_not_found']!)));
-        return;
-      }
       final batch = firestore.batch();
       String? notifTitle;
       String? notifBody;
@@ -769,7 +753,7 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
 
         // 2. Update Pro's Schedule in 'Schedule' sub-collection under 'users'
         final scheduleRef = firestore
-            .collection('users')
+            .collection('publicWorkerProfiles')
             .doc(user.uid)
             .collection('Schedule')
             .doc('info');

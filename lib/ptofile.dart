@@ -551,6 +551,9 @@ class _ProfileState extends State<Profile>
         // The primary profile is now ready to render. The remaining data is
         // useful, but should never delay the first meaningful paint.
         if (mounted) setState(() => _isLoading = false);
+        if (!isOwnProfile) {
+          unawaited(_loadVisibleContactDetails(targetUid, loadGeneration));
+        }
         if (_isOwnProfile && _userRole == 'worker') {
           unawaited(_refreshWorkerProfileStatus(loadGeneration));
         }
@@ -633,6 +636,32 @@ class _ProfileState extends State<Profile>
     if (!mounted || loadGeneration != _profileLoadGeneration) return;
     setState(() => _subscriptionStatus = accessState.subscriptionStatus);
     await _loadTaxAuthorityConnectionStatus();
+  }
+
+  Future<void> _loadVisibleContactDetails(
+    String targetUid,
+    int loadGeneration,
+  ) async {
+    try {
+      final callable = _functions.httpsCallable('getProfileContactDetails');
+      final response = await callable.call<Map<String, dynamic>>({
+        'targetUserId': targetUid,
+      });
+      if (!mounted || loadGeneration != _profileLoadGeneration) return;
+      final data = response.data;
+      setState(() {
+        _phoneNumber = data['phone']?.toString() ?? '';
+        _altPhoneNumber = data['optionalPhone']?.toString() ?? '';
+        _email = data['email']?.toString() ?? '';
+        if (_town.isEmpty) _town = data['town']?.toString() ?? '';
+      });
+    } on FirebaseFunctionsException catch (error) {
+      if (error.code != 'permission-denied' && error.code != 'not-found') {
+        debugPrint('Failed to load profile contact details: $error');
+      }
+    } catch (error) {
+      debugPrint('Failed to load profile contact details: $error');
+    }
   }
 
   Future<void> _loadTaxAuthorityConnectionStatus() async {
@@ -790,8 +819,11 @@ class _ProfileState extends State<Profile>
     String uid,
     String sub,
   ) async {
+    final collection = sub == 'reviews' || sub == 'projects'
+        ? 'publicWorkerProfiles'
+        : 'users';
     final snap = await _firestore
-        .collection('users')
+        .collection(collection)
         .doc(uid)
         .collection(sub)
         .get();
@@ -2500,7 +2532,7 @@ class _ProfileState extends State<Profile>
         final currentUser = FirebaseAuth.instance.currentUser;
         if (currentUser == null) return;
         await _firestore
-            .collection('users')
+            .collection('publicWorkerProfiles')
             .doc(currentUser.uid)
             .collection('projects')
             .doc(project['id'])

@@ -2348,7 +2348,6 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
           'description': _descriptionController.text.trim(),
           'workRadius': _workRadius,
           'hideSchedule': _hideSchedule,
-          'disabledDays': _disabledDays,
         });
       }
       userData.removeWhere((_, value) => value == null);
@@ -2378,7 +2377,6 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
           'description',
           'workRadius',
           'hideSchedule',
-          'disabledDays',
         };
         final profileUpdates = <String, dynamic>{
           for (final entry in userData.entries)
@@ -2390,7 +2388,7 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
       if (_userType == UserType.worker) {
         writeStage = 'schedule';
         await firestore
-            .collection('users')
+            .collection('publicWorkerProfiles')
             .doc(user.uid)
             .collection('Schedule')
             .doc('info')

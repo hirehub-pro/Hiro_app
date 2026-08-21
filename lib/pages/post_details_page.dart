@@ -68,7 +68,7 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
   void _checkIfLiked() async {
     if (_currentUser == null) return;
     final likeDoc = await _firestore
-        .collection('users')
+        .collection('publicWorkerProfiles')
         .doc(widget.workerId)
         .collection('projects')
         .doc(widget.project['id'])
@@ -100,7 +100,7 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
     if (_currentUser == null) return;
 
     final projectRef = _firestore
-        .collection('users')
+        .collection('publicWorkerProfiles')
         .doc(widget.workerId)
         .collection('projects')
         .doc(widget.project['id']);
@@ -113,15 +113,16 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
         _likesCount--;
       });
       await likeRef.delete();
-      await projectRef.update({'likesCount': FieldValue.increment(-1)});
     } else {
       setState(() {
         _isLiked = true;
         _likesCount++;
         _showHeartAnimation = true;
       });
-      await likeRef.set({'timestamp': FieldValue.serverTimestamp()});
-      await projectRef.update({'likesCount': FieldValue.increment(1)});
+      await likeRef.set({
+        'userId': _currentUser.uid,
+        'timestamp': FieldValue.serverTimestamp(),
+      });
 
       Future.delayed(const Duration(milliseconds: 900), () {
         if (mounted) {
@@ -148,7 +149,7 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
       final userImage = userDoc.data()?['profileImageUrl'] ?? '';
 
       await _firestore
-          .collection('users')
+          .collection('publicWorkerProfiles')
           .doc(widget.workerId)
           .collection('projects')
           .doc(widget.project['id'])
@@ -161,12 +162,13 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
             'timestamp': FieldValue.serverTimestamp(),
           });
 
-      await _firestore
-          .collection('users')
-          .doc(widget.workerId)
-          .collection('projects')
-          .doc(widget.project['id'])
-          .update({'commentsCount': FieldValue.increment(1)});
+      if (mounted) {
+        setState(() {
+          final currentCount = widget.project['commentsCount'];
+          widget.project['commentsCount'] =
+              (currentCount is num ? currentCount.toInt() : 0) + 1;
+        });
+      }
     } finally {
       if (mounted) {
         setState(() => _isSubmittingComment = false);
@@ -181,7 +183,7 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
   bool get _isAdmin => _currentUserRole == 'admin';
 
   DocumentReference<Map<String, dynamic>> get _projectRef => _firestore
-      .collection('users')
+      .collection('publicWorkerProfiles')
       .doc(widget.workerId)
       .collection('projects')
       .doc(widget.project['id']);
@@ -1024,10 +1026,7 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Material(
-                          color: Colors.transparent,
-
-                        ),
+                        Material(color: Colors.transparent),
                         const SizedBox(height: 16),
                         Row(
                           children: [
@@ -1130,7 +1129,7 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
                         ),
                         StreamBuilder<QuerySnapshot>(
                           stream: _firestore
-                              .collection('users')
+                              .collection('publicWorkerProfiles')
                               .doc(widget.workerId)
                               .collection('projects')
                               .doc(widget.project['id'])
@@ -2022,7 +2021,7 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
                         ),
                         child: StreamBuilder<QuerySnapshot>(
                           stream: _firestore
-                              .collection('users')
+                              .collection('publicWorkerProfiles')
                               .doc(widget.workerId)
                               .collection('projects')
                               .doc(widget.project['id'])

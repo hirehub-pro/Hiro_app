@@ -102,14 +102,73 @@ test("exposes only visible server-managed worker profiles", {
     professions: ["Electrician"],
     isSearchVisible: false,
   });
+  await seed("publicWorkerProfiles/visible-worker/Schedule/info", {
+    disabledDays: [6, 7],
+    availableDates: [],
+    vacations: [],
+  });
+  await seed("publicWorkerProfiles/hidden-worker/Schedule/info", {
+    disabledDays: [7],
+  });
+  await seed("publicWorkerProfiles/visible-worker/reviews/reviewer-1", {
+    userId: "reviewer-user-id-00001",
+    profession: "Electrician",
+    rating: 5,
+    priceRating: 5,
+    workRating: 5,
+    professionalismRating: 5,
+    comment: "Great",
+    imageUrls: [],
+    timestamp: new Date(),
+  });
+  await seed("publicWorkerProfiles/visible-worker/projects/project-1", {
+    description: "A public portfolio project",
+    imageUrl: "https://example.com/project.jpg",
+    imageUrls: ["https://example.com/project.jpg"],
+    mediaTypes: ["image"],
+    hasVideo: false,
+    likesCount: 0,
+    commentsCount: 1,
+    timestamp: new Date(),
+  });
+  await seed(
+      "publicWorkerProfiles/visible-worker/projects/project-1/comments/comment-1",
+      {
+        userId: "commenter-user-id-00001",
+        userName: "Commenter",
+        userImage: "",
+        text: "Public comment",
+        timestamp: new Date(),
+      },
+  );
+  await seed("publicWorkerProfiles/hidden-worker/projects/project-1", {
+    description: "Hidden portfolio project",
+    timestamp: new Date(),
+  });
 
   const unauth = testEnv.unauthenticatedContext().firestore();
   const customer = testEnv.authenticatedContext(
       "customer-user-id-00001",
   ).firestore();
-  await assertSucceeds(getDoc(
+  await assertFails(getDoc(
       doc(unauth, "publicWorkerProfiles/visible-worker"),
   ));
+  await assertSucceeds(getDoc(doc(
+      unauth,
+      "publicWorkerProfiles/visible-worker/projects/project-1",
+  )));
+  await assertSucceeds(getDocs(collection(
+      unauth,
+      "publicWorkerProfiles/visible-worker/projects",
+  )));
+  await assertSucceeds(getDoc(doc(
+      unauth,
+      "publicWorkerProfiles/visible-worker/projects/project-1/comments/comment-1",
+  )));
+  await assertFails(getDoc(doc(
+      unauth,
+      "publicWorkerProfiles/hidden-worker/projects/project-1",
+  )));
   await assertSucceeds(getDoc(
       doc(customer, "publicWorkerProfiles/visible-worker"),
   ));
@@ -121,10 +180,52 @@ test("exposes only visible server-managed worker profiles", {
       where("isSearchVisible", "==", true),
   )));
   await assertFails(getDocs(collection(customer, "publicWorkerProfiles")));
+  await assertSucceeds(getDoc(doc(
+      customer,
+      "publicWorkerProfiles/visible-worker/Schedule/info",
+  )));
+  await assertFails(getDoc(doc(
+      customer,
+      "publicWorkerProfiles/hidden-worker/Schedule/info",
+  )));
+  await assertSucceeds(getDoc(doc(
+      customer,
+      "publicWorkerProfiles/visible-worker/reviews/reviewer-1",
+  )));
   await assertFails(updateDoc(
       doc(customer, "publicWorkerProfiles/visible-worker"),
       {avgRating: 5},
   ));
+  await assertSucceeds(setDoc(doc(
+      customer,
+      "publicWorkerProfiles/visible-worker/projects/project-1/comments/customer-comment",
+  ), {
+    userId: "customer-user-id-00001",
+    userName: "Customer",
+    userImage: "",
+    text: "Looks great",
+    timestamp: serverTimestamp(),
+  }));
+  await assertSucceeds(setDoc(doc(
+      customer,
+      "publicWorkerProfiles/visible-worker/projects/project-1/likes/customer-user-id-00001",
+  ), {
+    userId: "customer-user-id-00001",
+    timestamp: serverTimestamp(),
+  }));
+  await assertFails(setDoc(doc(
+      customer,
+      "publicWorkerProfiles/visible-worker/projects/forged-project",
+  ), {
+    description: "Not my project",
+    timestamp: serverTimestamp(),
+  }));
+  await assertFails(updateDoc(doc(
+      customer,
+      "publicWorkerProfiles/visible-worker/projects/project-1/comments/customer-comment",
+  ), {
+    userId: "different-user-id-00001",
+  }));
 });
 
 test("allows guests to read blogs and profession catalogs only", {
@@ -209,7 +310,7 @@ test("allows inactive worker registration but rejects forged entitlement", {
   };
 
   await assertSucceeds(setDoc(doc(db, `users/${uid}`), worker));
-  await assertSucceeds(setDoc(doc(db, `users/${uid}/Schedule/info`), {
+  await assertSucceeds(setDoc(doc(db, `publicWorkerProfiles/${uid}/Schedule/info`), {
     hideSchedule: false,
     disabledDays: [6, 7],
     defaultWorkingHours: {from: "08:00", to: "16:00"},
@@ -407,6 +508,135 @@ test("allows chat participants and denies outsiders", {
   ));
   const eveDb = testEnv.authenticatedContext(eve).firestore();
   await assertFails(getDoc(doc(eveDb, `chat_rooms/${roomId}`)));
+});
+
+test("allows chat presence fields and the app review payload", {
+  skip: !emulatorAvailable,
+}, async () => {
+  const reviewer = "reviewer-user-id-00001";
+  const worker = "review-worker-id-000001";
+  const reviewerDb = testEnv.authenticatedContext(reviewer).firestore();
+  await seed(`users/${reviewer}`, {
+    uid: reviewer,
+    name: "Reviewer",
+    role: "customer",
+    createdAt: new Date(),
+  });
+  await seed(`users/${worker}`, {
+    uid: worker,
+    name: "Worker",
+    role: "worker",
+    createdAt: new Date(),
+  });
+
+  await assertSucceeds(updateDoc(doc(reviewerDb, `users/${reviewer}`), {
+    activeChatWith: worker,
+    activeChatUpdatedAt: serverTimestamp(),
+    isInChatPage: true,
+  }));
+  await assertSucceeds(setDoc(
+      doc(reviewerDb, `publicWorkerProfiles/${worker}/reviews/${reviewer}`),
+      {
+        userId: reviewer,
+        userName: "Reviewer",
+        profession: "Electrician",
+        rating: 4.5,
+        priceRating: 4,
+        workRating: 5,
+        professionalismRating: 4.5,
+        comment: "Excellent work",
+        imageUrls: [],
+        timestamp: serverTimestamp(),
+      },
+  ));
+  await assertFails(setDoc(
+      doc(reviewerDb, `publicWorkerProfiles/${worker}/reviews/forged-review-id`),
+      {
+        userId: reviewer,
+        userName: "Reviewer",
+        profession: "Electrician",
+        rating: 5,
+        priceRating: 5,
+        workRating: 5,
+        professionalismRating: 5,
+        comment: "Forged duplicate",
+        imageUrls: [],
+        timestamp: serverTimestamp(),
+      },
+  ));
+});
+
+test("allows reporters to list only their own reports", {
+  skip: !emulatorAvailable,
+}, async () => {
+  const alice = "report-alice-id-000001";
+  const bob = "report-bob-id-00000003";
+  await seed("reports/alice-report", {
+    reporterId: alice,
+    reportedId: "app",
+    reportType: "user_report",
+    reason: "Login problem",
+    status: "open",
+    timestamp: new Date(),
+  });
+  await seed("reports/bob-report", {
+    reporterId: bob,
+    reportedId: "app",
+    reportType: "user_report",
+    reason: "Payment problem",
+    status: "open",
+    timestamp: new Date(),
+  });
+
+  const aliceDb = testEnv.authenticatedContext(alice).firestore();
+  await assertSucceeds(getDoc(doc(aliceDb, "reports/alice-report")));
+  await assertFails(getDoc(doc(aliceDb, "reports/bob-report")));
+  await assertSucceeds(getDocs(query(
+      collection(aliceDb, "reports"),
+      where("reporterId", "==", alice),
+  )));
+  await assertFails(getDocs(collection(aliceDb, "reports")));
+});
+
+test("allows a customer to create a validated work request for its worker", {
+  skip: !emulatorAvailable,
+}, async () => {
+  const customer = "request-customer-id-001";
+  const worker = "request-worker-id-00001";
+  const requestId = "request-document-1";
+  const incomingId = "incoming-document-1";
+  const customerDb = testEnv.authenticatedContext(customer).firestore();
+  const workerDb = testEnv.authenticatedContext(worker).firestore();
+  const requestData = {
+    requestId,
+    workerId: worker,
+    workerName: "Worker",
+    workerNotificationId: "worker-notification-1",
+    workerRequestToMeId: incomingId,
+    type: "work_request",
+    fromId: customer,
+    fromName: "Customer",
+    jobDescription: "Install a light fixture",
+    images: [],
+    timestamp: serverTimestamp(),
+    status: "pending",
+    title: "Work Request",
+    body: "A customer sent a work request.",
+  };
+
+  const batch = writeBatch(customerDb);
+  batch.set(
+      doc(customerDb, `users/${customer}/requests/${requestId}`),
+      requestData,
+  );
+  batch.set(
+      doc(customerDb, `users/${worker}/RequestToMe/${incomingId}`),
+      requestData,
+  );
+  await assertSucceeds(batch.commit());
+  await assertSucceeds(getDoc(
+      doc(workerDb, `users/${worker}/RequestToMe/${incomingId}`),
+  ));
 });
 
 test("validates community author identity and content size", {

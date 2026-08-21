@@ -1,0 +1,76 @@
+# Firestore access findings
+
+Scope: chat messages, reviews, public worker schedules and projects, work
+requests, chat-to-invoice/client creation, and profile contact details.
+
+- `users/{uid}` contains phone, email, subscription, verification, location, and
+  other private account fields. Reads must remain owner/admin only.
+- `publicWorkerProfiles/{uid}` is the non-sensitive worker discovery projection.
+- Contact details needed by the UI should be returned by a callable that checks
+  authentication and either public worker visibility or an existing shared chat.
+- `chat_rooms/{roomId}` contains `users`, names, last-message metadata, and unread
+  counters. An authenticated callable creates or repairs the canonical room for
+  exactly the current user and requested receiver before the listener starts.
+- `chat_rooms/{roomId}/messages/{messageId}` is participant-only. Optional fields
+  must be omitted rather than written as null.
+- `users/{senderUid}/requests/{requestId}` is owned by the sender.
+- `users/{workerUid}/RequestToMe/{requestId}` is created by the authenticated
+  sender for the worker named in the request and read by the worker.
+- Work-request notification and chat-link payloads use bounded text, timestamps,
+  media URL lists, location data, and immutable sender/worker identifiers.
+- `publicWorkerProfiles/{workerUid}/reviews/{reviewerUid}` stores at most one review per
+  reviewer/worker pair. The reviewer may create or replace that document, while
+  a backend trigger owns aggregate fields on the worker and `ProRating` docs.
+- Review payloads include profession, three required 1-5 category ratings,
+  optional profile image, up to 10 image URLs, bounded comment, and timestamp.
+- `publicWorkerProfiles/{workerUid}/Schedule/info` is the public availability
+  document. The worker owns writes; authenticated users may read it only while
+  the parent profile is search-visible and `hideSchedule` is false.
+- `publicWorkerProfiles/{workerUid}/projects/{projectId}` stores public portfolio
+  media and descriptions. The worker owns project creation, edits, and deletion.
+  Guests and authenticated users may read projects only while the parent worker
+  profile is search-visible. The create schema requires a recent timestamp and
+  bounded description/media fields; the timestamp is immutable on update.
+- Project comments contain the authenticated author's UID, bounded display name,
+  optional HTTPS profile image, bounded text, and a recent timestamp. Public
+  reads and authenticated creates require an existing project on a visible
+  worker profile. Authors can edit/delete their comments; project owners and
+  admins can delete them.
+- Project likes use the liker UID as the document ID and store only that UID and
+  a recent timestamp. A user can read and change only their own like; the project
+  owner may list likes. Backend triggers calculate `likesCount` and
+  `commentsCount`, so clients cannot replay counter increments.
+- Legacy `users/{workerUid}/projects` documents are intentionally not migrated.
+  They are owner/admin-readable rollback data and reject client writes.
+- `reports/{reportId}` is admin-managed, but an authenticated reporter may read
+  their own reports through a `where(reporterId == request.auth.uid)` query.
+
+Relevant queries:
+
+- Chat messages: `orderBy(timestamp, descending: true)`.
+- Saved clients: owner-scoped reads and `where(taxId == ...)`.
+- Sent/incoming requests: owner-scoped `where(type, whereIn: [...])`.
+- Reports page: `where(reporterId == currentUser.uid)`, with optional status
+  equality filtering.
+- Schedule: direct conditional read of
+  `publicWorkerProfiles/{workerUid}/Schedule/info`.
+- Projects: direct collection read of
+  `publicWorkerProfiles/{workerUid}/projects`; nested comments are ordered by
+  `timestamp` ascending or descending. Like state uses a direct document get.
+
+Project-rule adversarial review:
+
+- Public list exploit: hidden-profile project and comment reads are denied;
+  visible-profile projects/comments are intentionally guest-readable.
+- Unauthorized writes and ownership hijacking: only the path owner can create,
+  edit, or delete a project; comment/like identity must match Firebase Auth.
+- Update/schema bypass: project and comment updates re-run their validators;
+  project and comment timestamps and comment author identity are immutable.
+- Type/size/schema pollution: project, comment, and like documents use strict
+  allowed-field validators with bounded strings, lists, URLs, and counters.
+- Counter replay: clients cannot write project counters through interaction
+  rules; backend triggers derive both counters from their subcollections.
+- Orphan access: nested interactions require the parent project to exist, and
+  non-owners additionally require a visible public worker profile.
+- Query mismatch: project lists depend only on the parent profile; comment
+  ordering has no document-level predicate, so both app queries are permitted.

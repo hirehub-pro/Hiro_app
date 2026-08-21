@@ -89,7 +89,7 @@ class _SettingsPageState extends State<SettingsPage>
       final firestore = FirebaseFirestore.instance;
       final doc = await firestore.collection('users').doc(user.uid).get();
       final scheduleDoc = await firestore
-          .collection('users')
+          .collection('publicWorkerProfiles')
           .doc(user.uid)
           .collection('Schedule')
           .doc('info')
@@ -107,7 +107,9 @@ class _SettingsPageState extends State<SettingsPage>
           _userData = data;
           _userRole = data['role'] ?? 'customer';
           _hideSchedule = data['hideSchedule'] ?? false;
-          _disabledDays = List<int>.from(data['disabledDays'] ?? []);
+          _disabledDays = List<int>.from(
+            scheduleData?['disabledDays'] ?? const <int>[],
+          );
           _workingHoursFrom = _parseStoredTime(
             defaultWorkingHours?['from']?.toString(),
             fallback: const TimeOfDay(hour: 8, minute: 0),
@@ -135,11 +137,21 @@ class _SettingsPageState extends State<SettingsPage>
     if (user == null) return;
 
     final firestore = FirebaseFirestore.instance;
+    if (key == 'disabledDays') {
+      await firestore
+          .collection('publicWorkerProfiles')
+          .doc(user.uid)
+          .collection('Schedule')
+          .doc('info')
+          .set({key: value}, SetOptions(merge: true));
+      return;
+    }
+
     await firestore.collection('users').doc(user.uid).update({key: value});
 
-    if (key == 'hideSchedule' || key == 'disabledDays') {
+    if (key == 'hideSchedule') {
       await firestore
-          .collection('users')
+          .collection('publicWorkerProfiles')
           .doc(user.uid)
           .collection('Schedule')
           .doc('info')
@@ -175,7 +187,7 @@ class _SettingsPageState extends State<SettingsPage>
     if (user == null) return;
 
     await FirebaseFirestore.instance
-        .collection('users')
+        .collection('publicWorkerProfiles')
         .doc(user.uid)
         .collection('Schedule')
         .doc('info')

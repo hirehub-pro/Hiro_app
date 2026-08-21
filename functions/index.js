@@ -2402,6 +2402,249 @@ exports.backfillPublicWorkerProfiles = onCall(
     },
 );
 
+exports.getProfileContactDetails = onCall(
+    {
+      region: "me-west1",
+    },
+    async (request) => {
+      const requesterId = request.auth?.uid;
+      if (!requesterId) {
+        throw new HttpsError("unauthenticated", "Authentication required.");
+      }
+
+      const targetUserId = normalizeString(request.data?.targetUserId).trim();
+      if (!targetUserId || targetUserId.length > 128) {
+        throw new HttpsError("invalid-argument", "A valid user ID is required.");
+      }
+
+      const db = admin.firestore();
+      const targetRef = db.collection("users").doc(targetUserId);
+      const publicProfileRef = db
+          .collection(PUBLIC_WORKER_PROFILE_COLLECTION)
+          .doc(targetUserId);
+      const roomId = [requesterId, targetUserId].sort().join("_");
+      const roomRef = db.collection("chat_rooms").doc(roomId);
+      const [targetSnap, publicProfileSnap, roomSnap] = await Promise.all([
+        targetRef.get(),
+        publicProfileRef.get(),
+        requesterId === targetUserId ? Promise.resolve(null) : roomRef.get(),
+      ]);
+
+      if (!targetSnap.exists) {
+        throw new HttpsError("not-found", "User profile not found.");
+      }
+
+      const publicProfile = publicProfileSnap.data() || {};
+      const roomUsers = roomSnap?.data()?.users;
+      const isOwnProfile = requesterId === targetUserId;
+      const isVisibleWorker =
+        publicProfileSnap.exists && publicProfile.isSearchVisible === true;
+      const sharesChat = Array.isArray(roomUsers) &&
+        roomUsers.includes(requesterId) && roomUsers.includes(targetUserId);
+
+      if (!isOwnProfile && !isVisibleWorker && !sharesChat) {
+        throw new HttpsError(
+            "permission-denied",
+            "Contact details are not available for this profile.",
+        );
+      }
+
+      const target = targetSnap.data() || {};
+      return {
+        userId: targetUserId,
+        name: normalizeString(target.name).trim(),
+        phone: normalizeString(target.phone).trim(),
+        optionalPhone: normalizeString(target.optionalPhone).trim(),
+        email: normalizeString(target.email).trim(),
+        town: normalizeString(target.town).trim(),
+      };
+    },
+);
+
+exports.ensureChatRoom = onCall(
+    {
+      region: "me-west1",
+    },
+    async (request) => {
+      const userId = request.auth?.uid;
+      if (!userId) {
+        throw new HttpsError("unauthenticated", "Authentication required.");
+      }
+
+      const receiverId = normalizeString(request.data?.receiverId).trim();
+      const receiverName = normalizeString(request.data?.receiverName)
+          .trim()
+          .slice(0, 100);
+      if (!receiverId || receiverId === userId || receiverId.length > 128) {
+        throw new HttpsError("invalid-argument", "A valid receiver is required.");
+      }
+
+      const db = admin.firestore();
+      const [senderSnap, receiverSnap] = await Promise.all([
+        db.collection("users").doc(userId).get(),
+        db.collection("users").doc(receiverId).get(),
+      ]);
+      if (!senderSnap.exists || !receiverSnap.exists) {
+        throw new HttpsError("not-found", "A chat participant was not found.");
+      }
+
+      const users = [userId, receiverId].sort();
+      const roomId = users.join("_");
+      const senderName = normalizeString(senderSnap.data()?.name)
+          .trim()
+          .slice(0, 100) || "User";
+      const storedReceiverName = normalizeString(receiverSnap.data()?.name)
+          .trim()
+          .slice(0, 100) || receiverName || "User";
+      const roomRef = db.collection("chat_rooms").doc(roomId);
+      const roomSnap = await roomRef.get();
+      const roomData = roomSnap.data() || {};
+      const unreadCount = roomData.unreadCount &&
+        typeof roomData.unreadCount === "object" ? roomData.unreadCount : {};
+
+      await roomRef.set({
+        users,
+        user_names: {
+          [userId]: senderName,
+          [receiverId]: storedReceiverName,
+        },
+        unreadCount: {
+          ...unreadCount,
+          [userId]: 0,
+          [receiverId]: Number.isFinite(unreadCount[receiverId]) ?
+            unreadCount[receiverId] : 0,
+        },
+        lastMessage: normalizeString(roomData.lastMessage).slice(0, 4000),
+        lastTimestamp: roomData.lastTimestamp ||
+          admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      return {roomId};
+    },
+);
+
+exports.syncWorkerReviewRatings = onDocumentWritten(
+    {
+      document: "publicWorkerProfiles/{targetUserId}/reviews/{reviewId}",
+      region: "me-west1",
+    },
+    async (event) => {
+      const targetUserId = event.params.targetUserId;
+      const db = admin.firestore();
+      const reviewsSnap = await db.collection("publicWorkerProfiles")
+          .doc(targetUserId)
+          .collection("reviews")
+          .get();
+
+      let totalStars = 0;
+      const professionTotals = new Map();
+      for (const reviewDoc of reviewsSnap.docs) {
+        const review = reviewDoc.data() || {};
+        const rating = Number(review.rating);
+        const profession = normalizeString(review.profession).trim().slice(0, 120);
+        if (!Number.isFinite(rating) || rating < 1 || rating > 5 || !profession) {
+          continue;
+        }
+        totalStars += rating;
+        const totals = professionTotals.get(profession) || {
+          count: 0,
+          overall: 0,
+          price: 0,
+          service: 0,
+          timing: 0,
+          workQuality: 0,
+        };
+        totals.count += 1;
+        totals.overall += rating;
+        totals.price += Number(review.priceRating) || rating;
+        totals.service += Number(review.serviceRating ??
+          review.professionalismRating) || rating;
+        totals.timing += Number(review.timingRating) || rating;
+        totals.workQuality += Number(review.workQualityRating ??
+          review.workRating) || rating;
+        professionTotals.set(profession, totals);
+      }
+
+      const workerRef = db.collection("users").doc(targetUserId);
+      const ratingCollection = workerRef.collection("ProRating");
+      const oldRatings = await ratingCollection.get();
+      const batch = db.batch();
+      for (const oldRating of oldRatings.docs) batch.delete(oldRating.ref);
+
+      const professionStats = {};
+      for (const [profession, totals] of professionTotals.entries()) {
+        const divisor = totals.count;
+        professionStats[profession] = {
+          avg: totals.overall / divisor,
+          count: totals.count,
+        };
+        batch.set(ratingCollection.doc(profession.replaceAll("/", "_")), {
+          profession,
+          reviewCount: totals.count,
+          totalStars: totals.overall,
+          totalPriceStars: totals.price,
+          totalServiceStars: totals.service,
+          totalTimingStars: totals.timing,
+          totalWorkQualityStars: totals.workQuality,
+          avgOverallRating: totals.overall / divisor,
+          avgPriceRating: totals.price / divisor,
+          avgServiceRating: totals.service / divisor,
+          avgTimingRating: totals.timing / divisor,
+          avgWorkQualityRating: totals.workQuality / divisor,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      }
+
+      const reviewCount = [...professionTotals.values()]
+          .reduce((sum, totals) => sum + totals.count, 0);
+      batch.set(workerRef, {
+        professionStats,
+        totalStars,
+        avgRating: reviewCount === 0 ? 0 : totalStars / reviewCount,
+        reviewCount,
+        ratingsUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, {merge: true});
+      await batch.commit();
+    },
+);
+
+async function syncPublicProjectCount(event, nestedCollection, countField) {
+  const {userId, projectId} = event.params;
+  const db = admin.firestore();
+  const projectRef = db.collection(PUBLIC_WORKER_PROFILE_COLLECTION)
+      .doc(userId)
+      .collection("projects")
+      .doc(projectId);
+  const countSnapshot = await projectRef.collection(nestedCollection)
+      .count()
+      .get();
+  const count = countSnapshot.data().count;
+
+  await db.runTransaction(async (transaction) => {
+    const projectSnapshot = await transaction.get(projectRef);
+    if (!projectSnapshot.exists) return;
+    transaction.update(projectRef, {[countField]: count});
+  });
+}
+
+exports.syncPublicProjectLikes = onDocumentWritten(
+    {
+      document:
+        "publicWorkerProfiles/{userId}/projects/{projectId}/likes/{likeId}",
+      region: "me-west1",
+    },
+    (event) => syncPublicProjectCount(event, "likes", "likesCount"),
+);
+
+exports.syncPublicProjectComments = onDocumentWritten(
+    {
+      document:
+        "publicWorkerProfiles/{userId}/projects/{projectId}/comments/{commentId}",
+      region: "me-west1",
+    },
+    (event) => syncPublicProjectCount(event, "comments", "commentsCount"),
+);
+
 exports.submitBusinessVerification = onCall(
     {
       region: "me-west1",
