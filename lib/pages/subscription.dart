@@ -401,9 +401,10 @@ class _SubscriptionPageState extends State<SubscriptionPage>
           'professions',
           'profileImageUrl',
           'spokenLanguages',
-          'hideSchedule',
         ])
           if (pending[field] != null) field: pending[field],
+        'hideSchedule': FieldValue.delete(),
+        'isInsured': FieldValue.delete(),
         'updatedAt': FieldValue.serverTimestamp(),
       };
 
@@ -419,6 +420,15 @@ class _SubscriptionPageState extends State<SubscriptionPage>
           .collection('publicWorkerProfiles')
           .doc(user.uid)
           .set(publicData, SetOptions(merge: true));
+      await firestore
+          .collection('publicWorkerProfiles')
+          .doc(user.uid)
+          .collection('Schedule')
+          .doc('info')
+          .set({
+            'hideSchedule': pending['hideSchedule'] == true,
+            'updatedAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
       return true;
     } catch (e) {
       debugPrint("Upgrade Error: $e");

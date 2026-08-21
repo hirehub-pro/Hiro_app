@@ -104,11 +104,9 @@ function buildPublicWorkerProfile(userId, userData, now = new Date()) {
     workRadius: Math.max(0, finiteNumber(userData.workRadius)),
     lat,
     lng,
-    hideSchedule: userData.hideSchedule === true,
     isIdVerified: userData.isIdVerified === true,
     isBusinessVerified: userData.isVerified === true ||
       userData.isBusinessVerified === true,
-    isInsured: userData.isInsured === true,
     createdAt: userData.createdAt || null,
     isSearchVisible: hasSearchEntitlement(userData, now),
   };

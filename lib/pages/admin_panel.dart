@@ -557,7 +557,10 @@ class _AdminPanelState extends State<AdminPanel> {
       );
 
       final pendingDocs = verificationDocs.where((doc) {
-        final status = doc.data()?['status']?.toString().toLowerCase();
+        final data = doc.data();
+        final status = (data?['businessVerificationStatus'] ?? data?['status'])
+            ?.toString()
+            .toLowerCase();
         return doc.exists && status == 'pending';
       }).toList();
 

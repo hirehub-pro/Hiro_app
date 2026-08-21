@@ -334,7 +334,9 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
             .get();
         if (doc.exists && mounted) {
           setState(() {
-            _currentStatus = doc.data()?['status'];
+            _currentStatus =
+                doc.data()?['businessVerificationStatus'] ??
+                doc.data()?['status'];
           });
         }
       } catch (e) {

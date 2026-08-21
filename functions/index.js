@@ -765,8 +765,10 @@ async function serverDocumentContext(userId) {
   ]);
   const user = await loadCanonicalUserProfile(db, userId, userSnap);
   const verification = verificationSnap.data() || {};
-  if (user.isapproved !== true ||
-      normalizeString(verification.status).trim() !== "approved") {
+  const verificationStatus = normalizeString(
+      verification.businessVerificationStatus || verification.status,
+  ).trim();
+  if (user.isapproved !== true || verificationStatus !== "approved") {
     throw new HttpsError(
         "failed-precondition",
         "An approved business is required to create documents.",
@@ -775,9 +777,7 @@ async function serverDocumentContext(userId) {
   const vatPercentValue = Number(systemSnap.data()?.vatPercent);
   const vatPercent = Number.isFinite(vatPercentValue) &&
       vatPercentValue > 0 && vatPercentValue <= 100 ? vatPercentValue : 17;
-  const businessId = normalizeBusinessId(
-      verification.businessId || user.businessId,
-  );
+  const businessId = normalizeBusinessId(verification.businessId);
   const [logoBytes, appIconBytes] = await Promise.all([
     optionalStorageBytes(`business_logos/${userId}.jpg`),
     optionalStorageBytes(EMAIL_APP_ICON_STORAGE_PATH),
@@ -1886,9 +1886,7 @@ async function taxInvoiceBusinessProfile(userId, expectedBusinessId) {
   ]);
   const user = await loadCanonicalUserProfile(db, userId, userSnap);
   const verification = verificationSnap.data() || {};
-  const businessId = normalizeBusinessId(
-      verification.businessId || user.businessId,
-  );
+  const businessId = normalizeBusinessId(verification.businessId);
   if (!businessId || businessId !== normalizeBusinessId(expectedBusinessId)) {
     throw new HttpsError(
         "failed-precondition",
@@ -2351,7 +2349,7 @@ exports.syncPublicWorkerProfile = onDocumentWritten(
       for (const field of [
         "name", "email", "phone", "optionalPhone", "description", "town",
         "profileImageUrl", "professions", "spokenLanguages", "workRadius",
-        "lat", "lng", "hideSchedule", "socialLinks",
+        "lat", "lng", "socialLinks",
       ]) {
         if (Object.prototype.hasOwnProperty.call(existingPublicData, field)) {
           profileSource[field] = existingPublicData[field];
@@ -2730,13 +2728,13 @@ exports.submitBusinessVerification = onCall(
           .collection("verification_info").doc("latest");
 
       await db.runTransaction(async (transaction) => {
-        const matchingUsers = await transaction.get(
-            db.collection("users")
+        const matchingVerifications = await transaction.get(
+            db.collectionGroup("verification_info")
                 .where("businessId", "==", businessId)
                 .limit(2),
         );
-        const belongsToAnotherUser = matchingUsers.docs.some(
-            (document) => document.id !== userId,
+        const belongsToAnotherUser = matchingVerifications.docs.some(
+            (document) => document.ref.parent.parent?.id !== userId,
         );
         if (belongsToAnotherUser) {
           throw new HttpsError(
@@ -2756,7 +2754,8 @@ exports.submitBusinessVerification = onCall(
           businessName,
           address,
           dealerType,
-          status: "pending",
+          businessVerificationStatus: "pending",
+          status: admin.firestore.FieldValue.delete(),
           legalAccepted: true,
           termsAccepted: true,
           legalDeclarationAccepted: true,
@@ -2765,9 +2764,9 @@ exports.submitBusinessVerification = onCall(
           businessLogoUrl: businessLogoUrl || null,
         }, {merge: true});
         transaction.update(userRef, {
-          businessId,
-          businessLogoUrl: businessLogoUrl || null,
-          businessVerificationStatus: "pending",
+          businessId: admin.firestore.FieldValue.delete(),
+          businessLogoUrl: admin.firestore.FieldValue.delete(),
+          businessVerificationStatus: admin.firestore.FieldValue.delete(),
         });
       });
 
@@ -2840,8 +2839,10 @@ exports.reviewBusinessVerification = onCall(
           );
         }
 
+        const verificationData = verificationSnapshot.data() || {};
         const currentStatus = normalizeString(
-            verificationSnapshot.data()?.status,
+            verificationData.businessVerificationStatus ||
+              verificationData.status,
         ).trim().toLowerCase();
         if (currentStatus !== "pending") {
           throw new HttpsError(
@@ -2855,23 +2856,29 @@ exports.reviewBusinessVerification = onCall(
         transaction.update(userRef, approved ? {
           isapproved: true,
           isVerified: true,
-          businessVerificationStatus: "approved",
           verifiedAt: reviewedAt,
+          businessId: admin.firestore.FieldValue.delete(),
+          businessLogoUrl: admin.firestore.FieldValue.delete(),
+          businessVerificationStatus: admin.firestore.FieldValue.delete(),
         } : {
           isapproved: false,
           isVerified: false,
-          businessVerificationStatus: "rejected",
           verifiedAt: admin.firestore.FieldValue.delete(),
+          businessId: admin.firestore.FieldValue.delete(),
+          businessLogoUrl: admin.firestore.FieldValue.delete(),
+          businessVerificationStatus: admin.firestore.FieldValue.delete(),
         });
         transaction.set(verificationRef, approved ? {
-          status: "approved",
+          businessVerificationStatus: "approved",
+          status: admin.firestore.FieldValue.delete(),
           approvedAt: reviewedAt,
           reviewedAt,
           reviewedBy: adminUid,
           rejectedAt: admin.firestore.FieldValue.delete(),
           rejectionReason: admin.firestore.FieldValue.delete(),
         } : {
-          status: "rejected",
+          businessVerificationStatus: "rejected",
+          status: admin.firestore.FieldValue.delete(),
           rejectedAt: reviewedAt,
           rejectionReason: reason,
           reviewedAt,
@@ -2881,6 +2888,8 @@ exports.reviewBusinessVerification = onCall(
         if (publicProfileSnapshot.exists) {
           transaction.update(publicProfileRef, {
             isBusinessVerified: approved,
+            hideSchedule: admin.firestore.FieldValue.delete(),
+            isInsured: admin.firestore.FieldValue.delete(),
             updatedAt: reviewedAt,
           });
         }
@@ -5372,13 +5381,13 @@ async function getVerifiedTaxAuthorityBusinessId(userId) {
   ]);
   const userData = userSnap.data() || {};
   const verificationData = verificationSnap.data() || {};
-  const businessId = normalizeBusinessId(
-      verificationData.businessId || userData.businessId,
-  );
+  const businessId = normalizeBusinessId(verificationData.businessId);
   const dealerType = normalizeString(verificationData.dealerType).trim();
-  const isApproved =
-    userData.isapproved === true &&
-    normalizeString(verificationData.status).trim() === "approved";
+  const verificationStatus = normalizeString(
+      verificationData.businessVerificationStatus || verificationData.status,
+  ).trim();
+  const isApproved = userData.isapproved === true &&
+    verificationStatus === "approved";
 
   if (!isApproved ||
       !businessId ||

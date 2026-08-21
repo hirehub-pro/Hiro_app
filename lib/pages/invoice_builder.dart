@@ -2501,12 +2501,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
               .get();
           if (vInfoDoc.exists && mounted) {
             final vData = vInfoDoc.data();
-            final businessLogoUrl =
-                (vData?['businessLogoUrl'] ??
-                        workerData?['businessLogoUrl'] ??
-                        '')
-                    .toString()
-                    .trim();
+            final businessLogoUrl = (vData?['businessLogoUrl'] ?? '')
+                .toString()
+                .trim();
             setState(() {
               _businessId = vData?['businessId'];
               _dealerType = vData?['dealerType'] ?? 'exempt';

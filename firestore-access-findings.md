@@ -10,7 +10,8 @@ schedules and projects, work requests, and chat-to-invoice/client creation.
 - `publicWorkerProfiles/{uid}` is the canonical worker profile. The product
   intentionally exposes name, email, phone, optional phone, description, town,
   precise latitude/longitude, work radius, avatar, professions, languages, and
-  schedule visibility whenever the worker is search-visible.
+  verification badges whenever the worker is search-visible. Schedule
+  visibility is stored only in the nested schedule document.
 - The owner may edit only those bounded public-profile fields. Ratings,
   verification badges, role, creation identity, and search visibility remain
   backend-controlled. The `users/{uid}` trigger preserves public-owned fields
@@ -36,8 +37,11 @@ schedules and projects, work requests, and chat-to-invoice/client creation.
 - Review payloads include profession, three required 1-5 category ratings,
   optional profile image, up to 10 image URLs, bounded comment, and timestamp.
 - `publicWorkerProfiles/{workerUid}/Schedule/info` is the public availability
-  document. The worker owns writes; authenticated users may read it only while
-  the parent profile is search-visible and `hideSchedule` is false.
+  document and the canonical location of `hideSchedule`. The worker owns
+  writes; authenticated users may read it only while the parent profile is
+  search-visible and the schedule document's `hideSchedule` is false.
+- `publicWorkerProfiles/{workerUid}` does not contain `hideSchedule` or
+  `isInsured`; both fields are rejected by the strict public-profile schema.
 - `publicWorkerProfiles/{workerUid}/projects/{projectId}` stores public portfolio
   media and descriptions. The worker owns project creation, edits, and deletion.
   Guests and authenticated users may read projects only while the parent worker
@@ -86,6 +90,11 @@ Relevant queries:
   `reviewBusinessVerification` callable. A single backend transaction updates
   the private account approval flags, the latest request status, the public
   business-verification badge, the user notification, and the legacy queue.
+- Business verification details live only in
+  `users/{uid}/verification_info/latest`. Its canonical fields include
+  `businessId`, `businessLogoUrl`, and `businessVerificationStatus`; the parent
+  user document no longer stores or accepts those fields. Verification writes
+  are server-only, while the owner and administrators may read the document.
 - Projects: direct collection read of
   `publicWorkerProfiles/{workerUid}/projects`; nested comments are ordered by
   `timestamp` ascending or descending. Like state uses a direct document get.
@@ -106,3 +115,35 @@ Project-rule adversarial review:
   non-owners additionally require a visible public worker profile.
 - Query mismatch: project lists depend only on the parent profile; comment
   ordering has no document-level predicate, so both app queries are permitted.
+
+Schedule/public-profile adversarial review (21-point rules checklist):
+
+1. Public list: only search-visible profiles list; schedules require auth,
+   visibility, and `hideSchedule == false`.
+2. Unauthorized CRUD: only the worker owns profile/schedule writes.
+3. Update bypass: both profile and schedule updates rerun strict validators.
+4. Create ownership: profile UID/path ownership is enforced.
+5. Update ownership: UID cannot be changed by an owner update.
+6. Immutable fields: owner updates cannot change role, verification, creation,
+   ratings, or search visibility.
+7. Type juggling: schedule visibility must be a boolean.
+8. Create/update parity: the same schedule validator covers both operations.
+9. Resource exhaustion: schedule lists/maps and profile strings/lists are
+   bounded.
+10. Required fields: public profile UID, role, and name remain required.
+11. Privilege escalation: clients cannot set verification/search fields.
+12. Schema pollution: parent `hideSchedule`, `isInsured`, and unknown fields
+    are rejected.
+13. State transitions: no client-controlled workflow status exists here.
+14. Path traversal: ownership derives from the authenticated path UID.
+15. Timestamp manipulation: optional timestamps must be Firestore timestamps;
+    server-controlled profile fields remain immutable.
+16. Numeric abuse: coordinates, ratings, counts, and radius remain bounded.
+17. Mixed-content leak: discovery data stays in the intentionally public
+    worker projection; private account data remains owner/admin-only.
+18. Counter replay: profile rating counters remain server-managed.
+19. Orphan access: non-owner schedule reads require a visible parent profile.
+20. Query mismatch: discovery uses `isSearchVisible == true`; schedules use
+    direct document gets matching the conditional rule.
+21. Validator pattern: both public-profile and schedule creates/updates call
+    their domain validators.

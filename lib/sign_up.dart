@@ -2361,7 +2361,8 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
         'optionalPhone': _altPhoneController.text.trim(),
         'description': _descriptionController.text.trim(),
         'workRadius': _workRadius,
-        'hideSchedule': _hideSchedule,
+        'hideSchedule': FieldValue.delete(),
+        'isInsured': FieldValue.delete(),
         'updatedAt': FieldValue.serverTimestamp(),
       };
 

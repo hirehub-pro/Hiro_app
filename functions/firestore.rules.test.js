@@ -102,12 +102,24 @@ test("exposes visible profiles while protecting server-managed fields", {
     professions: ["Electrician"],
     isSearchVisible: false,
   });
+  await seed("publicWorkerProfiles/schedule-hidden-worker", {
+    uid: "schedule-hidden-worker",
+    name: "Schedule Hidden Worker",
+    professions: ["Electrician"],
+    isSearchVisible: true,
+  });
   await seed("publicWorkerProfiles/visible-worker/Schedule/info", {
+    hideSchedule: false,
     disabledDays: [6, 7],
     availableDates: [],
     vacations: [],
   });
   await seed("publicWorkerProfiles/hidden-worker/Schedule/info", {
+    hideSchedule: true,
+    disabledDays: [7],
+  });
+  await seed("publicWorkerProfiles/schedule-hidden-worker/Schedule/info", {
+    hideSchedule: true,
     disabledDays: [7],
   });
   await seed("publicWorkerProfiles/visible-worker/reviews/reviewer-1", {
@@ -187,6 +199,10 @@ test("exposes visible profiles while protecting server-managed fields", {
   await assertFails(getDoc(doc(
       customer,
       "publicWorkerProfiles/hidden-worker/Schedule/info",
+  )));
+  await assertFails(getDoc(doc(
+      customer,
+      "publicWorkerProfiles/schedule-hidden-worker/Schedule/info",
   )));
   await assertSucceeds(getDoc(doc(
       customer,
@@ -276,7 +292,7 @@ test("allows an owner account but blocks self-assigned privilege", {
       {
         userId: uid,
         businessId: "515283737",
-        status: "pending",
+        businessVerificationStatus: "pending",
         timestamp: serverTimestamp(),
       },
   ));
@@ -314,7 +330,6 @@ test("allows inactive worker registration but rejects forged entitlement", {
     optionalPhone: "",
     description: "Residential electrical services and installations",
     workRadius: 15000,
-    hideSchedule: false,
     updatedAt: serverTimestamp(),
   };
 
@@ -346,6 +361,12 @@ test("allows inactive worker registration but rejects forged entitlement", {
   }));
   await assertFails(updateDoc(doc(db, `publicWorkerProfiles/${uid}`), {
     isSearchVisible: true,
+  }));
+  await assertFails(updateDoc(doc(db, `publicWorkerProfiles/${uid}`), {
+    hideSchedule: false,
+  }));
+  await assertFails(updateDoc(doc(db, `publicWorkerProfiles/${uid}`), {
+    isInsured: true,
   }));
   await assertSucceeds(setDoc(doc(db, `publicWorkerProfiles/${uid}/Schedule/info`), {
     hideSchedule: false,
@@ -793,7 +814,7 @@ test("permits protected admin-panel reads for a server-assigned admin role", {
   });
   await seed("users/worker-for-admin-0001/verification_info/latest", {
     userId: "worker-for-admin-0001",
-    status: "pending",
+    businessVerificationStatus: "pending",
     timestamp: new Date(),
   });
 

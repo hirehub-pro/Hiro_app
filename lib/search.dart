@@ -2156,7 +2156,6 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
 
           final bool isIdVerified = w['isIdVerified'] ?? false;
           final bool isBusinessVerified = w['isBusinessVerified'] ?? false;
-          final bool isInsured = w['isInsured'] ?? false;
 
           double displayRating = 0.0;
           int displayReviewCount = 0;
@@ -2240,15 +2239,6 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
                           child: Icon(
                             Icons.business_center,
                             color: Colors.orange,
-                            size: 14,
-                          ),
-                        ),
-                      if (isInsured)
-                        const Padding(
-                          padding: EdgeInsets.only(left: 2),
-                          child: Icon(
-                            Icons.shield,
-                            color: Colors.blue,
                             size: 14,
                           ),
                         ),

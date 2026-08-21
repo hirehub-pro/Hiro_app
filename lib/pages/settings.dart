@@ -131,7 +131,7 @@ class _SettingsPageState extends State<SettingsPage>
         setState(() {
           _userData = mergedData;
           _userRole = data['role'] ?? 'customer';
-          _hideSchedule = publicData['hideSchedule'] ?? false;
+          _hideSchedule = scheduleData?['hideSchedule'] ?? false;
           _disabledDays = List<int>.from(
             scheduleData?['disabledDays'] ?? const <int>[],
           );
@@ -173,16 +173,15 @@ class _SettingsPageState extends State<SettingsPage>
     }
 
     if (key == 'hideSchedule') {
-      await firestore.collection('publicWorkerProfiles').doc(user.uid).update({
-        key: value,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
       await firestore
           .collection('publicWorkerProfiles')
           .doc(user.uid)
           .collection('Schedule')
           .doc('info')
-          .set({key: value}, SetOptions(merge: true));
+          .set({
+            key: value,
+            'updatedAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
       return;
     }
 

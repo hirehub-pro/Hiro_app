@@ -8,6 +8,11 @@ service cloud.firestore {
     // users/{uid}: private account, PII, location, verification and
     // subscription data. Owner/admin only. Privilege and subscription fields
     // are immutable to the owner.
+    // users/{uid}/verification_info/latest: private canonical business ID,
+    // logo URL and verification status. Owner/admin read, server-only writes.
+    // publicWorkerProfiles/{uid}: authenticated worker discovery profile.
+    // Schedule privacy lives only in Schedule/info.hideSchedule; insurance is
+    // not part of the public worker profile schema.
     // users/{uid}/invoices/{id}: owner documents. Tax allocation, numbering,
     // finalization, signing and email-delivery fields are server controlled.
     // users/{uid}/counters/{id}: owner-readable sequence state. Initialization
@@ -147,8 +152,8 @@ service cloud.firestore {
         'professions', 'spokenLanguages', 'socialLinks', 'disabledDays',
         'hideSchedule', 'notificationsEnabled', 'activeLocationId',
         'activeLocationLabel', 'activeLocationSource', 'activeLocationUpdatedAt',
-        'activeSearchLat', 'activeSearchLng', 'businessId', 'businessLogoUrl',
-        'dealerType', 'businessVerificationStatus', 'verifiedAt', 'isVerified',
+        'activeSearchLat', 'activeSearchLng', 'dealerType', 'verifiedAt',
+        'isVerified',
         'isapproved', 'avgRating', 'reviewCount', 'totalStars',
         'professionStats', 'ratingsUpdatedAt', 'isInChatPage',
         'activeChatWith', 'activeChatUpdatedAt', 'isPro', 'isSubscribed', 'isVIP',
@@ -174,11 +179,8 @@ service cloud.firestore {
       optionalEmail(data, 'email') &&
       optionalString(data, 'description', 2000) &&
       optionalString(data, 'town', 120) &&
-      optionalString(data, 'businessId', 32) &&
       optionalString(data, 'dealerType', 40) &&
-      optionalString(data, 'businessVerificationStatus', 40) &&
       optionalUrl(data, 'profileImageUrl', 2048) &&
-      optionalUrl(data, 'businessLogoUrl', 2048) &&
       optionalNumber(data, 'lat', -90, 90) &&
       optionalNumber(data, 'lng', -180, 180) &&
       optionalNumber(data, 'workCenterLat', -90, 90) &&
@@ -227,7 +229,6 @@ service cloud.firestore {
         data.get('subscriptionCanceled', false) == false &&
         data.get('avgRating', 0) == 0 &&
         data.get('reviewCount', 0) == 0 &&
-        data.get('businessVerificationStatus', '') == '' &&
         data.get('subscriptionStatus', 'inactive') == 'inactive' &&
         data.get('subscriptionAccountToken', null) == null &&
         data.get('subscriptionDate', null) == null &&
@@ -248,8 +249,8 @@ service cloud.firestore {
 
     function userServerFieldsUnchanged() {
       return !request.resource.data.diff(resource.data).affectedKeys().hasAny([
-        'role', 'isapproved', 'isVerified', 'verifiedAt',
-        'businessVerificationStatus', 'isPro', 'isSubscribed', 'isVIP',
+        'role', 'isapproved', 'isVerified', 'verifiedAt', 'isPro',
+        'isSubscribed', 'isVIP',
         'subscriptionAccountToken', 'subscriptionCanceled', 'subscriptionDate',
         'subscriptionExpiresAt', 'subscriptionOwnershipKey',
         'subscriptionPlatform', 'subscriptionProductId',
@@ -271,7 +272,7 @@ service cloud.firestore {
         'spokenLanguages', 'socialLinks', 'disabledDays', 'hideSchedule',
         'notificationsEnabled', 'activeLocationId', 'activeLocationLabel',
         'activeLocationSource', 'activeLocationUpdatedAt', 'activeSearchLat',
-        'activeSearchLng', 'businessId', 'businessLogoUrl', 'dealerType',
+        'activeSearchLng', 'dealerType',
         'isInChatPage', 'activeChatWith', 'activeChatUpdatedAt',
         'accountingExportSettings',
         'ugcTermsAcceptedAt', 'ugcTermsVersion'
@@ -303,8 +304,6 @@ service cloud.firestore {
       (!changed.hasAny(['disabledDays']) || optionalList(request.resource.data, 'disabledDays', 31)) &&
       (!changed.hasAny(['hideSchedule']) || optionalBool(request.resource.data, 'hideSchedule')) &&
       (!changed.hasAny(['notificationsEnabled']) || optionalBool(request.resource.data, 'notificationsEnabled')) &&
-      (!changed.hasAny(['businessId']) || optionalString(request.resource.data, 'businessId', 32)) &&
-      (!changed.hasAny(['businessLogoUrl']) || optionalUrl(request.resource.data, 'businessLogoUrl', 2048)) &&
       (!changed.hasAny(['dealerType']) || optionalString(request.resource.data, 'dealerType', 40)) &&
       (!changed.hasAny(['isInChatPage']) || optionalBool(request.resource.data, 'isInChatPage')) &&
       (!changed.hasAny(['activeChatWith']) || optionalString(request.resource.data, 'activeChatWith', 128)) &&
@@ -783,8 +782,8 @@ service cloud.firestore {
         'uid', 'role', 'name', 'email', 'phone', 'optionalPhone',
         'description', 'town', 'profileImageUrl', 'professions',
         'spokenLanguages', 'socialLinks', 'avgRating', 'reviewCount',
-        'professionStats', 'workRadius', 'lat', 'lng', 'hideSchedule',
-        'isIdVerified', 'isBusinessVerified', 'isInsured', 'createdAt',
+        'professionStats', 'workRadius', 'lat', 'lng',
+        'isIdVerified', 'isBusinessVerified', 'createdAt',
         'updatedAt', 'isSearchVisible'
       ]) && data.keys().hasAll(['uid', 'role', 'name']) &&
       data.uid == userId && data.role == 'worker' &&
@@ -806,10 +805,8 @@ service cloud.firestore {
         (data.lat is number && data.lat >= -90 && data.lat <= 90)) &&
       (!('lng' in data) || data.lng == null ||
         (data.lng is number && data.lng >= -180 && data.lng <= 180)) &&
-      optionalBool(data, 'hideSchedule') &&
       optionalBool(data, 'isIdVerified') &&
       optionalBool(data, 'isBusinessVerified') &&
-      optionalBool(data, 'isInsured') &&
       optionalBool(data, 'isSearchVisible') &&
       (!('createdAt' in data) || data.createdAt == null ||
         data.createdAt is timestamp) &&
@@ -822,7 +819,7 @@ service cloud.firestore {
           'uid', 'role', 'name', 'email', 'phone', 'optionalPhone',
           'description', 'town', 'profileImageUrl', 'professions',
           'spokenLanguages', 'socialLinks', 'workRadius', 'lat', 'lng',
-          'hideSchedule', 'createdAt', 'updatedAt'
+          'createdAt', 'updatedAt'
         ]) &&
         get(/databases/$(database)/documents/users/$(userId)).data.role ==
           'worker';
@@ -833,7 +830,7 @@ service cloud.firestore {
         request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'name', 'email', 'phone', 'optionalPhone', 'description', 'town',
           'profileImageUrl', 'professions', 'spokenLanguages', 'socialLinks',
-          'workRadius', 'lat', 'lng', 'hideSchedule', 'updatedAt'
+          'workRadius', 'lat', 'lng', 'updatedAt', 'hideSchedule', 'isInsured'
         ]);
     }
 
@@ -856,8 +853,7 @@ service cloud.firestore {
           (isAuthenticated() &&
             get(/databases/$(database)/documents/publicWorkerProfiles/$(userId))
               .data.get('isSearchVisible', false) == true &&
-            get(/databases/$(database)/documents/publicWorkerProfiles/$(userId))
-              .data.get('hideSchedule', false) == false);
+            resource.data.get('hideSchedule', false) == false);
         allow create, update: if isOwner(userId) &&
           validPublicSchedule(request.resource.data);
         allow delete: if isOwner(userId);
@@ -1072,7 +1068,7 @@ service cloud.firestore {
 
       match /verification_info/{verificationId} {
         allow read: if isOwner(userId) || isAdmin();
-        allow create, update, delete: if isAdmin();
+        allow create, update, delete: if false;
       }
 
       match /invoice_builder_lock/{lockId} {

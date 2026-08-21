@@ -95,17 +95,6 @@ class _SchedulePageState extends State<SchedulePage> {
   Future<void> _fetchWorkerScheduleConfig() async {
     setState(() => _isLoading = true);
     try {
-      if (!_isOwnSchedule) {
-        final publicProfile = await _firestore
-            .collection('publicWorkerProfiles')
-            .doc(widget.workerId)
-            .get();
-        if (publicProfile.data()?['hideSchedule'] == true) {
-          if (!mounted) return;
-          setState(() => _hideScheduleFromOthers = true);
-          return;
-        }
-      }
       final doc = await _scheduleDoc.get();
       if (doc.exists) {
         final data = doc.data() as Map<String, dynamic>;
@@ -160,7 +149,10 @@ class _SchedulePageState extends State<SchedulePage> {
           await _updateScheduleWidget();
         }
       }
-    } catch (e) {
+    } on FirebaseException catch (e) {
+      if (!_isOwnSchedule && e.code == 'permission-denied' && mounted) {
+        setState(() => _hideScheduleFromOthers = true);
+      }
       debugPrint("Error fetching worker config: $e");
     } finally {
       if (mounted) setState(() => _isLoading = false);

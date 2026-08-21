@@ -30,6 +30,8 @@ test("builds a bounded public worker profile with public contact fields", () => 
   assert.equal(profile.lng, 34.7817676);
   assert.equal(profile.email, "private@example.com");
   assert.equal(profile.phone, "+972500000000");
+  assert.equal("hideSchedule" in profile, false);
+  assert.equal("isInsured" in profile, false);
   assert.equal("subscriptionStatus" in profile, false);
   assert.equal("subscriptionPurchaseToken" in profile, false);
 });

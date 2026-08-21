@@ -117,7 +117,6 @@ class _ProfileState extends State<Profile>
 
   bool _isIdVerified = false;
   bool _isBusinessVerified = false;
-  bool _isInsured = false;
   bool _areProfessionsExpanded = false;
   bool _isTaxAuthorityConnected = false;
   bool _isTaxAuthorityConnectionLoading = false;
@@ -530,6 +529,24 @@ class _ProfileState extends State<Profile>
 
       if (loadedProfileData != null && mounted) {
         final data = loadedProfileData;
+        var canonicalHideSchedule = false;
+        if ((data['role'] ?? '').toString().toLowerCase() == 'worker') {
+          try {
+            final scheduleDoc = await _firestore
+                .collection('publicWorkerProfiles')
+                .doc(targetUid)
+                .collection('Schedule')
+                .doc('info')
+                .get();
+            canonicalHideSchedule = scheduleDoc.data()?['hideSchedule'] == true;
+          } on FirebaseException catch (error) {
+            if (!isOwnProfile && error.code == 'permission-denied') {
+              canonicalHideSchedule = true;
+            } else {
+              rethrow;
+            }
+          }
+        }
 
         String oldRole = _userRole;
         setState(() {
@@ -550,7 +567,7 @@ class _ProfileState extends State<Profile>
           _socialLinks = _parseSocialLinks(data['socialLinks']);
           _viewsCount = 0;
           _userRole = data['role'] ?? 'customer';
-          _hideSchedule = data['hideSchedule'] ?? false;
+          _hideSchedule = canonicalHideSchedule;
           _subscriptionStatus = isOwnProfile
               ? data['subscriptionStatus']?.toString().toLowerCase() ??
                     'inactive'
@@ -575,8 +592,6 @@ class _ProfileState extends State<Profile>
           _isIdVerified = data['isIdVerified'] ?? false;
           _isBusinessVerified =
               data['isBusinessVerified'] ?? data['isVerified'] ?? false;
-          _isInsured = data['isInsured'] ?? false;
-
           _proLat = data['lat']?.toDouble();
           _proLng = data['lng']?.toDouble();
         });
@@ -2104,12 +2119,6 @@ class _ProfileState extends State<Profile>
                                                 Icons.business_center,
                                                 strings['verified_biz']!,
                                                 Colors.orangeAccent,
-                                              ),
-                                            if (_isInsured)
-                                              _buildHeaderBadge(
-                                                Icons.shield,
-                                                strings['insured']!,
-                                                Colors.blueAccent,
                                               ),
                                           ],
                                         ),
@@ -3962,6 +3971,8 @@ class _ProfileState extends State<Profile>
         if (profile.exists) {
           await profileRef.update({
             'socialLinks': links,
+            'hideSchedule': FieldValue.delete(),
+            'isInsured': FieldValue.delete(),
             'updatedAt': FieldValue.serverTimestamp(),
           });
         } else {
