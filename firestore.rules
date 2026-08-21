@@ -70,6 +70,46 @@ service cloud.firestore {
         (data[field] is list && data[field].size() <= maxSize);
     }
 
+    function validSocialLink(link) {
+      return link is map &&
+        link.keys().hasOnly(['type', 'name', 'url']) &&
+        link.keys().hasAll(['type', 'name', 'url']) &&
+        link.type is string && link.type.size() >= 1 &&
+        link.type.size() <= 40 &&
+        link.name is string && link.name.size() <= 80 &&
+        link.url is string && link.url.size() >= 9 &&
+        link.url.size() <= 2048 && link.url.matches('^https://.*');
+    }
+
+    function validSocialLinkAt(links, index) {
+      return links.size() <= index || validSocialLink(links[index]);
+    }
+
+    function optionalSocialLinks(data) {
+      return !('socialLinks' in data) ||
+        (data.socialLinks is list && data.socialLinks.size() <= 20 &&
+          validSocialLinkAt(data.socialLinks, 0) &&
+          validSocialLinkAt(data.socialLinks, 1) &&
+          validSocialLinkAt(data.socialLinks, 2) &&
+          validSocialLinkAt(data.socialLinks, 3) &&
+          validSocialLinkAt(data.socialLinks, 4) &&
+          validSocialLinkAt(data.socialLinks, 5) &&
+          validSocialLinkAt(data.socialLinks, 6) &&
+          validSocialLinkAt(data.socialLinks, 7) &&
+          validSocialLinkAt(data.socialLinks, 8) &&
+          validSocialLinkAt(data.socialLinks, 9) &&
+          validSocialLinkAt(data.socialLinks, 10) &&
+          validSocialLinkAt(data.socialLinks, 11) &&
+          validSocialLinkAt(data.socialLinks, 12) &&
+          validSocialLinkAt(data.socialLinks, 13) &&
+          validSocialLinkAt(data.socialLinks, 14) &&
+          validSocialLinkAt(data.socialLinks, 15) &&
+          validSocialLinkAt(data.socialLinks, 16) &&
+          validSocialLinkAt(data.socialLinks, 17) &&
+          validSocialLinkAt(data.socialLinks, 18) &&
+          validSocialLinkAt(data.socialLinks, 19));
+    }
+
     function optionalMap(data, field, maxSize) {
       return !(field in data) ||
         (data[field] is map && data[field].size() <= maxSize);
@@ -117,9 +157,11 @@ service cloud.firestore {
         'subscriptionVerificationFreshUntil', 'subscriptionVerifiedAt',
         'accountingExportSettings', 'ugcTermsAcceptedAt', 'ugcTermsVersion'
       ]) &&
-      data.keys().hasAll(['uid', 'name', 'role', 'createdAt']) &&
+      data.keys().hasAll(['uid', 'role', 'createdAt']) &&
       data.uid is string && data.uid.size() >= 20 && data.uid.size() <= 128 &&
-      data.name is string && data.name.size() >= 1 && data.name.size() <= 100 &&
+      optionalString(data, 'name', 100) &&
+      (data.role == 'worker' ||
+        ('name' in data && data.name.size() >= 1)) &&
       data.role in ['customer', 'worker', 'admin'] &&
       data.createdAt is timestamp &&
       optionalString(data, 'phone', 32) &&
@@ -147,7 +189,7 @@ service cloud.firestore {
       optionalList(data, 'professions', 50) &&
       optionalList(data, 'spokenLanguages', 30) &&
       optionalList(data, 'disabledDays', 31) &&
-      optionalMap(data, 'socialLinks', 20) &&
+      optionalSocialLinks(data) &&
       optionalMap(data, 'accountingExportSettings', 30) &&
       optionalBool(data, 'emailVerified') &&
       optionalBool(data, 'hideSchedule') &&
@@ -166,6 +208,11 @@ service cloud.firestore {
     // ratings, or any provider-issued subscription identifiers.
     function validSelfServiceUserCreate(data) {
       return data.role in ['customer', 'worker'] &&
+        (data.role != 'worker' || !data.keys().hasAny([
+          'hideSchedule', 'description', 'email', 'lat', 'lng', 'name',
+          'optionalPhone', 'phone', 'professions', 'profileImageUrl',
+          'spokenLanguages', 'town', 'workRadius'
+        ])) &&
         data.get('emailVerified', false) == false &&
         data.get('isapproved', false) == false &&
         data.get('isVerified', false) == false &&
@@ -224,6 +271,11 @@ service cloud.firestore {
         'accountingExportSettings',
         'ugcTermsAcceptedAt', 'ugcTermsVersion'
       ]) &&
+      (resource.data.role != 'worker' || !changed.hasAny([
+        'hideSchedule', 'description', 'email', 'lat', 'lng', 'name',
+        'optionalPhone', 'phone', 'professions', 'profileImageUrl',
+        'spokenLanguages', 'town', 'workRadius'
+      ])) &&
       (!changed.hasAny(['name']) ||
         (request.resource.data.name is string &&
           request.resource.data.name.size() >= 1 &&
@@ -721,13 +773,78 @@ service cloud.firestore {
       optionalTimestamp(data, 'updatedAt');
     }
 
+    function validPublicWorkerProfile(data, userId) {
+      return data.keys().hasOnly([
+        'uid', 'role', 'name', 'email', 'phone', 'optionalPhone',
+        'description', 'town', 'profileImageUrl', 'professions',
+        'spokenLanguages', 'socialLinks', 'avgRating', 'reviewCount',
+        'professionStats', 'workRadius', 'lat', 'lng', 'hideSchedule',
+        'isIdVerified', 'isBusinessVerified', 'isInsured', 'createdAt',
+        'updatedAt', 'isSearchVisible'
+      ]) && data.keys().hasAll(['uid', 'role', 'name']) &&
+      data.uid == userId && data.role == 'worker' &&
+      data.name is string && data.name.size() >= 1 && data.name.size() <= 100 &&
+      optionalEmail(data, 'email') &&
+      optionalString(data, 'phone', 32) &&
+      optionalString(data, 'optionalPhone', 32) &&
+      optionalString(data, 'description', 2000) &&
+      optionalString(data, 'town', 120) &&
+      optionalUrl(data, 'profileImageUrl', 2048) &&
+      optionalList(data, 'professions', 50) &&
+      optionalList(data, 'spokenLanguages', 30) &&
+      optionalSocialLinks(data) &&
+      optionalNumber(data, 'avgRating', 0, 5) &&
+      optionalNumber(data, 'reviewCount', 0, 100000000) &&
+      optionalMap(data, 'professionStats', 200) &&
+      optionalNumber(data, 'workRadius', 0, 1000000) &&
+      (!('lat' in data) || data.lat == null ||
+        (data.lat is number && data.lat >= -90 && data.lat <= 90)) &&
+      (!('lng' in data) || data.lng == null ||
+        (data.lng is number && data.lng >= -180 && data.lng <= 180)) &&
+      optionalBool(data, 'hideSchedule') &&
+      optionalBool(data, 'isIdVerified') &&
+      optionalBool(data, 'isBusinessVerified') &&
+      optionalBool(data, 'isInsured') &&
+      optionalBool(data, 'isSearchVisible') &&
+      (!('createdAt' in data) || data.createdAt == null ||
+        data.createdAt is timestamp) &&
+      optionalTimestamp(data, 'updatedAt');
+    }
+
+    function validPublicWorkerProfileCreate(data, userId) {
+      return validPublicWorkerProfile(data, userId) &&
+        data.keys().hasOnly([
+          'uid', 'role', 'name', 'email', 'phone', 'optionalPhone',
+          'description', 'town', 'profileImageUrl', 'professions',
+          'spokenLanguages', 'socialLinks', 'workRadius', 'lat', 'lng',
+          'hideSchedule', 'createdAt', 'updatedAt'
+        ]) &&
+        get(/databases/$(database)/documents/users/$(userId)).data.role ==
+          'worker';
+    }
+
+    function validPublicWorkerProfileOwnerUpdate(data, userId) {
+      return validPublicWorkerProfile(data, userId) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'name', 'email', 'phone', 'optionalPhone', 'description', 'town',
+          'profileImageUrl', 'professions', 'spokenLanguages', 'socialLinks',
+          'workRadius', 'lat', 'lng', 'hideSchedule', 'updatedAt'
+        ]);
+    }
+
     // ===============================================================
     // Public worker discovery projection
     // ===============================================================
     match /publicWorkerProfiles/{userId} {
-      allow get, list: if isAuthenticated() &&
+      allow get: if isOwner(userId) || isAdmin() ||
         resource.data.get('isSearchVisible', false) == true;
-      allow create, update, delete: if false;
+      allow list: if isAdmin() ||
+        resource.data.get('isSearchVisible', false) == true;
+      allow create: if isOwner(userId) &&
+        validPublicWorkerProfileCreate(request.resource.data, userId);
+      allow update: if isOwner(userId) &&
+        validPublicWorkerProfileOwnerUpdate(request.resource.data, userId);
+      allow delete: if false;
 
       match /Schedule/{scheduleId} {
         allow read: if isOwner(userId) ||

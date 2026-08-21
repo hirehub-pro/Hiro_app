@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 import 'package:untitled1/services/language_provider.dart';
 import 'package:untitled1/pages/chat_page.dart';
+import 'package:untitled1/services/profile_document_service.dart';
 import 'package:intl/intl.dart' as intl;
 
 class InboxPage extends StatefulWidget {
@@ -297,8 +298,9 @@ class _InboxPageState extends State<InboxPage> {
                       );
                       if (otherUserId.isEmpty) return const SizedBox.shrink();
 
-                      final Map<String, dynamic> userNames =
-                          _chatUserNames(data);
+                      final Map<String, dynamic> userNames = _chatUserNames(
+                        data,
+                      );
                       final String otherUserName =
                           userNames[otherUserId] ??
                           _t(
@@ -688,7 +690,8 @@ class _InboxPageState extends State<InboxPage> {
 
       try {
         final snapshot = await _firestore
-            .collection('users')
+            .collection('publicWorkerProfiles')
+            .where('isSearchVisible', isEqualTo: true)
             .where(FieldPath.documentId, whereIn: chunk)
             .get();
 
@@ -837,10 +840,11 @@ class _InboxPageState extends State<InboxPage> {
     final candidates = _phoneCandidates(rawPhoneQuery);
     if (candidates.isEmpty) return null;
 
-    for (final field in ['phone', 'phoneNumber']) {
+    for (final field in ['phone']) {
       try {
         final snapshot = await _firestore
-            .collection('users')
+            .collection('publicWorkerProfiles')
+            .where('isSearchVisible', isEqualTo: true)
             .where(field, whereIn: candidates)
             .limit(10)
             .get();
@@ -852,8 +856,8 @@ class _InboxPageState extends State<InboxPage> {
           final phone = (data['phone'] ?? data['phoneNumber'] ?? '')
               .toString()
               .trim();
-          final role = (data['role'] ?? '').toString().trim();
-          final city = (data['city'] ?? '').toString().trim();
+          final role = (data['role'] ?? 'worker').toString().trim();
+          final city = (data['town'] ?? '').toString().trim();
           return {
             'id': doc.id,
             'name': name.isNotEmpty ? name : 'User',
@@ -899,9 +903,8 @@ class _InboxPageState extends State<InboxPage> {
     }
 
     try {
-      final doc = await _firestore.collection('users').doc(currentUserId).get();
-      if (doc.exists) {
-        final data = doc.data() ?? {};
+      final data = await ProfileDocumentService.load(currentUserId);
+      if (data.isNotEmpty) {
         final profilePhone = (data['phone'] ?? data['phoneNumber'] ?? '')
             .toString()
             .trim();

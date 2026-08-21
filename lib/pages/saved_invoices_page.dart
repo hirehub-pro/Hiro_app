@@ -11,6 +11,7 @@ import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:untitled1/pages/invoice_builder.dart';
 import 'package:untitled1/services/language_provider.dart';
+import 'package:untitled1/services/profile_document_service.dart';
 
 class SavedInvoicesPage extends StatefulWidget {
   const SavedInvoicesPage({super.key, this.initialSearchQuery = ''});
@@ -117,11 +118,7 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
     final rawPhones = <String>{user.phoneNumber ?? ''};
 
     try {
-      final userDoc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .get();
-      final userData = userDoc.data() ?? <String, dynamic>{};
+      final userData = await ProfileDocumentService.load(user.uid);
       rawPhones
         ..add((userData['phone'] ?? '').toString())
         ..add((userData['phoneNumber'] ?? '').toString());
@@ -403,11 +400,9 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
           .doc(currentUser.uid);
       final detailRef = userRef.collection('invoices').doc(invoiceDocId);
 
-      final results = await Future.wait([userRef.get(), detailRef.get()]);
-      final userSnap = results[0];
-      final detailSnap = results[1];
+      final detailSnap = await detailRef.get();
 
-      final userData = userSnap.data() ?? <String, dynamic>{};
+      final userData = await ProfileDocumentService.load(currentUser.uid);
       final detailData = detailSnap.data() ?? <String, dynamic>{};
       final originalDocType = (savedData['docType'] ?? '').toString();
       final sourceDate = (detailData['date'] ?? savedData['date'] ?? '')
@@ -534,11 +529,9 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
       final detailRef = userRef
           .collection('invoices')
           .doc(resolvedInvoiceDocId);
-      final results = await Future.wait([userRef.get(), detailRef.get()]);
-      final userSnap = results[0];
-      final detailSnap = results[1];
+      final detailSnap = await detailRef.get();
 
-      final userData = userSnap.data() ?? <String, dynamic>{};
+      final userData = await ProfileDocumentService.load(currentUser.uid);
       final detailData = detailSnap.data() ?? <String, dynamic>{};
       final clientName =
           (detailData['clientName'] ?? savedData['clientName'] ?? '')
@@ -626,9 +619,9 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
           .toString()
           .trim();
       final detailRef = userRef.collection('invoices').doc(resolvedSourceDocId);
-      final results = await Future.wait([userRef.get(), detailRef.get()]);
-      final userData = results[0].data() ?? <String, dynamic>{};
-      final detailData = results[1].data() ?? savedData;
+      final detailSnap = await detailRef.get();
+      final userData = await ProfileDocumentService.load(currentUser.uid);
+      final detailData = detailSnap.data() ?? savedData;
       final amount = ((detailData['amount'] as num?)?.toDouble() ?? 0).abs();
       if (amount <= 0) {
         throw StateError('The receipt amount is missing.');
@@ -717,9 +710,9 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
           .collection('users')
           .doc(currentUser.uid);
       final detailRef = userRef.collection('invoices').doc(sourceDocId);
-      final results = await Future.wait([userRef.get(), detailRef.get()]);
-      final userData = results[0].data() ?? <String, dynamic>{};
-      final detailData = results[1].data() ?? savedData;
+      final detailSnap = await detailRef.get();
+      final userData = await ProfileDocumentService.load(currentUser.uid);
+      final detailData = detailSnap.data() ?? savedData;
       final items = ((detailData['items'] as List?) ?? const [])
           .map((item) => Map<String, dynamic>.from(item as Map))
           .toList();

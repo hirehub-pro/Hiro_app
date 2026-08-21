@@ -24,6 +24,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:untitled1/services/app_permission_service.dart';
 import 'package:untitled1/services/client_service.dart';
 import 'package:untitled1/services/subscription_access_service.dart';
+import 'package:untitled1/services/profile_document_service.dart';
 import 'package:untitled1/pages/my_request_details_page.dart';
 import 'package:untitled1/pages/request_details.dart';
 
@@ -176,9 +177,9 @@ class _ChatPageState extends State<ChatPage> {
     });
   }
 
-  Future<DocumentSnapshot?> _getUserDoc(String uid) async {
-    final doc = await _firestore.collection('users').doc(uid).get();
-    return doc.exists ? doc : null;
+  Future<Map<String, dynamic>?> _getUserData(String uid) async {
+    final data = await ProfileDocumentService.load(uid);
+    return data.isEmpty ? null : data;
   }
 
   Future<Map<String, dynamic>> _getContactDetails(String uid) async {
@@ -364,9 +365,8 @@ class _ChatPageState extends State<ChatPage> {
     final user = _auth.currentUser;
     if (user != null) {
       try {
-        final doc = await _getUserDoc(user.uid);
-        if (doc != null && doc.exists && mounted) {
-          final data = doc.data() as Map<String, dynamic>;
+        final data = await _getUserData(user.uid);
+        if (data != null && mounted) {
           setState(() {
             _isWorker = data['role'] == 'worker';
             _canCreateInvoices =
@@ -523,12 +523,8 @@ class _ChatPageState extends State<ChatPage> {
     }
 
     try {
-      final senderDoc = await _firestore
-          .collection('users')
-          .doc(senderId)
-          .get();
-      final senderData = senderDoc.data();
-      final firestoreName = senderData?['name']?.toString().trim() ?? '';
+      final senderData = await ProfileDocumentService.load(senderId);
+      final firestoreName = senderData['name']?.toString().trim() ?? '';
       if (firestoreName.isNotEmpty) {
         _currentUserName = firestoreName;
         return firestoreName;
@@ -3506,11 +3502,8 @@ class ChatReportDetailsPage extends StatelessWidget {
   Future<String> _userNameFromId(String userId) async {
     if (userId.isEmpty) return '-';
     if (userId == 'app') return 'App';
-    final doc = await FirebaseFirestore.instance
-        .collection('users')
-        .doc(userId)
-        .get();
-    final name = (doc.data()?['name'] ?? '').toString().trim();
+    final profile = await ProfileDocumentService.load(userId);
+    final name = (profile['name'] ?? '').toString().trim();
     return name.isEmpty ? userId : name;
   }
 

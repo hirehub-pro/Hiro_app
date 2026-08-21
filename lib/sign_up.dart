@@ -2326,8 +2326,29 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
         } catch (_) {}
       }
 
-      final userData = {
+      final isWorker = _userType == UserType.worker;
+      final userData = <String, dynamic>{
         'uid': user.uid,
+        'createdAt': FieldValue.serverTimestamp(),
+        'role': isWorker ? 'worker' : 'customer',
+      };
+
+      if (!isWorker) {
+        userData.addAll({
+          'name': finalName,
+          'email': _emailController.text.trim(),
+          'phone': _normalizePhone(_phoneController.text.trim()),
+          'town': _selectedTown,
+          'lat': lat,
+          'lng': lng,
+          'profileImageUrl': imageUrl,
+          'spokenLanguages': _selectedSpokenLanguages,
+        });
+      }
+
+      final publicWorkerData = <String, dynamic>{
+        'uid': user.uid,
+        'role': 'worker',
         'name': finalName,
         'email': _emailController.text.trim(),
         'phone': _normalizePhone(_phoneController.text.trim()),
@@ -2335,20 +2356,23 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
         'lat': lat,
         'lng': lng,
         'profileImageUrl': imageUrl,
-        'createdAt': FieldValue.serverTimestamp(),
-        'role': _userType == UserType.worker ? 'worker' : 'customer',
         'spokenLanguages': _selectedSpokenLanguages,
+        'professions': _selectedProfessions,
+        'optionalPhone': _altPhoneController.text.trim(),
+        'description': _descriptionController.text.trim(),
+        'workRadius': _workRadius,
+        'hideSchedule': _hideSchedule,
+        'updatedAt': FieldValue.serverTimestamp(),
       };
 
-      if (_userType == UserType.worker) {
-        userData.addAll({
-          'professions': _selectedProfessions,
-          'spokenLanguages': _selectedSpokenLanguages,
-          'optionalPhone': _altPhoneController.text.trim(),
-          'description': _descriptionController.text.trim(),
-          'workRadius': _workRadius,
-          'hideSchedule': _hideSchedule,
-        });
+      if (isWorker) {
+        publicWorkerData.removeWhere((_, value) => value == null);
+      } else {
+        publicWorkerData.clear();
+      }
+
+      if (isWorker) {
+        userData.addAll({'updatedAt': FieldValue.serverTimestamp()});
       }
       userData.removeWhere((_, value) => value == null);
 
@@ -2359,7 +2383,7 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
         // them in this client write makes Firestore reject the whole account
         // creation transaction.
         await userRef.set(userData);
-      } else {
+      } else if (!isWorker) {
         // Returning from subscription verification must only refresh fields
         // that an account owner may edit. Entitlement, role, ratings and
         // creation identity remain controlled by the backend/rules.
@@ -2384,8 +2408,18 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
           'updatedAt': FieldValue.serverTimestamp(),
         };
         await userRef.set(profileUpdates, SetOptions(merge: true));
+      } else {
+        await userRef.set({
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
       }
-      if (_userType == UserType.worker) {
+      if (isWorker) {
+        writeStage = 'public profile';
+        await firestore
+            .collection('publicWorkerProfiles')
+            .doc(user.uid)
+            .set(publicWorkerData, SetOptions(merge: true));
+
         writeStage = 'schedule';
         await firestore
             .collection('publicWorkerProfiles')

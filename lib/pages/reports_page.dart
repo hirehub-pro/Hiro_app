@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:untitled1/ptofile.dart';
+import 'package:untitled1/services/profile_document_service.dart';
 import 'package:untitled1/widgets/cached_video_player.dart';
 
 class ReportsPage extends StatefulWidget {
@@ -753,10 +754,10 @@ class _ReportsPageState extends State<ReportsPage> {
 
   Widget _userProfileLink({required String userId, required bool blocked}) {
     final label = blocked ? 'Blocked user' : 'Reported user';
-    return FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-      future: _firestore.collection('users').doc(userId).get(),
+    return FutureBuilder<Map<String, dynamic>>(
+      future: ProfileDocumentService.load(userId),
       builder: (context, snapshot) {
-        final data = snapshot.data?.data();
+        final data = snapshot.data;
         final resolvedName = (data?['name'] ?? '').toString().trim();
         final displayName = resolvedName.isNotEmpty ? resolvedName : userId;
 

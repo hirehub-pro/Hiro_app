@@ -384,32 +384,41 @@ class _SubscriptionPageState extends State<SubscriptionPage>
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) return false;
       final firestore = FirebaseFirestore.instance;
-
-      // Fetch existing user data from unified 'users' collection
-      final userDoc = await firestore.collection('users').doc(user.uid).get();
-      Map<String, dynamic> userData = userDoc.exists
-          ? (userDoc.data() ?? {})
-          : {};
-
-      userData.addAll({'role': 'worker'});
-
-      if (widget.pendingUserData != null) {
-        userData.addAll(widget.pendingUserData!);
-      }
+      final pending = widget.pendingUserData ?? const <String, dynamic>{};
+      final publicData = <String, dynamic>{
+        'uid': user.uid,
+        'role': 'worker',
+        'name': (pending['name'] ?? user.displayName ?? 'Worker').toString(),
+        for (final field in const [
+          'email',
+          'phone',
+          'optionalPhone',
+          'description',
+          'town',
+          'lat',
+          'lng',
+          'workRadius',
+          'professions',
+          'profileImageUrl',
+          'spokenLanguages',
+          'hideSchedule',
+        ])
+          if (pending[field] != null) field: pending[field],
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
 
       if (widget.pendingImage != null) {
         final storageRef = FirebaseStorage.instance.ref().child(
           'profile_pictures/${user.uid}.jpg',
         );
         await storageRef.putFile(widget.pendingImage!);
-        userData['profileImageUrl'] = await storageRef.getDownloadURL();
+        publicData['profileImageUrl'] = await storageRef.getDownloadURL();
       }
 
-      // Update the same document with new role and subscription status
       await firestore
-          .collection('users')
+          .collection('publicWorkerProfiles')
           .doc(user.uid)
-          .set(userData, SetOptions(merge: true));
+          .set(publicData, SetOptions(merge: true));
       return true;
     } catch (e) {
       debugPrint("Upgrade Error: $e");
@@ -487,10 +496,7 @@ class _SubscriptionPageState extends State<SubscriptionPage>
       _ => _googlePlayWorkerAppUri,
     };
 
-    final ok = await launchUrl(
-      targetUri,
-      mode: LaunchMode.externalApplication,
-    );
+    final ok = await launchUrl(targetUri, mode: LaunchMode.externalApplication);
     if (!ok && mounted) {
       ScaffoldMessenger.of(
         context,

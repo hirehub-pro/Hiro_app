@@ -13,6 +13,7 @@ import 'package:untitled1/pages/my_requests_page.dart';
 import 'package:untitled1/services/ai_description_service.dart';
 import 'package:untitled1/services/language_provider.dart';
 import 'package:untitled1/services/notification_service.dart';
+import 'package:untitled1/services/profile_document_service.dart';
 import 'package:untitled1/utils/booking_mode.dart';
 
 class SendRequestPage extends StatefulWidget {
@@ -980,11 +981,8 @@ class _SendRequestPageState extends State<SendRequestPage> {
         imageUrls.add(await ref.getDownloadURL());
       }
 
-      final userDoc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .get();
-      if (!userDoc.exists) {
+      final userData = await ProfileDocumentService.load(user.uid);
+      if (userData.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(
             context,
@@ -992,9 +990,8 @@ class _SendRequestPageState extends State<SendRequestPage> {
         }
         return;
       }
-      final userData = userDoc.data();
-      final userName = userData?['name'] ?? 'Client';
-      final userTown = userData?['town'];
+      final userName = userData['name'] ?? 'Client';
+      final userTown = userData['town'];
 
       final workerDoc = await FirebaseFirestore.instance
           .collection('publicWorkerProfiles')

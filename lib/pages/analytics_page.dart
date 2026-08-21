@@ -603,24 +603,33 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     try {
       final firestore = FirebaseFirestore.instance;
       final workerRef = firestore.collection('users').doc(widget.userId);
+      final publicWorkerRef = firestore
+          .collection('publicWorkerProfiles')
+          .doc(widget.userId);
 
-      final userDoc = await workerRef.get();
+      final results = await Future.wait([
+        workerRef.get(),
+        publicWorkerRef.get(),
+      ]);
+      final userDoc = results[0];
+      final publicWorkerDoc = results[1];
       if (userDoc.exists) {
         final data = userDoc.data()!;
+        final publicData = publicWorkerDoc.data() ?? <String, dynamic>{};
         _totalJobs = data['totalJobs'] ?? 0;
         _viewsCount = 0;
         _totalEarnings = _asDouble(data['totalEarnings']);
         _hasTotalEarnedValue = _totalEarnings > 0;
         _overallAvgRating = _asDouble(data['avgRating']);
         _avgRating = _overallAvgRating;
-        if (data['professions'] is List) {
+        if (publicData['professions'] is List) {
           _userProfessions = List<String>.from(
-            (data['professions'] as List)
+            (publicData['professions'] as List)
                 .map((e) => e.toString().trim())
                 .where((e) => e.isNotEmpty),
           );
         } else {
-          final single = (data['profession'] ?? '').toString().trim();
+          final single = (publicData['profession'] ?? '').toString().trim();
           _userProfessions = single.isEmpty ? [] : [single];
         }
       }

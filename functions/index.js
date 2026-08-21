@@ -89,6 +89,17 @@ const GOOGLE_PLAY_SUBSCRIPTION_PRODUCT_IDS = new Set([
   "pro_worker_monthly",
   "com-hiro-app-pro-worker-monthly",
 ]);
+
+async function loadCanonicalUserProfile(db, userId, accountSnap = null) {
+  const resolvedAccountSnap = accountSnap ||
+    await db.collection("users").doc(userId).get();
+  const accountData = resolvedAccountSnap.data() || {};
+  if (accountData.role !== "worker") return accountData;
+
+  const publicSnap = await db.collection(PUBLIC_WORKER_PROFILE_COLLECTION)
+      .doc(userId).get();
+  return publicSnap.exists ? {...accountData, ...publicSnap.data()} : accountData;
+}
 const PUBLIC_APP_ORIGIN = "https://hiro-services.com";
 const SIGNING_REQUEST_LIFETIME_DAYS = 30;
 // A signing link is a bearer capability, so only one submitted signature may
@@ -752,7 +763,7 @@ async function serverDocumentContext(userId) {
     userRef.collection("verification_info").doc("latest").get(),
     db.collection("metadata").doc("system").get(),
   ]);
-  const user = userSnap.data() || {};
+  const user = await loadCanonicalUserProfile(db, userId, userSnap);
   const verification = verificationSnap.data() || {};
   if (user.isapproved !== true ||
       normalizeString(verification.status).trim() !== "approved") {
@@ -1867,12 +1878,13 @@ exports.finalizeTaxInvoiceDocument = onCall(
 );
 
 async function taxInvoiceBusinessProfile(userId, expectedBusinessId) {
-  const userRef = admin.firestore().collection("users").doc(userId);
+  const db = admin.firestore();
+  const userRef = db.collection("users").doc(userId);
   const [userSnap, verificationSnap] = await Promise.all([
     userRef.get(),
     userRef.collection("verification_info").doc("latest").get(),
   ]);
-  const user = userSnap.data() || {};
+  const user = await loadCanonicalUserProfile(db, userId, userSnap);
   const verification = verificationSnap.data() || {};
   const businessId = normalizeBusinessId(
       verification.businessId || user.businessId,
@@ -2333,8 +2345,20 @@ exports.syncPublicWorkerProfile = onDocumentWritten(
       const publicRef = admin.firestore()
           .collection(PUBLIC_WORKER_PROFILE_COLLECTION)
           .doc(userId);
+      const existingPublicSnap = await publicRef.get();
+      const existingPublicData = existingPublicSnap.data() || {};
+      const profileSource = {...userData};
+      for (const field of [
+        "name", "email", "phone", "optionalPhone", "description", "town",
+        "profileImageUrl", "professions", "spokenLanguages", "workRadius",
+        "lat", "lng", "hideSchedule", "socialLinks",
+      ]) {
+        if (Object.prototype.hasOwnProperty.call(existingPublicData, field)) {
+          profileSource[field] = existingPublicData[field];
+        }
+      }
       const publicProfile = userData ?
-        buildPublicWorkerProfile(userId, userData) : null;
+        buildPublicWorkerProfile(userId, profileSource) : null;
 
       if (!publicProfile) {
         await publicRef.delete().catch((error) => {
@@ -2449,7 +2473,9 @@ exports.getProfileContactDetails = onCall(
         );
       }
 
-      const target = targetSnap.data() || {};
+      const targetAccount = targetSnap.data() || {};
+      const target = targetAccount.role === "worker" && publicProfileSnap.exists ?
+        publicProfile : targetAccount;
       return {
         userId: targetUserId,
         name: normalizeString(target.name).trim(),
@@ -2480,20 +2506,29 @@ exports.ensureChatRoom = onCall(
       }
 
       const db = admin.firestore();
-      const [senderSnap, receiverSnap] = await Promise.all([
+      const [senderSnap, receiverSnap, senderPublicSnap, receiverPublicSnap] =
+        await Promise.all([
         db.collection("users").doc(userId).get(),
         db.collection("users").doc(receiverId).get(),
-      ]);
+        db.collection(PUBLIC_WORKER_PROFILE_COLLECTION).doc(userId).get(),
+        db.collection(PUBLIC_WORKER_PROFILE_COLLECTION).doc(receiverId).get(),
+        ]);
       if (!senderSnap.exists || !receiverSnap.exists) {
         throw new HttpsError("not-found", "A chat participant was not found.");
       }
 
       const users = [userId, receiverId].sort();
       const roomId = users.join("_");
-      const senderName = normalizeString(senderSnap.data()?.name)
+      const senderData = senderSnap.data() || {};
+      const receiverData = receiverSnap.data() || {};
+      const senderProfile = senderData.role === "worker" &&
+        senderPublicSnap.exists ? senderPublicSnap.data() : senderData;
+      const receiverProfile = receiverData.role === "worker" &&
+        receiverPublicSnap.exists ? receiverPublicSnap.data() : receiverData;
+      const senderName = normalizeString(senderProfile?.name)
           .trim()
           .slice(0, 100) || "User";
-      const storedReceiverName = normalizeString(receiverSnap.data()?.name)
+      const storedReceiverName = normalizeString(receiverProfile?.name)
           .trim()
           .slice(0, 100) || receiverName || "User";
       const roomRef = db.collection("chat_rooms").doc(roomId);
@@ -2863,7 +2898,7 @@ exports.syncReceivedInvoices = onCall(
 
       const db = admin.firestore();
       const userDoc = await db.collection("users").doc(uid).get();
-      const userData = userDoc.data() || {};
+      const userData = await loadCanonicalUserProfile(db, uid, userDoc);
       const phoneValues = [
         request.auth?.token?.phone_number,
         userData.phone,
@@ -3180,10 +3215,15 @@ exports.emailSavedInvoice = onDocumentWritten(
 
       try {
         const userSnap = await db.collection("users").doc(userId).get();
+        const profileData = await loadCanonicalUserProfile(
+            db,
+            userId,
+            userSnap,
+        );
         const verificationSnap = await userSnap.ref
             .collection("verification_info").doc("latest").get();
-        let ownerEmail = normalizeEmail(userSnap.get("email"));
-        let userName = normalizeString(userSnap.get("name")).trim();
+        let ownerEmail = normalizeEmail(profileData.email);
+        let userName = normalizeString(profileData.name).trim();
         if (!ownerEmail || !userName) {
           const authUser = await admin.auth().getUser(userId);
           ownerEmail = ownerEmail || normalizeEmail(authUser.email);
@@ -3194,7 +3234,7 @@ exports.emailSavedInvoice = onDocumentWritten(
         const businessName = normalizeString(
             verificationSnap.get("businessName") ||
             userSnap.get("businessName") ||
-            userSnap.get("name"),
+            profileData.name,
         ).trim() || "הירו";
         const clientName =
           normalizeString(invoice.clientName).trim() || "לקוח";
@@ -4887,6 +4927,17 @@ async function findInvoiceRecipientUserIds(rawPhone, senderUserId) {
           recipientIds.add(doc.id);
         }
       }
+    }
+  }
+
+  for (const chunk of chunkArray(candidates, 30)) {
+    const snapshot = await db.collection(PUBLIC_WORKER_PROFILE_COLLECTION)
+        .where("phone", "in", chunk)
+        .limit(30)
+        .get();
+
+    for (const doc of snapshot.docs) {
+      if (doc.id !== senderUserId) recipientIds.add(doc.id);
     }
   }
 

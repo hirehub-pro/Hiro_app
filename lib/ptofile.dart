@@ -485,14 +485,51 @@ class _ProfileState extends State<Profile>
     }
 
     try {
-      final profileCollection = isOwnProfile ? 'users' : 'publicWorkerProfiles';
-      final userDoc = await _firestore
-          .collection(profileCollection)
-          .doc(targetUid)
-          .get();
+      Map<String, dynamic>? loadedProfileData;
+      if (isOwnProfile) {
+        final accountDoc = await _firestore
+            .collection('users')
+            .doc(targetUid)
+            .get();
+        final accountData = Map<String, dynamic>.from(
+          accountDoc.data() ?? const <String, dynamic>{},
+        );
+        final isWorker =
+            (accountData['role'] ?? '').toString().toLowerCase() == 'worker';
+        if (isWorker) {
+          const publicFields = {
+            'hideSchedule',
+            'description',
+            'email',
+            'lat',
+            'lng',
+            'name',
+            'optionalPhone',
+            'phone',
+            'professions',
+            'profileImageUrl',
+            'spokenLanguages',
+            'town',
+            'workRadius',
+          };
+          accountData.removeWhere((key, _) => publicFields.contains(key));
+          final publicDoc = await _firestore
+              .collection('publicWorkerProfiles')
+              .doc(targetUid)
+              .get();
+          accountData.addAll(publicDoc.data() ?? const <String, dynamic>{});
+        }
+        loadedProfileData = accountDoc.exists ? accountData : null;
+      } else {
+        final publicDoc = await _firestore
+            .collection('publicWorkerProfiles')
+            .doc(targetUid)
+            .get();
+        loadedProfileData = publicDoc.data();
+      }
 
-      if (userDoc.exists && mounted) {
-        final data = userDoc.data() as Map<String, dynamic>;
+      if (loadedProfileData != null && mounted) {
+        final data = loadedProfileData;
 
         String oldRole = _userRole;
         setState(() {
@@ -551,9 +588,6 @@ class _ProfileState extends State<Profile>
         // The primary profile is now ready to render. The remaining data is
         // useful, but should never delay the first meaningful paint.
         if (mounted) setState(() => _isLoading = false);
-        if (!isOwnProfile) {
-          unawaited(_loadVisibleContactDetails(targetUid, loadGeneration));
-        }
         if (_isOwnProfile && _userRole == 'worker') {
           unawaited(_refreshWorkerProfileStatus(loadGeneration));
         }
@@ -636,32 +670,6 @@ class _ProfileState extends State<Profile>
     if (!mounted || loadGeneration != _profileLoadGeneration) return;
     setState(() => _subscriptionStatus = accessState.subscriptionStatus);
     await _loadTaxAuthorityConnectionStatus();
-  }
-
-  Future<void> _loadVisibleContactDetails(
-    String targetUid,
-    int loadGeneration,
-  ) async {
-    try {
-      final callable = _functions.httpsCallable('getProfileContactDetails');
-      final response = await callable.call<Map<String, dynamic>>({
-        'targetUserId': targetUid,
-      });
-      if (!mounted || loadGeneration != _profileLoadGeneration) return;
-      final data = response.data;
-      setState(() {
-        _phoneNumber = data['phone']?.toString() ?? '';
-        _altPhoneNumber = data['optionalPhone']?.toString() ?? '';
-        _email = data['email']?.toString() ?? '';
-        if (_town.isEmpty) _town = data['town']?.toString() ?? '';
-      });
-    } on FirebaseFunctionsException catch (error) {
-      if (error.code != 'permission-denied' && error.code != 'not-found') {
-        debugPrint('Failed to load profile contact details: $error');
-      }
-    } catch (error) {
-      debugPrint('Failed to load profile contact details: $error');
-    }
   }
 
   Future<void> _loadTaxAuthorityConnectionStatus() async {
@@ -3476,18 +3484,17 @@ class _ProfileState extends State<Profile>
   String _normalizeExternalUrl(String input) {
     final trimmed = input.trim();
     if (trimmed.isEmpty) return '';
-    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-      return trimmed;
+    if (trimmed.startsWith('http://')) {
+      return 'https://${trimmed.substring('http://'.length)}';
     }
+    if (trimmed.startsWith('https://')) return trimmed;
     return 'https://$trimmed';
   }
 
   bool _isValidExternalUrl(String input) {
     final normalized = _normalizeExternalUrl(input);
     final uri = Uri.tryParse(normalized);
-    return uri != null &&
-        (uri.scheme == 'http' || uri.scheme == 'https') &&
-        (uri.host.isNotEmpty || normalized.contains('/'));
+    return uri != null && uri.scheme == 'https' && uri.host.isNotEmpty;
   }
 
   Future<void> _openSocialLink(
@@ -3957,9 +3964,35 @@ class _ProfileState extends State<Profile>
     final strings = _getLocalizedStrings(context);
 
     try {
-      await _firestore.collection('users').doc(currentUser.uid).set({
-        'socialLinks': links,
-      }, SetOptions(merge: true));
+      if (_userRole.toLowerCase() == 'worker') {
+        final profileRef = _firestore
+            .collection('publicWorkerProfiles')
+            .doc(currentUser.uid);
+        final profile = await profileRef.get();
+        if (profile.exists) {
+          await profileRef.update({
+            'socialLinks': links,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+        } else {
+          final profileName = _userName.trim().isNotEmpty
+              ? _userName.trim()
+              : (currentUser.displayName?.trim().isNotEmpty == true
+                    ? currentUser.displayName!.trim()
+                    : 'Worker');
+          await profileRef.set({
+            'uid': currentUser.uid,
+            'role': 'worker',
+            'name': profileName,
+            'socialLinks': links,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+        }
+      } else {
+        await _firestore.collection('users').doc(currentUser.uid).set({
+          'socialLinks': links,
+        }, SetOptions(merge: true));
+      }
       if (!mounted) return;
       setState(() {
         _socialLinks = links;

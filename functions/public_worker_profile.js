@@ -35,9 +35,7 @@ function finiteNumber(value, fallback = 0) {
 function publicCoordinate(value, min, max) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed < min || parsed > max) return null;
-  // Roughly 110 m precision: sufficient for service-area distance searches
-  // without publishing a worker's exact selected map point.
-  return Math.round(parsed * 1000) / 1000;
+  return parsed;
 }
 
 function safeSocialLinks(value) {
@@ -91,6 +89,9 @@ function buildPublicWorkerProfile(userId, userData, now = new Date()) {
     uid: userId,
     role: "worker",
     name: boundedString(userData.name, 100),
+    email: boundedString(userData.email, 254),
+    phone: boundedString(userData.phone, 32),
+    optionalPhone: boundedString(userData.optionalPhone, 32),
     description: boundedString(userData.description, 2000),
     town: boundedString(userData.town, 120),
     profileImageUrl: boundedString(userData.profileImageUrl, 2048),

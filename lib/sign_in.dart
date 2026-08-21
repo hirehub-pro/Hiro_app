@@ -710,7 +710,7 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
     final userDoc = await firestore.collection('users').doc(user.uid).get();
 
     if (userDoc.exists) {
-      final email = (userDoc.data()?['email'] ?? '').toString().trim();
+      final email = (user.email ?? '').trim();
       if (email.isEmpty) {
         await AuthService().signOut();
         throw FirebaseAuthException(

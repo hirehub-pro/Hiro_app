@@ -1690,7 +1690,9 @@ class _UserManagementSheetState extends State<_UserManagementSheet> {
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
               stream: widget.firestore
-                  .collection('users')
+                  .collection(
+                    widget.role == 'worker' ? 'publicWorkerProfiles' : 'users',
+                  )
                   .where('role', isEqualTo: widget.role)
                   .snapshots(),
               builder: (context, snapshot) {
@@ -1756,7 +1758,7 @@ class _UserManagementSheetState extends State<_UserManagementSheet> {
                         ],
                       ),
                       subtitle: Text(
-                        '${user['phone'] ?? 'No Phone'}${widget.role == 'worker' ? ' • ${user['profession'] ?? "Worker"}' : ""}',
+                        '${user['phone'] ?? 'No Phone'}${widget.role == 'worker' ? ' • ${((user['professions'] as List?) ?? const []).join(', ')}' : ""}',
                       ),
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,

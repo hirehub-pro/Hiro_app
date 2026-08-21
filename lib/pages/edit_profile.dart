@@ -358,11 +358,24 @@ class _EditProfilePageState extends State<EditProfilePage>
         updateData['profileImageUrl'] = imageUrl;
       }
 
-      // Update in the unified 'users' collection
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .update(updateData);
+      final isWorker =
+          (widget.userData['role'] ?? '').toString().toLowerCase() == 'worker';
+      updateData['updatedAt'] = FieldValue.serverTimestamp();
+
+      // Worker-facing profile data is owned by the public worker document.
+      // Customer profile data remains in the private account document.
+      final profileRef = FirebaseFirestore.instance
+          .collection(isWorker ? 'publicWorkerProfiles' : 'users')
+          .doc(user.uid);
+      if (isWorker) {
+        await profileRef.set({
+          'uid': user.uid,
+          'role': 'worker',
+          ...updateData,
+        }, SetOptions(merge: true));
+      } else {
+        await profileRef.update(updateData);
+      }
       await user.updateDisplayName(_nameController.text.trim());
 
       if (mounted) Navigator.pop(context, true);

@@ -893,27 +893,57 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       try {
         final doc = await _firestore.collection('users').doc(user.uid).get();
         if (doc.exists && mounted) {
+          final accountData = doc.data() ?? <String, dynamic>{};
+          final isWorker =
+              (accountData['role'] ?? '').toString().toLowerCase() == 'worker';
+          if (isWorker) {
+            const publicFields = {
+              'hideSchedule',
+              'description',
+              'email',
+              'lat',
+              'lng',
+              'name',
+              'optionalPhone',
+              'phone',
+              'professions',
+              'profileImageUrl',
+              'spokenLanguages',
+              'town',
+              'workRadius',
+            };
+            accountData.removeWhere((key, _) => publicFields.contains(key));
+          }
+          final profileData = isWorker
+              ? (await _firestore
+                        .collection('publicWorkerProfiles')
+                        .doc(user.uid)
+                        .get())
+                    .data()
+              : null;
+          final data = <String, dynamic>{
+            ...accountData,
+            if (profileData != null) ...profileData,
+          };
+          if (!mounted) return;
           setState(() {
-            _cachedName = doc.data()?['name']?.toString().split(' ').first;
-            _profileImageUrl = doc.data()?['profileImageUrl']?.toString();
-            _workerDisplayName =
-                (doc.data()?['name'] ?? user.displayName ?? 'Worker')
-                    .toString();
-            _workerPhone =
-                (doc.data()?['phone'] ?? doc.data()?['phoneNumber'] ?? '')
-                    .toString();
-            _workerEmail = (doc.data()?['email'] ?? user.email ?? '')
+            _cachedName = data['name']?.toString().split(' ').first;
+            _profileImageUrl = data['profileImageUrl']?.toString();
+            _workerDisplayName = (data['name'] ?? user.displayName ?? 'Worker')
                 .toString();
-            _userRole = doc.data()?['role'] ?? 'customer';
+            _workerPhone = (data['phone'] ?? data['phoneNumber'] ?? '')
+                .toString();
+            _workerEmail = (data['email'] ?? user.email ?? '').toString();
+            _userRole = accountData['role'] ?? 'customer';
             _subscriptionStatus =
-                doc.data()?['subscriptionStatus']?.toString().toLowerCase() ??
+                accountData['subscriptionStatus']?.toString().toLowerCase() ??
                 'inactive';
-            _subscriptionDate = _toDate(doc.data()?['subscriptionDate']);
+            _subscriptionDate = _toDate(accountData['subscriptionDate']);
             _subscriptionExpiresAt = _toDate(
-              doc.data()?['subscriptionExpiresAt'],
+              accountData['subscriptionExpiresAt'],
             );
-            _isVip = doc.data()?['isVIP'] == true;
-            _isBusinessVerified = doc.data()?['isVerified'] == true;
+            _isVip = accountData['isVIP'] == true;
+            _isBusinessVerified = accountData['isVerified'] == true;
           });
         }
       } catch (e) {

@@ -87,7 +87,7 @@ test("denies public and cross-user private account reads", {
   await assertFails(getDoc(doc(bob, "users/alice-user-id-000001")));
 });
 
-test("exposes only visible server-managed worker profiles", {
+test("exposes visible profiles while protecting server-managed fields", {
   skip: !emulatorAvailable,
 }, async () => {
   await seed("publicWorkerProfiles/visible-worker", {
@@ -150,7 +150,7 @@ test("exposes only visible server-managed worker profiles", {
   const customer = testEnv.authenticatedContext(
       "customer-user-id-00001",
   ).firestore();
-  await assertFails(getDoc(
+  await assertSucceeds(getDoc(
       doc(unauth, "publicWorkerProfiles/visible-worker"),
   ));
   await assertSucceeds(getDoc(doc(
@@ -294,11 +294,20 @@ test("allows inactive worker registration but rejects forged entitlement", {
 }, async () => {
   const uid = "new-worker-id-00000001";
   const db = testEnv.authenticatedContext(uid).firestore();
-  const worker = {
-    ...validUser(uid, "worker"),
+  const workerAccount = {
+    uid,
+    role: "worker",
+    createdAt: serverTimestamp(),
+  };
+  const publicWorker = {
+    uid,
+    role: "worker",
+    name: "Test Worker",
+    email: "worker@example.com",
+    phone: "+972500000000",
     town: "Tel Aviv-Yafo",
-    lat: 32.0853,
-    lng: 34.7818,
+    lat: 32.0852999,
+    lng: 34.7817676,
     profileImageUrl: "",
     professions: ["Electrician", "Plumber", "Air Conditioning"],
     spokenLanguages: ["Hebrew", "Arabic", "English"],
@@ -306,10 +315,38 @@ test("allows inactive worker registration but rejects forged entitlement", {
     description: "Residential electrical services and installations",
     workRadius: 15000,
     hideSchedule: false,
-    disabledDays: [6, 7],
+    updatedAt: serverTimestamp(),
   };
 
-  await assertSucceeds(setDoc(doc(db, `users/${uid}`), worker));
+  await assertSucceeds(setDoc(doc(db, `users/${uid}`), workerAccount));
+  await assertSucceeds(setDoc(
+      doc(db, `publicWorkerProfiles/${uid}`),
+      publicWorker,
+  ));
+  await assertSucceeds(updateDoc(doc(db, `publicWorkerProfiles/${uid}`), {
+    optionalPhone: "+972511111111",
+    lat: 32.085312345,
+    lng: 34.781812345,
+    updatedAt: serverTimestamp(),
+  }));
+  await assertSucceeds(updateDoc(doc(db, `publicWorkerProfiles/${uid}`), {
+    socialLinks: [{
+      type: "website",
+      name: "My website",
+      url: "https://worker.example.com",
+    }],
+    updatedAt: serverTimestamp(),
+  }));
+  await assertFails(updateDoc(doc(db, `publicWorkerProfiles/${uid}`), {
+    socialLinks: [{
+      type: "website",
+      name: "Insecure website",
+      url: "http://worker.example.com",
+    }],
+  }));
+  await assertFails(updateDoc(doc(db, `publicWorkerProfiles/${uid}`), {
+    isSearchVisible: true,
+  }));
   await assertSucceeds(setDoc(doc(db, `publicWorkerProfiles/${uid}/Schedule/info`), {
     hideSchedule: false,
     disabledDays: [6, 7],
@@ -319,7 +356,9 @@ test("allows inactive worker registration but rejects forged entitlement", {
   const attackerUid = "forged-worker-id-000001";
   const attacker = testEnv.authenticatedContext(attackerUid).firestore();
   await assertFails(setDoc(doc(attacker, `users/${attackerUid}`), {
-    ...validUser(attackerUid, "worker"),
+    uid: attackerUid,
+    role: "worker",
+    createdAt: serverTimestamp(),
     isSubscribed: true,
     subscriptionStatus: "active",
   }));

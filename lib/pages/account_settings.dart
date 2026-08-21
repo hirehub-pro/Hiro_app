@@ -578,9 +578,15 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
       final user = FirebaseAuth.instance.currentUser;
       if (user != null) {
         await FirebaseFirestore.instance
-            .collection('users')
+            .collection(
+              _userRole == 'worker' ? 'publicWorkerProfiles' : 'users',
+            )
             .doc(user.uid)
-            .update({'phone': newPhone});
+            .update({
+              'phone': newPhone,
+              if (_userRole == 'worker')
+                'updatedAt': FieldValue.serverTimestamp(),
+            });
 
         setState(() {
           _currentPhone = newPhone;

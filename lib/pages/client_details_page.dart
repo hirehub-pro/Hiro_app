@@ -9,6 +9,7 @@ import 'package:untitled1/pages/invoice_builder.dart';
 import 'package:untitled1/pages/saved_invoices_page.dart';
 import 'package:untitled1/pages/verify_business.dart';
 import 'package:untitled1/services/language_provider.dart';
+import 'package:untitled1/services/profile_document_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:xml/xml.dart';
 
@@ -56,11 +57,7 @@ class ClientDetailsPage extends StatelessWidget {
     _ClientDetailsStrings strings,
   ) async {
     try {
-      final userSnapshot = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .get();
-      final userData = userSnapshot.data() ?? <String, dynamic>{};
+      final userData = await ProfileDocumentService.load(user.uid);
       final workerName = (userData['name'] ?? user.displayName ?? '')
           .toString()
           .trim();

@@ -1,13 +1,25 @@
 # Firestore access findings
 
-Scope: chat messages, reviews, public worker schedules and projects, work
-requests, chat-to-invoice/client creation, and profile contact details.
+Scope: worker profiles/contact fields, chat messages, reviews, public worker
+schedules and projects, work requests, and chat-to-invoice/client creation.
 
-- `users/{uid}` contains phone, email, subscription, verification, location, and
-  other private account fields. Reads must remain owner/admin only.
-- `publicWorkerProfiles/{uid}` is the non-sensitive worker discovery projection.
-- Contact details needed by the UI should be returned by a callable that checks
-  authentication and either public worker visibility or an existing shared chat.
+- For new workers, `users/{uid}` contains account role, subscription,
+  verification, billing, and other server/account fields. The app no longer
+  writes the worker's name, contact details, profile content, service location,
+  professions, languages, town, radius, or schedule visibility there.
+- `publicWorkerProfiles/{uid}` is the canonical worker profile. The product
+  intentionally exposes name, email, phone, optional phone, description, town,
+  precise latitude/longitude, work radius, avatar, professions, languages, and
+  schedule visibility whenever the worker is search-visible.
+- The owner may edit only those bounded public-profile fields. Ratings,
+  verification badges, role, creation identity, and search visibility remain
+  backend-controlled. The `users/{uid}` trigger preserves public-owned fields
+  while refreshing backend-controlled profile status.
+- Existing Firebase documents are not migrated. Legacy profile fields can
+  remain in `users/{uid}`, but worker-facing code treats the public document as
+  authoritative.
+- Contact details returned by the contact callable now come from the canonical
+  public worker document for workers and from `users/{uid}` for customers.
 - `chat_rooms/{roomId}` contains `users`, names, last-message metadata, and unread
   counters. An authenticated callable creates or repairs the canonical room for
   exactly the current user and requested receiver before the listener starts.
@@ -47,6 +59,10 @@ requests, chat-to-invoice/client creation, and profile contact details.
 
 Relevant queries:
 
+- Worker discovery: `publicWorkerProfiles` with
+  `where(isSearchVisible == true)`, plus profession, rating/name, distance, and
+  public phone lookup filters. The public phone lookup has a matching
+  `isSearchVisible + phone` composite index.
 - Chat messages: `orderBy(timestamp, descending: true)`.
 - Saved clients: owner-scoped reads and `where(taxId == ...)`.
 - Sent/incoming requests: owner-scoped `where(type, whereIn: [...])`.
@@ -54,6 +70,10 @@ Relevant queries:
   equality filtering.
 - Schedule: direct conditional read of
   `publicWorkerProfiles/{workerUid}/Schedule/info`.
+- Worker social links are owner-written directly on
+  `publicWorkerProfiles/{workerUid}.socialLinks`; each entry is restricted to
+  bounded `type`, `name`, and HTTPS `url` fields. Customer links remain on the
+  private `users/{uid}` account document.
 - Projects: direct collection read of
   `publicWorkerProfiles/{workerUid}/projects`; nested comments are ordered by
   `timestamp` ascending or descending. Like state uses a direct document get.

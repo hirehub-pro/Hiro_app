@@ -123,7 +123,8 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
     setState(() => _loading = true);
     try {
       final snapshot = await FirebaseFirestore.instance
-          .collection('users')
+          .collection('publicWorkerProfiles')
+          .where('isSearchVisible', isEqualTo: true)
           .where('phone', isEqualTo: phone)
           .limit(1)
           .get();

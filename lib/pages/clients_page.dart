@@ -8,6 +8,7 @@ import 'package:untitled1/pages/invoice_builder.dart';
 import 'package:untitled1/pages/verify_business.dart';
 import 'package:untitled1/services/client_service.dart';
 import 'package:untitled1/services/language_provider.dart';
+import 'package:untitled1/services/profile_document_service.dart';
 import 'package:untitled1/utils/israeli_id_validator.dart';
 
 class ClientsPage extends StatefulWidget {
@@ -530,11 +531,7 @@ class _ClientsPageState extends State<ClientsPage> {
 
     setState(() => _isOpeningDocument = true);
     try {
-      final userSnapshot = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .get();
-      final userData = userSnapshot.data() ?? <String, dynamic>{};
+      final userData = await ProfileDocumentService.load(user.uid);
       final workerName = (userData['name'] ?? user.displayName ?? '')
           .toString()
           .trim();

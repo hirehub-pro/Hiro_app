@@ -25,6 +25,7 @@ import 'package:untitled1/services/invoice_builder_lock_service.dart';
 import 'package:untitled1/services/invoice_builder_verification_session.dart';
 import 'package:untitled1/services/client_service.dart';
 import 'package:untitled1/services/app_navigation_service.dart';
+import 'package:untitled1/services/profile_document_service.dart';
 import 'package:untitled1/pages/chat_page.dart';
 import 'package:xml/xml.dart';
 
@@ -1857,15 +1858,11 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     });
 
     try {
-      final profile = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .get();
-      final profileData = profile.data();
+      final profileData = await ProfileDocumentService.load(user.uid);
       final registeredPhones = <String>{
         user.phoneNumber ?? '',
-        (profileData?['phone'] ?? '').toString(),
-        (profileData?['phoneNumber'] ?? '').toString(),
+        (profileData['phone'] ?? '').toString(),
+        (profileData['phoneNumber'] ?? '').toString(),
       }.map(_normalizedIsraeliPhone).where((phone) => phone.isNotEmpty).toSet();
 
       if (registeredPhones.isEmpty ||
@@ -2408,17 +2405,13 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     if (receiverId == null || receiverId.isEmpty) return;
 
     try {
-      final userDoc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(receiverId)
-          .get();
+      final userData = await ProfileDocumentService.load(receiverId);
       final verificationDoc = await FirebaseFirestore.instance
           .collection('users')
           .doc(receiverId)
           .collection('verification_info')
           .doc('latest')
           .get();
-      final userData = userDoc.data() ?? <String, dynamic>{};
       final verificationData = verificationDoc.data() ?? <String, dynamic>{};
       final receiverName = (userData['name'] ?? widget.receiverName ?? '')
           .toString()
@@ -2486,16 +2479,17 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
       try {
-        // Fetch from unified 'users' collection
         final workerDoc = await FirebaseFirestore.instance
             .collection('users')
             .doc(user.uid)
             .get();
         if (workerDoc.exists && mounted) {
           final workerData = workerDoc.data();
+          final profileData = await ProfileDocumentService.load(user.uid);
+          if (!mounted) return;
           setState(() {
             _isBusinessVerified = workerData?['isapproved'] ?? false;
-            _workerName = workerData?['name']?.toString().trim();
+            _workerName = profileData['name']?.toString().trim();
           });
 
           // Fetch from verification_info sub-collection for business details

@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:untitled1/pages/fullscreen_media_viewer.dart';
 import 'package:untitled1/ptofile.dart';
+import 'package:untitled1/services/profile_document_service.dart';
 import 'package:untitled1/widgets/cached_video_player.dart';
 
 class PostDetailsPage extends StatefulWidget {
@@ -141,12 +142,9 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
     setState(() => _isSubmittingComment = true);
 
     try {
-      final userDoc = await _firestore
-          .collection('users')
-          .doc(_currentUser.uid)
-          .get();
-      final userName = userDoc.data()?['name'] ?? 'User';
-      final userImage = userDoc.data()?['profileImageUrl'] ?? '';
+      final profileData = await ProfileDocumentService.load(_currentUser.uid);
+      final userName = profileData['name'] ?? 'User';
+      final userImage = profileData['profileImageUrl'] ?? '';
 
       await _firestore
           .collection('publicWorkerProfiles')

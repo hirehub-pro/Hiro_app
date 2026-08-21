@@ -249,8 +249,21 @@ class _BlogPageState extends State<BlogPage> {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null || user.isAnonymous) return;
 
-      final snapshot = await _firestore.collection('users').doc(user.uid).get();
-      final data = snapshot.data();
+      final accountSnapshot = await _firestore
+          .collection('users')
+          .doc(user.uid)
+          .get();
+      final accountData = accountSnapshot.data();
+      if (accountData == null) return;
+      final isWorker =
+          (accountData['role'] ?? '').toString().toLowerCase() == 'worker';
+      final data = isWorker
+          ? (await _firestore
+                    .collection('publicWorkerProfiles')
+                    .doc(user.uid)
+                    .get())
+                .data()
+          : accountData;
       if (data == null) return;
 
       final myProfessions = <String>{};
@@ -2604,10 +2617,21 @@ class _BlogPageState extends State<BlogPage> {
                             if (user.displayName == null ||
                                 user.displayName!.isEmpty) {
                               try {
-                                final userDoc = await _firestore
+                                final accountDoc = await _firestore
                                     .collection('users')
                                     .doc(user.uid)
                                     .get();
+                                final isWorker =
+                                    (accountDoc.data()?['role'] ?? '')
+                                        .toString()
+                                        .toLowerCase() ==
+                                    'worker';
+                                final userDoc = isWorker
+                                    ? await _firestore
+                                          .collection('publicWorkerProfiles')
+                                          .doc(user.uid)
+                                          .get()
+                                    : accountDoc;
                                 if (userDoc.exists) {
                                   authorName =
                                       userDoc.data()?['name'] ??

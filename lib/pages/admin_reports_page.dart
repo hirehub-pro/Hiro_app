@@ -6,6 +6,7 @@ import 'package:untitled1/formu.dart';
 import 'package:untitled1/pages/chat_page.dart';
 import 'package:untitled1/pages/fullscreen_media_viewer.dart';
 import 'package:untitled1/ptofile.dart';
+import 'package:untitled1/services/profile_document_service.dart';
 import 'package:untitled1/widgets/cached_video_player.dart';
 
 class AdminReportsPage extends StatefulWidget {
@@ -91,13 +92,14 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
         .toList();
 
     if (missing.isNotEmpty) {
-      final docs = await Future.wait(
-        missing.map((id) => _firestore.collection('users').doc(id).get()),
+      final profiles = await Future.wait(
+        missing.map(ProfileDocumentService.load),
       );
-      for (final doc in docs) {
-        final data = doc.data() ?? <String, dynamic>{};
-        _userSearchCache[doc.id] = {
-          'id': doc.id,
+      for (var index = 0; index < missing.length; index++) {
+        final id = missing[index];
+        final data = profiles[index];
+        _userSearchCache[id] = {
+          'id': id,
           'name': (data['name'] ?? '').toString(),
           'phone': (data['phone'] ?? '').toString(),
         };
@@ -922,8 +924,7 @@ class _AdminReportDetailsPageState extends State<AdminReportDetailsPage> {
     final cached = _userDetailsCache[userId];
     if (cached != null) return cached;
 
-    final doc = await _firestore.collection('users').doc(userId).get();
-    final data = doc.data() ?? <String, dynamic>{};
+    final data = await ProfileDocumentService.load(userId);
     final resolved = {
       'name': (data['name'] ?? '').toString(),
       'phone': (data['phone'] ?? '').toString(),

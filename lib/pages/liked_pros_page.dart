@@ -274,7 +274,10 @@ class _LikedProsPageState extends State<LikedProsPage>
     Map<String, dynamic> storedData,
   ) async {
     try {
-      final doc = await _firestore.collection('users').doc(targetUid).get();
+      final doc = await _firestore
+          .collection('publicWorkerProfiles')
+          .doc(targetUid)
+          .get();
       if (!doc.exists) {
         return storedData;
       }

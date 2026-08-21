@@ -88,6 +88,10 @@ class _SettingsPageState extends State<SettingsPage>
     try {
       final firestore = FirebaseFirestore.instance;
       final doc = await firestore.collection('users').doc(user.uid).get();
+      final publicProfileDoc = await firestore
+          .collection('publicWorkerProfiles')
+          .doc(user.uid)
+          .get();
       final scheduleDoc = await firestore
           .collection('publicWorkerProfiles')
           .doc(user.uid)
@@ -97,6 +101,27 @@ class _SettingsPageState extends State<SettingsPage>
 
       if (doc.exists) {
         final data = doc.data() as Map<String, dynamic>;
+        final publicData = publicProfileDoc.data() ?? <String, dynamic>{};
+        final mergedData = <String, dynamic>{...data};
+        if ((data['role'] ?? '').toString().toLowerCase() == 'worker') {
+          const publicFields = {
+            'hideSchedule',
+            'description',
+            'email',
+            'lat',
+            'lng',
+            'name',
+            'optionalPhone',
+            'phone',
+            'professions',
+            'profileImageUrl',
+            'spokenLanguages',
+            'town',
+            'workRadius',
+          };
+          mergedData.removeWhere((key, _) => publicFields.contains(key));
+          mergedData.addAll(publicData);
+        }
         final scheduleData = scheduleDoc.data();
         final defaultWorkingHours =
             scheduleData?['defaultWorkingHours'] as Map<String, dynamic>?;
@@ -104,9 +129,9 @@ class _SettingsPageState extends State<SettingsPage>
         if (!mounted) return;
 
         setState(() {
-          _userData = data;
+          _userData = mergedData;
           _userRole = data['role'] ?? 'customer';
-          _hideSchedule = data['hideSchedule'] ?? false;
+          _hideSchedule = publicData['hideSchedule'] ?? false;
           _disabledDays = List<int>.from(
             scheduleData?['disabledDays'] ?? const <int>[],
           );
@@ -147,16 +172,21 @@ class _SettingsPageState extends State<SettingsPage>
       return;
     }
 
-    await firestore.collection('users').doc(user.uid).update({key: value});
-
     if (key == 'hideSchedule') {
+      await firestore.collection('publicWorkerProfiles').doc(user.uid).update({
+        key: value,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
       await firestore
           .collection('publicWorkerProfiles')
           .doc(user.uid)
           .collection('Schedule')
           .doc('info')
           .set({key: value}, SetOptions(merge: true));
+      return;
     }
+
+    await firestore.collection('users').doc(user.uid).update({key: value});
   }
 
   TimeOfDay _parseStoredTime(String? value, {required TimeOfDay fallback}) {

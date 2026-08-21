@@ -83,7 +83,10 @@ class _PostDetailPageState extends State<PostDetailPage> {
   Future<void> _ensureWorkerPreview(String uid) async {
     if (uid.isEmpty || _workerPreviewCache.containsKey(uid)) return;
     try {
-      final doc = await _firestore.collection('users').doc(uid).get();
+      final doc = await _firestore
+          .collection('publicWorkerProfiles')
+          .doc(uid)
+          .get();
       if (!doc.exists || !mounted) return;
       final data = doc.data() ?? <String, dynamic>{};
       setState(() {
@@ -102,8 +105,11 @@ class _PostDetailPageState extends State<PostDetailPage> {
     if (authorUid.isEmpty) return;
 
     try {
-      final doc = await _firestore.collection('users').doc(authorUid).get();
-      if (!doc.exists || !mounted) return;
+      final doc = await _firestore
+          .collection('publicWorkerProfiles')
+          .doc(authorUid)
+          .get();
+      if (!mounted) return;
       final data = doc.data() ?? <String, dynamic>{};
       setState(() {
         _authorPreview = {

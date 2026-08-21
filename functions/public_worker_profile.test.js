@@ -8,7 +8,7 @@ const {
   hasSearchEntitlement,
 } = require("./public_worker_profile");
 
-test("builds a bounded public projection without private account fields", () => {
+test("builds a bounded public worker profile with public contact fields", () => {
   const profile = buildPublicWorkerProfile("worker-1", {
     role: "worker",
     name: "Ada",
@@ -26,10 +26,10 @@ test("builds a bounded public projection without private account fields", () => 
   assert.equal(PUBLIC_WORKER_PROFILE_COLLECTION, "publicWorkerProfiles");
   assert.equal(profile.uid, "worker-1");
   assert.equal(profile.isSearchVisible, true);
-  assert.equal(profile.lat, 32.085);
-  assert.equal(profile.lng, 34.782);
-  assert.equal("email" in profile, false);
-  assert.equal("phone" in profile, false);
+  assert.equal(profile.lat, 32.0852999);
+  assert.equal(profile.lng, 34.7817676);
+  assert.equal(profile.email, "private@example.com");
+  assert.equal(profile.phone, "+972500000000");
   assert.equal("subscriptionStatus" in profile, false);
   assert.equal("subscriptionPurchaseToken" in profile, false);
 });
