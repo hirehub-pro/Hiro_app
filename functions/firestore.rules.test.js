@@ -364,6 +364,34 @@ test("allows inactive worker registration but rejects forged entitlement", {
   }));
 });
 
+test("stores favorites only as the owner's private bookmark", {
+  skip: !emulatorAvailable,
+}, async () => {
+  const uid = "favorite-owner-id-000001";
+  const targetUid = "favorite-worker-id-00001";
+  const db = testEnv.authenticatedContext(uid).firestore();
+
+  await assertSucceeds(setDoc(
+      doc(db, `users/${uid}/favorites/${targetUid}`),
+      {
+        targetUid,
+        addedAt: serverTimestamp(),
+        name: "Favorite Worker",
+        profileImageUrl: "https://example.com/worker.jpg",
+        professions: ["Electrician"],
+        spokenLanguages: ["Hebrew"],
+      },
+  ));
+  await assertFails(setDoc(
+      doc(db, `users/${targetUid}/likedBy/${uid}`),
+      {addedAt: serverTimestamp(), sourceUserId: uid},
+  ));
+  await assertFails(setDoc(
+      doc(db, `users/${uid}/favorites/${targetUid}`),
+      {addedAt: serverTimestamp(), name: "Missing identity"},
+  ));
+});
+
 test("blocks cross-user invoices and protected allocation fields", {
   skip: !emulatorAvailable,
 }, async () => {
@@ -734,4 +762,56 @@ test("permits custom-claim admins without trusting a user role field", {
   ).firestore();
   await assertSucceeds(getDoc(doc(adminDb, "users/private-user-id-0001")));
   assert.ok(true);
+});
+
+test("permits protected admin-panel reads for a server-assigned admin role", {
+  skip: !emulatorAvailable,
+}, async () => {
+  const adminUid = "stored-admin-id-00000001";
+  await seed(`users/${adminUid}`, {
+    uid: adminUid,
+    name: "Stored Admin",
+    role: "admin",
+    createdAt: new Date(),
+  });
+  await seed("users/customer-for-admin-001", {
+    uid: "customer-for-admin-001",
+    name: "Customer",
+    role: "customer",
+    createdAt: new Date(),
+  });
+  await seed("users/worker-for-admin-0001", {
+    uid: "worker-for-admin-0001",
+    role: "worker",
+    createdAt: new Date(),
+  });
+  await seed("publicWorkerProfiles/worker-for-admin-0001", {
+    uid: "worker-for-admin-0001",
+    role: "worker",
+    name: "Worker",
+    isSearchVisible: false,
+  });
+  await seed("users/worker-for-admin-0001/verification_info/latest", {
+    userId: "worker-for-admin-0001",
+    status: "pending",
+    timestamp: new Date(),
+  });
+
+  const adminDb = testEnv.authenticatedContext(adminUid).firestore();
+  await assertSucceeds(getDocs(query(
+      collection(adminDb, "users"),
+      where("role", "==", "customer"),
+  )));
+  await assertSucceeds(getDocs(query(
+      collection(adminDb, "users"),
+      where("role", "==", "worker"),
+  )));
+  await assertSucceeds(getDoc(doc(
+      adminDb,
+      "publicWorkerProfiles/worker-for-admin-0001",
+  )));
+  await assertSucceeds(getDoc(doc(
+      adminDb,
+      "users/worker-for-admin-0001/verification_info/latest",
+  )));
 });

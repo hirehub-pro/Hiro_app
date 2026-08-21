@@ -851,27 +851,17 @@ class _ProfileState extends State<Profile>
           .doc(currentUser.uid)
           .collection('favorites')
           .doc(targetUid);
-      final likedByRef = _firestore
-          .collection('users')
-          .doc(targetUid)
-          .collection('likedBy')
-          .doc(currentUser.uid);
       if (_isFavorite) {
-        await Future.wait([favRef.delete(), likedByRef.delete()]);
+        await favRef.delete();
       } else {
-        await Future.wait([
-          favRef.set({
-            'addedAt': FieldValue.serverTimestamp(),
-            'name': _userName,
-            'profileImageUrl': _profileImageUrl,
-            'professions': _userProfessions,
-            'spokenLanguages': _spokenLanguages,
-          }),
-          likedByRef.set({
-            'addedAt': FieldValue.serverTimestamp(),
-            'sourceUserId': currentUser.uid,
-          }),
-        ]);
+        await favRef.set({
+          'targetUid': targetUid,
+          'addedAt': FieldValue.serverTimestamp(),
+          'name': _userName,
+          'profileImageUrl': _profileImageUrl,
+          'professions': _userProfessions,
+          'spokenLanguages': _spokenLanguages,
+        });
       }
       if (mounted) setState(() => _isFavorite = !_isFavorite);
     } catch (e) {

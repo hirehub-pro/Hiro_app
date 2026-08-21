@@ -22,9 +22,7 @@ class LikedProsPage extends StatefulWidget {
   State<LikedProsPage> createState() => _LikedProsPageState();
 }
 
-class _LikedProsPageState extends State<LikedProsPage>
-    with SingleTickerProviderStateMixin {
-  late final TabController _tabController;
+class _LikedProsPageState extends State<LikedProsPage> {
   final User? _currentUser = FirebaseAuth.instance.currentUser;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final TextEditingController _searchController = TextEditingController();
@@ -33,15 +31,8 @@ class _LikedProsPageState extends State<LikedProsPage>
   String _searchQuery = '';
 
   @override
-  void initState() {
-    super.initState();
-    _tabController = TabController(length: 2, vsync: this);
-  }
-
-  @override
   void dispose() {
     _searchController.dispose();
-    _tabController.dispose();
     super.dispose();
   }
 
@@ -207,12 +198,6 @@ class _LikedProsPageState extends State<LikedProsPage>
         .doc(currentUser.uid)
         .collection('favorites')
         .doc(targetUid);
-    final likedByRef = _firestore
-        .collection('users')
-        .doc(targetUid)
-        .collection('likedBy')
-        .doc(currentUser.uid);
-
     try {
       if (shouldFavorite) {
         final professions =
@@ -222,21 +207,15 @@ class _LikedProsPageState extends State<LikedProsPage>
                 .toList() ??
             <String>[];
 
-        await Future.wait([
-          favRef.set({
-            'addedAt': FieldValue.serverTimestamp(),
-            'name': (previewData['name'] ?? '').toString(),
-            'profileImageUrl': (previewData['profileImageUrl'] ?? '')
-                .toString(),
-            'professions': professions,
-          }),
-          likedByRef.set({
-            'addedAt': FieldValue.serverTimestamp(),
-            'sourceUserId': currentUser.uid,
-          }),
-        ]);
+        await favRef.set({
+          'targetUid': targetUid,
+          'addedAt': FieldValue.serverTimestamp(),
+          'name': (previewData['name'] ?? '').toString(),
+          'profileImageUrl': (previewData['profileImageUrl'] ?? '').toString(),
+          'professions': professions,
+        });
       } else {
-        await Future.wait([favRef.delete(), likedByRef.delete()]);
+        await favRef.delete();
       }
 
       if (!mounted) return;
@@ -385,28 +364,10 @@ class _LikedProsPageState extends State<LikedProsPage>
                           child: _buildHeader(strings),
                         ),
                         Expanded(
-                          child: TabBarView(
-                            controller: _tabController,
-                            children: [
-                              _buildProsList(
-                                collectionName: 'favorites',
-                                emptyText: strings['empty_favorites']!,
-                                fallbackName: strings['no_name']!,
-                                strings: strings,
-                                uidResolver: (doc) => doc.id,
-                              ),
-                              _buildProsList(
-                                collectionName: 'likedBy',
-                                emptyText: strings['empty_liked_me']!,
-                                fallbackName: strings['no_name']!,
-                                strings: strings,
-                                uidResolver: (doc) {
-                                  final data = doc.data();
-                                  return (data['sourceUserId'] ?? doc.id)
-                                      .toString();
-                                },
-                              ),
-                            ],
+                          child: _buildProsList(
+                            emptyText: strings['empty_favorites']!,
+                            fallbackName: strings['no_name']!,
+                            strings: strings,
                           ),
                         ),
                       ],
@@ -446,54 +407,21 @@ class _LikedProsPageState extends State<LikedProsPage>
           ),
         ),
         const SizedBox(height: 14),
-        Container(
-          height: 56,
-          padding: const EdgeInsets.all(4),
-          decoration: BoxDecoration(
-            color: const Color(0xFFEAF0F7),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: const Color(0xFFDCE6F1)),
-          ),
-          child: TabBar(
-            controller: _tabController,
-            dividerColor: Colors.transparent,
-            splashBorderRadius: BorderRadius.circular(12),
-            indicator: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x120F172A),
-                  blurRadius: 6,
-                  offset: Offset(0, 2),
-                ),
-              ],
-            ),
-            labelColor: _primaryColor,
-            unselectedLabelColor: _textMuted,
-            labelStyle: const TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w800,
-            ),
-            unselectedLabelStyle: const TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-            ),
-            tabs: [
-              Tab(
-                child: _LikedProsTabLabel(
-                  icon: Icons.favorite_rounded,
-                  label: strings['tab_favorites']!,
+        Row(
+          children: [
+            const Icon(Icons.favorite_rounded, color: _primaryColor),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                strings['title']!,
+                style: const TextStyle(
+                  color: _textPrimary,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
                 ),
               ),
-              Tab(
-                child: _LikedProsTabLabel(
-                  icon: Icons.favorite_border_rounded,
-                  label: strings['tab_liked_me']!,
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
         const SizedBox(height: 14),
         TextField(
@@ -525,12 +453,9 @@ class _LikedProsPageState extends State<LikedProsPage>
   }
 
   Widget _buildProsList({
-    required String collectionName,
     required String emptyText,
     required String fallbackName,
     required Map<String, String> strings,
-    required String Function(QueryDocumentSnapshot<Map<String, dynamic>>)
-    uidResolver,
   }) {
     final uid = _currentUser?.uid;
     if (uid == null) {
@@ -541,7 +466,7 @@ class _LikedProsPageState extends State<LikedProsPage>
       stream: FirebaseFirestore.instance
           .collection('users')
           .doc(uid)
-          .collection(collectionName)
+          .collection('favorites')
           .orderBy('addedAt', descending: true)
           .snapshots(),
       builder: (context, snapshot) {
@@ -561,7 +486,7 @@ class _LikedProsPageState extends State<LikedProsPage>
         final docs = snapshot.data?.docs ?? const [];
 
         return FutureBuilder<List<_LikedProEntry>>(
-          future: _resolveEntries(docs, uidResolver),
+          future: _resolveEntries(docs, (doc) => doc.id),
           builder: (context, resolvedSnapshot) {
             if (resolvedSnapshot.connectionState == ConnectionState.waiting) {
               return const _LikedProsLoadingList();
@@ -571,18 +496,13 @@ class _LikedProsPageState extends State<LikedProsPage>
             if (entries.isEmpty) {
               return _LikedProsEmptyState(
                 title: _searchQuery.isEmpty
-                    ? collectionName == 'favorites'
-                          ? strings['empty_title_favorites']!
-                          : strings['empty_title_liked']!
+                    ? strings['empty_title_favorites']!
                     : strings['no_results']!,
                 message: _searchQuery.isEmpty
                     ? emptyText
                     : strings['no_results']!,
-                actionLabel:
-                    collectionName == 'favorites' && _searchQuery.isEmpty
-                    ? strings['browse']!
-                    : null,
-                onAction: collectionName == 'favorites' && _searchQuery.isEmpty
+                actionLabel: _searchQuery.isEmpty ? strings['browse']! : null,
+                onAction: _searchQuery.isEmpty
                     ? () => Navigator.of(context).push(
                         MaterialPageRoute(builder: (_) => const SearchPage()),
                       )
@@ -631,9 +551,6 @@ class _LikedProsPageState extends State<LikedProsPage>
                           );
                         },
                         actionButton: _FavoriteActionButton(
-                          collectionName: collectionName,
-                          currentUserId: uid,
-                          targetUid: entry.targetUid,
                           strings: strings,
                           isPending: _pendingFavoriteIds.contains(
                             entry.targetUid,
@@ -660,28 +577,6 @@ class _LikedProsPageState extends State<LikedProsPage>
   }
 }
 
-class _LikedProsTabLabel extends StatelessWidget {
-  final IconData icon;
-  final String label;
-
-  const _LikedProsTabLabel({required this.icon, required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 17),
-        const SizedBox(width: 7),
-        Flexible(
-          child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
-        ),
-      ],
-    );
-  }
-}
-
 class _LikedProEntry {
   final String targetUid;
   final Map<String, dynamic> storedData;
@@ -695,17 +590,11 @@ class _LikedProEntry {
 }
 
 class _FavoriteActionButton extends StatelessWidget {
-  final String collectionName;
-  final String currentUserId;
-  final String targetUid;
   final Map<String, String> strings;
   final bool isPending;
   final ValueChanged<bool> onSetFavorite;
 
   const _FavoriteActionButton({
-    required this.collectionName,
-    required this.currentUserId,
-    required this.targetUid,
     required this.strings,
     required this.isPending,
     required this.onSetFavorite,
@@ -713,61 +602,22 @@ class _FavoriteActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (collectionName == 'favorites') {
-      return OutlinedButton(
-        onPressed: isPending ? null : () => onSetFavorite(false),
-        style: OutlinedButton.styleFrom(
-          foregroundColor: const Color(0xFFB42318),
-          backgroundColor: const Color(0xFFFFF5F4),
-          side: const BorderSide(color: Color(0xFFF3CAC5)),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-        ),
-        child: isPending
-            ? const SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : Text(strings['remove']!),
-      );
-    }
-
-    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-      stream: FirebaseFirestore.instance
-          .collection('users')
-          .doc(currentUserId)
-          .collection('favorites')
-          .doc(targetUid)
-          .snapshots(),
-      builder: (context, snapshot) {
-        final isSaved = snapshot.data?.exists ?? false;
-        return OutlinedButton(
-          onPressed: isPending || isSaved ? null : () => onSetFavorite(true),
-          style: OutlinedButton.styleFrom(
-            foregroundColor: isSaved ? const Color(0xFF117A45) : _primaryColor,
-            side: BorderSide(
-              color: isSaved
-                  ? const Color(0xFFB7E4C7)
-                  : const Color(0xFFC6D9F9),
-            ),
-            backgroundColor: isSaved ? const Color(0xFFEFFAF3) : _softBlue,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-          ),
-          child: isPending
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : Text(isSaved ? strings['liked']! : strings['like_back']!),
-        );
-      },
+    return OutlinedButton(
+      onPressed: isPending ? null : () => onSetFavorite(false),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: const Color(0xFFB42318),
+        backgroundColor: const Color(0xFFFFF5F4),
+        side: const BorderSide(color: Color(0xFFF3CAC5)),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      ),
+      child: isPending
+          ? const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : Text(strings['remove']!),
     );
   }
 }

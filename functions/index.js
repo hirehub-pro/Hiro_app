@@ -2775,6 +2775,139 @@ exports.submitBusinessVerification = onCall(
     },
 );
 
+exports.reviewBusinessVerification = onCall(
+    {
+      region: "me-west1",
+    },
+    async (request) => {
+      const adminUid = request.auth?.uid;
+      if (!adminUid) {
+        throw new HttpsError("unauthenticated", "Authentication required.");
+      }
+
+      const db = admin.firestore();
+      const hasAdminClaim = request.auth.token?.admin === true;
+      if (!hasAdminClaim) {
+        const adminSnapshot = await db.collection("users").doc(adminUid).get();
+        if (!adminSnapshot.exists || adminSnapshot.data()?.role !== "admin") {
+          throw new HttpsError("permission-denied", "Admin access required.");
+        }
+      }
+
+      const userId = normalizeString(request.data?.userId).trim();
+      const decision = normalizeString(request.data?.decision)
+          .trim().toLowerCase();
+      const reason = normalizeString(request.data?.reason).trim();
+      if (!userId || userId.length > 128) {
+        throw new HttpsError("invalid-argument", "A valid user ID is required.");
+      }
+      if (!new Set(["approve", "reject"]).has(decision)) {
+        throw new HttpsError("invalid-argument", "Invalid review decision.");
+      }
+      if (decision === "reject" && (!reason || reason.length > 1000)) {
+        throw new HttpsError(
+            "invalid-argument",
+            "A rejection reason of up to 1000 characters is required.",
+        );
+      }
+
+      const userRef = db.collection("users").doc(userId);
+      const verificationRef = userRef
+          .collection("verification_info").doc("latest");
+      const publicProfileRef = db
+          .collection(PUBLIC_WORKER_PROFILE_COLLECTION).doc(userId);
+      const legacyVerificationRef = db.collection("verifications").doc(userId);
+      const notificationRef = userRef.collection("notifications").doc();
+
+      await db.runTransaction(async (transaction) => {
+        const [userSnapshot, verificationSnapshot, publicProfileSnapshot] =
+          await Promise.all([
+            transaction.get(userRef),
+            transaction.get(verificationRef),
+            transaction.get(publicProfileRef),
+          ]);
+
+        if (!userSnapshot.exists) {
+          throw new HttpsError("not-found", "Worker account not found.");
+        }
+        if (!verificationSnapshot.exists) {
+          throw new HttpsError("not-found", "Verification request not found.");
+        }
+        if (userSnapshot.data()?.role !== "worker") {
+          throw new HttpsError(
+              "failed-precondition",
+              "Only worker accounts can be professionally verified.",
+          );
+        }
+
+        const currentStatus = normalizeString(
+            verificationSnapshot.data()?.status,
+        ).trim().toLowerCase();
+        if (currentStatus !== "pending") {
+          throw new HttpsError(
+              "failed-precondition",
+              `This request is already ${currentStatus || "reviewed"}.`,
+          );
+        }
+
+        const reviewedAt = admin.firestore.FieldValue.serverTimestamp();
+        const approved = decision === "approve";
+        transaction.update(userRef, approved ? {
+          isapproved: true,
+          isVerified: true,
+          businessVerificationStatus: "approved",
+          verifiedAt: reviewedAt,
+        } : {
+          isapproved: false,
+          isVerified: false,
+          businessVerificationStatus: "rejected",
+          verifiedAt: admin.firestore.FieldValue.delete(),
+        });
+        transaction.set(verificationRef, approved ? {
+          status: "approved",
+          approvedAt: reviewedAt,
+          reviewedAt,
+          reviewedBy: adminUid,
+          rejectedAt: admin.firestore.FieldValue.delete(),
+          rejectionReason: admin.firestore.FieldValue.delete(),
+        } : {
+          status: "rejected",
+          rejectedAt: reviewedAt,
+          rejectionReason: reason,
+          reviewedAt,
+          reviewedBy: adminUid,
+          approvedAt: admin.firestore.FieldValue.delete(),
+        }, {merge: true});
+        if (publicProfileSnapshot.exists) {
+          transaction.update(publicProfileRef, {
+            isBusinessVerified: approved,
+            updatedAt: reviewedAt,
+          });
+        }
+        transaction.set(notificationRef, {
+          title: approved ? "Business Verification Approved" :
+            "Business Verification Rejected",
+          body: approved ?
+            "Your business verification has been approved." :
+            `Your business verification was rejected: ${reason}`,
+          type: "business_verification",
+          status: approved ? "approved" : "rejected",
+          isRead: false,
+          timestamp: reviewedAt,
+          reviewedBy: adminUid,
+        });
+        transaction.delete(legacyVerificationRef);
+      });
+
+      logger.info("Business verification reviewed", {
+        adminUid,
+        userId,
+        decision,
+      });
+      return {status: decision === "approve" ? "approved" : "rejected"};
+    },
+);
+
 exports.sendNotificationPush = onDocumentCreated(
     {
       document: "users/{userId}/notifications/{notificationId}",

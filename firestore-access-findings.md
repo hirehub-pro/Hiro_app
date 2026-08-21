@@ -74,6 +74,18 @@ Relevant queries:
   `publicWorkerProfiles/{workerUid}.socialLinks`; each entry is restricted to
   bounded `type`, `name`, and HTTPS `url` fields. Customer links remain on the
   private `users/{uid}` account document.
+- Favorites are one-way private bookmarks stored only under
+  `users/{ownerUid}/favorites/{workerUid}`. The former reciprocal
+  `users/{workerUid}/likedBy/{ownerUid}` write and read model is no longer used.
+- The admin panel lists private `users` documents for customers and workers,
+  then merges each worker's `publicWorkerProfiles/{uid}` display fields. Admin
+  authorization accepts either the Auth `admin` custom claim or an existing
+  server-assigned `users/{uid}.role == admin`; client creation and owner updates
+  cannot create or modify that role.
+- Professional verification decisions use the admin-only
+  `reviewBusinessVerification` callable. A single backend transaction updates
+  the private account approval flags, the latest request status, the public
+  business-verification badge, the user notification, and the legacy queue.
 - Projects: direct collection read of
   `publicWorkerProfiles/{workerUid}/projects`; nested comments are ordered by
   `timestamp` ascending or descending. Like state uses a direct document get.

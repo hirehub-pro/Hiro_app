@@ -33,7 +33,12 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return isAuthenticated() && request.auth.token.get('admin', false) == true;
+      return isAuthenticated() && (
+        request.auth.token.get('admin', false) == true ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+          get(/databases/$(database)/documents/users/$(request.auth.uid))
+            .data.get('role', '') == 'admin')
+      );
     }
 
     function uidUnchanged() {
@@ -1101,22 +1106,19 @@ service cloud.firestore {
         allow read, delete: if isOwner(userId);
         allow create, update: if isOwner(userId) &&
           request.resource.data.keys().hasOnly([
-            'userId', 'workerId', 'targetUid', 'addedAt', 'createdAt'
+            'targetUid', 'addedAt', 'name', 'profileImageUrl',
+            'professions', 'spokenLanguages'
           ]) &&
-          request.resource.data.get('userId',
-            request.resource.data.get('workerId',
-              request.resource.data.get('targetUid', ''))) == favoriteId &&
-          (optionalTimestamp(request.resource.data, 'addedAt') &&
-            optionalTimestamp(request.resource.data, 'createdAt'));
-      }
-
-      match /likedBy/{likerId} {
-        allow read: if isOwner(userId) || isOwner(likerId);
-        allow create, update: if isOwner(likerId) &&
-          request.resource.data.keys().hasOnly([
-            'userId', 'workerId', 'targetUid', 'addedAt', 'createdAt'
-          ]);
-        allow delete: if isOwner(likerId) || isOwner(userId);
+          request.resource.data.keys().hasAll(['targetUid', 'addedAt']) &&
+          request.resource.data.targetUid == favoriteId &&
+          request.resource.data.targetUid is string &&
+          request.resource.data.targetUid.size() >= 20 &&
+          request.resource.data.targetUid.size() <= 128 &&
+          request.resource.data.addedAt is timestamp &&
+          optionalString(request.resource.data, 'name', 100) &&
+          optionalUrl(request.resource.data, 'profileImageUrl', 2048) &&
+          optionalList(request.resource.data, 'professions', 50) &&
+          optionalList(request.resource.data, 'spokenLanguages', 30);
       }
 
       match /Schedule/{scheduleId} {

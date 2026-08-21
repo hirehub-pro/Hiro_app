@@ -2,7 +2,7 @@ import 'dart:io';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -21,6 +21,10 @@ class AdminPanel extends StatefulWidget {
 
 class _AdminPanelState extends State<AdminPanel> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseFunctions _functions = FirebaseFunctions.instanceFor(
+    region: 'me-west1',
+  );
+  final Set<String> _processingVerificationUids = <String>{};
 
   late final Map<String, IconData> _availableIcons =
       ProfessionIconRegistry.materialIcons;
@@ -260,8 +264,8 @@ class _AdminPanelState extends State<AdminPanel> {
               data['userId'] ?? verificationRef.parent.parent?.id ?? doc.id;
           return _buildVerificationCard(
             data: data,
-            verificationRef: verificationRef,
             uid: uid,
+            isProcessing: _processingVerificationUids.contains(uid),
           );
         },
       ),
@@ -270,8 +274,8 @@ class _AdminPanelState extends State<AdminPanel> {
 
   Widget _buildVerificationCard({
     required Map<String, dynamic> data,
-    required DocumentReference<Map<String, dynamic>> verificationRef,
     required String uid,
+    required bool isProcessing,
   }) {
     final businessName = _verificationValue(data['businessName'], 'Business');
     final businessId = _verificationValue(data['businessId']);
@@ -426,13 +430,19 @@ class _AdminPanelState extends State<AdminPanel> {
                             borderRadius: BorderRadius.circular(14),
                           ),
                         ),
-                        onPressed: () => _showRejectDialog(
-                          verificationRef,
-                          uid,
-                          businessName,
-                        ),
-                        icon: const Icon(Icons.close_rounded, size: 19),
-                        label: const Text('Reject'),
+                        onPressed: isProcessing
+                            ? null
+                            : () => _showRejectDialog(uid),
+                        icon: isProcessing
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.close_rounded, size: 19),
+                        label: Text(isProcessing ? 'Working...' : 'Reject'),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -447,14 +457,22 @@ class _AdminPanelState extends State<AdminPanel> {
                             borderRadius: BorderRadius.circular(14),
                           ),
                         ),
-                        onPressed: () => _handleVerification(
-                          verificationRef,
-                          uid,
-                          true,
-                          businessName,
+                        onPressed: isProcessing
+                            ? null
+                            : () => _handleVerification(uid, true),
+                        icon: isProcessing
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.verified_rounded, size: 19),
+                        label: Text(
+                          isProcessing ? 'Approving...' : 'Approve business',
                         ),
-                        icon: const Icon(Icons.verified_rounded, size: 19),
-                        label: const Text('Approve business'),
                       ),
                     ),
                   ],
@@ -1151,11 +1169,7 @@ class _AdminPanelState extends State<AdminPanel> {
     );
   }
 
-  void _showRejectDialog(
-    DocumentReference<Map<String, dynamic>> verificationRef,
-    String uid,
-    String businessName,
-  ) {
+  void _showRejectDialog(String uid) {
     final controller = TextEditingController();
     showDialog(
       context: context,
@@ -1176,14 +1190,8 @@ class _AdminPanelState extends State<AdminPanel> {
           TextButton(
             onPressed: () {
               if (controller.text.trim().isEmpty) return;
-              _handleVerification(
-                verificationRef,
-                uid,
-                false,
-                businessName,
-                reason: controller.text.trim(),
-              );
               Navigator.pop(context);
+              _handleVerification(uid, false, reason: controller.text.trim());
             },
             child: const Text('Reject', style: TextStyle(color: Colors.red)),
           ),
@@ -1193,13 +1201,15 @@ class _AdminPanelState extends State<AdminPanel> {
   }
 
   Future<void> _handleVerification(
-    DocumentReference<Map<String, dynamic>> verificationRef,
     String uid,
-    bool approve,
-    String businessName, {
+    bool approve, {
     String? reason,
   }) async {
-    // Immediate feedback to show button click worked
+    if (_processingVerificationUids.contains(uid)) return;
+    if (mounted) {
+      setState(() => _processingVerificationUids.add(uid));
+    }
+
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -1212,93 +1222,11 @@ class _AdminPanelState extends State<AdminPanel> {
     }
 
     try {
-      final vDoc = await verificationRef.get();
-      final vData = vDoc.data();
-      if (vData == null) return;
-
-      if (approve) {
-        // Use set with merge: true to ensure the document exists and updates the requested fields
-        await _firestore.collection('users').doc(uid).set({
-          'role': 'worker',
-          'isapproved': true, // As per request
-          'isVerified': true,
-          'isPro': true,
-          'businessVerificationStatus': 'approved',
-          'verifiedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-
-        // Add verification info collection to user collection (as a subcollection)
-        await _firestore
-            .collection('users')
-            .doc(uid)
-            .collection('verification_info')
-            .doc('latest')
-            .set({
-              ...vData,
-              'approvedAt': FieldValue.serverTimestamp(),
-              'status': 'approved',
-            }, SetOptions(merge: true));
-      } else {
-        await verificationRef.set({
-          'status': 'rejected',
-          'rejectedAt': FieldValue.serverTimestamp(),
-          if (reason != null && reason.isNotEmpty) 'rejectionReason': reason,
-        }, SetOptions(merge: true));
-        await _firestore.collection('users').doc(uid).set({
-          'businessVerificationStatus': 'rejected',
-        }, SetOptions(merge: true));
-
-        final String adminUid =
-            FirebaseAuth.instance.currentUser?.uid ?? 'admin';
-
-        if (reason != null && reason.isNotEmpty) {
-          // Send message to worker in chat room
-          final List<String> ids = [adminUid, uid];
-          ids.sort();
-          final String roomId = ids.join('_');
-
-          await _firestore
-              .collection('chat_rooms')
-              .doc(roomId)
-              .collection('messages')
-              .add({
-                'senderId': adminUid,
-                'receiverId': uid,
-                'message':
-                    'Your business verification has been rejected. Reason: $reason',
-                'type': 'text',
-                'timestamp': FieldValue.serverTimestamp(),
-              });
-
-          await _firestore.collection('chat_rooms').doc(roomId).set({
-            'lastMessage': 'Verification rejected: $reason',
-            'lastTimestamp': FieldValue.serverTimestamp(),
-            'users': [adminUid, uid],
-            'user_names': {adminUid: 'Admin', uid: businessName},
-          }, SetOptions(merge: true));
-
-          // Send notification to user collection
-          await _firestore
-              .collection('users')
-              .doc(uid)
-              .collection('notifications')
-              .add({
-                'title': 'Verification Rejected',
-                'body': 'Your business verification was rejected: $reason',
-                'timestamp': FieldValue.serverTimestamp(),
-              });
-        }
-      }
-
-      if (approve) {
-        await verificationRef.set({
-          'status': 'approved',
-          'approvedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-      }
-
-      // Keep the legacy queue document in sync while the rest of the app still references it.
-      await _firestore.collection('verifications').doc(uid).delete();
+      await _functions.httpsCallable('reviewBusinessVerification').call({
+        'userId': uid,
+        'decision': approve ? 'approve' : 'reject',
+        if (!approve) 'reason': reason?.trim() ?? '',
+      });
 
       if (mounted) {
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
@@ -1313,13 +1241,31 @@ class _AdminPanelState extends State<AdminPanel> {
           ),
         );
       }
+    } on FirebaseFunctionsException catch (e) {
+      debugPrint("Verification handle error: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.message ?? 'Could not update verification.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     } catch (e) {
       debugPrint("Verification handle error: $e");
       if (mounted) {
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+          const SnackBar(
+            content: Text('Could not update verification. Please try again.'),
+            backgroundColor: Colors.red,
+          ),
         );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _processingVerificationUids.remove(uid));
       }
     }
   }
@@ -1635,6 +1581,40 @@ class _UserManagementSheet extends StatefulWidget {
 class _UserManagementSheetState extends State<_UserManagementSheet> {
   String _searchQuery = "";
 
+  Stream<List<_AdminUserRecord>> _usersStream() {
+    return widget.firestore
+        .collection('users')
+        .where('role', isEqualTo: widget.role)
+        .snapshots()
+        .asyncMap((accountSnapshot) async {
+          if (widget.role != 'worker') {
+            return accountSnapshot.docs
+                .map((doc) => _AdminUserRecord(uid: doc.id, data: doc.data()))
+                .toList();
+          }
+
+          // The account document contains private/admin-managed worker state,
+          // while the public profile contains the worker's display details.
+          // Start from users so workers without a public profile are not hidden
+          // from administrators, then merge the public fields for presentation.
+          return Future.wait(
+            accountSnapshot.docs.map((accountDoc) async {
+              final publicDoc = await widget.firestore
+                  .collection('publicWorkerProfiles')
+                  .doc(accountDoc.id)
+                  .get();
+              return _AdminUserRecord(
+                uid: accountDoc.id,
+                data: {
+                  ...accountDoc.data(),
+                  if (publicDoc.exists) ...?publicDoc.data(),
+                },
+              );
+            }),
+          );
+        });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -1688,36 +1668,65 @@ class _UserManagementSheetState extends State<_UserManagementSheet> {
             ),
           ),
           Expanded(
-            child: StreamBuilder<QuerySnapshot>(
-              stream: widget.firestore
-                  .collection(
-                    widget.role == 'worker' ? 'publicWorkerProfiles' : 'users',
-                  )
-                  .where('role', isEqualTo: widget.role)
-                  .snapshots(),
+            child: StreamBuilder<List<_AdminUserRecord>>(
+              stream: _usersStream(),
               builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting)
+                if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
-                if (!snapshot.hasData)
+                }
+                if (snapshot.hasError) {
+                  return Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.cloud_off_rounded,
+                            color: Colors.red,
+                            size: 44,
+                          ),
+                          const SizedBox(height: 12),
+                          const Text(
+                            'Could not load users',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            snapshot.error.toString(),
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Colors.grey[600],
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }
+                if (!snapshot.hasData) {
                   return const Center(child: Text('No data found'));
+                }
 
-                final docs = snapshot.data!.docs.where((doc) {
-                  final data = doc.data() as Map<String, dynamic>;
+                final docs = snapshot.data!.where((record) {
+                  final data = record.data;
                   final name = (data['name'] ?? "").toString().toLowerCase();
                   final phone = (data['phone'] ?? "").toString().toLowerCase();
                   return name.contains(_searchQuery) ||
                       phone.contains(_searchQuery);
                 }).toList();
 
-                if (docs.isEmpty)
+                if (docs.isEmpty) {
                   return const Center(child: Text('No matching entries found'));
+                }
 
                 return ListView.builder(
                   padding: const EdgeInsets.only(bottom: 40),
                   itemCount: docs.length,
                   itemBuilder: (context, index) {
-                    final user = docs[index].data() as Map<String, dynamic>;
-                    final uid = docs[index].id;
+                    final user = docs[index].data;
+                    final uid = docs[index].uid;
                     final bool isBanned = user['isBanned'] ?? false;
 
                     return ListTile(
@@ -1804,6 +1813,13 @@ class _UserManagementSheetState extends State<_UserManagementSheet> {
       ),
     );
   }
+}
+
+class _AdminUserRecord {
+  final String uid;
+  final Map<String, dynamic> data;
+
+  const _AdminUserRecord({required this.uid, required this.data});
 }
 
 class _ProfessionCategoriesSheet extends StatefulWidget {
