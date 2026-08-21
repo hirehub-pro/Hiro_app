@@ -2643,6 +2643,21 @@ class _BlogPageState extends State<BlogPage> {
                               mediaUrls.add(url);
                             }
 
+                            final likedBy = <String, bool>{};
+                            final existingLikedBy = existingPost?['likedBy'];
+                            if (existingLikedBy is Map) {
+                              for (final entry in existingLikedBy.entries) {
+                                if (entry.key is String &&
+                                    entry.value == true) {
+                                  likedBy[entry.key as String] = true;
+                                }
+                              }
+                            } else if (existingLikedBy is List) {
+                              for (final uid in existingLikedBy) {
+                                if (uid is String) likedBy[uid] = true;
+                              }
+                            }
+
                             final postData = {
                               'title': titleController.text.trim(),
                               'content': contentController.text.trim(),
@@ -2685,7 +2700,7 @@ class _BlogPageState extends State<BlogPage> {
                                   existingPost?['timestamp'] ??
                                   FieldValue.serverTimestamp(),
                               'likes': existingPost?['likes'] ?? 0,
-                              'likedBy': existingPost?['likedBy'] ?? {},
+                              'likedBy': likedBy,
                               'isJobRequest':
                                   _isJobRequestCategoryValue(
                                     selectedCategory,
@@ -2693,6 +2708,10 @@ class _BlogPageState extends State<BlogPage> {
                                   selectedCategory == strings['job_request'],
                               'isPinned': existingPost?['isPinned'] ?? false,
                             };
+                            // Optional fields must be omitted, not written as
+                            // null, so the strict Firestore schema validator
+                            // can validate each present field's type.
+                            postData.removeWhere((key, value) => value == null);
 
                             if (existingPost == null) {
                               await _firestore

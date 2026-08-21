@@ -8,12 +8,16 @@ const {
   initializeTestEnvironment,
 } = require("@firebase/rules-unit-testing");
 const {
+  collection,
   doc,
   getDoc,
+  getDocs,
+  query,
   serverTimestamp,
   setDoc,
   Timestamp,
   updateDoc,
+  where,
   writeBatch,
 } = require("firebase/firestore");
 
@@ -83,6 +87,77 @@ test("denies public and cross-user private account reads", {
   await assertFails(getDoc(doc(bob, "users/alice-user-id-000001")));
 });
 
+test("exposes only visible server-managed worker profiles", {
+  skip: !emulatorAvailable,
+}, async () => {
+  await seed("publicWorkerProfiles/visible-worker", {
+    uid: "visible-worker",
+    name: "Visible Worker",
+    professions: ["Electrician"],
+    isSearchVisible: true,
+  });
+  await seed("publicWorkerProfiles/hidden-worker", {
+    uid: "hidden-worker",
+    name: "Hidden Worker",
+    professions: ["Electrician"],
+    isSearchVisible: false,
+  });
+
+  const unauth = testEnv.unauthenticatedContext().firestore();
+  const customer = testEnv.authenticatedContext(
+      "customer-user-id-00001",
+  ).firestore();
+  await assertSucceeds(getDoc(
+      doc(unauth, "publicWorkerProfiles/visible-worker"),
+  ));
+  await assertSucceeds(getDoc(
+      doc(customer, "publicWorkerProfiles/visible-worker"),
+  ));
+  await assertFails(getDoc(
+      doc(customer, "publicWorkerProfiles/hidden-worker"),
+  ));
+  await assertSucceeds(getDocs(query(
+      collection(customer, "publicWorkerProfiles"),
+      where("isSearchVisible", "==", true),
+  )));
+  await assertFails(getDocs(collection(customer, "publicWorkerProfiles")));
+  await assertFails(updateDoc(
+      doc(customer, "publicWorkerProfiles/visible-worker"),
+      {avgRating: 5},
+  ));
+});
+
+test("allows guests to read blogs and profession catalogs only", {
+  skip: !emulatorAvailable,
+}, async () => {
+  await seed("blog_posts/public-post", {
+    authorUid: "author-user-id-000001",
+    text: "Public community post",
+    timestamp: new Date(),
+  });
+  await seed("blog_posts/public-post/blog_comments/public-comment", {
+    authorUid: "author-user-id-000001",
+    text: "Public comment",
+    timestamp: new Date(),
+  });
+  await seed("metadata/professions", {
+    items: [{en: "Electrician"}],
+  });
+  await seed("metadata/system", {privateSetting: true});
+
+  const guest = testEnv.unauthenticatedContext().firestore();
+  await assertSucceeds(getDoc(doc(guest, "blog_posts/public-post")));
+  await assertSucceeds(getDoc(doc(
+      guest,
+      "blog_posts/public-post/blog_comments/public-comment",
+  )));
+  await assertSucceeds(getDoc(doc(guest, "metadata/professions")));
+  await assertFails(getDoc(doc(guest, "metadata/system")));
+  await assertFails(updateDoc(doc(guest, "blog_posts/public-post"), {
+    text: "Guest edit",
+  }));
+});
+
 test("allows an owner account but blocks self-assigned privilege", {
   skip: !emulatorAvailable,
 }, async () => {
@@ -91,6 +166,19 @@ test("allows an owner account but blocks self-assigned privilege", {
   await assertSucceeds(setDoc(doc(db, `users/${uid}`), validUser(uid)));
   await assertSucceeds(updateDoc(doc(db, `users/${uid}`), {name: "Updated User"}));
   await assertFails(updateDoc(doc(db, `users/${uid}`), {role: "admin"}));
+  await assertFails(updateDoc(doc(db, `users/${uid}`), {
+    isSubscribed: true,
+    subscriptionStatus: "active",
+  }));
+  await assertFails(setDoc(
+      doc(db, `users/${uid}/verification_info/latest`),
+      {
+        userId: uid,
+        businessId: "515283737",
+        status: "pending",
+        timestamp: serverTimestamp(),
+      },
+  ));
 
   const attackerUid = "attacker-user-id-0001";
   const attacker = testEnv.authenticatedContext(attackerUid).firestore();
@@ -98,6 +186,42 @@ test("allows an owner account but blocks self-assigned privilege", {
       doc(attacker, `users/${attackerUid}`),
       validUser(attackerUid, "admin"),
   ));
+});
+
+test("allows inactive worker registration but rejects forged entitlement", {
+  skip: !emulatorAvailable,
+}, async () => {
+  const uid = "new-worker-id-00000001";
+  const db = testEnv.authenticatedContext(uid).firestore();
+  const worker = {
+    ...validUser(uid, "worker"),
+    town: "Tel Aviv-Yafo",
+    lat: 32.0853,
+    lng: 34.7818,
+    profileImageUrl: "",
+    professions: ["Electrician", "Plumber", "Air Conditioning"],
+    spokenLanguages: ["Hebrew", "Arabic", "English"],
+    optionalPhone: "",
+    description: "Residential electrical services and installations",
+    workRadius: 15000,
+    hideSchedule: false,
+    disabledDays: [6, 7],
+  };
+
+  await assertSucceeds(setDoc(doc(db, `users/${uid}`), worker));
+  await assertSucceeds(setDoc(doc(db, `users/${uid}/Schedule/info`), {
+    hideSchedule: false,
+    disabledDays: [6, 7],
+    defaultWorkingHours: {from: "08:00", to: "16:00"},
+  }));
+
+  const attackerUid = "forged-worker-id-000001";
+  const attacker = testEnv.authenticatedContext(attackerUid).firestore();
+  await assertFails(setDoc(doc(attacker, `users/${attackerUid}`), {
+    ...validUser(attackerUid, "worker"),
+    isSubscribed: true,
+    subscriptionStatus: "active",
+  }));
 });
 
 test("blocks cross-user invoices and protected allocation fields", {
@@ -295,7 +419,7 @@ test("validates community author identity and content size", {
     title: "A valid post",
     content: "Hello",
     likes: 0,
-    likedBy: [],
+    likedBy: {},
     timestamp: serverTimestamp(),
   }));
   await assertFails(setDoc(doc(db, "blog_posts/post-2"), {
@@ -315,14 +439,14 @@ test("validates community author identity and content size", {
   const likerDb = testEnv.authenticatedContext(likerUid).firestore();
   await assertSucceeds(updateDoc(doc(likerDb, "blog_posts/post-1"), {
     likes: 1,
-    likedBy: [likerUid],
+    likedBy: {[likerUid]: true},
   }));
   await assertFails(updateDoc(doc(likerDb, "blog_posts/post-1"), {
     content: "A liker cannot edit the author's post",
   }));
   await assertFails(updateDoc(doc(likerDb, "blog_posts/post-1"), {
     likes: 99,
-    likedBy: [likerUid],
+    likedBy: {[likerUid]: true},
   }));
 });
 

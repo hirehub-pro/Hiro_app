@@ -35,6 +35,10 @@ const {
   taxAuthorityTokenDocumentPath,
 } = require("./tax_authority_token_security");
 const {
+  PUBLIC_WORKER_PROFILE_COLLECTION,
+  buildPublicWorkerProfile,
+} = require("./public_worker_profile");
+const {
   normalizeServerDocumentRequest,
   serverDocumentPdfPayload,
 } = require("./server_document");
@@ -2318,6 +2322,181 @@ exports.getTaxAuthorityConnectionStatus = onCall(
     },
 );
 
+exports.syncPublicWorkerProfile = onDocumentWritten(
+    {
+      document: "users/{userId}",
+      region: "me-west1",
+    },
+    async (event) => {
+      const userId = event.params.userId;
+      const userData = event.data?.after?.data() || null;
+      const publicRef = admin.firestore()
+          .collection(PUBLIC_WORKER_PROFILE_COLLECTION)
+          .doc(userId);
+      const publicProfile = userData ?
+        buildPublicWorkerProfile(userId, userData) : null;
+
+      if (!publicProfile) {
+        await publicRef.delete().catch((error) => {
+          if (error?.code !== 5) throw error;
+        });
+        return;
+      }
+
+      await publicRef.set({
+        ...publicProfile,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    },
+);
+
+exports.backfillPublicWorkerProfiles = onCall(
+    {
+      region: "me-west1",
+      timeoutSeconds: 540,
+    },
+    async (request) => {
+      if (!request.auth?.uid || request.auth.token?.admin !== true) {
+        throw new HttpsError("permission-denied", "Admin access required.");
+      }
+
+      const db = admin.firestore();
+      let lastDocument = null;
+      let scanned = 0;
+      let projected = 0;
+
+      while (true) {
+        let query = db.collection("users")
+            .orderBy(admin.firestore.FieldPath.documentId())
+            .limit(400);
+        if (lastDocument) query = query.startAfter(lastDocument);
+        const snapshot = await query.get();
+        if (snapshot.empty) break;
+
+        const batch = db.batch();
+        for (const userDoc of snapshot.docs) {
+          const publicRef = db.collection(PUBLIC_WORKER_PROFILE_COLLECTION)
+              .doc(userDoc.id);
+          const publicProfile = buildPublicWorkerProfile(
+              userDoc.id,
+              userDoc.data(),
+          );
+          if (publicProfile) {
+            batch.set(publicRef, {
+              ...publicProfile,
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+            projected += 1;
+          } else {
+            batch.delete(publicRef);
+          }
+        }
+        await batch.commit();
+
+        scanned += snapshot.size;
+        lastDocument = snapshot.docs[snapshot.docs.length - 1];
+        if (snapshot.size < 400) break;
+      }
+
+      return {scanned, projected};
+    },
+);
+
+exports.submitBusinessVerification = onCall(
+    {
+      region: "me-west1",
+    },
+    async (request) => {
+      const userId = request.auth?.uid;
+      if (!userId) {
+        throw new HttpsError("unauthenticated", "Authentication required.");
+      }
+
+      const payload = request.data || {};
+      const businessId = normalizeBusinessId(payload.businessId);
+      const businessName = normalizeString(payload.businessName).trim();
+      const address = normalizeString(payload.address).trim();
+      const dealerType = normalizeString(payload.dealerType).trim();
+      const businessLogoUrl = normalizeString(payload.businessLogoUrl).trim();
+
+      if (!businessId || !isValidIsraeliBusinessId(businessId)) {
+        throw new HttpsError("invalid-argument", "Invalid business ID.");
+      }
+      if (!businessName || businessName.length > 200) {
+        throw new HttpsError("invalid-argument", "Invalid business name.");
+      }
+      if (!address || address.length > 500) {
+        throw new HttpsError("invalid-argument", "Invalid business address.");
+      }
+      if (!["exempt", "licensed", "company"].includes(dealerType)) {
+        throw new HttpsError("invalid-argument", "Invalid dealer type.");
+      }
+      if (businessLogoUrl &&
+          (!businessLogoUrl.startsWith("https://") ||
+           businessLogoUrl.length > 2048)) {
+        throw new HttpsError("invalid-argument", "Invalid business logo URL.");
+      }
+      if (payload.legalAccepted !== true ||
+          payload.termsAccepted !== true ||
+          payload.legalDeclarationAccepted !== true ||
+          payload.responsibilityAccepted !== true) {
+        throw new HttpsError(
+            "failed-precondition",
+            "All legal declarations must be accepted.",
+        );
+      }
+
+      const db = admin.firestore();
+      const userRef = db.collection("users").doc(userId);
+      const verificationRef = userRef
+          .collection("verification_info").doc("latest");
+
+      await db.runTransaction(async (transaction) => {
+        const matchingUsers = await transaction.get(
+            db.collection("users")
+                .where("businessId", "==", businessId)
+                .limit(2),
+        );
+        const belongsToAnotherUser = matchingUsers.docs.some(
+            (document) => document.id !== userId,
+        );
+        if (belongsToAnotherUser) {
+          throw new HttpsError(
+              "already-exists",
+              "This business ID is already linked to another account.",
+          );
+        }
+
+        const userSnapshot = await transaction.get(userRef);
+        if (!userSnapshot.exists) {
+          throw new HttpsError("not-found", "User profile not found.");
+        }
+
+        transaction.set(verificationRef, {
+          userId,
+          businessId,
+          businessName,
+          address,
+          dealerType,
+          status: "pending",
+          legalAccepted: true,
+          termsAccepted: true,
+          legalDeclarationAccepted: true,
+          responsibilityAccepted: true,
+          timestamp: admin.firestore.FieldValue.serverTimestamp(),
+          businessLogoUrl: businessLogoUrl || null,
+        }, {merge: true});
+        transaction.update(userRef, {
+          businessId,
+          businessLogoUrl: businessLogoUrl || null,
+          businessVerificationStatus: "pending",
+        });
+      });
+
+      return {status: "pending"};
+    },
+);
+
 exports.sendNotificationPush = onDocumentCreated(
     {
       document: "users/{userId}/notifications/{notificationId}",
@@ -3419,6 +3598,9 @@ exports.verifySubscriptionPurchase = onCall(
       }
 
       await applyUserSubscriptionUpdates(userRef, userData, updates);
+      if (updates.isSubscribed === true && userData.role !== "worker") {
+        await userRef.update({role: "worker"});
+      }
       const refreshed = (await userRef.get()).data() || {};
       return buildSubscriptionVerificationResponse(refreshed);
     },
@@ -4733,6 +4915,17 @@ function hebrewDocumentType(docType) {
 function normalizeBusinessId(value) {
   const digits = normalizeString(value).replace(/\D/g, "");
   return /^\d{9}$/.test(digits) ? digits : null;
+}
+
+function isValidIsraeliBusinessId(value) {
+  const businessId = normalizeBusinessId(value);
+  if (!businessId) return false;
+
+  const sum = [...businessId].reduce((total, digit, index) => {
+    const product = Number(digit) * (index % 2 === 0 ? 1 : 2);
+    return total + (product > 9 ? product - 9 : product);
+  }, 0);
+  return sum % 10 === 0;
 }
 
 function maskBusinessId(value) {

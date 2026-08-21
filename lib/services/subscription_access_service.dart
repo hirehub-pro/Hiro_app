@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 import 'package:in_app_purchase_storekit/in_app_purchase_storekit.dart';
-import 'package:in_app_purchase_storekit/store_kit_2_wrappers.dart';
 import 'dart:convert';
 
 class SubscriptionAccessState {
@@ -70,18 +69,7 @@ class SubscriptionAccessService {
     'pro_worker_monthly',
     'com-hiro-app-pro-worker-monthly',
   };
-  static const String _iosWorkerSubscriptionProductId = 'HIRO_SUBSCRIPTION';
-
-  static const String _subscriptionAccountTokenField =
-      'subscriptionAccountToken';
-  static const String _subscriptionOwnershipKeyField =
-      'subscriptionOwnershipKey';
   static const String _subscriptionSourceField = 'subscriptionSource';
-
-  static bool get _isApplePlatform =>
-      !kIsWeb &&
-      (defaultTargetPlatform == TargetPlatform.iOS ||
-          defaultTargetPlatform == TargetPlatform.macOS);
 
   static bool hasActiveWorkerSubscriptionFromData(Map<String, dynamic>? data) {
     final role = (data?['role'] ?? 'customer').toString().toLowerCase();
@@ -119,18 +107,10 @@ class SubscriptionAccessService {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return null;
 
-    final token = subscriptionAccountTokenForUid(user.uid);
-    final currentValue =
-        existingData?[_subscriptionAccountTokenField]?.toString().trim() ?? '';
-
-    if (currentValue == token) {
-      return token;
-    }
-
-    await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-      _subscriptionAccountTokenField: token,
-    }, SetOptions(merge: true));
-    return token;
+    // Entitlement identifiers are server-controlled. The deterministic token
+    // is sent to the store/callable and persisted only after server-side
+    // purchase verification succeeds.
+    return subscriptionAccountTokenForUid(user.uid);
   }
 
   static Future<bool>
@@ -143,18 +123,10 @@ class SubscriptionAccessService {
       return false;
     }
 
-    final purchaseToken = playSnapshot.purchaseToken?.trim();
-    if (purchaseToken == null || purchaseToken.isEmpty) {
-      return false;
-    }
-
-    final ownerQuery = await FirebaseFirestore.instance
-        .collection('users')
-        .where('subscriptionPurchaseToken', isEqualTo: purchaseToken)
-        .limit(1)
-        .get();
-
-    return ownerQuery.docs.isNotEmpty && ownerQuery.docs.first.id != user.uid;
+    // Cross-account ownership is checked by verifySubscriptionPurchase using
+    // the Admin SDK. Client-side collection queries would expose private
+    // purchase tokens and are intentionally denied by Firestore rules.
+    return false;
   }
 
   static String? ownershipKeyForPurchase(PurchaseDetails purchaseDetails) {
@@ -202,63 +174,6 @@ class SubscriptionAccessService {
     return null;
   }
 
-  static Future<String?> findSubscriptionOwnerUidForPurchase(
-    PurchaseDetails purchaseDetails,
-  ) async {
-    final firestore = FirebaseFirestore.instance;
-    final ownershipKey = ownershipKeyForPurchase(purchaseDetails);
-
-    final lookupValues = <MapEntry<String, String>>[];
-    if (ownershipKey != null && ownershipKey.isNotEmpty) {
-      lookupValues.add(MapEntry(_subscriptionOwnershipKeyField, ownershipKey));
-    }
-
-    final purchaseId = purchaseDetails.purchaseID?.trim();
-    if (purchaseId != null && purchaseId.isNotEmpty) {
-      lookupValues.add(MapEntry('subscriptionPurchaseId', purchaseId));
-    }
-
-    final verificationToken = purchaseDetails
-        .verificationData
-        .serverVerificationData
-        .trim();
-    if (verificationToken.isNotEmpty) {
-      lookupValues.add(
-        MapEntry('subscriptionPurchaseToken', verificationToken),
-      );
-    }
-
-    if (purchaseDetails is AppStorePurchaseDetails) {
-      final originalTransactionId = purchaseDetails
-          .skPaymentTransaction
-          .originalTransaction
-          ?.transactionIdentifier
-          ?.trim();
-      if (originalTransactionId != null && originalTransactionId.isNotEmpty) {
-        lookupValues.add(
-          MapEntry('subscriptionPurchaseId', originalTransactionId),
-        );
-      }
-    }
-
-    final seenLookups = <String>{};
-    for (final lookup in lookupValues) {
-      final key = '${lookup.key}:${lookup.value}';
-      if (!seenLookups.add(key)) continue;
-
-      final ownerQuery = await firestore
-          .collection('users')
-          .where(lookup.key, isEqualTo: lookup.value)
-          .limit(1)
-          .get();
-      if (ownerQuery.docs.isNotEmpty) {
-        return ownerQuery.docs.first.id;
-      }
-    }
-
-    return null;
-  }
-
   static Future<SubscriptionAccessState> getCurrentUserState() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
@@ -285,7 +200,6 @@ class SubscriptionAccessService {
     final data = doc.data() ?? <String, dynamic>{};
     final role = (data['role'] ?? 'customer').toString().toLowerCase();
     final isVip = data['isVIP'] == true;
-    await ensureCurrentUserSubscriptionAccountToken(existingData: data);
 
     if (role == 'worker') {
       if (isVip) {
@@ -296,17 +210,13 @@ class SubscriptionAccessService {
         );
       }
 
-      final liveStoreState = await _syncWorkerStoreState(existingData: data);
-      if (liveStoreState != null) {
-        return liveStoreState;
-      }
-
-      final normalizedState = await _syncExpiredSubscriptionIfNeeded(
-        userRef: doc.reference,
-        data: data,
+      // Firestore contains the server-verified state. Store notifications,
+      // explicit purchase verification and the scheduled backend refresh are
+      // the only writers of entitlement fields.
+      return SubscriptionAccessState(
+        role: role,
+        subscriptionStatus: _resolveSubscriptionStatusFromData(data),
       );
-
-      return normalizedState;
     }
 
     return SubscriptionAccessState(
@@ -316,293 +226,12 @@ class SubscriptionAccessService {
     );
   }
 
-  static Future<SubscriptionAccessState?> _syncWorkerStoreState({
-    required Map<String, dynamic>? existingData,
-  }) async {
-    final appStoreState = await syncCurrentUserWithAppStore(
-      existingData: existingData,
-    );
-    if (appStoreState != null) {
-      return appStoreState;
-    }
-
-    return syncCurrentUserWithGooglePlay(existingData: existingData);
-  }
-
   static Future<void> refreshCurrentUserStateInBackground() async {
     try {
       await refreshCurrentUserState();
     } catch (e) {
       debugPrint('Subscription refresh skipped: $e');
     }
-  }
-
-  static Future<SubscriptionAccessState?> syncCurrentUserWithGooglePlay({
-    Map<String, dynamic>? existingData,
-    bool allowClaimUnownedPurchase = false,
-  }) async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return null;
-
-    final firestore = FirebaseFirestore.instance;
-    final userRef = firestore.collection('users').doc(user.uid);
-    final data = existingData ?? (await userRef.get()).data();
-    final role = (data?['role'] ?? 'customer').toString().toLowerCase();
-    if (role != 'worker') return null;
-
-    final playSnapshot = await _queryGooglePlayState();
-    if (playSnapshot == null) return null;
-
-    final mapped = _mapGooglePlayToAccessState(
-      role: role,
-      playState: playSnapshot.status,
-    );
-
-    if (!playSnapshot.isActive) {
-      if (_hasNonGooglePlayEntitlement(data)) {
-        return SubscriptionAccessState(
-          role: role,
-          subscriptionStatus: _resolveSubscriptionStatusFromData(data),
-        );
-      }
-
-      await userRef.set({
-        'isSubscribed': false,
-        'subscriptionStatus': mapped.subscriptionStatus,
-        'subscriptionCanceled': true,
-        'subscriptionUpdatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-      return mapped;
-    }
-
-    final purchaseToken = playSnapshot.purchaseToken?.trim();
-    if (purchaseToken == null || purchaseToken.isEmpty) {
-      return null;
-    }
-
-    final storedToken =
-        data?['subscriptionPurchaseToken']?.toString().trim() ?? '';
-
-    final ownerQuery = await firestore
-        .collection('users')
-        .where('subscriptionPurchaseToken', isEqualTo: purchaseToken)
-        .limit(1)
-        .get();
-
-    if (ownerQuery.docs.isNotEmpty && ownerQuery.docs.first.id != user.uid) {
-      debugPrint(
-        'Ignoring Google Play subscription for ${user.uid} because token belongs to ${ownerQuery.docs.first.id}.',
-      );
-      if (_hasNonGooglePlayEntitlement(data)) {
-        return SubscriptionAccessState(
-          role: role,
-          subscriptionStatus: _resolveSubscriptionStatusFromData(data),
-        );
-      }
-
-      await userRef.set({
-        'isSubscribed': false,
-        'subscriptionStatus': 'inactive',
-        'subscriptionCanceled': true,
-        'subscriptionUpdatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-      return SubscriptionAccessState(
-        role: role,
-        subscriptionStatus: 'inactive',
-      );
-    }
-
-    final ownsStoredToken =
-        storedToken.isNotEmpty && storedToken == purchaseToken;
-    final canClaimUnownedToken =
-        (allowClaimUnownedPurchase || _hasGooglePlayHistory(data)) &&
-        ownerQuery.docs.isEmpty;
-
-    if (!ownsStoredToken && !canClaimUnownedToken) {
-      debugPrint(
-        'Ignoring unclaimed Google Play subscription for ${user.uid}; token is not bound to this account.',
-      );
-      if (_hasNonGooglePlayEntitlement(data)) {
-        return SubscriptionAccessState(
-          role: role,
-          subscriptionStatus: _resolveSubscriptionStatusFromData(data),
-        );
-      }
-
-      await userRef.set({
-        'isSubscribed': false,
-        'subscriptionStatus': 'inactive',
-        'subscriptionCanceled': true,
-        'subscriptionUpdatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-      return SubscriptionAccessState(
-        role: role,
-        subscriptionStatus: 'inactive',
-      );
-    }
-
-    await userRef.set({
-      'isSubscribed': mapped.isSubscribed,
-      'subscriptionStatus': mapped.subscriptionStatus,
-      'subscriptionCanceled': playSnapshot.status == 'active_canceled',
-      'subscriptionUpdatedAt': FieldValue.serverTimestamp(),
-      _subscriptionSourceField: 'google_play',
-      'subscriptionPlatform': 'google_play',
-      'subscriptionPurchaseToken': purchaseToken,
-      'subscriptionProductId':
-          playSnapshot.productId ?? data?['subscriptionProductId'],
-      'subscriptionPurchaseOrderId':
-          data?['subscriptionPurchaseOrderId'] ?? playSnapshot.orderId,
-    }, SetOptions(merge: true));
-
-    return mapped;
-  }
-
-  static String ownershipKeyForAppStoreTransaction(SK2Transaction transaction) {
-    final originalId = transaction.originalId.trim();
-    if (originalId.isNotEmpty) {
-      return 'appstore:$originalId';
-    }
-
-    return 'appstore-sk2:${transaction.id}';
-  }
-
-  static Future<SubscriptionAccessState?> syncCurrentUserWithAppStore({
-    Map<String, dynamic>? existingData,
-  }) async {
-    if (!_isApplePlatform) return null;
-
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return null;
-
-    final firestore = FirebaseFirestore.instance;
-    final userRef = firestore.collection('users').doc(user.uid);
-    final data = existingData ?? (await userRef.get()).data();
-    final role = (data?['role'] ?? 'customer').toString().toLowerCase();
-    if (role != 'worker') return null;
-
-    try {
-      final transactions = await SK2Transaction.transactions();
-      final now = DateTime.now();
-      final matchingTransactions = transactions.where((transaction) {
-        return transaction.productId == _iosWorkerSubscriptionProductId;
-      }).toList();
-
-      matchingTransactions.sort((a, b) {
-        final aExpiry = _parseIsoDate(a.expirationDate);
-        final bExpiry = _parseIsoDate(b.expirationDate);
-        final aSort = aExpiry ?? _parseIsoDate(a.purchaseDate) ?? DateTime(0);
-        final bSort = bExpiry ?? _parseIsoDate(b.purchaseDate) ?? DateTime(0);
-        return bSort.compareTo(aSort);
-      });
-
-      SK2Transaction? activeTransaction;
-      for (final transaction in matchingTransactions) {
-        final expiration = _parseIsoDate(transaction.expirationDate);
-        if (expiration == null || now.isBefore(expiration)) {
-          activeTransaction = transaction;
-          break;
-        }
-      }
-
-      if (activeTransaction == null) {
-        final hasAppleEntitlement =
-            (data?['subscriptionProductId'] ?? '').toString() ==
-                _iosWorkerSubscriptionProductId ||
-            (data?['subscriptionPlatform'] ?? '')
-                .toString()
-                .toLowerCase()
-                .contains('app_store');
-        if (!hasAppleEntitlement) {
-          return null;
-        }
-
-        await userRef.set({
-          'isSubscribed': false,
-          'subscriptionStatus': 'inactive',
-          'subscriptionCanceled': true,
-          'subscriptionUpdatedAt': FieldValue.serverTimestamp(),
-          _subscriptionSourceField: 'app_store',
-        }, SetOptions(merge: true));
-        return SubscriptionAccessState(
-          role: role,
-          subscriptionStatus: 'inactive',
-        );
-      }
-
-      final ownershipKey = ownershipKeyForAppStoreTransaction(
-        activeTransaction,
-      );
-      final ownerQuery = await firestore
-          .collection('users')
-          .where(_subscriptionOwnershipKeyField, isEqualTo: ownershipKey)
-          .limit(1)
-          .get();
-      if (ownerQuery.docs.isNotEmpty && ownerQuery.docs.first.id != user.uid) {
-        await userRef.set({
-          'isSubscribed': false,
-          'subscriptionStatus': 'inactive',
-          'subscriptionCanceled': true,
-          'subscriptionUpdatedAt': FieldValue.serverTimestamp(),
-          _subscriptionSourceField: 'app_store',
-        }, SetOptions(merge: true));
-        return SubscriptionAccessState(
-          role: role,
-          subscriptionStatus: 'inactive',
-        );
-      }
-
-      final purchaseDate =
-          _parseIsoDate(activeTransaction.purchaseDate) ?? DateTime.now();
-      final expirationDate = _parseIsoDate(activeTransaction.expirationDate);
-
-      await userRef.set({
-        'isSubscribed': true,
-        'subscriptionStatus': 'active',
-        'subscriptionCanceled': false,
-        'subscriptionUpdatedAt': FieldValue.serverTimestamp(),
-        _subscriptionSourceField: 'app_store',
-        'subscriptionProductId': activeTransaction.productId,
-        'subscriptionPlatform': 'app_store',
-        'subscriptionPurchaseId': activeTransaction.id,
-        _subscriptionOwnershipKeyField: ownershipKey,
-        'subscriptionTransactionDate': activeTransaction.purchaseDate,
-        'subscriptionDate': Timestamp.fromDate(purchaseDate),
-        if (expirationDate != null)
-          'subscriptionExpiresAt': Timestamp.fromDate(expirationDate),
-        if ((activeTransaction.receiptData ?? '').trim().isNotEmpty)
-          'subscriptionPurchaseToken': activeTransaction.receiptData!.trim(),
-        if ((activeTransaction.appAccountToken ?? '').trim().isNotEmpty)
-          _subscriptionAccountTokenField: activeTransaction.appAccountToken!
-              .trim(),
-      }, SetOptions(merge: true));
-
-      return SubscriptionAccessState(role: role, subscriptionStatus: 'active');
-    } on PlatformException catch (e) {
-      debugPrint('App Store state read failed: ${e.message}');
-      return null;
-    } catch (e) {
-      debugPrint('App Store state read failed: $e');
-      return null;
-    }
-  }
-
-  static bool _hasNonGooglePlayEntitlement(Map<String, dynamic>? data) {
-    if (_resolveSubscriptionStatusFromData(data) == 'inactive') return false;
-
-    final platform = (data?['subscriptionPlatform'] ?? '')
-        .toString()
-        .toLowerCase();
-    final productId = (data?['subscriptionProductId'] ?? '').toString();
-
-    if (productId == _iosWorkerSubscriptionProductId) return true;
-    if (platform.contains('app_store') ||
-        platform.contains('storekit') ||
-        platform == 'ios') {
-      return true;
-    }
-
-    return false;
   }
 
   static bool _hasGooglePlayHistory(Map<String, dynamic>? data) {
@@ -652,58 +281,6 @@ class SubscriptionAccessService {
     }
   }
 
-  static SubscriptionAccessState _mapGooglePlayToAccessState({
-    required String role,
-    required String playState,
-  }) {
-    switch (playState) {
-      case 'active_renewing':
-        return SubscriptionAccessState(
-          role: role,
-          subscriptionStatus: 'active',
-        );
-      case 'active_canceled':
-        return SubscriptionAccessState(
-          role: role,
-          subscriptionStatus: 'active_canceled',
-        );
-      default:
-        return SubscriptionAccessState(
-          role: role,
-          subscriptionStatus: 'inactive',
-        );
-    }
-  }
-
-  static Future<SubscriptionAccessState> _syncExpiredSubscriptionIfNeeded({
-    required DocumentReference<Map<String, dynamic>> userRef,
-    required Map<String, dynamic>? data,
-  }) async {
-    final role = (data?['role'] ?? 'customer').toString().toLowerCase();
-    final resolvedStatus = _resolveSubscriptionStatusFromData(data);
-
-    if (role == 'worker' && resolvedStatus == 'inactive') {
-      final storedStatus = (data?['subscriptionStatus'] ?? '')
-          .toString()
-          .toLowerCase();
-      final isSubscribed = data?['isSubscribed'] == true;
-
-      if (storedStatus != 'inactive' || isSubscribed) {
-        await userRef.set({
-          'isSubscribed': false,
-          'subscriptionStatus': 'inactive',
-          'subscriptionCanceled': true,
-          'subscriptionUpdatedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-      }
-    }
-
-    return SubscriptionAccessState(
-      role: role,
-      subscriptionStatus: resolvedStatus,
-    );
-  }
-
   static String _resolveSubscriptionStatusFromData(Map<String, dynamic>? data) {
     final status = (data?['subscriptionStatus'] ?? '').toString().toLowerCase();
     if (!isEntitledSubscriptionStatus(status)) {
@@ -734,12 +311,6 @@ class SubscriptionAccessService {
     }
 
     return subscriptionDate.add(const Duration(days: 30));
-  }
-
-  static DateTime? _parseIsoDate(String? value) {
-    final trimmed = value?.trim() ?? '';
-    if (trimmed.isEmpty) return null;
-    return DateTime.tryParse(trimmed);
   }
 
   static DateTime? _toDate(dynamic value) {

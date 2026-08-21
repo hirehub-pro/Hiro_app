@@ -121,6 +121,8 @@ class _ProfileState extends State<Profile>
   bool _areProfessionsExpanded = false;
   bool _isTaxAuthorityConnected = false;
   bool _isTaxAuthorityConnectionLoading = false;
+  bool _isTaxAuthorityAuthorizationLoading = false;
+  String? _taxAuthorityConnectionReason;
 
   String _distanceStr = "";
   double? _proLat;
@@ -466,12 +468,13 @@ class _ProfileState extends State<Profile>
     final loadGeneration = ++_profileLoadGeneration;
     final currentUser = FirebaseAuth.instance.currentUser;
     final targetUid = widget.userId ?? currentUser?.uid;
+    final isOwnProfile = widget.userId == null
+        ? currentUser != null
+        : (currentUser != null && widget.userId == currentUser.uid);
 
     if (mounted) {
       setState(() {
-        _isOwnProfile = widget.userId == null
-            ? currentUser != null
-            : (currentUser != null && widget.userId == currentUser.uid);
+        _isOwnProfile = isOwnProfile;
         if (_userName.isEmpty) _isLoading = true;
       });
     }
@@ -482,7 +485,11 @@ class _ProfileState extends State<Profile>
     }
 
     try {
-      final userDoc = await _firestore.collection('users').doc(targetUid).get();
+      final profileCollection = isOwnProfile ? 'users' : 'publicWorkerProfiles';
+      final userDoc = await _firestore
+          .collection(profileCollection)
+          .doc(targetUid)
+          .get();
 
       if (userDoc.exists && mounted) {
         final data = userDoc.data() as Map<String, dynamic>;
@@ -507,12 +514,17 @@ class _ProfileState extends State<Profile>
           _viewsCount = 0;
           _userRole = data['role'] ?? 'customer';
           _hideSchedule = data['hideSchedule'] ?? false;
-          _subscriptionStatus =
-              data['subscriptionStatus']?.toString().toLowerCase() ??
-              'inactive';
-          _subscriptionDate = _toDate(data['subscriptionDate']);
-          _subscriptionExpiresAt = _toDate(data['subscriptionExpiresAt']);
-          _isVip = data['isVIP'] == true;
+          _subscriptionStatus = isOwnProfile
+              ? data['subscriptionStatus']?.toString().toLowerCase() ??
+                    'inactive'
+              : (data['isSearchVisible'] == true ? 'active' : 'inactive');
+          _subscriptionDate = isOwnProfile
+              ? _toDate(data['subscriptionDate'])
+              : null;
+          _subscriptionExpiresAt = isOwnProfile
+              ? _toDate(data['subscriptionExpiresAt'])
+              : null;
+          _isVip = isOwnProfile && data['isVIP'] == true;
 
           if (data['professions'] is List) {
             _userProfessions = List<String>.from(data['professions']);
@@ -524,7 +536,8 @@ class _ProfileState extends State<Profile>
           _areProfessionsExpanded = false;
 
           _isIdVerified = data['isIdVerified'] ?? false;
-          _isBusinessVerified = data['isVerified'] ?? false;
+          _isBusinessVerified =
+              data['isBusinessVerified'] ?? data['isVerified'] ?? false;
           _isInsured = data['isInsured'] ?? false;
 
           _proLat = data['lat']?.toDouble();
@@ -569,7 +582,10 @@ class _ProfileState extends State<Profile>
       final results = await Future.wait<dynamic>([
         _fetchSubcollection(targetUid, 'reviews'),
         _fetchSubcollection(targetUid, 'projects'),
-        _readTotalViewsFromProRatings(targetUid),
+        if (isOwnProfile)
+          _readTotalViewsFromProRatings(targetUid)
+        else
+          Future<int>.value(0),
         if (currentUser != null && !isOwnProfile)
           _firestore
               .collection('users')
@@ -637,6 +653,7 @@ class _ProfileState extends State<Profile>
       if (!mounted) return;
       setState(() {
         _isTaxAuthorityConnected = data['connected'] == true;
+        _taxAuthorityConnectionReason = data['reason']?.toString();
       });
     } catch (e) {
       debugPrint('Failed to load Tax Authority connection status: $e');
@@ -648,16 +665,41 @@ class _ProfileState extends State<Profile>
   }
 
   Future<void> _connectTaxAuthority(Map<String, String> strings) async {
+    if (_isTaxAuthorityAuthorizationLoading) return;
+
+    final stopwatch = Stopwatch()..start();
+    if (mounted) {
+      setState(() => _isTaxAuthorityAuthorizationLoading = true);
+    }
+
     try {
       final callable = _functions.httpsCallable(
         'createTaxAuthorityAuthorizationUrl',
       );
       final response = await callable.call<Map<String, dynamic>>();
+      debugPrint(
+        'Tax Authority authorization URL created in '
+        '${stopwatch.elapsedMilliseconds}ms.',
+      );
       final authorizationUrl = response.data['authorizationUrl']?.toString();
       final uri = Uri.tryParse(authorizationUrl ?? '');
-      final launched =
+      final isWebUri =
           uri != null &&
-          await launchUrl(uri, mode: LaunchMode.externalApplication);
+          (uri.scheme == 'https' || uri.scheme == 'http') &&
+          uri.host.isNotEmpty;
+      var launched = false;
+      if (isWebUri) {
+        try {
+          launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+          if (!launched) {
+            launched = await launchUrl(uri, mode: LaunchMode.platformDefault);
+          }
+        } catch (_) {
+          // Some Android devices do not expose an external browser handler.
+          // Let the platform choose an available handler as a fallback.
+          launched = await launchUrl(uri, mode: LaunchMode.platformDefault);
+        }
+      }
       if (!launched) {
         throw StateError(
           'Tax Authority authorization URL could not be opened.',
@@ -669,12 +711,37 @@ class _ProfileState extends State<Profile>
           if (mounted) return _loadTaxAuthorityConnectionStatus();
         }),
       );
+    } on FirebaseFunctionsException catch (e) {
+      debugPrint(
+        'Failed to start Tax Authority connection after '
+        '${stopwatch.elapsedMilliseconds}ms: $e',
+      );
+      if (mounted) {
+        final message = switch (e.code) {
+          'failed-precondition' =>
+            strings['tax_authority_business_required'] ??
+                'Tax Authority connection requires an approved licensed business or company.',
+          'unauthenticated' => strings['guest_msg']!,
+          _ => strings['open_link_failed']!,
+        };
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(message)));
+      }
     } catch (e) {
-      debugPrint('Failed to start Tax Authority connection: $e');
+      debugPrint(
+        'Failed to open Tax Authority authorization URL after '
+        '${stopwatch.elapsedMilliseconds}ms: $e',
+      );
       if (mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text(strings['open_link_failed']!)));
+      }
+    } finally {
+      stopwatch.stop();
+      if (mounted) {
+        setState(() => _isTaxAuthorityAuthorizationLoading = false);
       }
     }
   }
@@ -2788,6 +2855,7 @@ class _ProfileState extends State<Profile>
           if (_isOwnProfile) ...[
             const SizedBox(height: 32),
             if (_userRole == 'worker' &&
+                _isBusinessVerified &&
                 !_isTaxAuthorityConnected &&
                 !_isTaxAuthorityConnectionLoading) ...[
               _buildTaxAuthorityConnectCard(strings),
@@ -2971,6 +3039,8 @@ class _ProfileState extends State<Profile>
   }
 
   Widget _buildTaxAuthorityConnectCard(Map<String, String> strings) {
+    final businessApprovalRequired =
+        _taxAuthorityConnectionReason == 'business-verification-required';
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(18),
@@ -3017,8 +3087,11 @@ class _ProfileState extends State<Profile>
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  strings['tax_authority_connect_body'] ??
-                      'Authorize invoice allocation numbers for tax invoices.',
+                  businessApprovalRequired
+                      ? strings['tax_authority_business_required'] ??
+                            'Tax Authority connection requires an approved licensed business or company.'
+                      : strings['tax_authority_connect_body'] ??
+                            'Authorize invoice allocation numbers for tax invoices.',
                   style: const TextStyle(
                     fontSize: 13,
                     height: 1.45,
@@ -3029,11 +3102,26 @@ class _ProfileState extends State<Profile>
                 Align(
                   alignment: AlignmentDirectional.centerStart,
                   child: ElevatedButton.icon(
-                    onPressed: () => _connectTaxAuthority(strings),
-                    icon: const Icon(Icons.open_in_new_rounded, size: 18),
+                    onPressed:
+                        _isTaxAuthorityAuthorizationLoading ||
+                            businessApprovalRequired
+                        ? null
+                        : () => _connectTaxAuthority(strings),
+                    icon: _isTaxAuthorityAuthorizationLoading
+                        ? const SizedBox.square(
+                            dimension: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.open_in_new_rounded, size: 18),
                     label: Text(
-                      strings['tax_authority_connect_button'] ??
-                          'Connect Tax Authority',
+                      businessApprovalRequired
+                          ? strings['tax_authority_approval_required'] ??
+                                'Business approval required'
+                          : strings['tax_authority_connect_button'] ??
+                                'Connect Tax Authority',
                     ),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF0369A1),
@@ -4208,6 +4296,9 @@ class _ProfileState extends State<Profile>
           'tax_authority_connect_body':
               'אפשר קבלת מספרי הקצאה לחשבוניות מס מתוך האפליקציה.',
           'tax_authority_connect_button': 'חבר את רשות המסים',
+          'tax_authority_business_required':
+              'החיבור לרשות המסים זמין רק לאחר אישור עסק מסוג עוסק מורשה או חברה בע״מ.',
+          'tax_authority_approval_required': 'נדרש אישור עסק',
           'verify_business': 'אמת עסק',
           'change_business': 'עדכן פרטי עסק',
           'renew_subscription': 'חדש מנוי',
@@ -4668,6 +4759,9 @@ class _ProfileState extends State<Profile>
           'tax_authority_connect_body':
               'Authorize invoice allocation numbers for tax invoices from the app.',
           'tax_authority_connect_button': 'Connect Tax Authority',
+          'tax_authority_business_required':
+              'Tax Authority connection is available only after approval of a licensed business or company.',
+          'tax_authority_approval_required': 'Business approval required',
           'verify_business': 'Verify Business',
           'change_business': 'Update Business',
           'renew_subscription': 'Renew Subscription',

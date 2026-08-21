@@ -159,6 +159,40 @@ service cloud.firestore {
       optionalBool(data, 'isVIP');
     }
 
+    // A worker profile is not publicly searchable until a trusted backend
+    // verifies its subscription. Self-service registration may therefore set
+    // the worker role, but may not claim entitlement, approval, verification,
+    // ratings, or any provider-issued subscription identifiers.
+    function validSelfServiceUserCreate(data) {
+      return data.role in ['customer', 'worker'] &&
+        data.get('emailVerified', false) == false &&
+        data.get('isapproved', false) == false &&
+        data.get('isVerified', false) == false &&
+        data.get('isPro', false) == false &&
+        data.get('isSubscribed', false) == false &&
+        data.get('isVIP', false) == false &&
+        data.get('subscriptionCanceled', false) == false &&
+        data.get('avgRating', 0) == 0 &&
+        data.get('reviewCount', 0) == 0 &&
+        data.get('businessVerificationStatus', '') == '' &&
+        data.get('subscriptionStatus', 'inactive') == 'inactive' &&
+        data.get('subscriptionAccountToken', null) == null &&
+        data.get('subscriptionDate', null) == null &&
+        data.get('subscriptionExpiresAt', null) == null &&
+        data.get('subscriptionOwnershipKey', null) == null &&
+        data.get('subscriptionPlatform', null) == null &&
+        data.get('subscriptionProductId', null) == null &&
+        data.get('subscriptionProviderState', null) == null &&
+        data.get('subscriptionPurchaseId', null) == null &&
+        data.get('subscriptionPurchaseOrderId', null) == null &&
+        data.get('subscriptionPurchaseToken', null) == null &&
+        data.get('subscriptionSource', null) == null &&
+        data.get('subscriptionTransactionDate', null) == null &&
+        data.get('subscriptionUpdatedAt', null) == null &&
+        data.get('subscriptionVerificationFreshUntil', null) == null &&
+        data.get('subscriptionVerifiedAt', null) == null;
+    }
+
     function userServerFieldsUnchanged() {
       return !request.resource.data.diff(resource.data).affectedKeys().hasAny([
         'role', 'isapproved', 'isVerified', 'verifiedAt',
@@ -454,16 +488,19 @@ service cloud.firestore {
       optionalNumber(data, 'locationLng', -180, 180) &&
       optionalBool(data, 'isJobRequest') && optionalBool(data, 'isPinned') &&
       optionalNumber(data, 'likes', 0, 100000000) &&
-      optionalList(data, 'likedBy', 10000);
+      optionalMap(data, 'likedBy', 10000);
     }
 
     function validBlogLikeChange() {
       return request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['likes', 'likedBy']) &&
         request.resource.data.likes is int && resource.data.likes is int &&
-        request.resource.data.likedBy is list && resource.data.likedBy is list &&
+        request.resource.data.likedBy is map && resource.data.likedBy is map &&
+        request.resource.data.likedBy.diff(resource.data.likedBy).affectedKeys()
+          .hasOnly([request.auth.uid]) &&
         ((request.auth.uid in request.resource.data.likedBy &&
             !(request.auth.uid in resource.data.likedBy) &&
+            request.resource.data.likedBy[request.auth.uid] == true &&
             request.resource.data.likes == resource.data.likes + 1 &&
             request.resource.data.likedBy.size() == resource.data.likedBy.size() + 1) ||
           (!(request.auth.uid in request.resource.data.likedBy) &&
@@ -535,13 +572,20 @@ service cloud.firestore {
     }
 
     // ===============================================================
+    // Public worker discovery projection
+    // ===============================================================
+    match /publicWorkerProfiles/{userId} {
+      allow get, list: if resource.data.get('isSearchVisible', false) == true;
+      allow create, update, delete: if false;
+    }
+
+    // ===============================================================
     // Private accounts and user-owned data
     // ===============================================================
     match /users/{userId} {
       allow read: if isOwner(userId) || isAdmin();
       allow create: if isOwner(userId) && validUser(request.resource.data) &&
-        uidUnchanged() && request.resource.data.role == 'customer' &&
-        request.resource.data.get('emailVerified', false) == false &&
+        uidUnchanged() && validSelfServiceUserCreate(request.resource.data) &&
         recentTimestamp(request.resource.data, 'createdAt');
       allow update: if (isAdmin() && validUser(request.resource.data)) ||
         (isOwner(userId) && isDocOwner() && uidNotModified() &&
@@ -731,7 +775,7 @@ service cloud.firestore {
     // Community content
     // ===============================================================
     match /blog_posts/{postId} {
-      allow read: if isAuthenticated();
+      allow read: if true;
       allow create: if isAuthenticated() && validBlogPost(request.resource.data) &&
         request.resource.data.authorUid == request.auth.uid &&
         recentTimestamp(request.resource.data, 'timestamp');
@@ -742,7 +786,7 @@ service cloud.firestore {
       allow delete: if isAuthenticated() && request.auth.uid == resource.data.authorUid;
 
       match /blog_comments/{commentId} {
-        allow read: if isAuthenticated();
+        allow read: if true;
         allow create: if isAuthenticated() && validBlogComment(request.resource.data) &&
           request.resource.data.authorUid == request.auth.uid &&
           recentTimestamp(request.resource.data, 'timestamp');
@@ -798,12 +842,17 @@ service cloud.firestore {
     }
 
     match /professions/{professionId} {
-      allow read: if isAuthenticated();
+      allow read: if true;
       allow write: if isAdmin();
     }
 
     match /system_announcements/{announcementId} {
       allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /metadata/professions {
+      allow read: if true;
       allow write: if isAdmin();
     }
 

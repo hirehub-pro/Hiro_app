@@ -545,17 +545,6 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
     return '+972$digits';
   }
 
-  Future<QueryDocumentSnapshot<Map<String, dynamic>>?> _getUserByPhone(
-    String normalizedPhone,
-  ) async {
-    final snapshot = await FirebaseFirestore.instance
-        .collection('users')
-        .where('phone', isEqualTo: normalizedPhone)
-        .limit(1)
-        .get();
-    return snapshot.docs.isEmpty ? null : snapshot.docs.first;
-  }
-
   Future<void> _verifyPasswordWithoutChangingSession({
     required String email,
     required String password,
@@ -608,79 +597,10 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
 
     setState(() => _loading = true);
     try {
-      final userDoc = await _getUserByPhone(phone);
-      if (userDoc == null) {
-        if (mounted) {
-          setState(() => _loading = false);
-          showDialog(
-            context: context,
-            builder: (context) => AlertDialog(
-              title: Text(
-                strings['not_registered_title'] ?? 'User Not Registered',
-              ),
-              content: Text(
-                strings['not_registered_body'] ??
-                    'The phone number you entered is not registered.',
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: Text(strings['ok'] ?? 'OK'),
-                ),
-                TextButton(
-                  onPressed: () {
-                    Navigator.of(context).pop();
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const SignUpPage()),
-                    );
-                  },
-                  child: Text(strings['signup'] ?? 'Sign Up'),
-                ),
-              ],
-            ),
-          );
-        }
-        return;
-      }
-
-      final email = (userDoc.data()['email'] ?? '').toString().trim();
-      if (email.isEmpty) {
-        if (mounted) {
-          setState(() => _loading = false);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                strings['password_unavailable'] ??
-                    'Password sign-in is not available for this account yet.',
-              ),
-            ),
-          );
-        }
-        return;
-      }
-
-      try {
-        await _verifyPasswordWithoutChangingSession(
-          email: email,
-          password: password,
-        );
-      } on FirebaseAuthException catch (e) {
-        if (mounted) {
-          setState(() => _loading = false);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                e.code == 'wrong-password' || e.code == 'invalid-credential'
-                    ? (strings['wrong_password'] ?? 'Incorrect password.')
-                    : (e.message ?? e.code),
-              ),
-            ),
-          );
-        }
-        return;
-      }
-
+      // The users collection contains private account data and cannot be
+      // queried safely before authentication. Verify phone ownership first;
+      // after that, _routeAuthenticatedUser reads only the caller's UID doc
+      // and validates the password against the email stored there.
       await AnalyticsService.logSignInCodeRequested();
       await FirebaseAuth.instance.verifyPhoneNumber(
         phoneNumber: phone,
@@ -785,10 +705,39 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
       return;
     }
 
+    final strings = _getLocalizedStrings(context);
     final firestore = FirebaseFirestore.instance;
     final userDoc = await firestore.collection('users').doc(user.uid).get();
 
     if (userDoc.exists) {
+      final email = (userDoc.data()?['email'] ?? '').toString().trim();
+      if (email.isEmpty) {
+        await AuthService().signOut();
+        throw FirebaseAuthException(
+          code: 'password-unavailable',
+          message:
+              strings['password_unavailable'] ??
+              'Password sign-in is not available for this account yet.',
+        );
+      }
+
+      try {
+        await _verifyPasswordWithoutChangingSession(
+          email: email,
+          password: _passwordController.text,
+        );
+      } on FirebaseAuthException catch (error) {
+        await AuthService().signOut();
+        throw FirebaseAuthException(
+          code: error.code,
+          message:
+              error.code == 'wrong-password' ||
+                  error.code == 'invalid-credential'
+              ? (strings['wrong_password'] ?? 'Incorrect password.')
+              : (error.message ?? error.code),
+        );
+      }
+
       await AnalyticsService.logSignInSuccess(method: method);
       if (mounted) {
         Navigator.pushReplacement(

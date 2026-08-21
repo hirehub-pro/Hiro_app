@@ -8,7 +8,6 @@ import 'dart:math' as math;
 import 'package:untitled1/services/language_provider.dart';
 import 'package:untitled1/services/analytics_service.dart';
 import 'package:untitled1/services/location_context_service.dart';
-import 'package:untitled1/services/subscription_access_service.dart';
 import 'package:untitled1/ptofile.dart';
 import 'package:untitled1/pages/location_manager_page.dart';
 import 'package:untitled1/utils/booking_mode.dart';
@@ -400,8 +399,7 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
     _getCurrentLocation(silent: true);
 
     _scrollController.addListener(() {
-      if (_scrollController.position.pixels >=
-          _scrollController.position.maxScrollExtent + 50) {
+      if (_scrollController.position.extentAfter < 300) {
         if (_hasMore && !_isFetchingMore && _showWorkerList) {
           _fetchWorkers();
         }
@@ -534,10 +532,11 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
     });
 
     try {
-      // Query 'users' collection with 'worker' role
+      // Public search reads a server-maintained projection. Private account,
+      // billing, verification, and OAuth fields remain in users/{uid}.
       Query query = _firestore
-          .collection('users')
-          .where('role', isEqualTo: 'worker');
+          .collection('publicWorkerProfiles')
+          .where('isSearchVisible', isEqualTo: true);
 
       if (_selectedProfession != null) {
         query = query.where(
@@ -546,13 +545,21 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
         );
       }
 
-      // Firestore excludes documents that do not have the ordered field.
-      // Ordering by avgRating therefore hid new workers with no ratings yet.
-      // Fetch by a field every worker has, then apply the rating order locally.
-      query = query.orderBy('name');
+      // The public projection always contains both fields, so Firestore can
+      // paginate rating and name sorts globally instead of sorting one page.
+      if (_sortBy == 'rating') {
+        query = query.orderBy('avgRating', descending: true).orderBy('name');
+      } else {
+        query = query.orderBy('name');
+      }
 
-      query = query.limit(5);
-      if (_lastDocument != null) {
+      const pageSize = 20;
+      final fetchAllForDistance =
+          _sortBy == 'distance' && _currentPosition != null;
+      if (!fetchAllForDistance) {
+        query = query.limit(pageSize);
+      }
+      if (!fetchAllForDistance && _lastDocument != null) {
         query = query.startAfterDocument(_lastDocument!);
       }
 
@@ -560,25 +567,20 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
 
       if (currentId != _fetchSessionId) return;
 
-      if (snapshot.docs.length < 5) {
+      if (fetchAllForDistance || snapshot.docs.length < pageSize) {
         _hasMore = false;
       }
 
       if (snapshot.docs.isNotEmpty) {
         _lastDocument = snapshot.docs.last;
 
-        final newWorkers = snapshot.docs
-            .map((doc) {
-              final data = doc.data() as Map<String, dynamic>;
-              data['uid'] = doc.id;
-              data['avgRating'] = (data['avgRating'] ?? 0.0).toDouble();
-              data['reviewCount'] = data['reviewCount'] ?? 0;
-              return _withCachedScheduleData(data);
-            })
-            .where(
-              SubscriptionAccessService.hasActiveWorkerSubscriptionFromData,
-            )
-            .toList();
+        final newWorkers = snapshot.docs.map((doc) {
+          final data = doc.data() as Map<String, dynamic>;
+          data['uid'] = doc.id;
+          data['avgRating'] = (data['avgRating'] ?? 0.0).toDouble();
+          data['reviewCount'] = data['reviewCount'] ?? 0;
+          return _withCachedScheduleData(data);
+        }).toList();
 
         if (mounted && currentId == _fetchSessionId) {
           setState(() {
@@ -733,15 +735,19 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
     try {
       final position = await LocationContextService.getActiveLocation();
       if (!mounted) return;
+      final shouldRefreshWorkers = !silent && position != null;
       setState(() {
         _currentPosition = position;
-        if (!silent && position != null) {
+        if (shouldRefreshWorkers) {
           _sortBy = 'distance';
-          _fetchWorkers(isRefresh: true);
         }
       });
 
-      _applyFilters();
+      if (shouldRefreshWorkers) {
+        await _fetchWorkers(isRefresh: true);
+      } else {
+        _applyFilters();
+      }
     } catch (e) {
       debugPrint("Error getting location: $e");
     } finally {
@@ -1034,12 +1040,6 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
     void updateFilters() {
       if (_showWorkerList) {
         _filteredWorkers = _allWorkers.where((w) {
-          if (!SubscriptionAccessService.hasActiveWorkerSubscriptionFromData(
-            w,
-          )) {
-            return false;
-          }
-
           final workerProfsEn =
               (w['professions'] as List?)
                   ?.map((e) => _normalizeSearchText(e.toString()))
