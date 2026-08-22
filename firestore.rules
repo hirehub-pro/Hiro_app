@@ -300,7 +300,7 @@ service cloud.firestore {
       (!changed.hasAny(['workRadius']) || optionalNumber(request.resource.data, 'workRadius', 0, 1000000)) &&
       (!changed.hasAny(['professions']) || optionalList(request.resource.data, 'professions', 50)) &&
       (!changed.hasAny(['spokenLanguages']) || optionalList(request.resource.data, 'spokenLanguages', 30)) &&
-      (!changed.hasAny(['socialLinks']) || optionalMap(request.resource.data, 'socialLinks', 20)) &&
+      (!changed.hasAny(['socialLinks']) || optionalSocialLinks(request.resource.data)) &&
       (!changed.hasAny(['disabledDays']) || optionalList(request.resource.data, 'disabledDays', 31)) &&
       (!changed.hasAny(['hideSchedule']) || optionalBool(request.resource.data, 'hideSchedule')) &&
       (!changed.hasAny(['notificationsEnabled']) || optionalBool(request.resource.data, 'notificationsEnabled')) &&

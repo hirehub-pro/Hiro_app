@@ -636,6 +636,7 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
       return;
     }
 
+    FocusScope.of(context).unfocus();
     setState(() => _loading = true);
     try {
       final result = await _functions.httpsCallable('phoneAccountExists').call(
@@ -736,6 +737,7 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
   Future<void> _verifyCode() async {
     final strings = _getLocalizedStrings(context);
     if (_codeController.text.isEmpty) return;
+    FocusScope.of(context).unfocus();
     setState(() => _loading = true);
     try {
       final credential = PhoneAuthProvider.credential(
@@ -976,6 +978,7 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
       child: Material(
         color: Colors.transparent,
         child: PopupMenuButton<String>(
+          enabled: !_loading,
           tooltip: strings['change_language']!,
           offset: const Offset(0, 12),
           onSelected: (code) {
@@ -1545,7 +1548,7 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
 
   Widget _buildLogoMark() {
     return GestureDetector(
-      onTap: _playLogoTapAnimation,
+      onTap: _loading ? null : _playLogoTapAnimation,
       child: AnimatedBuilder(
         animation: _logoTapAnimationController,
         builder: (context, child) {
@@ -1599,6 +1602,7 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
         const SizedBox(height: 9),
         TextField(
           controller: _phoneController,
+          enabled: !_loading,
           keyboardType: TextInputType.phone,
           textInputAction: TextInputAction.next,
           style: const TextStyle(
@@ -1649,6 +1653,7 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
         const SizedBox(height: 9),
         TextField(
           controller: _passwordController,
+          enabled: !_loading,
           obscureText: _obscurePassword,
           textInputAction: TextInputAction.done,
           autofillHints: const [AutofillHints.password],
@@ -1661,8 +1666,9 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
           decoration: _inputDecoration(
             icon: Icons.lock_outline_rounded,
             suffixIcon: IconButton(
-              onPressed: () =>
-                  setState(() => _obscurePassword = !_obscurePassword),
+              onPressed: _loading
+                  ? null
+                  : () => setState(() => _obscurePassword = !_obscurePassword),
               icon: Icon(
                 _obscurePassword
                     ? Icons.visibility_outlined
@@ -1737,6 +1743,7 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
         const SizedBox(height: 9),
         TextField(
           controller: _codeController,
+          enabled: !_loading,
           keyboardType: TextInputType.number,
           textAlign: TextAlign.center,
           style: const TextStyle(
@@ -1789,7 +1796,9 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
                 ),
               ),
               TextButton(
-                onPressed: () => setState(() => _codeSent = false),
+                onPressed: _loading
+                    ? null
+                    : () => setState(() => _codeSent = false),
                 child: Text(
                   strings['edit_phone'] ?? 'Edit Phone Number',
                   style: const TextStyle(
@@ -1905,10 +1914,12 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
                 borderRadius: BorderRadius.circular(16),
               ),
             ),
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const SignUpPage()),
-            ),
+            onPressed: _loading
+                ? null
+                : () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const SignUpPage()),
+                  ),
             child: Text(
               strings['signup'] ?? 'Sign Up',
               style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),

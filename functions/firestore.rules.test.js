@@ -290,6 +290,17 @@ test("allows an owner account but blocks self-assigned privilege", {
   const db = testEnv.authenticatedContext(uid).firestore();
   await assertSucceeds(setDoc(doc(db, `users/${uid}`), validUser(uid)));
   await assertSucceeds(updateDoc(doc(db, `users/${uid}`), {name: "Updated User"}));
+  await assertSucceeds(updateDoc(doc(db, `users/${uid}`), {
+    socialLinks: [{
+      type: "website",
+      name: "Website",
+      url: "https://example.com",
+    }, {
+      type: "instagram",
+      name: "",
+      url: "https://instagram.com/example",
+    }],
+  }));
   await assertFails(updateDoc(doc(db, `users/${uid}`), {role: "admin"}));
   await assertFails(updateDoc(doc(db, `users/${uid}`), {
     isSubscribed: true,
@@ -357,6 +368,10 @@ test("allows inactive worker registration but rejects forged entitlement", {
       type: "website",
       name: "My website",
       url: "https://worker.example.com",
+    }, {
+      type: "instagram",
+      name: "",
+      url: "https://instagram.com/test-worker",
     }],
     updatedAt: serverTimestamp(),
   }));

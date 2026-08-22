@@ -3552,6 +3552,12 @@ class _ProfileState extends State<Profile>
             }
 
             void saveLinks() {
+              if (draftLinks.length > 20) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text(strings['invalid_link']!)),
+                );
+                return;
+              }
               for (final link in draftLinks) {
                 final type = (link['type'] ?? '').trim();
                 final url = (link['url'] ?? '').trim();
@@ -3568,7 +3574,11 @@ class _ProfileState extends State<Profile>
                   );
                   return;
                 }
-                if (!_isValidExternalUrl(url)) {
+                final normalizedUrl = _normalizeExternalUrl(url);
+                if (type.length > 40 ||
+                    name.length > 80 ||
+                    normalizedUrl.length > 2048 ||
+                    !_isValidExternalUrl(url)) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(content: Text(strings['invalid_link']!)),
                   );
@@ -4015,6 +4025,7 @@ class _ProfileState extends State<Profile>
         _socialLinks = links;
       });
     } catch (e) {
+      debugPrint('SAVE SOCIAL LINKS ERROR: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
