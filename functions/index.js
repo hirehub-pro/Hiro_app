@@ -73,6 +73,38 @@ const SUBSCRIPTION_NOTIFICATION_RETENTION_DAYS = 30;
 const SUBSCRIPTION_VERIFICATION_RETENTION_HOURS = 36;
 const DEVICE_TOKEN_RETENTION_DAYS = 90;
 const TAX_AUTH_OAUTH_CODE_RETENTION_HOURS = 2;
+
+exports.phoneAccountExists = onCall(
+    {region: "me-west1"},
+    async (request) => {
+      const phoneNumber = normalizeString(request.data?.phoneNumber).trim();
+      if (!/^\+9725\d{8}$/.test(phoneNumber)) {
+        throw new HttpsError(
+            "invalid-argument",
+            "A valid Israeli mobile phone number is required.",
+        );
+      }
+
+      try {
+        const user = await admin.auth().getUserByPhoneNumber(phoneNumber);
+        const account = await admin
+            .firestore()
+            .collection("users")
+            .doc(user.uid)
+            .get();
+        return {exists: account.exists};
+      } catch (error) {
+        if (error?.code === "auth/user-not-found") {
+          return {exists: false};
+        }
+        logger.error("Could not check phone account existence", {
+          code: error?.code,
+        });
+        throw new HttpsError("internal", "Could not check the account.");
+      }
+    },
+);
+
 const TAX_AUTH_SANDBOX_AUTH_URL =
   "https://openapi.taxes.gov.il/shaam/tsandbox/longtimetoken/oauth2/authorize";
 const TAX_AUTH_SANDBOX_TOKEN_URL =

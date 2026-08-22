@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:provider/provider.dart';
 import 'package:untitled1/services/language_provider.dart';
 import 'package:untitled1/services/analytics_service.dart';
@@ -159,6 +160,9 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
   bool _codeSent = false;
   bool _loading = false;
   bool _obscurePassword = true;
+  final FirebaseFunctions _functions = FirebaseFunctions.instanceFor(
+    region: 'me-west1',
+  );
 
   @override
   void initState() {
@@ -209,7 +213,10 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
           'not_registered_title': 'משתמש לא רשום',
           'not_registered_body':
               'מספר הטלפון שהוזן אינו רשום. האם תרצה להירשם?',
+          'cancel': 'ביטול',
           'ok': 'אישור',
+          'service_unavailable':
+              'לא ניתן לבדוק את החשבון כרגע. נסו שוב מאוחר יותר.',
           'invalid_phone': 'אנא הכנס מספר טלפון ישראלי תקין (05XXXXXXXX)',
           'edit_phone': 'ערוך מספר טלפון',
           'resend_code': 'שלח SMS שוב',
@@ -253,7 +260,10 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
           'not_registered_title': 'المستخدم غير مسجل',
           'not_registered_body':
               'رقم الهاتف الذي أدخلته غير مسجل. هل تريد إنشاء حساب؟',
+          'cancel': 'إلغاء',
           'ok': 'موافق',
+          'service_unavailable':
+              'تعذر التحقق من الحساب الآن. يرجى المحاولة مرة أخرى لاحقًا.',
           'invalid_phone': 'يرجى إدخال رقم هاتف إسرائيلي صالح (05XXXXXXXX)',
           'edit_phone': 'تعديل رقم الهاتف',
           'resend_code': 'إرسال SMS مرة أخرى',
@@ -297,7 +307,10 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
           'not_registered_title': 'Пользователь не зарегистрирован',
           'not_registered_body':
               'Введённый номер телефона не зарегистрирован. Хотите зарегистрироваться?',
+          'cancel': 'Отмена',
           'ok': 'OK',
+          'service_unavailable':
+              'Сейчас не удалось проверить аккаунт. Повторите попытку позже.',
           'invalid_phone':
               'Введите действительный израильский номер телефона (05XXXXXXXX)',
           'edit_phone': 'Изменить номер телефона',
@@ -342,7 +355,9 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
           'no_account': 'መለያ የለዎትም? ',
           'not_registered_title': 'ተጠቃሚው አልተመዘገበም',
           'not_registered_body': 'ያስገቡት የስልክ ቁጥር አልተመዘገበም። መመዝገብ ይፈልጋሉ?',
+          'cancel': 'ሰርዝ',
           'ok': 'እሺ',
+          'service_unavailable': 'መለያውን አሁን ማረጋገጥ አልተቻለም። ቆይተው ይሞክሩ።',
           'invalid_phone': 'እባክዎ ትክክለኛ የእስራኤል የስልክ ቁጥር ያስገቡ (05XXXXXXXX)',
           'edit_phone': 'የስልክ ቁጥር ያስተካክሉ',
           'resend_code': 'SMS እንደገና ላክ',
@@ -386,7 +401,10 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
           'not_registered_title': 'User Not Registered',
           'not_registered_body':
               'The phone number you entered is not registered. Would you like to sign up?',
+          'cancel': 'Cancel',
           'ok': 'OK',
+          'service_unavailable':
+              'Could not check the account right now. Please try again later.',
           'invalid_phone':
               'Please enter a valid Israeli phone number (05XXXXXXXX)',
           'edit_phone': 'Edit Phone Number',
@@ -607,10 +625,39 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
 
     setState(() => _loading = true);
     try {
-      // The users collection contains private account data and cannot be
-      // queried safely before authentication. Verify phone ownership first;
-      // after that, _routeAuthenticatedUser reads only the caller's UID doc
-      // and validates the password against the email stored there.
+      final result = await _functions.httpsCallable('phoneAccountExists').call(
+        <String, dynamic>{'phoneNumber': phone},
+      );
+      final data = Map<String, dynamic>.from(result.data as Map);
+      if (data['exists'] != true) {
+        if (!mounted) return;
+        setState(() => _loading = false);
+        final shouldSignUp = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: Text(strings['not_registered_title']!),
+            content: Text(strings['not_registered_body']!),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: Text(strings['cancel']!),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                child: Text(strings['signup']!),
+              ),
+            ],
+          ),
+        );
+        if (shouldSignUp == true && mounted) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const SignUpPage()),
+          );
+        }
+        return;
+      }
+
       await AnalyticsService.logSignInCodeRequested();
       await FirebaseAuth.instance.verifyPhoneNumber(
         phoneNumber: phone,
@@ -647,15 +694,11 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
           _verificationId = verificationId;
         },
       );
-    } catch (e) {
+    } catch (_) {
       if (mounted) {
         setState(() => _loading = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              strings['generic_error']!.replaceAll('{err}', e.toString()),
-            ),
-          ),
+          SnackBar(content: Text(strings['service_unavailable']!)),
         );
       }
     }
