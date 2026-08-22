@@ -1,0 +1,363 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "UniStructFileUploadLinksApi",
+    "description": "",
+    "version": "v1",
+    "x-ibm-name": "unistructfileuploadlinksapi"
+  },
+  "host": "t-ita-api.taxes.gov.il",
+  "basePath": "/shaam/tsandbox/UniStructFileUploadLinksApi",
+  "schemes": [
+    "https"
+  ],
+  "paths": {
+    "/v1/UploadingFile/GetUrlsForUploadingFiles": {
+      "post": {
+        "tags": [
+          "UploadingFile"
+        ],
+        "operationId": "GetUrlsForUploadingFiles",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/InputRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/SignedUrlResponseGeneralResponse"
+            },
+            "examples": {
+              "application/json": {
+                "success": true,
+                "data": {
+                  "uniqueId": "250818409889393295584",
+                  "files": [
+                    {
+                      "fileName": "test",
+                      "signUrl": "https://storage.googleapis.com/sign_url/",
+                      "fileUniqueId": "145112142c50-e414-49c1-b293-4b91064864a9.txt"
+                    }
+                  ]
+                },
+                "error": null
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/SignedUrlResponseGeneralResponse"
+            },
+            "examples": {
+              "application/json": {
+                "data": null,
+                "success": false,
+                "error": {
+                  "errorCode": 400,
+                  "message": "Bad Request"
+                }
+              }
+            }
+          },
+          "406": {
+            "description": "Not Acceptable",
+            "schema": {
+              "$ref": "#/definitions/SignedUrlResponseGeneralResponse"
+            },
+            "examples": {
+              "application/json": {
+                "data": null,
+                "success": false,
+                "error": {
+                  "errorCode": 406,
+                  "message": "Not Acceptable"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server Error",
+            "schema": {
+              "$ref": "#/definitions/SignedUrlResponseGeneralResponse"
+            },
+            "examples": {
+              "application/json": {
+                "data": null,
+                "success": false,
+                "error": {
+                  "errorCode": 500,
+                  "message": "Internal Server Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/health": {
+      "get": {
+        "tags": [
+          "HealthChecks"
+        ],
+        "summary": "Health Check",
+        "description": "Checks the health of the application",
+        "responses": {
+          "200": {
+            "description": "Healthy"
+          },
+          "503": {
+            "description": "Unhealthy"
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "ErrorResponse": {
+      "required": [
+        "message"
+      ],
+      "type": "object",
+      "properties": {
+        "errorCode": {
+          "format": "int32",
+          "description": "קוד שגיאה",
+          "maximum": 599,
+          "minimum": 400,
+          "type": "integer",
+          "example": 400
+        },
+        "message": {
+          "description": "הודעה",
+          "maxLength": 500,
+          "minLength": 1,
+          "pattern": "^[^<>]*$",
+          "type": "string",
+          "example": "Explanation of the error"
+        }
+      },
+      "additionalProperties": false
+    },
+    "FileResponse": {
+      "required": [
+        "fileName",
+        "fileUniqueId",
+        "headers",
+        "signUrl"
+      ],
+      "type": "object",
+      "properties": {
+        "fileName": {
+          "description": "שם הקובץ",
+          "maxLength": 50,
+          "minLength": 1,
+          "pattern": "^[^<>]*$",
+          "type": "string",
+          "example": "test"
+        },
+        "signUrl": {
+          "description": "קישור",
+          "maxLength": 1000,
+          "minLength": 300,
+          "pattern": "^https:\\/\\/storage\\.googleapis\\.com\\/([\\w\\-]+\\.)+[a-zA-Z]{2,6}(:\\d+)?(\\/[\\w\\-.,@?^=%&:/~+#]*)?(\\?[;&a-zA-Z0-9%_\\.=+\\-]*)?$",
+          "type": "string",
+          "example": "https://storage.googleapis.com/sign_url/"
+        },
+        "fileUniqueId": {
+          "description": "מזהה יחודי לקובץ",
+          "maxLength": 280,
+          "minLength": 1,
+          "pattern": "^[0-9a-fA-F]{12}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}\\.txt$",
+          "type": "string",
+          "example": "145112142c50-e414-49c1-b293-4b91064864a9.txt"
+        },
+        "headers": {
+          "description": "headers עבור שירות העלאה לענן",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "example": {
+            "x-goog-content-length-range": "0,1048576",
+            "x-goog-resumable": "start"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "InputRequest": {
+      "required": [
+        "caseNumber",
+        "endPeriod",
+        "startPeriod"
+      ],
+      "type": "object",
+      "properties": {
+        "caseNumber": {
+          "format": "int32",
+          "description": "מספר תיק\r\nניתן להשתמש במספר תיק 777777715 למקרה שאין דרישה לקובץ במבנה אחיד\r\nובתיק 777777749 לשגיאת gateway",
+          "maximum": 999999999,
+          "minimum": 1,
+          "type": "integer",
+          "example": 777777723
+        },
+        "startPeriod": {
+          "description": "תחילת תקופה",
+          "maxLength": 10,
+          "minLength": 10,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "type": "string",
+          "example": "2025-05-05"
+        },
+        "endPeriod": {
+          "description": "סיום תקופה",
+          "maxLength": 10,
+          "minLength": 10,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "type": "string",
+          "example": "2025-05-09"
+        },
+        "representorCompanyId": {
+          "format": "int32",
+          "description": "מזהה חברה של מייצג",
+          "maximum": 999999999,
+          "minimum": 1,
+          "example": 777777728,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "SignedUrlResponse": {
+      "required": [
+        "uniqueId"
+      ],
+      "type": "object",
+      "properties": {
+        "uniqueId": {
+          "description": "מזהה ייחודי",
+          "maxLength": 21,
+          "minLength": 21,
+          "pattern": "^$|[0-9]+$",
+          "type": "string"
+        },
+        "files": {
+          "description": "קבצים",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/FileResponse"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "SignedUrlResponseGeneralResponse": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean"
+        },
+        "data": {
+          "$ref": "#/definitions/SignedUrlResponse"
+        },
+        "error": {
+          "$ref": "#/definitions/ErrorResponse"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "x-ibm-configuration": {
+    "cors": {
+      "enabled": true
+    },
+    "phase": "realized",
+    "enforced": true,
+    "type": "rest",
+    "testable": true,
+    "servers": [
+      {
+        "url": "https://t-ita-api.taxes.gov.il/shaam/tsandbox/UniStructFileUploadLinksApi",
+        "description": "",
+        "type": [
+          "production",
+          "development"
+        ]
+      },
+      {
+        "url": "https://openapi.taxes.gov.il/shaam/tsandbox/UniStructFileUploadLinksApi",
+        "description": "",
+        "type": [
+          "production",
+          "development"
+        ]
+      },
+      {
+        "url": "https://t-ita-api.taxes.gov.il/shaam/tsandbox/UniStructFileUploadLinksApi",
+        "description": "",
+        "type": [
+          "production",
+          "development"
+        ]
+      },
+      {
+        "url": "https://ita-api.taxes.gov.il/shaam/tsandbox/UniStructFileUploadLinksApi",
+        "description": "",
+        "type": [
+          "production",
+          "development"
+        ]
+      }
+    ],
+    "oauth-servers": {
+      "dailytoken": {
+        "tokenUrls": [
+          "https://t-ita-api.taxes.gov.il/shaam/tsandbox/dailytoken/oauth2/token",
+          "https://openapi.taxes.gov.il/shaam/tsandbox/dailytoken/oauth2/token",
+          "https://ita-api.taxes.gov.il/shaam/tsandbox/dailytoken/oauth2/token"
+        ],
+        "authorizationUrls": [
+          "https://openapi.taxes.gov.il/shaam/tsandbox/dailytoken/oauth2/authorize"
+        ],
+        "refreshUrls": []
+      }
+    }
+  },
+  "securityDefinitions": {
+    "dailytoken": {
+      "type": "oauth2",
+      "x-ibm-oauth-provider": "dailytoken",
+      "flow": "accessCode",
+      "authorizationUrl": "https://openapi.taxes.gov.il/shaam/tsandbox/dailytoken/oauth2/authorize",
+      "tokenUrl": "/dailytoken/oauth2/token",
+      "scopes": {
+        "scope": "scope",
+        "UniStructFileUploadLinks_scope": "this is scope for UniStructFileUploadLinks_scope"
+      }
+    }
+  },
+  "security": [
+    {
+      "dailytoken": [
+        "UniStructFileUploadLinks_scope"
+      ]
+    }
+  ]
+}

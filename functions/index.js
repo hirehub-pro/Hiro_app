@@ -50,6 +50,16 @@ const {
   validateTaxInvoicePresentation,
 } = require("./tax_invoice_pdf");
 const {
+  mapAuthorityUploadFiles,
+  maximumUploadBytes,
+  normalizeSandboxPdfPaths,
+  normalizeUniformSubmissionInput,
+  safeSignedUploadHeaders,
+  uniformOverallStatus,
+  validateSandboxPdf,
+  validateUniformFileContents,
+} = require("./uniform_tax_authority");
+const {
   AppStoreServerAPIClient,
   AutoRenewStatus,
   Environment,
@@ -169,11 +179,23 @@ const TAX_AUTH_SANDBOX_TOKEN_FALLBACK_URL =
   "https://ita-api.taxes.gov.il/shaam/tsandbox/longtimetoken/oauth2/token";
 const TAX_AUTH_SANDBOX_MULTI_APPROVAL_URL =
   "https://openapi.taxes.gov.il/shaam/tsandbox/Multi-invoices/v2/MultiApproval";
+const TAX_AUTH_SANDBOX_DAILY_AUTH_URL =
+  "https://openapi.taxes.gov.il/shaam/tsandbox/dailytoken/oauth2/authorize";
+const TAX_AUTH_SANDBOX_DAILY_TOKEN_URLS = [
+  "https://openapi.taxes.gov.il/shaam/tsandbox/dailytoken/oauth2/token",
+  "https://ita-api.taxes.gov.il/shaam/tsandbox/dailytoken/oauth2/token",
+];
+const TAX_AUTH_SANDBOX_UNIFORM_LINKS_URL =
+  "https://ita-api.taxes.gov.il/shaam/tsandbox/UniStructFileUploadLinksApi/v1/UploadingFile/GetUrlsForUploadingFiles";
+const TAX_AUTH_SANDBOX_FILES_STATUS_URL =
+  "https://ita-api.taxes.gov.il/shaam/tsandbox/FilesStatusApi/v1/Files/get-file-status";
 const TAX_AUTH_SANDBOX_ACCOUNTING_SOFTWARE_NUMBER = 987654321;
 const TAX_AUTH_REDIRECT_URI =
   "https://me-west1-hire-hub-fe6c4.cloudfunctions.net/taxesOAuthCallback";
 const TAX_AUTH_APP_RETURN_URI = "hiro://tax-authority-connected";
 const TAX_AUTH_SCOPE = "scope";
+const TAX_AUTH_UNIFORM_SCOPE =
+  "UniStructFileUploadLinks_scope FilesStatus_scope";
 const APPLE_SUBSCRIPTION_PRODUCT_ID = "HIRO_SUBSCRIPTION";
 const GOOGLE_PLAY_SUBSCRIPTION_PRODUCT_IDS = new Set([
   "pro_worker_monthly",
@@ -630,6 +652,7 @@ exports.createTaxAuthorityAuthorizationUrl = onCall(
           .set({
             userId,
             businessId,
+            purpose: "invoice-allocation",
             createdAt: now,
             expiresAt,
             usedAt: null,
@@ -645,6 +668,45 @@ exports.createTaxAuthorityAuthorizationUrl = onCall(
       authorizationUrl.searchParams.set("scope", TAX_AUTH_SCOPE);
       authorizationUrl.searchParams.set("state", state);
 
+      return {authorizationUrl: authorizationUrl.toString()};
+    },
+);
+
+exports.createUniformTaxAuthorityAuthorizationUrl = onCall(
+    {
+      region: "me-west1",
+      secrets: [TAX_AUTH_CLIENT_ID],
+    },
+    async (request) => {
+      const userId = request.auth?.uid;
+      if (!userId) {
+        throw new HttpsError("unauthenticated", "Authentication required.");
+      }
+
+      const businessId = await getVerifiedTaxAuthorityBusinessId(userId);
+      const state = crypto.randomUUID();
+      const now = admin.firestore.Timestamp.now();
+      const expiresAt = admin.firestore.Timestamp.fromDate(
+          addHours(now.toDate(), TAX_AUTH_OAUTH_CODE_RETENTION_HOURS),
+      );
+      await admin.firestore()
+          .collection("taxAuthorityOAuthStates")
+          .doc(state)
+          .set({
+            userId,
+            businessId,
+            purpose: "uniform-files",
+            createdAt: now,
+            expiresAt,
+            usedAt: null,
+          });
+
+      const authorizationUrl = new URL(TAX_AUTH_SANDBOX_DAILY_AUTH_URL);
+      authorizationUrl.searchParams.set("response_type", "code");
+      authorizationUrl.searchParams.set("client_id", TAX_AUTH_CLIENT_ID.value());
+      authorizationUrl.searchParams.set("redirect_uri", TAX_AUTH_REDIRECT_URI);
+      authorizationUrl.searchParams.set("scope", TAX_AUTH_UNIFORM_SCOPE);
+      authorizationUrl.searchParams.set("state", state);
       return {authorizationUrl: authorizationUrl.toString()};
     },
 );
@@ -719,6 +781,8 @@ exports.taxesOAuthCallback = onRequest(
         const stateData = stateSnap.data() || {};
         const stateUserId = normalizeString(stateData.userId).trim();
         const stateBusinessId = normalizeBusinessId(stateData.businessId);
+        const purpose = normalizeString(stateData.purpose).trim() ||
+          "invoice-allocation";
         const stateExpiresAt = toDate(stateData.expiresAt);
         if (!stateUserId ||
             !stateBusinessId ||
@@ -732,6 +796,7 @@ exports.taxesOAuthCallback = onRequest(
         return {
           userId: stateUserId,
           businessId: stateBusinessId,
+          purpose,
         };
       });
       if (!oauthOwner) {
@@ -741,7 +806,7 @@ exports.taxesOAuthCallback = onRequest(
         }));
         return;
       }
-      const {userId, businessId} = oauthOwner;
+      const {userId, businessId, purpose} = oauthOwner;
 
       let currentBusinessId;
       try {
@@ -767,7 +832,9 @@ exports.taxesOAuthCallback = onRequest(
 
       let tokenResponse;
       try {
-        tokenResponse = await exchangeTaxAuthorityCodeForTokens(code);
+        tokenResponse = await exchangeTaxAuthorityCodeForTokens(code, {
+          daily: purpose === "uniform-files",
+        });
       } catch (error) {
         logger.error("Tax Authority OAuth token exchange crashed", {
           message: normalizeString(error.message),
@@ -795,6 +862,7 @@ exports.taxesOAuthCallback = onRequest(
           .add({
             userId,
             businessId,
+            purpose,
             code,
             state,
             createdAt: now,
@@ -812,6 +880,7 @@ exports.taxesOAuthCallback = onRequest(
         callbackId: docRef.id,
         updatedAt: now,
         environment: "sandbox",
+        purpose,
         disconnectedAt: admin.firestore.FieldValue.delete(),
         disconnectReason: admin.firestore.FieldValue.delete(),
         expiresAt: tokenResponse.expires_in ?
@@ -820,7 +889,9 @@ exports.taxesOAuthCallback = onRequest(
           ) :
           null,
       };
-      await taxAuthorityTokenRef(userId).set(tokenRecord, {merge: true});
+      const tokenRef = purpose === "uniform-files" ?
+        uniformTaxAuthorityTokenRef(userId) : taxAuthorityTokenRef(userId);
+      await tokenRef.set(tokenRecord, {merge: true});
       await docRef.update({consumedAt: admin.firestore.Timestamp.now()});
 
       logger.info("Stored Tax Authority OAuth callback code", {
@@ -2419,6 +2490,291 @@ exports.getTaxAuthorityConnectionStatus = onCall(
                   "access-token-missing" :
                   null,
       };
+    },
+);
+
+exports.getUniformTaxAuthorityConnectionStatus = onCall(
+    {region: "me-west1"},
+    async (request) => {
+      const userId = request.auth?.uid;
+      if (!userId) {
+        throw new HttpsError("unauthenticated", "Authentication required.");
+      }
+      let businessId;
+      try {
+        businessId = await getVerifiedTaxAuthorityBusinessId(userId);
+      } catch (_) {
+        return {
+          connected: false,
+          environment: "sandbox",
+          expiresAt: null,
+          reason: "business-verification-required",
+        };
+      }
+
+      const tokenSnap = await uniformTaxAuthorityTokenRef(userId).get();
+      const data = tokenSnap.data() || {};
+      const expiresAtDate = toDate(data.expiresAt);
+      const hasAccessToken = normalizeString(data.access_token).trim().length > 0;
+      const businessMatches = normalizeBusinessId(data.businessId) === businessId;
+      const connected = tokenSnap.exists && hasAccessToken && businessMatches &&
+        expiresAtDate != null && expiresAtDate.getTime() > Date.now();
+      return {
+        connected,
+        environment: "sandbox",
+        expiresAt: expiresAtDate?.toISOString() || null,
+        reason: connected ? null : !tokenSnap.exists ? "not-connected" :
+          !businessMatches ? "business-id-mismatch" :
+          !expiresAtDate || expiresAtDate.getTime() <= Date.now() ?
+            "token-expired" : "access-token-missing",
+      };
+    },
+);
+
+exports.submitUniformFilesToTaxAuthority = onCall(
+    {
+      region: "me-west1",
+      timeoutSeconds: 300,
+      memory: "512MiB",
+    },
+    async (request) => {
+      const userId = request.auth?.uid;
+      if (!userId) {
+        throw new HttpsError("unauthenticated", "Authentication required.");
+      }
+
+      let input;
+      let sandboxPdfPaths;
+      try {
+        input = normalizeUniformSubmissionInput(request.data, userId);
+        sandboxPdfPaths = normalizeSandboxPdfPaths(request.data, userId);
+      } catch (error) {
+        throw new HttpsError("invalid-argument", error.message);
+      }
+      const businessId = await getVerifiedTaxAuthorityBusinessId(userId);
+      const {accessToken} = await getUniformTaxAuthorityTokenData(
+          userId, businessId,
+      );
+      const bucket = admin.storage().bucket();
+      const iniFile = bucket.file(input.iniPath);
+      const bkmvFile = bucket.file(input.bkmvPath);
+      const sandboxIniFile = bucket.file(sandboxPdfPaths[0]);
+      const sandboxBkmvFile = bucket.file(sandboxPdfPaths[1]);
+      const [iniExists, bkmvExists, sandboxIniExists, sandboxBkmvExists] =
+        await Promise.all([
+        iniFile.exists(),
+        bkmvFile.exists(),
+        sandboxIniFile.exists(),
+        sandboxBkmvFile.exists(),
+        ]);
+      if (!iniExists[0] || !bkmvExists[0] ||
+          !sandboxIniExists[0] || !sandboxBkmvExists[0]) {
+        throw new HttpsError("not-found", "A uniform export file was not found.");
+      }
+
+      const [iniDownload, bkmvDownload, sandboxIniDownload,
+        sandboxBkmvDownload] = await Promise.all([
+        iniFile.download(),
+        bkmvFile.download(),
+        sandboxIniFile.download(),
+        sandboxBkmvFile.download(),
+        ]);
+      const iniBytes = iniDownload[0];
+      const bkmvBytes = bkmvDownload[0];
+      const sandboxIniBytes = sandboxIniDownload[0];
+      const sandboxBkmvBytes = sandboxBkmvDownload[0];
+      if (!iniBytes.length || !bkmvBytes.length) {
+        throw new HttpsError("invalid-argument", "Uniform export files are empty.");
+      }
+      try {
+        validateUniformFileContents({
+          iniBytes,
+          bkmvBytes,
+          businessId,
+          fromDate: input.fromDate,
+          toDate: input.toDate,
+        });
+      } catch (error) {
+        throw new HttpsError("failed-precondition", error.message);
+      }
+      try {
+        validateSandboxPdf(sandboxIniBytes);
+        validateSandboxPdf(sandboxBkmvBytes);
+      } catch (error) {
+        throw new HttpsError("failed-precondition", error.message);
+      }
+
+      const linksPayload = await callTaxAuthorityUniformJson({
+        accessToken,
+        url: TAX_AUTH_SANDBOX_UNIFORM_LINKS_URL,
+        body: {
+          caseNumber: Number(businessId),
+          startPeriod: input.fromDate,
+          endPeriod: input.toDate,
+        },
+        operationName: "uniform upload link request",
+      });
+      if (linksPayload?.success !== true || !linksPayload?.data?.uniqueId) {
+        logger.warn("Tax Authority sandbox returned no uniform upload links", {
+          success: linksPayload?.success ?? null,
+          hasData: linksPayload?.data != null,
+          errorCode: linksPayload?.error?.errorCode || null,
+          errorMessage: normalizeString(linksPayload?.error?.message).slice(0, 300),
+        });
+        throw taxAuthorityUniformError(
+            linksPayload, "The Tax Authority did not create upload links.",
+        );
+      }
+
+      let targets;
+      try {
+        targets = mapAuthorityUploadFiles(linksPayload.data.files);
+      } catch (error) {
+        throw new HttpsError("failed-precondition", error.message);
+      }
+      const uploads = [
+        {
+          kind: "ini",
+          target: targets.ini,
+          bytes: sandboxIniBytes,
+          path: input.iniPath,
+        },
+        {
+          kind: "bkmv",
+          target: targets.bkmv,
+          bytes: sandboxBkmvBytes,
+          path: input.bkmvPath,
+        },
+      ];
+      const submissionRef = admin.firestore()
+          .collection("users").doc(userId)
+          .collection("uniformTaxSubmissions").doc();
+      const createdAt = admin.firestore.Timestamp.now();
+      const submissionFiles = uploads.map(({kind, target, bytes}) => ({
+        kind,
+        authorityFileName: target.fileName,
+        fileUniqueId: target.fileUniqueId,
+        byteLength: bytes.length,
+        sha256: crypto.createHash("sha256").update(bytes).digest("hex"),
+        status: "uploading",
+      }));
+      await submissionRef.set({
+        environment: "sandbox",
+        testPayload: true,
+        authorityUniqueId: linksPayload.data.uniqueId,
+        businessId,
+        fromDate: input.fromDate,
+        toDate: input.toDate,
+        status: "uploading",
+        files: submissionFiles,
+        uniformFileHashes: {
+          iniSha256: crypto.createHash("sha256").update(iniBytes).digest("hex"),
+          bkmvSha256:
+            crypto.createHash("sha256").update(bkmvBytes).digest("hex"),
+        },
+        createdAt,
+        updatedAt: createdAt,
+      });
+
+      try {
+        for (const upload of uploads) {
+          await uploadTaxAuthorityResumableFile(upload.target, upload.bytes);
+        }
+        await submissionRef.update({
+          status: "processing",
+          files: submissionFiles.map((file) => ({
+            ...file,
+            status: "Uploaded",
+          })),
+          uploadedAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        await Promise.all(uploads.map(({path}) =>
+          bucket.file(path).delete().catch((error) => {
+            logger.warn("Could not remove submitted uniform export", {
+              path,
+              message: normalizeString(error.message),
+            });
+          })));
+      } catch (error) {
+        await submissionRef.update({
+          status: "upload-failed",
+          error: normalizeString(error.message).slice(0, 500),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        throw error;
+      }
+
+      return {
+        submissionId: submissionRef.id,
+        authorityUniqueId: linksPayload.data.uniqueId,
+        status: "processing",
+      };
+    },
+);
+
+exports.getUniformTaxAuthoritySubmissionStatus = onCall(
+    {region: "me-west1"},
+    async (request) => {
+      const userId = request.auth?.uid;
+      if (!userId) {
+        throw new HttpsError("unauthenticated", "Authentication required.");
+      }
+      const submissionId = normalizeString(request.data?.submissionId).trim();
+      if (!/^[A-Za-z0-9_-]{10,80}$/.test(submissionId)) {
+        throw new HttpsError("invalid-argument", "Invalid submission ID.");
+      }
+      const submissionRef = admin.firestore()
+          .collection("users").doc(userId)
+          .collection("uniformTaxSubmissions").doc(submissionId);
+      const submissionSnap = await submissionRef.get();
+      if (!submissionSnap.exists) {
+        throw new HttpsError("not-found", "Uniform submission not found.");
+      }
+      const submission = submissionSnap.data() || {};
+      const businessId = await getVerifiedTaxAuthorityBusinessId(userId);
+      if (normalizeBusinessId(submission.businessId) !== businessId) {
+        throw new HttpsError("permission-denied", "Business details changed.");
+      }
+      const {accessToken} = await getUniformTaxAuthorityTokenData(
+          userId, businessId,
+      );
+      const trackedFiles = Array.isArray(submission.files) ? submission.files : [];
+      const statusPayload = await callTaxAuthorityUniformJson({
+        accessToken,
+        url: TAX_AUTH_SANDBOX_FILES_STATUS_URL,
+        body: trackedFiles.map((file) => ({fileName: file.fileUniqueId})),
+        operationName: "uniform file status request",
+      });
+      if (!Array.isArray(statusPayload)) {
+        throw taxAuthorityUniformError(
+            statusPayload, "The Tax Authority returned an invalid status.",
+        );
+      }
+      const files = trackedFiles.map((trackedFile) => {
+        const responseFile = statusPayload.find((file) =>
+          normalizeString(file?.fileName) === trackedFile.fileUniqueId) || {};
+        return {
+          kind: trackedFile.kind || null,
+          authorityFileName: trackedFile.authorityFileName || null,
+          fileUniqueId: normalizeString(trackedFile.fileUniqueId).slice(0, 280),
+          status: normalizeString(responseFile.status).slice(0, 40),
+          description: normalizeString(responseFile.description).slice(0, 500),
+          isFound: responseFile.isFound === true,
+          errorCode: Number.isInteger(responseFile.errorCode) ?
+            responseFile.errorCode : null,
+          errorMessage:
+            normalizeString(responseFile.errorMessage).slice(0, 500) || null,
+        };
+      });
+      const status = uniformOverallStatus(files);
+      await submissionRef.update({
+        status,
+        files,
+        checkedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      return {submissionId, status, files};
     },
 );
 
@@ -5566,20 +5922,22 @@ function maskOAuthState(state) {
   return state.length <= 8 ? "set" : `${state.slice(0, 4)}...${state.slice(-4)}`;
 }
 
-async function exchangeTaxAuthorityCodeForTokens(code) {
+async function exchangeTaxAuthorityCodeForTokens(code, {daily = false} = {}) {
   const params = new URLSearchParams();
   params.set("grant_type", "authorization_code");
   params.set("client_id", TAX_AUTH_CLIENT_ID.value());
   params.set("client_secret", TAX_AUTH_CLIENT_SECRET.value());
   params.set("code", code);
   params.set("redirect_uri", TAX_AUTH_REDIRECT_URI);
-  params.set("scope", TAX_AUTH_SCOPE);
+  params.set("scope", daily ? TAX_AUTH_UNIFORM_SCOPE : TAX_AUTH_SCOPE);
 
-  return await postTaxAuthorityTokenForm(params, "token exchange");
+  return await postTaxAuthorityTokenForm(params, "token exchange", {
+    urls: daily ? TAX_AUTH_SANDBOX_DAILY_TOKEN_URLS : null,
+  });
 }
 
-async function postTaxAuthorityTokenForm(params, operationName) {
-  const urls = [
+async function postTaxAuthorityTokenForm(params, operationName, options = {}) {
+  const urls = options.urls || [
     TAX_AUTH_SANDBOX_TOKEN_URL,
     TAX_AUTH_SANDBOX_TOKEN_FALLBACK_URL,
   ];
@@ -5680,6 +6038,172 @@ async function getTaxAuthorityTokenData(userId, businessId) {
 
 function taxAuthorityTokenRef(userId) {
   return admin.firestore().doc(taxAuthorityTokenDocumentPath(userId));
+}
+
+function uniformTaxAuthorityTokenRef(userId) {
+  return admin.firestore().doc(`taxAuthorityUniformOAuthTokens/${userId}`);
+}
+
+async function getUniformTaxAuthorityTokenData(userId, businessId) {
+  const tokenRef = uniformTaxAuthorityTokenRef(userId);
+  const tokenSnap = await tokenRef.get();
+  const tokenData = tokenSnap.data() || {};
+  if (!tokenSnap.exists ||
+      normalizeBusinessId(tokenData.businessId) !== businessId) {
+    throw new HttpsError(
+        "failed-precondition",
+        "Connect the Tax Authority uniform-file service before submitting.",
+    );
+  }
+  const accessToken = normalizeString(tokenData.access_token).trim();
+  const expiresAt = toDate(tokenData.expiresAt);
+  if (!accessToken || !expiresAt || expiresAt.getTime() <= Date.now()) {
+    await tokenRef.set({
+      connected: false,
+      disconnectedAt: admin.firestore.FieldValue.serverTimestamp(),
+      disconnectReason: !accessToken ? "access-token-missing" : "token-expired",
+    }, {merge: true});
+    throw new HttpsError(
+        "failed-precondition",
+        "The Tax Authority daily authorization expired. Connect again.",
+    );
+  }
+  return {accessToken, tokenData};
+}
+
+async function callTaxAuthorityUniformJson({
+  accessToken,
+  url,
+  body,
+  operationName,
+}) {
+  let response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "authorization": `Bearer ${accessToken}`,
+        "content-type": "application/json",
+        "accept": "application/json",
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(30000),
+    });
+  } catch (error) {
+    logger.error(`Tax Authority ${operationName} network failure`, {
+      message: normalizeString(error.message),
+      code: normalizeString(error.code || error.cause?.code),
+    });
+    throw new HttpsError(
+        "unavailable",
+        `Tax Authority ${operationName} is temporarily unavailable.`,
+    );
+  }
+  const payload = await parseJsonResponse(response);
+  if (!response.ok) {
+    logger.error(`Tax Authority ${operationName} failed`, {
+      status: response.status,
+      errorCode: payload?.error?.errorCode || payload?.errorCode || null,
+    });
+    throw taxAuthorityUniformError(
+        payload,
+        `Tax Authority ${operationName} failed.`,
+        response.status,
+    );
+  }
+  return payload;
+}
+
+function taxAuthorityUniformError(payload, fallback, authorityStatus = null) {
+  const message = normalizeString(
+      payload?.error?.message || payload?.message || fallback,
+  ).trim() || fallback;
+  return new HttpsError("failed-precondition", message.slice(0, 500), {
+    authorityStatus,
+    authorityErrorCode: payload?.error?.errorCode || payload?.errorCode || null,
+  });
+}
+
+async function uploadTaxAuthorityResumableFile(target, bytes) {
+  const headers = safeSignedUploadHeaders(target.headers);
+  const maximumBytes = maximumUploadBytes(headers);
+  if (maximumBytes != null && bytes.length > maximumBytes) {
+    throw new HttpsError(
+        "resource-exhausted",
+        `${target.fileName} exceeds the Tax Authority upload limit.`,
+    );
+  }
+  let initiation;
+  try {
+    initiation = await fetch(target.signUrl, {
+      method: "POST",
+      headers,
+      redirect: "manual",
+      signal: AbortSignal.timeout(30000),
+    });
+  } catch (error) {
+    throw new HttpsError(
+        "unavailable",
+        `Could not initiate upload for ${target.fileName}.`,
+    );
+  }
+  if (initiation.status !== 201) {
+    throw new HttpsError(
+        "failed-precondition",
+        `The upload service rejected ${target.fileName} (${initiation.status}).`,
+    );
+  }
+  const uploadUrl = checkedGoogleStorageUrl(initiation.headers.get("location"));
+  const chunkSize = 1024 * 1024;
+  for (let start = 0; start < bytes.length; start += chunkSize) {
+    const endExclusive = Math.min(start + chunkSize, bytes.length);
+    const chunk = bytes.subarray(start, endExclusive);
+    let response;
+    try {
+      response = await fetch(uploadUrl, {
+        method: "PUT",
+        headers: {
+          "content-type": "application/octet-stream",
+          "content-length": String(chunk.length),
+          "content-range": `bytes ${start}-${endExclusive - 1}/${bytes.length}`,
+        },
+        body: chunk,
+        redirect: "manual",
+        signal: AbortSignal.timeout(60000),
+      });
+    } catch (_) {
+      throw new HttpsError(
+          "unavailable",
+          `Upload failed for ${target.fileName}.`,
+      );
+    }
+    const isFinalChunk = endExclusive === bytes.length;
+    const validStatus = isFinalChunk ?
+      [200, 201].includes(response.status) : response.status === 308;
+    if (!validStatus) {
+      throw new HttpsError(
+          "failed-precondition",
+          `Upload failed for ${target.fileName} (${response.status}).`,
+      );
+    }
+  }
+}
+
+function checkedGoogleStorageUrl(value) {
+  let url;
+  try {
+    url = new URL(normalizeString(value).trim());
+  } catch (_) {
+    url = null;
+  }
+  if (!url || url.protocol !== "https:" ||
+      url.hostname !== "storage.googleapis.com") {
+    throw new HttpsError(
+        "failed-precondition",
+        "The upload service returned an invalid destination.",
+    );
+  }
+  return url.toString();
 }
 
 async function callTaxAuthorityMultiApproval({accessToken, payload}) {

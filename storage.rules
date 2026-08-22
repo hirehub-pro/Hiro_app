@@ -30,12 +30,20 @@ service firebase.storage {
       allow delete: if isOwner(userId) && isClientGeneratedInvoice(fileName);
     }
 
+    match /users/{userId}/uniform_exports/{allPaths=**} {
+      allow read, write: if isOwner(userId);
+    }
+
     // Preserve the current behavior of unrelated Storage features. These
     // paths should be tightened separately once their ownership model is
     // inventoried; this fallback deliberately excludes all invoice objects.
     match /{topLevel}/{allPaths=**} {
-      allow read: if topLevel != 'invoices';
-      allow write: if topLevel != 'invoices' && isAuthenticated();
+      allow read: if topLevel != 'invoices' &&
+        !(topLevel == 'users' &&
+          allPaths.matches('^[^/]+/uniform_exports/.*$'));
+      allow write: if topLevel != 'invoices' && isAuthenticated() &&
+        !(topLevel == 'users' &&
+          allPaths.matches('^[^/]+/uniform_exports/.*$'));
     }
   }
 }

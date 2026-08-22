@@ -960,6 +960,11 @@ service cloud.firestore {
         allow read, write: if false;
       }
 
+      match /uniformTaxSubmissions/{submissionId} {
+        allow read: if isOwner(userId);
+        allow write: if false;
+      }
+
       match /invoiceBuilderVerifications/{document=**} {
         allow read, write: if false;
       }
@@ -1234,6 +1239,9 @@ service cloud.firestore {
       allow read, write: if false;
     }
     match /taxAuthorityOAuthTokens/{document=**} {
+      allow read, write: if false;
+    }
+    match /taxAuthorityUniformOAuthTokens/{document=**} {
       allow read, write: if false;
     }
     match /subscriptionNotificationEvents/{document=**} {

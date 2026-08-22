@@ -15,6 +15,7 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_storage/firebase_storage.dart' as firebase_storage;
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:pdf/pdf.dart' as pdf;
 import 'package:pdf/widgets.dart' as pw;
 import 'package:untitled1/services/auth_service.dart';
@@ -383,6 +384,70 @@ class _SettingsPageState extends State<SettingsPage>
     final month = date.month.toString().padLeft(2, '0');
     final day = date.day.toString().padLeft(2, '0');
     return '${date.year}$month$day';
+  }
+
+  String _formatTaxAuthorityDate(DateTime date) {
+    final month = date.month.toString().padLeft(2, '0');
+    final day = date.day.toString().padLeft(2, '0');
+    return '${date.year}-$month-$day';
+  }
+
+  Future<bool> _ensureUniformTaxAuthorityConnection() async {
+    final functions = FirebaseFunctions.instanceFor(region: 'me-west1');
+    try {
+      final status = await functions
+          .httpsCallable('getUniformTaxAuthorityConnectionStatus')
+          .call<Map<String, dynamic>>();
+      if (status.data['connected'] == true) return true;
+
+      final authorization = await functions
+          .httpsCallable('createUniformTaxAuthorityAuthorizationUrl')
+          .call<Map<String, dynamic>>();
+      final uri = Uri.tryParse(
+        authorization.data['authorizationUrl']?.toString() ?? '',
+      );
+      if (uri == null || uri.scheme != 'https' || uri.host.isEmpty) {
+        throw StateError('The Tax Authority returned an invalid login link.');
+      }
+      var launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!launched) {
+        launched = await launchUrl(uri, mode: LaunchMode.platformDefault);
+      }
+      if (!launched) {
+        throw StateError('Could not open the Tax Authority login.');
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Complete the Tax Authority authorization, then tap Export again.',
+            ),
+          ),
+        );
+      }
+      return false;
+    } on FirebaseFunctionsException catch (error) {
+      throw StateError(error.message ?? 'Tax Authority connection failed.');
+    }
+  }
+
+  Future<Map<String, dynamic>> _waitForUniformTaxAuthorityStatus(
+    String submissionId,
+  ) async {
+    final callable = FirebaseFunctions.instanceFor(
+      region: 'me-west1',
+    ).httpsCallable('getUniformTaxAuthoritySubmissionStatus');
+    Map<String, dynamic> latest = {'status': 'processing'};
+    for (var attempt = 0; attempt < 8; attempt++) {
+      await Future<void>.delayed(const Duration(seconds: 2));
+      final response = await callable.call<Map<String, dynamic>>({
+        'submissionId': submissionId,
+      });
+      latest = response.data;
+      final status = latest['status']?.toString();
+      if (status == 'approved' || status == 'rejected') break;
+    }
+    return latest;
   }
 
   Future<DateTimeRange?> _pickExportDateRange() async {
@@ -1146,19 +1211,22 @@ class _SettingsPageState extends State<SettingsPage>
   Future<void> _generateWorkerUniformFiles() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null || _isGeneratingUniformFiles) return;
+    setState(() => _isGeneratingUniformFiles = true);
 
     ValueNotifier<_UniformExportProgress>? exportProgress;
     BuildContext? progressDialogContext;
     Future<void>? progressDialogFuture;
 
     try {
+      final isConnected = await _ensureUniformTaxAuthorityConnection();
+      if (!isConnected || !mounted) return;
+
       final recipientEmail = await _promptExportEmail();
       if (recipientEmail == null || !mounted) return;
 
       final selectedRange = await _pickExportDateRange();
       if (selectedRange == null || !mounted) return;
 
-      setState(() => _isGeneratingUniformFiles = true);
       exportProgress = ValueNotifier(
         const _UniformExportProgress(
           value: 0.04,
@@ -1242,6 +1310,17 @@ class _SettingsPageState extends State<SettingsPage>
         stamp: stamp,
       );
       final exportFiles = <File>[openFrmtZip, printedSummaryFile, annex4File];
+      final authorityFiles = <File>[
+        for (final package in result.packages) ...[
+          package.iniFile,
+          package.bkmvFile,
+        ],
+      ];
+      if (authorityFiles.length != 2) {
+        throw StateError(
+          'Exactly one INI.txt and one BKMVDATA.txt file are required.',
+        );
+      }
       final exportFolder =
           'users/${user.uid}/uniform_exports/$stamp-${DateTime.now().microsecondsSinceEpoch}';
       final storage = firebase_storage.FirebaseStorage.instance;
@@ -1250,7 +1329,7 @@ class _SettingsPageState extends State<SettingsPage>
         status: 'Uploading files securely…',
       );
       final uploadedPaths = await _uploadUniformExportFiles(
-        files: exportFiles,
+        files: [...exportFiles, ...authorityFiles],
         storage: storage,
         exportFolder: exportFolder,
         progress: exportProgress,
@@ -1265,13 +1344,64 @@ class _SettingsPageState extends State<SettingsPage>
       }
       exportProgress.value = const _UniformExportProgress(
         value: 0.93,
-        status: 'Sending the files to your email…',
+        status: 'Testing delivery to the Tax Authority sandbox…',
+      );
+      final authorityResponse =
+          await FirebaseFunctions.instanceFor(region: 'me-west1')
+              .httpsCallable('submitUniformFilesToTaxAuthority')
+              .call<Map<String, dynamic>>({
+                'fromDate': _formatTaxAuthorityDate(selectedRange.start),
+                'toDate': _formatTaxAuthorityDate(selectedRange.end),
+                'filePaths': uploadedPaths.skip(exportFiles.length).toList(),
+                'sandboxFilePaths': uploadedPaths.skip(1).take(2).toList(),
+              });
+      final submissionId = authorityResponse.data['submissionId']?.toString();
+      if (submissionId == null || submissionId.isEmpty) {
+        throw StateError('The Tax Authority submission ID is missing.');
+      }
+      exportProgress.value = const _UniformExportProgress(
+        value: 0.96,
+        status: 'Checking the Tax Authority response…',
+      );
+      final authorityStatus = await _waitForUniformTaxAuthorityStatus(
+        submissionId,
+      );
+      final authorityState =
+          authorityStatus['status']?.toString() ?? 'processing';
+      if (authorityState == 'rejected') {
+        final files = authorityStatus['files'];
+        String? reason;
+        if (files is List) {
+          for (final entry in files) {
+            if (entry is Map) {
+              final errorMessage = entry['errorMessage']?.toString().trim();
+              final description = entry['description']?.toString().trim();
+              final candidate = errorMessage != null && errorMessage.isNotEmpty
+                  ? errorMessage
+                  : description;
+              if (candidate != null && candidate.isNotEmpty) {
+                reason = candidate;
+                break;
+              }
+            }
+          }
+        }
+        throw StateError(
+          reason == null
+              ? 'The Tax Authority rejected the uniform files.'
+              : 'The Tax Authority rejected the files: $reason',
+        );
+      }
+
+      exportProgress.value = const _UniformExportProgress(
+        value: 0.98,
+        status: 'Sending your backup copy by email…',
       );
       await FirebaseFunctions.instanceFor(
         region: 'us-central1',
       ).httpsCallable('sendUniformFilesEmail').call(<String, dynamic>{
         'recipientEmail': recipientEmail,
-        'filePaths': uploadedPaths,
+        'filePaths': uploadedPaths.take(exportFiles.length).toList(),
       });
 
       exportProgress.value = const _UniformExportProgress(
@@ -1283,13 +1413,26 @@ class _SettingsPageState extends State<SettingsPage>
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('קובץ במבנה אחיד נשלח בהצלחה ל "$recipientEmail"'),
+          content: Text(
+            authorityState == 'approved'
+                ? 'בדיקת השידור בסביבת הניסוי אושרה. עותק נשלח ל "$recipientEmail"'
+                : 'בדיקת השידור התקבלה בסביבת הניסוי ומעובדת. עותק נשלח ל "$recipientEmail"',
+          ),
+        ),
+      );
+    } on FirebaseFunctionsException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.message ?? 'שליחת הקבצים לרשות המסים נכשלה.'),
+          backgroundColor: Colors.red,
         ),
       );
     } catch (e) {
       if (!mounted) return;
+      final message = e.toString().replaceFirst(RegExp(r'^[^:]+:\s*'), '');
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        SnackBar(content: Text(message), backgroundColor: Colors.red),
       );
     } finally {
       final dialogContext = progressDialogContext;

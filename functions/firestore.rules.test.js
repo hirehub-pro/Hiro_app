@@ -550,9 +550,27 @@ test("keeps OAuth and verification secrets inaccessible to clients", {
   const db = testEnv.authenticatedContext(uid).firestore();
   await assertFails(getDoc(doc(db, `users/${uid}/tax_authority/oauth`)));
   await assertFails(getDoc(doc(db, `taxAuthorityOAuthTokens/${uid}`)));
+  await assertFails(getDoc(doc(db, `taxAuthorityUniformOAuthTokens/${uid}`)));
   await assertFails(setDoc(doc(db, `users/${uid}/invoiceBuilderVerifications/emailCode`), {
     codeHash: "fake",
   }));
+});
+
+test("allows owners to read but not forge uniform submission status", {
+  skip: !emulatorAvailable,
+}, async () => {
+  const uid = "uniform-owner-id-000001";
+  const otherUid = "uniform-other-id-000001";
+  const pathValue = `users/${uid}/uniformTaxSubmissions/submission-1`;
+  await seed(pathValue, {
+    status: "approved",
+    authorityUniqueId: "123456789012345678901",
+  });
+  const ownerDb = testEnv.authenticatedContext(uid).firestore();
+  const otherDb = testEnv.authenticatedContext(otherUid).firestore();
+  await assertSucceeds(getDoc(doc(ownerDb, pathValue)));
+  await assertFails(getDoc(doc(otherDb, pathValue)));
+  await assertFails(setDoc(doc(ownerDb, pathValue), {status: "approved"}));
 });
 
 test("enforces invoice-builder lock ownership and expiry", {

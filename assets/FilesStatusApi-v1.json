@@ -1,0 +1,155 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "FilesStatusApi",
+    "version": "v1",
+    "x-ibm-name": "filesstatusapi"
+  },
+  "host": "t-ita-api.taxes.gov.il",
+  "basePath": "/shaam/tsandbox/FilesStatusApi",
+  "schemes": [
+    "https"
+  ],
+  "paths": {
+    "/v1/Files/get-file-status": {
+      "post": {
+        "tags": [
+          "FilesEndpoint"
+        ],
+        "operationId": "GetFileStatusByLogIdAsync",
+        "consumes": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/FileStatusRequest"
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/health": {
+      "get": {
+        "tags": [
+          "HealthChecks"
+        ],
+        "summary": "Health Check",
+        "description": "Checks the health of the application",
+        "responses": {
+          "200": {
+            "description": "Healthy"
+          },
+          "503": {
+            "description": "Unhealthy"
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "FileStatusRequest": {
+      "required": [
+        "fileName"
+      ],
+      "type": "object",
+      "properties": {
+        "fileName": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9\\-]+\\.[a-zA-Z0-9]{1,5}$",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "x-ibm-configuration": {
+    "cors": {
+      "enabled": true
+    },
+    "phase": "realized",
+    "enforced": true,
+    "type": "rest",
+    "testable": true,
+    "servers": [
+      {
+        "url": "https://t-ita-api.taxes.gov.il/shaam/tsandbox/FilesStatusApi",
+        "description": "",
+        "type": [
+          "production",
+          "development"
+        ]
+      },
+      {
+        "url": "https://openapi.taxes.gov.il/shaam/tsandbox/FilesStatusApi",
+        "description": "",
+        "type": [
+          "production",
+          "development"
+        ]
+      },
+      {
+        "url": "https://t-ita-api.taxes.gov.il/shaam/tsandbox/FilesStatusApi",
+        "description": "",
+        "type": [
+          "production",
+          "development"
+        ]
+      },
+      {
+        "url": "https://ita-api.taxes.gov.il/shaam/tsandbox/FilesStatusApi",
+        "description": "",
+        "type": [
+          "production",
+          "development"
+        ]
+      }
+    ],
+    "oauth-servers": {
+      "dailytoken": {
+        "tokenUrls": [
+          "https://t-ita-api.taxes.gov.il/shaam/tsandbox/dailytoken/oauth2/token",
+          "https://openapi.taxes.gov.il/shaam/tsandbox/dailytoken/oauth2/token",
+          "https://ita-api.taxes.gov.il/shaam/tsandbox/dailytoken/oauth2/token"
+        ],
+        "authorizationUrls": [
+          "https://openapi.taxes.gov.il/shaam/tsandbox/dailytoken/oauth2/authorize"
+        ],
+        "refreshUrls": []
+      }
+    }
+  },
+  "securityDefinitions": {
+    "dailytoken": {
+      "type": "oauth2",
+      "x-ibm-oauth-provider": "dailytoken",
+      "flow": "accessCode",
+      "authorizationUrl": "https://openapi.taxes.gov.il/shaam/tsandbox/dailytoken/oauth2/authorize",
+      "tokenUrl": "/dailytoken/oauth2/token",
+      "scopes": {
+        "scope": "scope",
+        "UniStructFileUploadLinks_scope": "this is scope for UniStructFileUploadLinks_scope",
+        "FilesStatus_scope": "this is scope for FilesStatusApi"
+      }
+    }
+  },
+  "security": [
+    {
+      "dailytoken": [
+        "FilesStatus_scope"
+      ]
+    }
+  ]
+}
