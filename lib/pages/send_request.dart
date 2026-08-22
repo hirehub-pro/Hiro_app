@@ -1098,8 +1098,8 @@ class _SendRequestPageState extends State<SendRequestPage> {
           'longitude': _selectedLocation!.longitude,
         },
         if (!widget.isQuoteRequest) 'date': dStr,
-        if (fStr != null) 'requestedFrom': fStr,
-        if (tStr != null) 'requestedTo': tStr,
+        'requestedFrom': ?fStr,
+        'requestedTo': ?tStr,
         if (locationName != null && locationName.isNotEmpty)
           'locationName': locationName,
         'serviceLocationType': serviceLocationType,
@@ -1889,7 +1889,7 @@ class _SendRequestPageState extends State<SendRequestPage> {
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             itemCount: _images.length + 1,
-            separatorBuilder: (_, __) => const SizedBox(width: 10),
+            separatorBuilder: (_, _) => const SizedBox(width: 10),
             itemBuilder: (context, index) {
               if (index == _images.length) {
                 return Material(

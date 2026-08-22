@@ -549,7 +549,7 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
       }
     } catch (e) {
       debugPrint("FIRESTORE ERROR: $e");
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
@@ -557,6 +557,7 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
             ),
           ),
         );
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -613,7 +614,7 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
                       child: Center(child: CircularProgressIndicator()),
                     );
                   },
-                  errorBuilder: (_, __, ___) => Container(
+                  errorBuilder: (_, _, _) => Container(
                     height: 280,
                     color: const Color(0xFFF1F5F9),
                     alignment: Alignment.center,
@@ -1077,7 +1078,7 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             itemCount: imageUrls.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 10),
+            separatorBuilder: (_, _) => const SizedBox(width: 10),
             itemBuilder: (context, index) {
               final imageUrl = imageUrls[index];
               return Material(
@@ -1106,7 +1107,7 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
                           ),
                         );
                       },
-                      errorBuilder: (_, __, ___) => Container(
+                      errorBuilder: (_, _, _) => Container(
                         width: 92,
                         height: 92,
                         color: const Color(0xFFF1F5F9),

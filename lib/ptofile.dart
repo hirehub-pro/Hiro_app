@@ -2778,7 +2778,7 @@ class _ProfileState extends State<Profile>
                 ],
               ),
             );
-          }).toList(),
+          }),
       ],
     );
   }
@@ -5153,9 +5153,9 @@ class _SliverAppBarDelegate extends SliverPersistentHeaderDelegate {
 }
 
 class _BouncingArrow extends StatefulWidget {
-  final Color color;
+  final Color color = const Color(0xFF0EA5E9);
   final double size;
-  const _BouncingArrow({this.color = const Color(0xFF0EA5E9), this.size = 36});
+  const _BouncingArrow({this.size = 36});
 
   @override
   State<_BouncingArrow> createState() => _BouncingArrowState();

@@ -198,21 +198,21 @@ class _AdminAnalyticsPageState extends State<AdminAnalyticsPage> {
             ? _isAnnouncementActive(data)
             : false;
       }).length;
-      final recentBroadcasts = announcementsSnap.docs
-          .map((doc) => {'id': doc.id, ...doc.data()})
-          .toList()
-        ..sort((a, b) {
-          final aTs = a['timestamp'] as Timestamp?;
-          final bTs = b['timestamp'] as Timestamp?;
-          if (aTs == null && bTs == null) return 0;
-          if (aTs == null) return 1;
-          if (bTs == null) return -1;
-          return bTs.compareTo(aTs);
-        });
+      final recentBroadcasts =
+          announcementsSnap.docs
+              .map((doc) => {'id': doc.id, ...doc.data()})
+              .toList()
+            ..sort((a, b) {
+              final aTs = a['timestamp'] as Timestamp?;
+              final bTs = b['timestamp'] as Timestamp?;
+              if (aTs == null && bTs == null) return 0;
+              if (aTs == null) return 1;
+              if (bTs == null) return -1;
+              return bTs.compareTo(aTs);
+            });
 
       final systemData = systemDoc.data() ?? <String, dynamic>{};
-      final invoiceCountsData =
-          invoiceCountsDoc.data() ?? <String, dynamic>{};
+      final invoiceCountsData = invoiceCountsDoc.data() ?? <String, dynamic>{};
 
       if (!mounted) return;
       setState(() {
@@ -239,7 +239,8 @@ class _AdminAnalyticsPageState extends State<AdminAnalyticsPage> {
             .map(
               (doc) => {
                 'name': doc.id,
-                'searchCount': (doc.data()['searchCount'] as num?)?.toInt() ?? 0,
+                'searchCount':
+                    (doc.data()['searchCount'] as num?)?.toInt() ?? 0,
               },
             )
             .toList();
@@ -642,7 +643,9 @@ class _AdminAnalyticsPageState extends State<AdminAnalyticsPage> {
                         : Column(
                             children: _topProfessions.map((item) {
                               return Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 8),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 8,
+                                ),
                                 child: Row(
                                   children: [
                                     Expanded(
@@ -698,7 +701,9 @@ class _AdminAnalyticsPageState extends State<AdminAnalyticsPage> {
                                   : const Color(0xFF64748B);
 
                               return Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 8),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 8,
+                                ),
                                 child: Row(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [

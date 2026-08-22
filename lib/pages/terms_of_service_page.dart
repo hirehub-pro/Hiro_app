@@ -39,7 +39,8 @@ class _TermsOfServicePageState extends State<TermsOfServicePage> {
 
   @override
   Widget build(BuildContext context) {
-    final isHe = Provider.of<LanguageProvider>(context).locale.languageCode == 'he';
+    final isHe =
+        Provider.of<LanguageProvider>(context).locale.languageCode == 'he';
     return Directionality(
       textDirection: isHe ? TextDirection.rtl : TextDirection.ltr,
       child: Scaffold(
@@ -51,10 +52,7 @@ class _TermsOfServicePageState extends State<TermsOfServicePage> {
         body: Stack(
           children: [
             WebViewWidget(controller: _controller),
-            if (_isLoading)
-              const Center(
-                child: CircularProgressIndicator(),
-              ),
+            if (_isLoading) const Center(child: CircularProgressIndicator()),
           ],
         ),
       ),

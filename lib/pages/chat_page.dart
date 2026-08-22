@@ -606,8 +606,8 @@ class _ChatPageState extends State<ChatPage> {
       'type': type,
       if (url != null && url.isNotEmpty) 'url': url,
       if (fileName != null && fileName.isNotEmpty) 'fileName': fileName,
-      if (durationSeconds != null) 'durationSeconds': durationSeconds,
-      if (mediaItems != null) 'mediaItems': mediaItems,
+      'durationSeconds': ?durationSeconds,
+      'mediaItems': ?mediaItems,
       'timestamp': FieldValue.serverTimestamp(),
     };
 
@@ -1693,7 +1693,7 @@ class _ChatPageState extends State<ChatPage> {
                         width: _mediaPreviewWidth.toDouble(),
                         child: const Center(child: CircularProgressIndicator()),
                       ),
-                      errorWidget: (context, _, __) => SizedBox(
+                      errorWidget: (context, _, _) => SizedBox(
                         height: _mediaPreviewHeight.toDouble(),
                         width: _mediaPreviewWidth.toDouble(),
                         child: const Icon(Icons.error),
@@ -1716,7 +1716,7 @@ class _ChatPageState extends State<ChatPage> {
                     width: _mediaPreviewWidth.toDouble(),
                     child: const Center(child: CircularProgressIndicator()),
                   ),
-                  errorWidget: (context, _, __) => SizedBox(
+                  errorWidget: (context, _, _) => SizedBox(
                     height: _mediaPreviewHeight.toDouble(),
                     width: _mediaPreviewWidth.toDouble(),
                     child: const Icon(Icons.error),
@@ -1863,7 +1863,7 @@ class _ChatPageState extends State<ChatPage> {
                 color: Color(0xFFE2E8F0),
                 child: Center(child: CircularProgressIndicator()),
               ),
-              errorWidget: (context, _, __) => const ColoredBox(
+              errorWidget: (context, _, _) => const ColoredBox(
                 color: Color(0xFFE2E8F0),
                 child: Icon(Icons.error_outline_rounded),
               ),
@@ -1907,7 +1907,7 @@ class _ChatPageState extends State<ChatPage> {
                 size: 18,
               ),
             ),
-          if (overlay != null) overlay,
+          ?overlay,
         ],
       ),
     );
@@ -4043,7 +4043,7 @@ class _MediaGroupViewerState extends State<_MediaGroupViewer> {
                     maxWidthDiskCache: 1440,
                     placeholder: (context, _) =>
                         const Center(child: CircularProgressIndicator()),
-                    errorWidget: (context, _, __) => const Icon(
+                    errorWidget: (context, _, _) => const Icon(
                       Icons.error_outline_rounded,
                       color: Colors.white,
                       size: 42,

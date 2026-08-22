@@ -173,7 +173,7 @@ class NotificationService {
     try {
       final token = await _messaging.getToken();
       if (token == null || token.isEmpty) return;
-         
+
       final userRef = FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid);

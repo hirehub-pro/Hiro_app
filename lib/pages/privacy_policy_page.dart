@@ -19,8 +19,9 @@ class _PrivacyPolicyPageState extends State<PrivacyPolicyPage> {
   void initState() {
     super.initState();
     // Cache-busting URL to ensure the app fetches the latest version from the server
-    final cacheBusterUrl = "${AppConstants.privacyPolicyUrl}?v=${DateTime.now().millisecondsSinceEpoch}";
-    
+    final cacheBusterUrl =
+        "${AppConstants.privacyPolicyUrl}?v=${DateTime.now().millisecondsSinceEpoch}";
+
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setNavigationDelegate(
@@ -43,7 +44,8 @@ class _PrivacyPolicyPageState extends State<PrivacyPolicyPage> {
 
   @override
   Widget build(BuildContext context) {
-    final isHe = Provider.of<LanguageProvider>(context).locale.languageCode == 'he';
+    final isHe =
+        Provider.of<LanguageProvider>(context).locale.languageCode == 'he';
     return Directionality(
       textDirection: isHe ? TextDirection.rtl : TextDirection.ltr,
       child: Scaffold(
@@ -55,10 +57,7 @@ class _PrivacyPolicyPageState extends State<PrivacyPolicyPage> {
         body: Stack(
           children: [
             WebViewWidget(controller: _controller),
-            if (_isLoading)
-              const Center(
-                child: CircularProgressIndicator(),
-              ),
+            if (_isLoading) const Center(child: CircularProgressIndicator()),
           ],
         ),
       ),

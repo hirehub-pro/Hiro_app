@@ -1911,7 +1911,7 @@ class _BlogPageState extends State<BlogPage> {
           final place = placemarks.first;
           final parts =
               [place.locality, place.subLocality, place.administrativeArea]
-                  .where((part) => part != null && part!.trim().isNotEmpty)
+                  .where((part) => part != null && part.trim().isNotEmpty)
                   .cast<String>()
                   .toList();
           locationController.text = parts.isNotEmpty
@@ -2609,8 +2609,9 @@ class _BlogPageState extends State<BlogPage> {
                           setSheetState(() => isUploading = true);
                           try {
                             final user = FirebaseAuth.instance.currentUser;
-                            if (user == null)
+                            if (user == null) {
                               throw Exception(strings['user_not_signed_in']);
+                            }
 
                             String authorName =
                                 user.displayName ?? strings['user_fallback'];
@@ -2749,7 +2750,7 @@ class _BlogPageState extends State<BlogPage> {
                             }
                             if (mounted) Navigator.pop(context);
                           } catch (e) {
-                            if (mounted)
+                            if (mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
                                   content: Text(
@@ -2757,9 +2758,11 @@ class _BlogPageState extends State<BlogPage> {
                                   ),
                                 ),
                               );
+                            }
                           } finally {
-                            if (mounted)
+                            if (mounted) {
                               setSheetState(() => isUploading = false);
+                            }
                           }
                         },
                   style: ElevatedButton.styleFrom(
@@ -3501,9 +3504,9 @@ class _BlogCard extends StatelessWidget {
     final likedByData = post['likedBy'];
     bool isLiked = false;
     if (user != null && likedByData != null) {
-      if (likedByData is Map)
+      if (likedByData is Map) {
         isLiked = likedByData.containsKey(user.uid);
-      else if (likedByData is List)
+      } else if (likedByData is List)
         isLiked = likedByData.contains(user.uid);
     }
 

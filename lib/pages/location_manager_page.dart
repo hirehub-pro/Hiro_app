@@ -814,7 +814,7 @@ class _LocationManagerPageState extends State<LocationManagerPage> {
                 ],
               ),
             ),
-            if (trailing != null) trailing,
+            ?trailing,
             Radio<bool>(
               value: true,
               groupValue: isActive,

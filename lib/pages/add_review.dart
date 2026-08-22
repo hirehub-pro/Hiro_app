@@ -337,7 +337,7 @@ class _AddReviewPageState extends State<AddReviewPage> {
                 ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
-                  value: _selectedProfession,
+                  initialValue: _selectedProfession,
                   items: widget.professions
                       .map((p) => DropdownMenuItem(value: p, child: Text(p)))
                       .toList(),

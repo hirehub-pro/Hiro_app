@@ -1672,10 +1672,12 @@ class _SchedulePageState extends State<SchedulePage> {
                       calendarBuilders: CalendarBuilders(
                         defaultBuilder: (context, day, focusedDay) {
                           final dStr = "${day.year}-${day.month}-${day.day}";
-                          if (_isVacation(day))
+                          if (_isVacation(day)) {
                             return _dayCircle(day, Colors.red);
-                          if (_availableDates.contains(dStr))
+                          }
+                          if (_availableDates.contains(dStr)) {
                             return _dayCircle(day, Colors.green);
+                          }
                           if (_isPermanentlyDisabled(day)) {
                             return _dayCircle(
                               day,
@@ -2034,7 +2036,7 @@ class _SchedulePageState extends State<SchedulePage> {
   }
 
   Widget _buildRemindersList(Map<String, String> strings) {
-    if (_reminders.isEmpty)
+    if (_reminders.isEmpty) {
       return Padding(
         padding: const EdgeInsets.all(20),
         child: Text(
@@ -2042,6 +2044,7 @@ class _SchedulePageState extends State<SchedulePage> {
           style: const TextStyle(color: Colors.grey),
         ),
       );
+    }
     return Column(
       children: _reminders
           .map(
@@ -2104,8 +2107,9 @@ class _SchedulePageState extends State<SchedulePage> {
     bool isVac,
     bool isPast,
   ) {
-    if (_hideScheduleFromOthers)
+    if (_hideScheduleFromOthers) {
       return _emptyState(Icons.lock_outline, strings['hidden_msg']!);
+    }
     final dateStr =
         "${_selectedDay.year}-${_selectedDay.month}-${_selectedDay.day}";
 

@@ -422,7 +422,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
                   : ListView.separated(
                       padding: const EdgeInsets.all(16),
                       itemCount: filtered.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 12),
+                      separatorBuilder: (_, _) => const SizedBox(height: 12),
                       itemBuilder: (context, index) {
                         final data = filtered[index];
                         final canDismiss = data['isBroadcast'] != true;

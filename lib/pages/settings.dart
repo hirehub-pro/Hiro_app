@@ -2228,8 +2228,12 @@ class _SettingsPageState extends State<SettingsPage>
                             height: 32,
                             decoration: BoxDecoration(
                               color: isOff
-                                  ? CupertinoColors.systemRed.withOpacity(0.1)
-                                  : CupertinoColors.systemBlue.withOpacity(0.1),
+                                  ? CupertinoColors.systemRed.withValues(
+                                      alpha: 0.1,
+                                    )
+                                  : CupertinoColors.systemBlue.withValues(
+                                      alpha: 0.1,
+                                    ),
                               shape: BoxShape.circle,
                               border: Border.all(
                                 color: isOff

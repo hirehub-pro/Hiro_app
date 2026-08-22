@@ -143,7 +143,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: imageUrls.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 10),
+        separatorBuilder: (_, _) => const SizedBox(width: 10),
         itemBuilder: (context, index) => ClipRRect(
           borderRadius: borderRadius ?? BorderRadius.circular(18),
           child: CachedNetworkImage(
@@ -4523,7 +4523,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               itemCount: items.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 12),
+              separatorBuilder: (_, _) => const SizedBox(width: 12),
               itemBuilder: (context, index) {
                 final item = items[index];
                 final color = item['color'] as Color;
@@ -4900,7 +4900,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               itemCount: items.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 12),
+              separatorBuilder: (_, _) => const SizedBox(width: 12),
               itemBuilder: (context, index) {
                 final item = items[index];
                 final color = item['color'] as Color;
@@ -5437,7 +5437,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               itemCount: items.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 12),
+              separatorBuilder: (_, _) => const SizedBox(width: 12),
               itemBuilder: (context, index) {
                 final item = items[index];
                 final color = item['color'] as Color;
@@ -5676,7 +5676,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                   child: ListView.separated(
                     shrinkWrap: true,
                     itemCount: options.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 12),
+                    separatorBuilder: (_, _) => const SizedBox(height: 12),
                     itemBuilder: (context, index) {
                       final option = options[index];
 

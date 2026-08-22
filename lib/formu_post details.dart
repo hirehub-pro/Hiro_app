@@ -225,7 +225,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
                   ? initialDescription
                   : (widget.localizedStrings['bid_price'] ?? 'Quote'),
               'quantity': 1,
-              if (initialPrice != null) 'price': initialPrice,
+              'price': ?initialPrice,
             },
           ];
 
@@ -326,24 +326,38 @@ class _PostDetailPageState extends State<PostDetailPage> {
         : null;
 
     if (text.isEmpty && (!isWorkerBid || bidPrice.isEmpty)) return;
+    final bidAmount = isWorkerBid ? _bidAmountFromValue(bidPrice) : null;
+    if (isWorkerBid && bidAmount == null) return;
 
     setState(() => _isSubmittingComment = true);
-    final commentData = {
+    final commentData = <String, dynamic>{
       'text': text,
       'authorName': user.displayName ?? widget.localizedStrings['anonymous'],
       'authorUid': user.uid,
-      'authorRole': _currentUserRole,
-      'bidPrice': isWorkerBid ? bidPrice : null,
       'isBid': isWorkerBid && bidPrice.isNotEmpty,
-      'quoteUrl': isWorkerBid ? _pendingBidQuoteUrl : null,
-      'quoteFileName': isWorkerBid ? _pendingBidQuoteFileName : null,
-      'quoteDocType': isWorkerBid ? _pendingBidQuoteDocType : null,
-      'quoteDocumentNumber': isWorkerBid
-          ? _pendingBidQuoteDocumentNumber
-          : null,
-      'quoteItems': isWorkerBid ? _pendingBidQuoteItems : null,
       'timestamp': FieldValue.serverTimestamp(),
     };
+    if (_currentUserRole != null) {
+      commentData['authorRole'] = _currentUserRole;
+    }
+    if (isWorkerBid) {
+      commentData['bidPrice'] = bidAmount;
+      if (_pendingBidQuoteUrl != null) {
+        commentData['quoteUrl'] = _pendingBidQuoteUrl;
+      }
+      if (_pendingBidQuoteFileName != null) {
+        commentData['quoteFileName'] = _pendingBidQuoteFileName;
+      }
+      if (_pendingBidQuoteDocType != null) {
+        commentData['quoteDocType'] = _pendingBidQuoteDocType;
+      }
+      if (_pendingBidQuoteDocumentNumber != null) {
+        commentData['quoteDocumentNumber'] = _pendingBidQuoteDocumentNumber;
+      }
+      if (_pendingBidQuoteItems.isNotEmpty) {
+        commentData['quoteItems'] = _pendingBidQuoteItems;
+      }
+    }
     try {
       final commentsRef = _firestore
           .collection('blog_posts')

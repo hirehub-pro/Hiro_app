@@ -396,7 +396,7 @@ class _MyRequestDetailsPageState extends State<MyRequestDetailsPage> {
                       child: Center(child: CircularProgressIndicator()),
                     );
                   },
-                  errorBuilder: (_, __, ___) => Container(
+                  errorBuilder: (_, _, _) => Container(
                     height: 280,
                     color: const Color(0xFFF1F5F9),
                     alignment: Alignment.center,
@@ -641,8 +641,7 @@ class _MyRequestDetailsPageState extends State<MyRequestDetailsPage> {
                         child: ListView.separated(
                           scrollDirection: Axis.horizontal,
                           itemCount: imageUrls.length,
-                          separatorBuilder: (_, __) =>
-                              const SizedBox(width: 10),
+                          separatorBuilder: (_, _) => const SizedBox(width: 10),
                           itemBuilder: (context, index) {
                             final imageUrl = imageUrls[index];
                             return Material(
@@ -657,7 +656,7 @@ class _MyRequestDetailsPageState extends State<MyRequestDetailsPage> {
                                     width: 92,
                                     height: 92,
                                     fit: BoxFit.cover,
-                                    errorBuilder: (_, __, ___) => Container(
+                                    errorBuilder: (_, _, _) => Container(
                                       width: 92,
                                       height: 92,
                                       color: const Color(0xFFF1F5F9),

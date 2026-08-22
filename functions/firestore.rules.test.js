@@ -774,6 +774,47 @@ test("validates community author identity and content size", {
     likes: 99,
     likedBy: {[likerUid]: true},
   }));
+
+  const commentRef = doc(db, "blog_posts/post-1/blog_comments/comment-1");
+  await assertSucceeds(setDoc(commentRef, {
+    authorUid: uid,
+    authorName: "Author",
+    text: "A valid comment",
+    isBid: false,
+    timestamp: serverTimestamp(),
+  }));
+  await assertSucceeds(updateDoc(commentRef, {
+    text: "An edited comment",
+    updatedAt: serverTimestamp(),
+  }));
+  await assertFails(setDoc(
+      doc(db, "blog_posts/post-1/blog_comments/null-fields"),
+      {
+        authorUid: uid,
+        text: "Invalid null bid",
+        bidPrice: null,
+        timestamp: serverTimestamp(),
+      },
+  ));
+  await assertFails(setDoc(
+      doc(db, "blog_posts/post-1/blog_comments/string-bid"),
+      {
+        authorUid: uid,
+        text: "Invalid string bid",
+        bidPrice: "250",
+        timestamp: serverTimestamp(),
+      },
+  ));
+  await assertSucceeds(setDoc(
+      doc(db, "blog_posts/post-1/blog_comments/numeric-bid"),
+      {
+        authorUid: uid,
+        text: "Valid numeric bid",
+        bidPrice: 250,
+        isBid: true,
+        timestamp: serverTimestamp(),
+      },
+  ));
 });
 
 test("permits custom-claim admins without trusting a user role field", {
