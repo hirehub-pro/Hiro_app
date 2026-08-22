@@ -49,6 +49,15 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
           'no_email_access': 'אין לי גישה לאימייל כרגע',
           'contact_failed': 'לא הצלחנו לפתוח את אפליקציית האימייל.',
           'phone_required_contact': 'יש להזין מספר טלפון לפני יצירת קשר.',
+          'invalid_email': 'כתובת האימייל אינה תקינה.',
+          'user_not_found': 'לא נמצא חשבון סיסמה עבור האימייל הזה.',
+          'operation_not_allowed':
+              'התחברות באמצעות אימייל וסיסמה אינה זמינה כרגע.',
+          'too_many_requests': 'בוצעו יותר מדי ניסיונות. נסו שוב מאוחר יותר.',
+          'reset_failed': 'לא הצלחנו לאפס את הסיסמה. נסו שוב מאוחר יותר.',
+          'support_subject': 'בקשה לעזרה בשחזור סיסמה',
+          'support_body':
+              'שלום לצוות Hiro,\n\nאין לי כרגע גישה לכתובת האימייל שמחוברת לחשבון שלי.\n\nאימייל החשבון: {email}\nמספר טלפון: {phone}\n\nאשמח לעזרתכם בשחזור הגישה לחשבון.',
         };
       case 'ar':
         return {
@@ -68,6 +77,77 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
           'no_email_access': 'لا يمكنني الوصول إلى البريد الآن',
           'contact_failed': 'تعذر فتح تطبيق البريد الإلكتروني.',
           'phone_required_contact': 'أدخل رقم الهاتف قبل التواصل معنا.',
+          'invalid_email': 'عنوان البريد الإلكتروني غير صالح.',
+          'user_not_found': 'لم يتم العثور على حساب بكلمة مرور لهذا البريد.',
+          'operation_not_allowed':
+              'تسجيل الدخول بالبريد الإلكتروني وكلمة المرور غير متاح حاليًا.',
+          'too_many_requests': 'عدد المحاولات كبير جدًا. حاول مرة أخرى لاحقًا.',
+          'reset_failed':
+              'تعذرت إعادة تعيين كلمة المرور. حاول مرة أخرى لاحقًا.',
+          'support_subject': 'طلب مساعدة في استعادة كلمة المرور',
+          'support_body':
+              'مرحبًا بفريق Hiro،\n\nلا يمكنني حاليًا الوصول إلى البريد الإلكتروني المرتبط بحسابي.\n\nبريد الحساب: {email}\nرقم الهاتف: {phone}\n\nأرجو مساعدتي في استعادة الوصول إلى حسابي.',
+        };
+      case 'ru':
+        return {
+          'title': 'Восстановление пароля',
+          'subtitle':
+              'Введите электронную почту и номер телефона, чтобы подтвердить аккаунт.',
+          'email': 'Электронная почта',
+          'phone': 'Номер телефона',
+          'phone_hint': 'например: 0501234567',
+          'send': 'Отправить письмо для сброса',
+          'sent_title': 'Проверьте почту',
+          'sent_body':
+              'Мы отправили безопасную ссылку для сброса пароля. Откройте её, чтобы подтвердить свою личность и задать новый пароль.',
+          'required': 'Введите электронную почту и номер телефона.',
+          'invalid_phone': 'Введите действительный номер телефона.',
+          'not_match':
+              'Электронная почта и номер телефона не принадлежат одному аккаунту.',
+          'back': 'Вернуться ко входу',
+          'no_email_access': 'Сейчас у меня нет доступа к этой почте',
+          'contact_failed': 'Не удалось открыть почтовое приложение.',
+          'phone_required_contact':
+              'Введите номер телефона, прежде чем связаться с нами.',
+          'invalid_email': 'Недействительный адрес электронной почты.',
+          'user_not_found':
+              'Для этой электронной почты не найден аккаунт с паролем.',
+          'operation_not_allowed':
+              'Вход по электронной почте и паролю сейчас недоступен.',
+          'too_many_requests':
+              'Слишком много попыток. Повторите попытку позже.',
+          'reset_failed':
+              'Не удалось сбросить пароль. Повторите попытку позже.',
+          'support_subject': 'Помощь с восстановлением пароля',
+          'support_body':
+              'Здравствуйте, команда Hiro!\n\nСейчас у меня нет доступа к электронной почте, связанной с моим аккаунтом.\n\nПочта аккаунта: {email}\nНомер телефона: {phone}\n\nПомогите, пожалуйста, восстановить доступ к аккаунту.',
+        };
+      case 'am':
+        return {
+          'title': 'የይለፍ ቃል መልሶ ማግኘት',
+          'subtitle': 'መለያው የእርስዎ መሆኑን ለማረጋገጥ ኢሜይልዎን እና ስልክ ቁጥርዎን ያስገቡ።',
+          'email': 'ኢሜይል',
+          'phone': 'የስልክ ቁጥር',
+          'phone_hint': 'ለምሳሌ፡ 0501234567',
+          'send': 'የይለፍ ቃል ማስጀመሪያ ኢሜይል ላክ',
+          'sent_title': 'ኢሜይልዎን ይመልከቱ',
+          'sent_body':
+              'የይለፍ ቃልዎን ለማደስ ደህንነቱ የተጠበቀ አገናኝ ልከናል። ማንነትዎን ለማረጋገጥ እና አዲስ የይለፍ ቃል ለማዘጋጀት ይክፈቱት።',
+          'required': 'ኢሜይልዎን እና ስልክ ቁጥርዎን ያስገቡ።',
+          'invalid_phone': 'ትክክለኛ የስልክ ቁጥር ያስገቡ።',
+          'not_match': 'ኢሜይሉ እና ስልክ ቁጥሩ የአንድ ተጠቃሚ አይደሉም።',
+          'back': 'ወደ መግቢያ ተመለስ',
+          'no_email_access': 'አሁን ወደዚያ ኢሜይል መግባት አልችልም',
+          'contact_failed': 'የኢሜይል መተግበሪያዎን መክፈት አልተቻለም።',
+          'phone_required_contact': 'እኛን ከማነጋገርዎ በፊት ስልክ ቁጥርዎን ያስገቡ።',
+          'invalid_email': 'የኢሜይል አድራሻው ትክክል አይደለም።',
+          'user_not_found': 'ለዚህ ኢሜይል የይለፍ ቃል መለያ አልተገኘም።',
+          'operation_not_allowed': 'በኢሜይልና በይለፍ ቃል መግባት አሁን አይገኝም።',
+          'too_many_requests': 'ብዙ ሙከራዎች ተደርገዋል። እባክዎ ቆይተው እንደገና ይሞክሩ።',
+          'reset_failed': 'የይለፍ ቃሉን ማደስ አልተቻለም። እባክዎ ቆይተው እንደገና ይሞክሩ።',
+          'support_subject': 'የይለፍ ቃል መልሶ ለማግኘት የእገዛ ጥያቄ',
+          'support_body':
+              'ሰላም የHiro ቡድን፣\n\nአሁን ከመለያዬ ጋር የተገናኘውን ኢሜይል መድረስ አልችልም።\n\nየመለያ ኢሜይል፡ {email}\nየስልክ ቁጥር፡ {phone}\n\nወደ መለያዬ እንድገባ እርዳታዎን እጠይቃለሁ።',
         };
       default:
         return {
@@ -90,6 +170,16 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
           'contact_failed': 'Could not open your email app.',
           'phone_required_contact':
               'Please enter your phone number before contacting us.',
+          'invalid_email': 'The email address is invalid.',
+          'user_not_found': 'No password account was found for this email.',
+          'operation_not_allowed':
+              'Email/password sign-in is not available right now.',
+          'too_many_requests': 'Too many attempts. Please try again later.',
+          'reset_failed':
+              'Could not reset the password. Please try again later.',
+          'support_subject': 'Help with password recovery',
+          'support_body':
+              "Hello Hiro team,\n\nI currently don't have access to the email address connected to my account.\n\nAccount email: {email}\nPhone number: {phone}\n\nPlease help me restore access to my account.",
         };
     }
   }
@@ -159,18 +249,18 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
       if (!mounted) return;
       setState(() => _loading = false);
       final message = switch (e.code) {
-        'invalid-email' => 'The email address is invalid.',
-        'user-not-found' => 'No password account was found for this email.',
-        'operation-not-allowed' =>
-          'Email/password sign-in must be enabled in Firebase Authentication.',
-        'too-many-requests' => 'Too many attempts. Please try again later.',
-        _ => e.message ?? e.code,
+        'invalid-email' => strings['invalid_email']!,
+        'user-not-found' => strings['user_not_found']!,
+        'operation-not-allowed' => strings['operation_not_allowed']!,
+        'too-many-requests' => strings['too_many_requests']!,
+        _ => strings['reset_failed']!,
       };
       _showSnack(message);
     } catch (e) {
       if (!mounted) return;
       setState(() => _loading = false);
-      _showSnack(e.toString());
+      debugPrint('Password reset failed: $e');
+      _showSnack(strings['reset_failed']!);
     }
   }
 
@@ -189,13 +279,10 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
       return;
     }
 
-    const subject = 'בקשה לעזרה בשחזור סיסמה';
-    final body =
-        'שלום לצוות Hiro,\n\n'
-        'אין לי כרגע גישה לכתובת האימייל שמחוברת לחשבון שלי.\n\n'
-        'אימייל החשבון: $accountEmail\n'
-        'מספר טלפון: $phone\n\n'
-        'אשמח לעזרתכם בשחזור הגישה לחשבון.';
+    final subject = strings['support_subject']!;
+    final body = strings['support_body']!
+        .replaceAll('{email}', accountEmail)
+        .replaceAll('{phone}', phone);
     final uri = Uri.parse(
       'mailto:support@hiro-services.com'
       '?subject=${Uri.encodeComponent(subject)}'
