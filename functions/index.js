@@ -73,16 +73,21 @@ const SUBSCRIPTION_NOTIFICATION_RETENTION_DAYS = 30;
 const SUBSCRIPTION_VERIFICATION_RETENTION_HOURS = 36;
 const DEVICE_TOKEN_RETENTION_DAYS = 90;
 const TAX_AUTH_OAUTH_CODE_RETENTION_HOURS = 2;
+const FIREBASE_AUTH_API_KEY = "AIzaSyBL55dWOh2eIBDooZ0EwzXegyAMEiWMuNE";
 
 exports.phoneAccountExists = onCall(
     {region: "me-west1"},
     async (request) => {
       const phoneNumber = normalizeString(request.data?.phoneNumber).trim();
+      const password = normalizeString(request.data?.password);
       if (!/^\+9725\d{8}$/.test(phoneNumber)) {
         throw new HttpsError(
             "invalid-argument",
             "A valid Israeli mobile phone number is required.",
         );
+      }
+      if (!password || password.length > 4096) {
+        throw new HttpsError("invalid-argument", "A password is required.");
       }
 
       try {
@@ -92,7 +97,58 @@ exports.phoneAccountExists = onCall(
             .collection("users")
             .doc(user.uid)
             .get();
-        return {exists: account.exists};
+        if (!account.exists) {
+          return {exists: false};
+        }
+
+        const hasPasswordProvider = user.providerData.some(
+            (provider) => provider.providerId === "password",
+        );
+        if (!user.email || !hasPasswordProvider) {
+          return {
+            exists: true,
+            passwordAvailable: false,
+            passwordValid: false,
+          };
+        }
+
+        const authResponse = await fetch(
+            "https://identitytoolkit.googleapis.com/v1/" +
+              `accounts:signInWithPassword?key=${FIREBASE_AUTH_API_KEY}`,
+            {
+              method: "POST",
+              headers: {"Content-Type": "application/json"},
+              body: JSON.stringify({
+                email: user.email,
+                password,
+                returnSecureToken: true,
+              }),
+            },
+        );
+        const authResult = await authResponse.json();
+        if (authResponse.ok) {
+          return {
+            exists: true,
+            passwordAvailable: true,
+            passwordValid: authResult.localId === user.uid,
+          };
+        }
+
+        const authError = normalizeString(authResult?.error?.message)
+            .split(" : ")[0];
+        if ([
+          "INVALID_LOGIN_CREDENTIALS",
+          "INVALID_PASSWORD",
+          "EMAIL_NOT_FOUND",
+          "USER_DISABLED",
+        ].includes(authError)) {
+          return {
+            exists: true,
+            passwordAvailable: true,
+            passwordValid: false,
+          };
+        }
+        throw new Error(`Firebase password verification failed: ${authError}`);
       } catch (error) {
         if (error?.code === "auth/user-not-found") {
           return {exists: false};

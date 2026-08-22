@@ -217,6 +217,8 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
           'ok': 'אישור',
           'service_unavailable':
               'לא ניתן לבדוק את החשבון כרגע. נסו שוב מאוחר יותר.',
+          'wrong_password': 'הסיסמה שגויה.',
+          'password_unavailable': 'לא ניתן להתחבר לחשבון הזה באמצעות סיסמה.',
           'invalid_phone': 'אנא הכנס מספר טלפון ישראלי תקין (05XXXXXXXX)',
           'edit_phone': 'ערוך מספר טלפון',
           'resend_code': 'שלח SMS שוב',
@@ -264,6 +266,9 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
           'ok': 'موافق',
           'service_unavailable':
               'تعذر التحقق من الحساب الآن. يرجى المحاولة مرة أخرى لاحقًا.',
+          'wrong_password': 'كلمة المرور غير صحيحة.',
+          'password_unavailable':
+              'تسجيل الدخول بكلمة المرور غير متاح لهذا الحساب.',
           'invalid_phone': 'يرجى إدخال رقم هاتف إسرائيلي صالح (05XXXXXXXX)',
           'edit_phone': 'تعديل رقم الهاتف',
           'resend_code': 'إرسال SMS مرة أخرى',
@@ -311,6 +316,9 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
           'ok': 'OK',
           'service_unavailable':
               'Сейчас не удалось проверить аккаунт. Повторите попытку позже.',
+          'wrong_password': 'Неверный пароль.',
+          'password_unavailable':
+              'Вход по паролю недоступен для этой учетной записи.',
           'invalid_phone':
               'Введите действительный израильский номер телефона (05XXXXXXXX)',
           'edit_phone': 'Изменить номер телефона',
@@ -358,6 +366,8 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
           'cancel': 'ሰርዝ',
           'ok': 'እሺ',
           'service_unavailable': 'መለያውን አሁን ማረጋገጥ አልተቻለም። ቆይተው ይሞክሩ።',
+          'wrong_password': 'የይለፍ ቃሉ ትክክል አይደለም።',
+          'password_unavailable': 'ለዚህ መለያ በይለፍ ቃል መግባት አይገኝም።',
           'invalid_phone': 'እባክዎ ትክክለኛ የእስራኤል የስልክ ቁጥር ያስገቡ (05XXXXXXXX)',
           'edit_phone': 'የስልክ ቁጥር ያስተካክሉ',
           'resend_code': 'SMS እንደገና ላክ',
@@ -405,6 +415,9 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
           'ok': 'OK',
           'service_unavailable':
               'Could not check the account right now. Please try again later.',
+          'wrong_password': 'Incorrect password.',
+          'password_unavailable':
+              'Password sign-in is not available for this account.',
           'invalid_phone':
               'Please enter a valid Israeli phone number (05XXXXXXXX)',
           'edit_phone': 'Edit Phone Number',
@@ -626,7 +639,7 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
     setState(() => _loading = true);
     try {
       final result = await _functions.httpsCallable('phoneAccountExists').call(
-        <String, dynamic>{'phoneNumber': phone},
+        <String, dynamic>{'phoneNumber': phone, 'password': password},
       );
       final data = Map<String, dynamic>.from(result.data as Map);
       if (data['exists'] != true) {
@@ -655,6 +668,22 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
             MaterialPageRoute(builder: (_) => const SignUpPage()),
           );
         }
+        return;
+      }
+      if (data['passwordAvailable'] != true) {
+        if (!mounted) return;
+        setState(() => _loading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(strings['password_unavailable']!)),
+        );
+        return;
+      }
+      if (data['passwordValid'] != true) {
+        if (!mounted) return;
+        setState(() => _loading = false);
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(strings['wrong_password']!)));
         return;
       }
 
