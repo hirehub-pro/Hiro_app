@@ -2614,10 +2614,18 @@ exports.submitUniformFilesToTaxAuthority = onCall(
         },
         operationName: "uniform upload link request",
       });
-      if (linksPayload?.success !== true || !linksPayload?.data?.uniqueId) {
+      if (linksPayload?.success !== true ||
+          !linksPayload?.data || !Array.isArray(linksPayload.data.files)) {
+        const responseData = linksPayload?.data;
         logger.warn("Tax Authority sandbox returned no uniform upload links", {
+          caseNumber: maskBusinessId(businessId),
           success: linksPayload?.success ?? null,
-          hasData: linksPayload?.data != null,
+          hasData: responseData != null,
+          dataType: Array.isArray(responseData) ? "array" : typeof responseData,
+          dataKeys: responseData && typeof responseData === "object" ?
+            Object.keys(responseData).slice(0, 20) : [],
+          filesCount: Array.isArray(responseData?.files) ?
+            responseData.files.length : null,
           errorCode: linksPayload?.error?.errorCode || null,
           errorMessage: normalizeString(linksPayload?.error?.message).slice(0, 300),
         });
@@ -2625,6 +2633,11 @@ exports.submitUniformFilesToTaxAuthority = onCall(
             linksPayload, "The Tax Authority did not create upload links.",
         );
       }
+      // Although uniqueId is required by the sandbox schema, its documented
+      // pattern permits an empty string. FileStatusApi tracks the upload using
+      // each returned fileUniqueId, so an empty overall ID must not block it.
+      const authorityUniqueId =
+        normalizeString(linksPayload.data.uniqueId).trim() || null;
 
       let targets;
       try {
@@ -2661,7 +2674,7 @@ exports.submitUniformFilesToTaxAuthority = onCall(
       await submissionRef.set({
         environment: "sandbox",
         testPayload: true,
-        authorityUniqueId: linksPayload.data.uniqueId,
+        authorityUniqueId,
         businessId,
         fromDate: input.fromDate,
         toDate: input.toDate,
@@ -2707,7 +2720,7 @@ exports.submitUniformFilesToTaxAuthority = onCall(
 
       return {
         submissionId: submissionRef.id,
-        authorityUniqueId: linksPayload.data.uniqueId,
+        authorityUniqueId,
         status: "processing",
       };
     },
