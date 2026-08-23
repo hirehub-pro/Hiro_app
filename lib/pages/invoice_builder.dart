@@ -964,6 +964,13 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     'invoice_receipt',
     'credit_note',
   };
+  static const Map<String, int> _suggestedStartingDocumentNumbers = {
+    'invoice': 1001,
+    'receipt': 2001,
+    'invoice_receipt': 3001,
+    'credit_note': 4001,
+    'transaction_account': 5001,
+  };
   static const List<String> _bankNames = [
     'יהב - 4',
     'U-Bank - 26',
@@ -4069,7 +4076,10 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     final strings = _withRequiredDefaults(
       _getLocalizedStrings(context, listen: false),
     );
-    final controller = TextEditingController();
+    final suggestedNumber = _suggestedStartingDocumentNumbers[_selectedDocType];
+    final controller = TextEditingController(
+      text: suggestedNumber?.toString() ?? '',
+    );
     String? errorText;
 
     final confirmed = await showDialog<bool>(
@@ -4140,7 +4150,10 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       },
     );
 
-    if (confirmed != true) return false;
+    if (confirmed != true) {
+      controller.dispose();
+      return false;
+    }
 
     final startNumber = int.parse(controller.text.trim());
     try {
