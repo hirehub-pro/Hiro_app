@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:untitled1/pages/my_request_details_page.dart';
 import 'package:untitled1/pages/request_details.dart';
 import 'package:untitled1/services/language_provider.dart';
+import 'package:untitled1/utils/profession_localization.dart';
 import 'package:untitled1/utils/request_expiration.dart';
 
 class MyRequestsPage extends StatefulWidget {
@@ -16,6 +17,56 @@ class MyRequestsPage extends StatefulWidget {
 
 class _MyRequestsPageState extends State<MyRequestsPage> {
   String _activeFilter = 'all';
+  List<Map<String, dynamic>> _professionItems = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProfessionItems();
+  }
+
+  Future<void> _loadProfessionItems() async {
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('metadata')
+          .doc('professions')
+          .get();
+      final rawItems = snapshot.data()?['items'];
+      if (rawItems is! List || !mounted) return;
+
+      setState(() {
+        _professionItems = rawItems
+            .whereType<Map>()
+            .map((item) => Map<String, dynamic>.from(item))
+            .toList(growable: false);
+      });
+    } catch (error) {
+      debugPrint('Failed to load profession translations: $error');
+    }
+  }
+
+  String _localizedProfessionName(String profession, String localeCode) {
+    final normalized = profession.trim().toLowerCase();
+    if (normalized.isEmpty) return '';
+
+    for (final item in _professionItems) {
+      final matchesStoredName = const ['en', 'he', 'ar', 'ru', 'am'].any((
+        languageCode,
+      ) {
+        return item[languageCode]?.toString().trim().toLowerCase() ==
+            normalized;
+      });
+      if (!matchesStoredName) continue;
+
+      final localized = item[localeCode]?.toString().trim();
+      if (localized != null && localized.isNotEmpty) return localized;
+
+      final english = item['en']?.toString().trim();
+      if (english != null && english.isNotEmpty) return english;
+    }
+
+    return ProfessionLocalization.toLocalized(profession, localeCode);
+  }
 
   Map<String, String> _strings(BuildContext context) {
     final code = Provider.of<LanguageProvider>(context).locale.languageCode;
@@ -26,6 +77,7 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
           'empty': 'לא נמצאו בקשות ששלחת',
           'request': 'בקשה',
           'request_type': 'סוג בקשה',
+          'profession_name': 'מקצוע',
           'work_request': 'בקשת עבודה',
           'quote_request': 'בקשה לתן הצעת מחיר',
           'date': 'תאריך',
@@ -66,6 +118,7 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
           'empty': 'لا توجد طلبات قمت بإرسالها',
           'request': 'الطلب',
           'request_type': 'نوع الطلب',
+          'profession_name': 'المهنة',
           'work_request': 'طلب عمل',
           'quote_request': 'طلب عرض سعر',
           'date': 'التاريخ',
@@ -106,6 +159,7 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
           'empty': 'የላኩት ጥያቄዎች አልተገኙም',
           'request': 'ጥያቄ',
           'request_type': 'የጥያቄ አይነት',
+          'profession_name': 'ሙያ',
           'work_request': 'የስራ ጥያቄ',
           'quote_request': 'የዋጋ ቅናሽ ጥያቄ',
           'date': 'ቀን',
@@ -146,6 +200,7 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
           'empty': 'Отправленные вами запросы не найдены',
           'request': 'Запрос',
           'request_type': 'Тип запроса',
+          'profession_name': 'Профессия',
           'work_request': 'Рабочий запрос',
           'quote_request': 'Запрос предложения',
           'date': 'Дата',
@@ -186,6 +241,7 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
           'empty': 'No requests found',
           'request': 'Request',
           'request_type': 'Request Type',
+          'profession_name': 'Profession',
           'work_request': 'Work Request',
           'quote_request': 'Quote Request',
           'date': 'Date',
@@ -405,6 +461,7 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
     required Map<String, String> strings,
     required bool isRtl,
     required bool isIncoming,
+    required String localeCode,
   }) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: stream,
@@ -537,6 +594,11 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
                           final to = data['requestedTo']?.toString();
                           final body = (data['jobDescription'] ?? '')
                               .toString();
+                          final professionName = _localizedProfessionName(
+                            (data['profession'] ?? data['professionName'] ?? '')
+                                .toString(),
+                            localeCode,
+                          );
                           final statusColor = _statusColor(status);
                           final otherPartyName = isIncoming
                               ? (data['fromName'] ?? '').toString()
@@ -657,6 +719,16 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
                                       ),
                                     ],
                                     const SizedBox(height: 10),
+                                    if (professionName.isNotEmpty) ...[
+                                      Text(
+                                        '${strings['profession_name']!}: $professionName',
+                                        style: const TextStyle(
+                                          color: Color(0xFF334155),
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                    ],
                                     Text(
                                       '${strings['date']!}: $date',
                                       style: const TextStyle(
@@ -738,9 +810,10 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
   @override
   Widget build(BuildContext context) {
     final strings = _strings(context);
-    final isRtl =
-        Provider.of<LanguageProvider>(context).locale.languageCode == 'he' ||
-        Provider.of<LanguageProvider>(context).locale.languageCode == 'ar';
+    final localeCode = Provider.of<LanguageProvider>(
+      context,
+    ).locale.languageCode;
+    final isRtl = localeCode == 'he' || localeCode == 'ar';
     final user = FirebaseAuth.instance.currentUser;
 
     if (user == null) {
@@ -792,6 +865,7 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
                 strings: strings,
                 isRtl: isRtl,
                 isIncoming: false,
+                localeCode: localeCode,
               ),
               _buildRequestTab(
                 context: context,
@@ -799,6 +873,7 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
                 strings: strings,
                 isRtl: isRtl,
                 isIncoming: true,
+                localeCode: localeCode,
               ),
             ],
           ),

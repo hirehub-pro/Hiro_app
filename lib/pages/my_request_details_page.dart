@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:untitled1/pages/chat_page.dart';
 import 'package:untitled1/services/language_provider.dart';
 import 'package:untitled1/services/map_app_launcher.dart';
+import 'package:untitled1/utils/profession_localization.dart';
 import 'package:untitled1/utils/request_expiration.dart';
 
 class MyRequestDetailsPage extends StatefulWidget {
@@ -22,6 +23,56 @@ class MyRequestDetailsPage extends StatefulWidget {
 
 class _MyRequestDetailsPageState extends State<MyRequestDetailsPage> {
   bool _isCancelling = false;
+  List<Map<String, dynamic>> _professionItems = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProfessionItems();
+  }
+
+  Future<void> _loadProfessionItems() async {
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('metadata')
+          .doc('professions')
+          .get();
+      final rawItems = snapshot.data()?['items'];
+      if (rawItems is! List || !mounted) return;
+
+      setState(() {
+        _professionItems = rawItems
+            .whereType<Map>()
+            .map((item) => Map<String, dynamic>.from(item))
+            .toList(growable: false);
+      });
+    } catch (error) {
+      debugPrint('Failed to load profession translations: $error');
+    }
+  }
+
+  String _localizedProfessionName(String profession, String localeCode) {
+    final normalized = profession.trim().toLowerCase();
+    if (normalized.isEmpty) return '';
+
+    for (final item in _professionItems) {
+      final matchesStoredName = const ['en', 'he', 'ar', 'ru', 'am'].any((
+        languageCode,
+      ) {
+        return item[languageCode]?.toString().trim().toLowerCase() ==
+            normalized;
+      });
+      if (!matchesStoredName) continue;
+
+      final localized = item[localeCode]?.toString().trim();
+      if (localized != null && localized.isNotEmpty) return localized;
+
+      final english = item['en']?.toString().trim();
+      if (english != null && english.isNotEmpty) return english;
+    }
+
+    return ProfessionLocalization.toLocalized(profession, localeCode);
+  }
 
   Map<String, String> _strings(BuildContext context) {
     final code = Provider.of<LanguageProvider>(context).locale.languageCode;
@@ -484,10 +535,10 @@ class _MyRequestDetailsPageState extends State<MyRequestDetailsPage> {
                         data['fromName'] ??
                         strings['unknown'])
                     .toString();
-            final professionName =
-                (data['profession'] ?? data['professionName'] ?? '')
-                    .toString()
-                    .trim();
+            final professionName = _localizedProfessionName(
+              (data['profession'] ?? data['professionName'] ?? '').toString(),
+              code,
+            );
             final latValue = data['latitude'] ?? data['lat'];
             final lngValue = data['longitude'] ?? data['lng'] ?? data['long'];
             final lat = latValue is num
