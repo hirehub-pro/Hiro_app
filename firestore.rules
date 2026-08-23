@@ -567,7 +567,7 @@ service cloud.firestore {
 
     function validNotification(data) {
       return data.keys().hasOnly([
-        'title', 'body', 'message', 'type', 'url', 'isRead', 'read',
+        'title', 'body', 'message', 'type', 'requestType', 'url', 'isRead', 'read',
         'timestamp', 'createdAt', 'fromId', 'fromUserId', 'fromName',
         'fromUserName', 'fromLocation', 'roomId', 'chatPartnerId',
         'chatPartnerName', 'messageId', 'requestId', 'requestOwnerId',
@@ -581,6 +581,7 @@ service cloud.firestore {
       ]) &&
       optionalString(data, 'title', 240) && optionalString(data, 'body', 4000) &&
       optionalString(data, 'message', 4000) && optionalString(data, 'type', 80) &&
+      optionalString(data, 'requestType', 80) &&
       optionalUrl(data, 'url', 4096) && optionalBool(data, 'isRead') &&
       optionalBool(data, 'read') && optionalTimestamp(data, 'timestamp') &&
       optionalTimestamp(data, 'createdAt') &&

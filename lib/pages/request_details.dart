@@ -883,7 +883,9 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
     final data = widget.data;
     final locale = Provider.of<LanguageProvider>(context).locale.languageCode;
     final isRtl = locale == 'he' || locale == 'ar';
-    final isQuoteRequest = data['type'] == 'quote_request';
+    final isQuoteRequest =
+        data['type'] == 'quote_request' ||
+        data['requestType'] == 'quote_request';
     final isPending =
         _normalizeRequestStatus(data['status']) == 'pending' &&
         !isPendingRequestExpired(data);
@@ -1266,7 +1268,9 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
   }
 
   Widget _buildActionButtons(Map<String, String> strings) {
-    final isQuoteRequest = widget.data['type'] == 'quote_request';
+    final isQuoteRequest =
+        widget.data['type'] == 'quote_request' ||
+        widget.data['requestType'] == 'quote_request';
     return Column(
       children: [
         SizedBox(

@@ -3462,6 +3462,7 @@ exports.sendNotificationPush = onDocumentCreated(
         "document_signed",
         "work_request",
         "quote_request",
+        "request_edited",
         "request_accepted",
         "request_declined",
         "quote_response",
@@ -7134,6 +7135,8 @@ function defaultTitleForType(type) {
       return "New work request";
     case "quote_request":
       return "New quote request";
+    case "request_edited":
+      return "בקשה שצפית בה עודכנה";
     case "request_accepted":
       return "Request accepted";
     case "request_declined":
@@ -7154,6 +7157,8 @@ function defaultBodyForType(type) {
       return "You received a new work request";
     case "quote_request":
       return "You received a new quote request";
+    case "request_edited":
+      return "הלקוח ערך את פרטי הבקשה לאחר שצפית בה.";
     case "request_accepted":
       return "Your request was accepted";
     case "request_declined":
@@ -7172,6 +7177,7 @@ function dataTypeForNotification(type) {
       return "chat";
     case "work_request":
     case "quote_request":
+    case "request_edited":
       return "job_request";
     case "request_accepted":
     case "request_declined":

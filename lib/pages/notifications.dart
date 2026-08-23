@@ -700,13 +700,14 @@ class _NotificationsPageState extends State<NotificationsPage> {
   ) {
     final isActionableRequest =
         data['type'] == 'work_request' || data['type'] == 'quote_request';
+    final isRequestEdit = data['type'] == 'request_edited';
     final isResponseUpdate =
         data['type'] == 'request_accepted' ||
         data['type'] == 'request_declined' ||
         data['type'] == 'quote_response';
     final isBroadcast = data['isBroadcast'] == true;
     final normalizedStatus = _normalizeRequestStatus(data['status']);
-    final canOpenRequest = isActionableRequest;
+    final canOpenRequest = isActionableRequest || isRequestEdit;
     final title =
         (data['title'] ??
                 (isBroadcast

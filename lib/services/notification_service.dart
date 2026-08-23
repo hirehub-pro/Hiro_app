@@ -16,6 +16,7 @@ class NotificationService {
     'chat_message',
     'work_request',
     'quote_request',
+    'request_edited',
     'request_accepted',
     'request_declined',
     'quote_response',

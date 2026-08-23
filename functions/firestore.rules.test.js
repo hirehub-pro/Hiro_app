@@ -784,6 +784,79 @@ test("allows a customer to create a validated work request for its worker", {
   ));
 });
 
+test("allows a customer to notify a worker after editing a reviewed request", {
+  skip: !emulatorAvailable,
+}, async () => {
+  const customer = "edit-customer-id-000001";
+  const worker = "edit-worker-id-000000001";
+  const requestId = "reviewed-request-1";
+  const incomingId = "reviewed-incoming-1";
+  const originalNotificationId = "reviewed-notification-1";
+  const editedNotificationId = "edited-notification-1";
+  const reviewedAt = new Date();
+  const requestData = {
+    requestId,
+    workerId: worker,
+    workerName: "Worker",
+    workerNotificationId: originalNotificationId,
+    workerRequestToMeId: incomingId,
+    type: "work_request",
+    fromId: customer,
+    fromName: "Customer",
+    jobDescription: "Original details",
+    images: [],
+    date: "2026-8-25",
+    requestedFrom: "08:00",
+    requestedTo: "16:00",
+    timestamp: new Date(),
+    status: "pending",
+    title: "Work Request",
+    body: "A customer sent a work request.",
+    reviewedAt,
+    reviewedBy: worker,
+  };
+  await seed(`users/${customer}/requests/${requestId}`, requestData);
+  await seed(`users/${worker}/RequestToMe/${incomingId}`, requestData);
+  await seed(
+      `users/${worker}/notifications/${originalNotificationId}`,
+      requestData,
+  );
+
+  const customerDb = testEnv.authenticatedContext(customer).firestore();
+  const updates = {
+    jobDescription: "Edited details",
+    updatedAt: serverTimestamp(),
+  };
+  const batch = writeBatch(customerDb);
+  batch.update(
+      doc(customerDb, `users/${customer}/requests/${requestId}`),
+      updates,
+  );
+  batch.update(
+      doc(customerDb, `users/${worker}/RequestToMe/${incomingId}`),
+      updates,
+  );
+  batch.update(
+      doc(customerDb, `users/${worker}/notifications/${originalNotificationId}`),
+      updates,
+  );
+  batch.set(
+      doc(customerDb, `users/${worker}/notifications/${editedNotificationId}`),
+      {
+        ...requestData,
+        jobDescription: "Edited details",
+        type: "request_edited",
+        requestType: "work_request",
+        title: "בקשה שצפית בה עודכנה",
+        body: "הלקוח ערך את פרטי הבקשה לאחר שצפית בה.",
+        isRead: false,
+        timestamp: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      },
+  );
+  await assertSucceeds(batch.commit());
+});
+
 test("validates community author identity and content size", {
   skip: !emulatorAvailable,
 }, async () => {

@@ -519,6 +519,7 @@ class _MyRequestDetailsPageState extends State<MyRequestDetailsPage> {
     var noLongerPending = false;
     try {
       final firestore = FirebaseFirestore.instance;
+      final editedNotificationId = firestore.collection('_ids').doc().id;
       await firestore.runTransaction((transaction) async {
         final latestSnapshot = await transaction.get(widget.requestRef);
         final latestData = latestSnapshot.data();
@@ -536,6 +537,30 @@ class _MyRequestDetailsPageState extends State<MyRequestDetailsPage> {
 
         final workerId = latestData['workerId']?.toString();
         if (workerId == null || workerId.isEmpty) return;
+
+        if (latestData['reviewedAt'] != null) {
+          final originalRequestType = latestData['type']?.toString();
+          transaction.set(
+            firestore
+                .collection('users')
+                .doc(workerId)
+                .collection('notifications')
+                .doc(editedNotificationId),
+            <String, dynamic>{
+              ...latestData,
+              ...result,
+              'type': 'request_edited',
+              if (originalRequestType != null &&
+                  originalRequestType.isNotEmpty)
+                'requestType': originalRequestType,
+              'title': 'בקשה שצפית בה עודכנה',
+              'body': 'הלקוח ערך את פרטי הבקשה לאחר שצפית בה.',
+              'isRead': false,
+              'timestamp': FieldValue.serverTimestamp(),
+              'updatedAt': FieldValue.serverTimestamp(),
+            },
+          );
+        }
 
         final requestToMeId = latestData['workerRequestToMeId']?.toString();
         if (requestToMeId != null && requestToMeId.isNotEmpty) {
