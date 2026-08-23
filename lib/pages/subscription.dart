@@ -127,7 +127,7 @@ class _SubscriptionPageState extends State<SubscriptionPage>
     return _products.isNotEmpty ? _products.first : null;
   }
 
-  String get _monthlyPriceLabel => _selectedProduct?.price ?? '99.90 ₪';
+  String get _monthlyPriceLabel => _selectedProduct?.price ?? '120.90 ₪';
 
   @override
   void initState() {

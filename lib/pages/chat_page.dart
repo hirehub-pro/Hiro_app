@@ -48,6 +48,7 @@ class ChatPage extends StatefulWidget {
 }
 
 class _ChatPageState extends State<ChatPage> {
+  static const int _messagePageSize = 50;
   static const int _mediaPreviewWidth = 220;
   static const int _mediaPreviewHeight = 190;
   static const int _mediaPreviewCacheWidth = 660;
@@ -70,6 +71,7 @@ class _ChatPageState extends State<ChatPage> {
   StreamSubscription<ap.PlayerState>? _audioStateSubscription;
   bool _isRecording = false;
   Timer? _recordingTimer;
+  final Stopwatch _recordingStopwatch = Stopwatch();
   int _recordingSeconds = 0;
   String? _activeAudioUrl;
   Duration _activeAudioPosition = Duration.zero;
@@ -83,7 +85,12 @@ class _ChatPageState extends State<ChatPage> {
   final Set<String> _failedDownloads = {};
   final Map<String, Future<String?>> _localResolveFutures = {};
   final List<_PendingMediaUpload> _pendingMediaUploads = [];
-  Stream<QuerySnapshot>? _messageStream;
+  Stream<QuerySnapshot<Map<String, dynamic>>>? _messageStream;
+  Future<void>? _chatRoomInitialization;
+  bool _isChatRoomReady = false;
+  bool _messageStreamFailed = false;
+  bool _didRetryMessageStream = false;
+  int _messageLimit = _messagePageSize;
 
   // Selection Mode State
   bool _isSelectionMode = false;
@@ -129,6 +136,7 @@ class _ChatPageState extends State<ChatPage> {
     _checkUserType();
     final currentUserId = _auth.currentUser!.uid;
     final chatRoomId = _getChatRoomId(currentUserId, widget.receiverId);
+    _messageStream = _buildMessageStream(chatRoomId);
     unawaited(_initializeChatRoom(chatRoomId, currentUserId));
   }
 
@@ -150,21 +158,83 @@ class _ChatPageState extends State<ChatPage> {
 
   Future<void> _initializeChatRoom(String chatRoomId, String userId) async {
     try {
-      await _ensureChatRoom();
+      await _ensureChatRoomOnce();
       if (!mounted) return;
-      setState(() {
-        _messageStream = _firestore
-            .collection('chat_rooms')
-            .doc(chatRoomId)
-            .collection('messages')
-            .orderBy('timestamp', descending: true)
-            .snapshots();
-      });
+      if (_messageStreamFailed) {
+        _didRetryMessageStream = true;
+        setState(() {
+          _messageStreamFailed = false;
+          _messageStream = _buildMessageStream(chatRoomId);
+        });
+      }
       await _setActiveChat(userId);
     } catch (error) {
       debugPrint('Could not initialize chat room: $error');
       if (mounted) setState(() {});
     }
+  }
+
+  Stream<QuerySnapshot<Map<String, dynamic>>> _buildMessageStream(
+    String chatRoomId,
+  ) {
+    return _firestore
+        .collection('chat_rooms')
+        .doc(chatRoomId)
+        .collection('messages')
+        .orderBy('timestamp', descending: true)
+        .limit(_messageLimit + 1)
+        .snapshots();
+  }
+
+  Future<void> _ensureChatRoomOnce() async {
+    if (_isChatRoomReady) return;
+
+    final pending = _chatRoomInitialization;
+    if (pending != null) {
+      await pending;
+      return;
+    }
+
+    final initialization = _ensureChatRoom();
+    _chatRoomInitialization = initialization;
+    try {
+      await initialization;
+      _isChatRoomReady = true;
+    } finally {
+      _chatRoomInitialization = null;
+    }
+  }
+
+  void _loadOlderMessages() {
+    final currentUserId = _auth.currentUser?.uid;
+    if (currentUserId == null) return;
+
+    setState(() {
+      _messageLimit += _messagePageSize;
+      _messageStream = _buildMessageStream(
+        _getChatRoomId(currentUserId, widget.receiverId),
+      );
+    });
+  }
+
+  void _retryMessageStream() {
+    final currentUserId = _auth.currentUser?.uid;
+    if (currentUserId == null || !mounted) return;
+
+    setState(() {
+      _messageStreamFailed = false;
+      _messageStream = _buildMessageStream(
+        _getChatRoomId(currentUserId, widget.receiverId),
+      );
+    });
+  }
+
+  void _retryMessageStreamAfterRoomInitialization() {
+    if (!_isChatRoomReady || _didRetryMessageStream) return;
+    _didRetryMessageStream = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _retryMessageStream();
+    });
   }
 
   Future<void> _ensureChatRoom() async {
@@ -185,7 +255,7 @@ class _ChatPageState extends State<ChatPage> {
   Future<Map<String, dynamic>> _getContactDetails(String uid) async {
     final currentUserId = _auth.currentUser?.uid;
     if (currentUserId != null && currentUserId != uid) {
-      await _ensureChatRoom();
+      await _ensureChatRoomOnce();
     }
     final callable = FirebaseFunctions.instanceFor(
       region: 'me-west1',
@@ -612,7 +682,7 @@ class _ChatPageState extends State<ChatPage> {
     };
 
     try {
-      await _ensureChatRoom();
+      await _ensureChatRoomOnce();
 
       String lastMsgDisplay = "";
       switch (type) {
@@ -815,10 +885,45 @@ class _ChatPageState extends State<ChatPage> {
       body: Column(
         children: [
           Expanded(
-            child: StreamBuilder<QuerySnapshot>(
+            child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
               stream: _messageStream,
               builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
+                if (snapshot.hasError) {
+                  _messageStreamFailed = true;
+                  _retryMessageStreamAfterRoomInitialization();
+                  return Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          _t(
+                            en: 'Could not load messages.',
+                            he: 'לא ניתן לטעון את ההודעות.',
+                            ar: 'تعذر تحميل الرسائل.',
+                            am: 'መልዕክቶችን መጫን አልተቻለም።',
+                            ru: 'Не удалось загрузить сообщения.',
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        TextButton.icon(
+                          onPressed: _retryMessageStream,
+                          icon: const Icon(Icons.refresh_rounded),
+                          label: Text(
+                            _t(
+                              en: 'Try again',
+                              he: 'נסה שוב',
+                              ar: 'حاول مجددًا',
+                              am: 'እንደገና ሞክር',
+                              ru: 'Повторить',
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+                if (snapshot.connectionState == ConnectionState.waiting &&
+                    !snapshot.hasData) {
                   return const Center(child: CircularProgressIndicator());
                 }
                 if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
@@ -836,7 +941,11 @@ class _ChatPageState extends State<ChatPage> {
                   );
                 }
 
-                final messages = snapshot.data!.docs;
+                final allMessages = snapshot.data!.docs;
+                final hasOlderMessages = allMessages.length > _messageLimit;
+                final messages = hasOlderMessages
+                    ? allMessages.take(_messageLimit).toList(growable: false)
+                    : allMessages;
                 final pendingUploads = _pendingMediaUploads
                     .where((upload) => upload.receiverId == widget.receiverId)
                     .toList();
@@ -844,19 +953,41 @@ class _ChatPageState extends State<ChatPage> {
                   controller: _scrollController,
                   reverse: true,
                   padding: const EdgeInsets.all(16),
-                  itemCount: pendingUploads.length + messages.length,
+                  itemCount:
+                      pendingUploads.length +
+                      messages.length +
+                      (hasOlderMessages ? 1 : 0),
                   itemBuilder: (context, index) {
                     if (index < pendingUploads.length) {
                       return _buildPendingUploadBubble(pendingUploads[index]);
                     }
-                    final message =
-                        messages[index - pendingUploads.length].data()
-                            as Map<String, dynamic>;
+                    final messageIndex = index - pendingUploads.length;
+                    if (messageIndex >= messages.length) {
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Center(
+                          child: OutlinedButton.icon(
+                            onPressed: _loadOlderMessages,
+                            icon: const Icon(Icons.history_rounded),
+                            label: Text(
+                              _t(
+                                en: 'Load older messages',
+                                he: 'טען הודעות ישנות יותר',
+                                ar: 'تحميل رسائل أقدم',
+                                am: 'የቆዩ መልዕክቶችን ጫን',
+                                ru: 'Загрузить старые сообщения',
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    }
+                    final message = messages[messageIndex].data();
                     final isMe = message['senderId'] == _auth.currentUser!.uid;
                     return _buildMessageBubble(
                       message,
                       isMe,
-                      messages[index - pendingUploads.length].id,
+                      messages[messageIndex].id,
                     );
                   },
                 );
@@ -937,7 +1068,7 @@ class _ChatPageState extends State<ChatPage> {
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
             color: isSelected
-                ? Colors.blue.withOpacity(0.2)
+                ? Colors.blue.withValues(alpha: 0.2)
                 : (isMe ? const Color(0xFF1976D2) : Colors.white),
             borderRadius: BorderRadius.only(
               topLeft: const Radius.circular(16),
@@ -947,7 +1078,7 @@ class _ChatPageState extends State<ChatPage> {
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.05),
+                color: Colors.black.withValues(alpha: 0.05),
                 blurRadius: 4,
                 offset: const Offset(0, 2),
               ),
@@ -2282,7 +2413,7 @@ class _ChatPageState extends State<ChatPage> {
         color: Colors.white,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 10,
             offset: const Offset(0, -2),
           ),
@@ -2490,7 +2621,7 @@ class _ChatPageState extends State<ChatPage> {
   ) {
     return ListTile(
       leading: CircleAvatar(
-        backgroundColor: color.withOpacity(0.1),
+        backgroundColor: color.withValues(alpha: 0.1),
         child: Icon(icon, color: color),
       ),
       title: Text(label),
@@ -3168,6 +3299,9 @@ class _ChatPageState extends State<ChatPage> {
     );
 
     _recordingTimer?.cancel();
+    _recordingStopwatch
+      ..reset()
+      ..start();
     _recordingSeconds = 0;
     _recordingTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
@@ -3184,7 +3318,9 @@ class _ChatPageState extends State<ChatPage> {
   Future<void> _stopRecording({required bool send}) async {
     if (!_isRecording) return;
 
-    final recordedSeconds = _recordingSeconds;
+    _recordingStopwatch.stop();
+    final recordedDuration = _recordingStopwatch.elapsed;
+    final recordedSeconds = recordedDuration.inSeconds;
     final path = await _audioRecorder.stop();
     _recordingTimer?.cancel();
 
@@ -3195,12 +3331,28 @@ class _ChatPageState extends State<ChatPage> {
       });
     }
 
-    if (path == null || !send) {
+    final isTooShort = recordedDuration < const Duration(seconds: 1);
+    if (path == null || !send || isTooShort) {
       if (path != null) {
         final file = File(path);
         if (await file.exists()) {
           await file.delete();
         }
+      }
+      if (send && isTooShort && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              _t(
+                en: 'Voice messages must be at least 1 second long.',
+                he: 'הודעה קולית חייבת להיות באורך של שנייה אחת לפחות.',
+                ar: 'يجب ألا تقل مدة الرسالة الصوتية عن ثانية واحدة.',
+                am: 'የድምፅ መልዕክት ቢያንስ 1 ሰከንድ መሆን አለበት።',
+                ru: 'Голосовое сообщение должно длиться не менее 1 секунды.',
+              ),
+            ),
+          ),
+        );
       }
       return;
     }
