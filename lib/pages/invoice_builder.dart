@@ -1134,6 +1134,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   final _creditOriginalInvoiceNumberController = TextEditingController();
   final _creditOriginalInvoiceDateController = TextEditingController();
   final _creditReceiptConfirmationController = TextEditingController();
+  final _startingDocumentNumberController = TextEditingController();
   final ImagePicker _imagePicker = ImagePicker();
   String? _selectedSavedClientId;
   String? _selectedSavedClientExternalNumber;
@@ -2686,6 +2687,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     _creditOriginalInvoiceNumberController.dispose();
     _creditOriginalInvoiceDateController.dispose();
     _creditReceiptConfirmationController.dispose();
+    _startingDocumentNumberController.dispose();
     for (final methodEntry in _paymentMethods) {
       methodEntry.dispose();
     }
@@ -3226,6 +3228,12 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
               'חשוב להזין את המספר הנכון. אם תזין מספר שגוי, האחריות היא שלך ולא תוכל לשנות אותו אחר כך.',
           'doc_start_field': 'מספר פתיחה',
           'doc_start_invalid': 'יש להזין מספר תקין גדול מ-0',
+          'doc_start_confirm_title': 'אישור מספר הפתיחה',
+          'doc_start_confirm_message':
+              'האם ברצונך להתחיל את מספור {docType} במספר {number}?',
+          'doc_start_confirm_warning':
+              'לאחר האישור מספר הפתיחה יינעל ולא ניתן יהיה לשנות אותו.',
+          'doc_start_confirm_action': 'אישור ושמירה',
           'allocation_number': 'מספר הקצאה',
           'tax_authority_connect_title': 'חיבור לרשות המסים',
           'tax_authority_connect_message':
@@ -3375,6 +3383,12 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
               'من المهم إدخال الرقم الصحيح. إذا أدخلت رقمًا خاطئًا، فستتحمل المسؤولية ولن تتمكن من تغييره لاحقًا.',
           'doc_start_field': 'رقم البداية',
           'doc_start_invalid': 'أدخل رقمًا صحيحًا أكبر من 0',
+          'doc_start_confirm_title': 'تأكيد رقم البداية',
+          'doc_start_confirm_message':
+              'هل تريد أن يبدأ ترقيم {docType} من الرقم {number}؟',
+          'doc_start_confirm_warning':
+              'بعد التأكيد سيتم تثبيت رقم البداية ولن تتمكن من تغييره.',
+          'doc_start_confirm_action': 'تأكيد وحفظ',
           'continue': 'متابعة',
           'cancel': 'إلغاء',
         };
@@ -3514,6 +3528,12 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
               'Важно ввести правильный номер. Если вы введете неправильный номер, ответственность будет на вас, и позже его нельзя будет изменить.',
           'doc_start_field': 'Начальный номер',
           'doc_start_invalid': 'Введите корректный номер больше 0',
+          'doc_start_confirm_title': 'Подтвердите начальный номер',
+          'doc_start_confirm_message':
+              'Начать нумерацию документа «{docType}» с номера {number}?',
+          'doc_start_confirm_warning':
+              'После подтверждения начальный номер будет заблокирован, и изменить его будет нельзя.',
+          'doc_start_confirm_action': 'Подтвердить и сохранить',
           'continue': 'Продолжить',
           'cancel': 'Отмена',
         };
@@ -3647,6 +3667,11 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
               'ትክክለኛውን ቁጥር ማስገባት አስፈላጊ ነው። የተሳሳተ ቁጥር ካስገቡ ኃላፊነቱ የእርስዎ ነው እና በኋላ መቀየር አይቻልም።',
           'doc_start_field': 'የመነሻ ቁጥር',
           'doc_start_invalid': 'ከ0 በላይ የሆነ ትክክለኛ ቁጥር ያስገቡ',
+          'doc_start_confirm_title': 'የመነሻ ቁጥርን ያረጋግጡ',
+          'doc_start_confirm_message': 'የ{docType} ቁጥር ከ{number} እንዲጀምር ይፈልጋሉ?',
+          'doc_start_confirm_warning':
+              'ካረጋገጡ በኋላ የመነሻ ቁጥሩ ይቆለፋል እና መቀየር አይቻልም።',
+          'doc_start_confirm_action': 'አረጋግጥና አስቀምጥ',
           'continue': 'ቀጥል',
           'cancel': 'ሰርዝ',
         };
@@ -3784,6 +3809,12 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
               'It is important to enter the correct number. If you enter the wrong number, it is your responsibility and you will not be able to change it later.',
           'doc_start_field': 'Starting Number',
           'doc_start_invalid': 'Enter a valid number greater than 0',
+          'doc_start_confirm_title': 'Confirm starting number',
+          'doc_start_confirm_message':
+              'Do you want {docType} numbering to start at {number}?',
+          'doc_start_confirm_warning':
+              'After confirmation, this starting number will be locked and cannot be changed.',
+          'doc_start_confirm_action': 'Confirm and save',
           'allocation_number': 'Tax Authority allocation number',
           'tax_authority_connect_title': 'Connect to the Tax Authority',
           'tax_authority_connect_message':
@@ -3939,6 +3970,12 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'It is important to enter the correct number. If you enter the wrong number, it is your responsibility and you will not be able to change it later.',
       'doc_start_field': 'Starting Number',
       'doc_start_invalid': 'Enter a valid number greater than 0',
+      'doc_start_confirm_title': 'Confirm starting number',
+      'doc_start_confirm_message':
+          'Do you want {docType} numbering to start at {number}?',
+      'doc_start_confirm_warning':
+          'After confirmation, this starting number will be locked and cannot be changed.',
+      'doc_start_confirm_action': 'Confirm and save',
       'allocation_number': 'Tax Authority allocation number',
       'tax_authority_connect_title': 'Connect to the Tax Authority',
       'tax_authority_connect_message':
@@ -4069,6 +4106,142 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     return _promptForStartingDocumentNumber();
   }
 
+  Future<bool> _confirmStartingDocumentNumber({
+    required BuildContext context,
+    required Map<String, String> strings,
+    required int number,
+  }) async {
+    final documentType = _documentTypeDisplayName(strings, _selectedDocType);
+    final message = strings['doc_start_confirm_message']!
+        .replaceFirst('{docType}', documentType)
+        .replaceFirst('{number}', number.toString());
+
+    return await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (confirmationContext) => PopScope(
+            canPop: false,
+            child: AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(22),
+              ),
+              titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+              contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+              actionsPadding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+              title: Row(
+                children: [
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF7ED),
+                      borderRadius: BorderRadius.circular(13),
+                    ),
+                    child: const Icon(
+                      Icons.lock_outline_rounded,
+                      color: Color(0xFFC2410C),
+                      size: 23,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      strings['doc_start_confirm_title']!,
+                      style: const TextStyle(
+                        color: Color(0xFF0F172A),
+                        fontSize: 19,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    message,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Color(0xFF334155),
+                      fontSize: 15,
+                      height: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Container(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEFF6FF),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: const Color(0xFFBFDBFE)),
+                    ),
+                    child: Text(
+                      number.toString(),
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Color(0xFF1D4ED8),
+                        fontSize: 26,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1.5,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Container(
+                    padding: const EdgeInsets.all(11),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFEF2F2),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFFECACA)),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(
+                          Icons.warning_amber_rounded,
+                          color: Color(0xFFB91C1C),
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            strings['doc_start_confirm_warning']!,
+                            style: const TextStyle(
+                              color: Color(0xFF991B1B),
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600,
+                              height: 1.35,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                OutlinedButton(
+                  onPressed: () => Navigator.pop(confirmationContext, false),
+                  child: Text(strings['cancel']!),
+                ),
+                FilledButton.icon(
+                  onPressed: () => Navigator.pop(confirmationContext, true),
+                  icon: const Icon(Icons.lock_rounded, size: 18),
+                  label: Text(strings['doc_start_confirm_action']!),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF1976D2),
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ) ??
+        false;
+  }
+
   Future<bool> _promptForStartingDocumentNumber() async {
     final ref = _counterRefForDocType(_selectedDocType);
     if (ref == null || !mounted) return false;
@@ -4077,9 +4250,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       _getLocalizedStrings(context, listen: false),
     );
     final suggestedNumber = _suggestedStartingDocumentNumbers[_selectedDocType];
-    final controller = TextEditingController(
-      text: suggestedNumber?.toString() ?? '',
-    );
+    final controller = _startingDocumentNumberController;
+    controller.text = suggestedNumber?.toString() ?? '';
     String? errorText;
 
     final confirmed = await showDialog<bool>(
@@ -4089,61 +4261,298 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         return PopScope(
           canPop: false,
           child: StatefulBuilder(
-            builder: (context, setDialogState) => AlertDialog(
-              title: Text(strings['doc_start_title']!),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    strings['doc_start_message']!.replaceFirst(
-                      '{docType}',
-                      _documentTypeDisplayName(strings, _selectedDocType),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    strings['doc_start_warning']!,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFFB45309),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: controller,
-                    keyboardType: TextInputType.number,
-                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                    decoration: InputDecoration(
-                      labelText: strings['doc_start_field']!,
-                      errorText: errorText,
-                      border: const OutlineInputBorder(),
-                    ),
-                  ),
-                ],
+            builder: (context, setDialogState) => Dialog(
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              insetPadding: const EdgeInsets.symmetric(
+                horizontal: 24,
+                vertical: 36,
               ),
-              actions: [
-                TextButton.icon(
-                  onPressed: () => Navigator.pop(dialogContext, false),
-                  icon: const BackButtonIcon(),
-                  label: Text(
-                    MaterialLocalizations.of(dialogContext).backButtonTooltip,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 400),
+                child: Material(
+                  color: Colors.white,
+                  elevation: 20,
+                  shadowColor: const Color(0x330F172A),
+                  borderRadius: BorderRadius.circular(22),
+                  clipBehavior: Clip.antiAlias,
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+                          decoration: const BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topRight,
+                              end: Alignment.bottomLeft,
+                              colors: [Color(0xFFEFF6FF), Color(0xFFF8FAFC)],
+                            ),
+                          ),
+                          child: Column(
+                            children: [
+                              Container(
+                                width: 52,
+                                height: 52,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF1976D2),
+                                  borderRadius: BorderRadius.circular(16),
+                                  boxShadow: const [
+                                    BoxShadow(
+                                      color: Color(0x331976D2),
+                                      blurRadius: 12,
+                                      offset: Offset(0, 5),
+                                    ),
+                                  ],
+                                ),
+                                child: const Icon(
+                                  Icons.receipt_long_rounded,
+                                  color: Colors.white,
+                                  size: 27,
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              Text(
+                                strings['doc_start_title']!,
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  color: Color(0xFF0F172A),
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(999),
+                                  border: Border.all(
+                                    color: const Color(0xFFBFDBFE),
+                                  ),
+                                ),
+                                child: Text(
+                                  _documentTypeDisplayName(
+                                    strings,
+                                    _selectedDocType,
+                                  ),
+                                  style: const TextStyle(
+                                    color: Color(0xFF1D4ED8),
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Text(
+                                strings['doc_start_message']!.replaceFirst(
+                                  '{docType}',
+                                  _documentTypeDisplayName(
+                                    strings,
+                                    _selectedDocType,
+                                  ),
+                                ),
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  color: Color(0xFF475569),
+                                  fontSize: 14,
+                                  height: 1.35,
+                                ),
+                              ),
+                              const SizedBox(height: 14),
+                              TextField(
+                                controller: controller,
+                                autofocus: true,
+                                selectAllOnFocus: true,
+                                textAlign: TextAlign.center,
+                                keyboardType: TextInputType.number,
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.digitsOnly,
+                                ],
+                                style: const TextStyle(
+                                  color: Color(0xFF0F172A),
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 1.5,
+                                ),
+                                onChanged: (_) {
+                                  if (errorText != null) {
+                                    setDialogState(() => errorText = null);
+                                  }
+                                },
+                                decoration: InputDecoration(
+                                  labelText: strings['doc_start_field']!,
+                                  floatingLabelBehavior:
+                                      FloatingLabelBehavior.always,
+                                  errorText: errorText,
+                                  filled: true,
+                                  fillColor: const Color(0xFFF8FAFC),
+                                  prefixIcon: const Icon(
+                                    Icons.tag_rounded,
+                                    color: Color(0xFF1976D2),
+                                    size: 20,
+                                  ),
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 14,
+                                  ),
+                                  enabledBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                    borderSide: const BorderSide(
+                                      color: Color(0xFFCBD5E1),
+                                    ),
+                                  ),
+                                  focusedBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                    borderSide: const BorderSide(
+                                      color: Color(0xFF1976D2),
+                                      width: 2,
+                                    ),
+                                  ),
+                                  errorBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                    borderSide: const BorderSide(
+                                      color: Color(0xFFDC2626),
+                                    ),
+                                  ),
+                                  focusedErrorBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                    borderSide: const BorderSide(
+                                      color: Color(0xFFDC2626),
+                                      width: 2,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              Container(
+                                padding: const EdgeInsets.all(11),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFFFF7ED),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: const Color(0xFFFED7AA),
+                                  ),
+                                ),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Icon(
+                                      Icons.info_outline_rounded,
+                                      color: Color(0xFFC2410C),
+                                      size: 20,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        strings['doc_start_warning']!,
+                                        style: const TextStyle(
+                                          color: Color(0xFF9A3412),
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                          height: 1.35,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: OutlinedButton.icon(
+                                      onPressed: () =>
+                                          Navigator.pop(dialogContext, false),
+                                      icon: const BackButtonIcon(),
+                                      label: Text(
+                                        MaterialLocalizations.of(
+                                          dialogContext,
+                                        ).backButtonTooltip,
+                                      ),
+                                      style: OutlinedButton.styleFrom(
+                                        foregroundColor: const Color(
+                                          0xFF475569,
+                                        ),
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 12,
+                                        ),
+                                        side: const BorderSide(
+                                          color: Color(0xFFCBD5E1),
+                                        ),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: FilledButton.icon(
+                                      onPressed: () async {
+                                        final parsed = int.tryParse(
+                                          controller.text.trim(),
+                                        );
+                                        if (parsed == null || parsed < 1) {
+                                          setDialogState(() {
+                                            errorText =
+                                                strings['doc_start_invalid']!;
+                                          });
+                                          return;
+                                        }
+                                        final shouldSave =
+                                            await _confirmStartingDocumentNumber(
+                                              context: dialogContext,
+                                              strings: strings,
+                                              number: parsed,
+                                            );
+                                        if (!shouldSave ||
+                                            !dialogContext.mounted) {
+                                          return;
+                                        }
+                                        Navigator.pop(dialogContext, true);
+                                      },
+                                      icon: const Icon(Icons.check_rounded),
+                                      label: Text(strings['continue']!),
+                                      style: FilledButton.styleFrom(
+                                        backgroundColor: const Color(
+                                          0xFF1976D2,
+                                        ),
+                                        foregroundColor: Colors.white,
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 12,
+                                        ),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-                ElevatedButton(
-                  onPressed: () {
-                    final parsed = int.tryParse(controller.text.trim());
-                    if (parsed == null || parsed < 1) {
-                      setDialogState(() {
-                        errorText = strings['doc_start_invalid']!;
-                      });
-                      return;
-                    }
-                    Navigator.pop(dialogContext, true);
-                  },
-                  child: Text(strings['continue']!),
-                ),
-              ],
+              ),
             ),
           ),
         );
@@ -4151,7 +4560,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     );
 
     if (confirmed != true) {
-      controller.dispose();
       return false;
     }
 
@@ -4175,8 +4583,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     } catch (e) {
       dev.log('Error saving starting document counter: $e');
       return false;
-    } finally {
-      controller.dispose();
     }
   }
 
