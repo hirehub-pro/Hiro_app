@@ -577,7 +577,7 @@ service cloud.firestore {
         'serviceLocationType', 'locationName', 'latitude', 'longitude',
         'mapUrl', 'images', 'videos', 'media', 'cancelledAt', 'price',
         'description', 'quotePrice', 'quoteDescription', 'seenAt',
-        'reviewedAt', 'reviewedBy'
+        'reviewedAt', 'reviewedBy', 'updatedAt'
       ]) &&
       optionalString(data, 'title', 240) && optionalString(data, 'body', 4000) &&
       optionalString(data, 'message', 4000) && optionalString(data, 'type', 80) &&
@@ -585,6 +585,7 @@ service cloud.firestore {
       optionalBool(data, 'read') && optionalTimestamp(data, 'timestamp') &&
       optionalTimestamp(data, 'createdAt') &&
       optionalTimestamp(data, 'cancelledAt') &&
+      optionalTimestamp(data, 'updatedAt') &&
       optionalTimestamp(data, 'seenAt') &&
       optionalTimestamp(data, 'reviewedAt') &&
       optionalString(data, 'price', 80) &&
@@ -649,6 +650,22 @@ service cloud.firestore {
         data.workerId == resource.data.workerId &&
         data.fromId == resource.data.fromId &&
         data.timestamp == resource.data.timestamp;
+    }
+
+    function validPendingRequestEditBySender() {
+      return isAuthenticated() &&
+        resource.data.get('fromId', '') == request.auth.uid &&
+        resource.data.get('status', '') == 'pending' &&
+        request.resource.data.get('status', '') == 'pending' &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'date', 'requestedFrom', 'requestedTo', 'jobDescription', 'updatedAt'
+        ]) &&
+        optionalString(request.resource.data, 'date', 40) &&
+        optionalString(request.resource.data, 'requestedFrom', 20) &&
+        optionalString(request.resource.data, 'requestedTo', 20) &&
+        optionalString(request.resource.data, 'jobDescription', 10000) &&
+        optionalTimestamp(request.resource.data, 'updatedAt') &&
+        request.resource.data.updatedAt == request.time;
     }
 
     function validBlogPost(data) {
@@ -1015,11 +1032,14 @@ service cloud.firestore {
         allow create: if isAuthenticated() && validNotification(request.resource.data) &&
           request.resource.data.get('fromUserId',
             request.resource.data.get('fromId', request.auth.uid)) == request.auth.uid;
-        allow update: if isOwner(userId) && validNotification(request.resource.data) &&
-          request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly([
-              'isRead', 'read', 'status', 'seenAt', 'reviewedAt', 'reviewedBy'
-            ]);
+        allow update: if validNotification(request.resource.data) &&
+          ((isOwner(userId) &&
+            request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly([
+                'isRead', 'read', 'status', 'seenAt', 'reviewedAt', 'reviewedBy'
+              ])) ||
+            (resource.data.get('workerId', '') == userId &&
+              validPendingRequestEditBySender()));
       }
 
       match /requests/{requestId} {
@@ -1033,6 +1053,7 @@ service cloud.firestore {
           workRequestIdentityUnchanged(request.resource.data) &&
           ((isOwner(userId) && request.resource.data.diff(resource.data)
               .affectedKeys().hasOnly(['status', 'cancelledAt', 'updatedAt'])) ||
+            (isOwner(userId) && validPendingRequestEditBySender()) ||
             (isAuthenticated() && request.auth.uid == resource.data.workerId &&
               request.resource.data.diff(resource.data).affectedKeys().hasOnly([
                 'status', 'acceptedWindow', 'quotePrice', 'quoteDescription',
@@ -1042,13 +1063,15 @@ service cloud.firestore {
 
       match /RequestToMe/{requestId} {
         allow read, delete: if isOwner(userId);
-        allow update: if isOwner(userId) &&
-          validWorkRequest(request.resource.data) &&
+        allow update: if validWorkRequest(request.resource.data) &&
           workRequestIdentityUnchanged(request.resource.data) &&
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-            'status', 'acceptedWindow', 'quotePrice', 'quoteDescription',
-            'quoteSentAt', 'seenAt', 'reviewedAt', 'reviewedBy', 'updatedAt'
-          ]);
+          ((isOwner(userId) &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'status', 'acceptedWindow', 'quotePrice', 'quoteDescription',
+              'quoteSentAt', 'seenAt', 'reviewedAt', 'reviewedBy', 'updatedAt'
+            ])) ||
+            (resource.data.workerId == userId &&
+              validPendingRequestEditBySender()));
         allow create: if isAuthenticated() &&
           validWorkRequest(request.resource.data) &&
           request.resource.data.fromId == request.auth.uid &&

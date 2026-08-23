@@ -92,6 +92,7 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
           'additional_details': 'פרטים נוספים',
           'status': 'סטטוס',
           'waiting_for_approval': 'ממתין לאישור',
+          'reviewed': 'הבקשה נבדקה',
           'accepted': 'התקבל',
           'rejected': 'נדחה',
           'cancelled': 'בוטל',
@@ -133,6 +134,7 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
           'additional_details': 'تفاصيل إضافية',
           'status': 'الحالة',
           'waiting_for_approval': 'بانتظار الموافقة',
+          'reviewed': 'تمت مراجعة الطلب',
           'accepted': 'تم القبول',
           'rejected': 'تم الرفض',
           'cancelled': 'تم الإلغاء',
@@ -174,6 +176,7 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
           'additional_details': 'ተጨማሪ ዝርዝሮች',
           'status': 'ሁኔታ',
           'waiting_for_approval': 'ማጽደቅ በመጠባበቅ',
+          'reviewed': 'ጥያቄው ታይቷል',
           'accepted': 'ተቀባ',
           'rejected': 'ተቀባይነት አላገኘም',
           'cancelled': 'ተሰርዟል',
@@ -215,6 +218,7 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
           'additional_details': 'Дополнительные детали',
           'status': 'Статус',
           'waiting_for_approval': 'Ожидает подтверждения',
+          'reviewed': 'Запрос просмотрен',
           'accepted': 'Принято',
           'rejected': 'Отклонено',
           'cancelled': 'Отменено',
@@ -256,6 +260,7 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
           'additional_details': 'Additional Details',
           'status': 'Status',
           'waiting_for_approval': 'Waiting for approval',
+          'reviewed': 'Request reviewed',
           'accepted': 'Accepted',
           'rejected': 'Rejected',
           'cancelled': 'Cancelled',
@@ -281,6 +286,8 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
 
   IconData _statusIcon(String status) {
     switch (status) {
+      case 'reviewed':
+        return Icons.visibility_rounded;
       case 'accepted':
         return Icons.check_circle_rounded;
       case 'rejected':
@@ -339,6 +346,8 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
 
   String _statusLabel(String status, Map<String, String> strings) {
     switch (status) {
+      case 'reviewed':
+        return strings['reviewed']!;
       case 'accepted':
         return strings['accepted']!;
       case 'rejected':
@@ -354,6 +363,8 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
 
   Color _statusColor(String status) {
     switch (status) {
+      case 'reviewed':
+        return const Color(0xFF1976D2);
       case 'accepted':
         return const Color(0xFF2D8F5B);
       case 'rejected':
@@ -599,7 +610,13 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
                                 .toString(),
                             localeCode,
                           );
-                          final statusColor = _statusColor(status);
+                          final visualStatus =
+                              !isIncoming &&
+                                  status == 'waiting_for_approval' &&
+                                  data['reviewedAt'] != null
+                              ? 'reviewed'
+                              : status;
+                          final statusColor = _statusColor(visualStatus);
                           final otherPartyName = isIncoming
                               ? (data['fromName'] ?? '').toString()
                               : (data['workerName'] ?? '').toString();
@@ -667,7 +684,7 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
                                             ),
                                           ),
                                           child: Icon(
-                                            _statusIcon(status),
+                                            _statusIcon(visualStatus),
                                             color: statusColor,
                                             size: 18,
                                           ),
@@ -698,7 +715,7 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
                                             ),
                                           ),
                                           child: Text(
-                                            _statusLabel(status, strings),
+                                            _statusLabel(visualStatus, strings),
                                             style: TextStyle(
                                               color: statusColor,
                                               fontWeight: FontWeight.w700,

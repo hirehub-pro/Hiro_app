@@ -627,7 +627,7 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
               right: 10,
               top: 10,
               child: Material(
-                color: Colors.black.withOpacity(0.45),
+                color: Colors.black.withValues(alpha: 0.45),
                 shape: const CircleBorder(),
                 child: InkWell(
                   customBorder: const CircleBorder(),
@@ -656,11 +656,24 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
     final requestId = widget.data['requestId']?.toString();
     final firestore = FirebaseFirestore.instance;
 
+    final workerNotificationId =
+        widget.data['workerNotificationId']?.toString() ??
+        widget.notificationId;
     final workerNotificationRef = firestore
         .collection('users')
         .doc(user.uid)
         .collection('notifications')
-        .doc(widget.notificationId);
+        .doc(workerNotificationId);
+
+    final workerRequestToMeId = widget.data['workerRequestToMeId']?.toString();
+    DocumentReference<Map<String, dynamic>>? workerRequestToMeRef;
+    if (workerRequestToMeId != null && workerRequestToMeId.isNotEmpty) {
+      workerRequestToMeRef = firestore
+          .collection('users')
+          .doc(user.uid)
+          .collection('RequestToMe')
+          .doc(workerRequestToMeId);
+    }
 
     DocumentReference<Map<String, dynamic>>? clientRequestRef;
     if (clientId != null &&
@@ -674,51 +687,33 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
           .doc(requestId);
     }
 
-    try {
-      await firestore.runTransaction((transaction) async {
-        final workerNotificationSnap = await transaction.get(
-          workerNotificationRef,
-        );
-        if (workerNotificationSnap.exists) {
-          final workerData =
-              workerNotificationSnap.data() ?? <String, dynamic>{};
-          final workerUpdates = <String, dynamic>{};
-          if (workerData['seenAt'] == null) {
-            workerUpdates['seenAt'] = FieldValue.serverTimestamp();
-          }
-          if (workerData['reviewedAt'] == null) {
-            workerUpdates['reviewedAt'] = FieldValue.serverTimestamp();
-          }
-          if (workerUpdates.isNotEmpty) {
-            transaction.update(workerNotificationRef, workerUpdates);
-          }
-        }
+    final reviewUpdates = <String, dynamic>{
+      'seenAt': FieldValue.serverTimestamp(),
+      'reviewedAt': FieldValue.serverTimestamp(),
+      'reviewedBy': user.uid,
+    };
 
-        if (clientRequestRef != null) {
-          final clientRequestSnap = await transaction.get(clientRequestRef);
-          if (clientRequestSnap.exists) {
-            final requestData = clientRequestSnap.data() ?? <String, dynamic>{};
-            final requestUpdates = <String, dynamic>{};
-            if (requestData['seenAt'] == null) {
-              requestUpdates['seenAt'] = FieldValue.serverTimestamp();
-            }
-            if (requestData['reviewedAt'] == null) {
-              requestUpdates['reviewedAt'] = FieldValue.serverTimestamp();
-              requestUpdates['reviewedBy'] = user.uid;
-            }
-            if (requestUpdates.isNotEmpty) {
-              transaction.set(
-                clientRequestRef,
-                requestUpdates,
-                SetOptions(merge: true),
-              );
-            }
-          }
-        }
-      });
-    } catch (e) {
-      debugPrint('Request review tracking error: $e');
+    Future<void> updateReviewCopy(
+      DocumentReference<Map<String, dynamic>> reference,
+      String copyName,
+    ) async {
+      try {
+        await reference.update(reviewUpdates);
+      } catch (e) {
+        // The request copies are deliberately independent: an older request
+        // may be missing one mirror, and that must not block the canonical
+        // customer request from being marked as reviewed.
+        debugPrint('Request review tracking error ($copyName): $e');
+      }
     }
+
+    await Future.wait([
+      updateReviewCopy(workerNotificationRef, 'worker notification'),
+      if (workerRequestToMeRef != null)
+        updateReviewCopy(workerRequestToMeRef, 'worker request'),
+      if (clientRequestRef != null)
+        updateReviewCopy(clientRequestRef, 'customer request'),
+    ]);
   }
 
   Future<void> _processRequest(bool accept) async {
@@ -962,7 +957,7 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
             if (_isLoading)
               Positioned.fill(
                 child: Container(
-                  color: Colors.black.withOpacity(0.15),
+                  color: Colors.black.withValues(alpha: 0.15),
                   child: const Center(child: CircularProgressIndicator()),
                 ),
               ),
