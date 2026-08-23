@@ -2294,10 +2294,12 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     );
   }
 
-  void _handleInvoiceBuilderLockLost() {
+  void _handleInvoiceBuilderLockLost(InvoiceBuilderLockLossReason reason) {
     if (!mounted || _lockLostDialogShown) return;
     setState(() => _hasInvoiceBuilderLock = false);
-    _showInvoiceBuilderLockedMessage();
+    _showInvoiceBuilderLockedMessage(
+      unavailable: reason == InvoiceBuilderLockLossReason.unavailable,
+    );
   }
 
   Future<void> _showInvoiceBuilderLockedMessage({

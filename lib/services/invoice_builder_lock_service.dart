@@ -7,6 +7,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 enum InvoiceBuilderLockAcquireResult { acquired, occupied, unavailable }
 
+enum InvoiceBuilderLockLossReason { ownershipChanged, unavailable }
+
 /// A short-lived, per-device lease for the Invoice Builder.
 ///
 /// The document path and field names are shared with the Hiro website; keep
@@ -33,9 +35,11 @@ class InvoiceBuilderLockService {
   Timer? _renewalTimer;
   bool _hasLease = false;
   bool _released = false;
+  bool _renewalInProgress = false;
+  DateTime? _confirmedExpiresAt;
 
   /// Called when this device no longer owns the lock.
-  void Function()? onLeaseLost;
+  void Function(InvoiceBuilderLockLossReason reason)? onLeaseLost;
 
   Future<InvoiceBuilderLockAcquireResult> acquire() async {
     if (_released) return InvoiceBuilderLockAcquireResult.unavailable;
@@ -61,8 +65,9 @@ class InvoiceBuilderLockService {
     // A transaction result alone is not enough to unlock the UI: make sure
     // the committed document is visible from the Firestore server first.
     // This prevents cached/offline state from granting access on two clients.
-    if (!await _confirmOwnershipFromServer()) {
-      return InvoiceBuilderLockAcquireResult.unavailable;
+    final confirmation = await _confirmOwnershipFromServer();
+    if (confirmation != InvoiceBuilderLockAcquireResult.acquired) {
+      return confirmation;
     }
 
     _hasLease = true;
@@ -76,10 +81,39 @@ class InvoiceBuilderLockService {
   }
 
   Future<void> _renew() async {
-    if (!_hasLease ||
-        !await _claimOrRenew() ||
-        !await _confirmOwnershipFromServer()) {
-      _loseLease();
+    if (!_hasLease || _renewalInProgress) return;
+    _renewalInProgress = true;
+    try {
+      if (!await _claimOrRenew()) {
+        if (_lastOperationError == null) {
+          _loseLease(InvoiceBuilderLockLossReason.ownershipChanged);
+        } else {
+          _handleTemporaryRenewalFailure();
+        }
+        return;
+      }
+
+      final confirmation = await _confirmOwnershipFromServer();
+      switch (confirmation) {
+        case InvoiceBuilderLockAcquireResult.acquired:
+          return;
+        case InvoiceBuilderLockAcquireResult.occupied:
+          _loseLease(InvoiceBuilderLockLossReason.ownershipChanged);
+          return;
+        case InvoiceBuilderLockAcquireResult.unavailable:
+          _handleTemporaryRenewalFailure();
+          return;
+      }
+    } finally {
+      _renewalInProgress = false;
+    }
+  }
+
+  void _handleTemporaryRenewalFailure() {
+    final confirmedExpiresAt = _confirmedExpiresAt;
+    if (confirmedExpiresAt == null ||
+        !DateTime.now().isBefore(confirmedExpiresAt)) {
+      _loseLease(InvoiceBuilderLockLossReason.unavailable);
     }
   }
 
@@ -88,12 +122,14 @@ class InvoiceBuilderLockService {
     final deviceId = _deviceId;
     final userId = _userId;
     if (ref == null || deviceId == null || userId == null) return false;
+    _lastOperationError = null;
 
     try {
       return await _firestore.runTransaction((transaction) async {
         final snapshot = await transaction.get(ref);
         final data = snapshot.data();
         final ownerSessionId = data?['sessionId'] as String?;
+        final ownerDeviceId = data?['deviceId'] as String?;
         final expiresAt = data?['expiresAt'];
         final expiresAtMs = expiresAt is Timestamp
             ? expiresAt.millisecondsSinceEpoch
@@ -102,6 +138,7 @@ class InvoiceBuilderLockService {
 
         if (snapshot.exists &&
             ownerSessionId != _sessionId &&
+            ownerDeviceId != deviceId &&
             expiresAtMs > nowMs) {
           return false;
         }
@@ -129,24 +166,30 @@ class InvoiceBuilderLockService {
     }
   }
 
-  Future<bool> _confirmOwnershipFromServer() async {
+  Future<InvoiceBuilderLockAcquireResult> _confirmOwnershipFromServer() async {
     final ref = _lockRef;
     final userId = _userId;
-    if (ref == null || userId == null) return false;
+    if (ref == null || userId == null) {
+      return InvoiceBuilderLockAcquireResult.unavailable;
+    }
 
     try {
       final snapshot = await ref.get(const GetOptions(source: Source.server));
       final data = snapshot.data();
       final expiresAt = data?['expiresAt'];
-      return data?['ownerUid'] == userId &&
+      final isOwned =
+          data?['ownerUid'] == userId &&
           data?['sessionId'] == _sessionId &&
           expiresAt is Timestamp &&
           expiresAt.millisecondsSinceEpoch >
               DateTime.now().millisecondsSinceEpoch;
+      if (!isOwned) return InvoiceBuilderLockAcquireResult.occupied;
+      _confirmedExpiresAt = expiresAt.toDate();
+      return InvoiceBuilderLockAcquireResult.acquired;
     } catch (error) {
       _lastOperationError = error;
       // Never grant or retain exclusive access from cache-only state.
-      return false;
+      return InvoiceBuilderLockAcquireResult.unavailable;
     }
   }
 
@@ -155,20 +198,25 @@ class InvoiceBuilderLockService {
     final ref = _lockRef;
     if (ref == null) return;
 
-    _subscription = ref.snapshots().listen((snapshot) {
+    _subscription = ref.snapshots(includeMetadataChanges: true).listen((
+      snapshot,
+    ) {
+      // A listener may first emit an older cached owner even after the server
+      // has confirmed this session. Only server state may revoke the lease.
+      if (snapshot.metadata.isFromCache) return;
       final ownerSessionId = snapshot.data()?['sessionId'] as String?;
       if (!snapshot.exists || ownerSessionId != _sessionId) {
-        _loseLease();
+        _loseLease(InvoiceBuilderLockLossReason.ownershipChanged);
       }
-    }, onError: (_) => _loseLease());
+    }, onError: (_) => _handleTemporaryRenewalFailure());
   }
 
-  void _loseLease() {
+  void _loseLease(InvoiceBuilderLockLossReason reason) {
     if (!_hasLease) return;
     _hasLease = false;
     _renewalTimer?.cancel();
     _renewalTimer = null;
-    onLeaseLost?.call();
+    onLeaseLost?.call(reason);
   }
 
   Future<void> release() async {

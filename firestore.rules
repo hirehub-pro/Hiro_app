@@ -453,10 +453,12 @@ service cloud.firestore {
 
     function validInvoiceBuilderLockUpdate(data, userId) {
       let sameSession = resource.data.get('sessionId', '') == data.sessionId;
+      let sameDevice = resource.data.get('deviceId', '') == data.deviceId;
       let legacyOrExpired = !('expiresAt' in resource.data) ||
         resource.data.expiresAt <= request.time;
       return validInvoiceBuilderLock(data, userId) &&
         ((sameSession && data.acquiredAt == resource.data.acquiredAt) ||
+          (sameDevice && recentTimestamp(data, 'acquiredAt')) ||
           (legacyOrExpired && recentTimestamp(data, 'acquiredAt')));
     }
 

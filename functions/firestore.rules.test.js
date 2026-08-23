@@ -601,6 +601,22 @@ test("enforces invoice-builder lock ownership and expiry", {
     updatedAt: serverTimestamp(),
   }));
 
+  await assertSucceeds(updateDoc(lockRef, {
+    sessionId: "session-c-0000000000000003",
+    deviceId: "device-a-0000000000000001",
+    acquiredAt: serverTimestamp(),
+    expiresAt: futureExpiry(),
+    updatedAt: serverTimestamp(),
+  }));
+
+  await assertFails(updateDoc(lockRef, {
+    sessionId: "session-d-0000000000000004",
+    deviceId: "device-b-0000000000000002",
+    acquiredAt: serverTimestamp(),
+    expiresAt: futureExpiry(),
+    updatedAt: serverTimestamp(),
+  }));
+
   await seed(`users/${uid}/invoice_builder_lock/active`, {
     ownerUid: uid,
     sessionId: "expired-session-00000000001",
