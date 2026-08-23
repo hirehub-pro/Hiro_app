@@ -550,8 +550,7 @@ class _MyRequestDetailsPageState extends State<MyRequestDetailsPage> {
               ...latestData,
               ...result,
               'type': 'request_edited',
-              if (originalRequestType != null &&
-                  originalRequestType.isNotEmpty)
+              if (originalRequestType != null && originalRequestType.isNotEmpty)
                 'requestType': originalRequestType,
               'title': 'בקשה שצפית בה עודכנה',
               'body': 'הלקוח ערך את פרטי הבקשה לאחר שצפית בה.',
