@@ -6683,40 +6683,12 @@ async function signAndReplacePdf(signingRequest, signatureBytes, signerName) {
   const width = signature.width * scale;
   const height = signature.height * scale;
   const x = Math.max(40, (pageWidth - width) / 2);
-  const y = 166;
+  // Quotes and work orders already contain a signature line at y=91 and a
+  // footer below y=59. Preserve both and add only the signing information in
+  // the space reserved by the original document template.
+  const y = 96;
 
-  page.drawRectangle({
-    x: 24,
-    y: 24,
-    width: pageWidth - 48,
-    height: 210,
-    color: rgb(1, 1, 1),
-    opacity: 1,
-  });
   page.drawImage(signature, {x, y, width, height});
-  const signatureLineWidth = Math.min(260, pageWidth - 100);
-  const signatureLineX = (pageWidth - signatureLineWidth) / 2;
-  const signatureLabel = "חתימה:";
-  const signatureLabelSize = 10;
-  const signatureLabelWidth = font.widthOfTextAtSize(
-      signatureLabel,
-      signatureLabelSize,
-  );
-  const signatureLabelX =
-    signatureLineX + signatureLineWidth - signatureLabelWidth;
-  page.drawText(signatureLabel, {
-    x: signatureLabelX,
-    y: 151,
-    size: signatureLabelSize,
-    font,
-    color: rgb(0.2, 0.24, 0.28),
-  });
-  page.drawLine({
-    start: {x: signatureLineX, y: 153},
-    end: {x: signatureLabelX - 6, y: 153},
-    thickness: 0.8,
-    color: rgb(0.2, 0.24, 0.28),
-  });
   const signedAt = new Date();
   drawCenteredPdfParts(page, [
     {text: formatSigningDate(signedAt), direction: "ltr"},
@@ -6725,62 +6697,9 @@ async function signAndReplacePdf(signingRequest, signatureBytes, signerName) {
     {text: "נחתם על ידי", direction: "rtl"},
   ], {
     font,
-    size: 8.5,
-    y: 132,
+    size: 7.5,
+    y: 72,
     color: rgb(0.2, 0.22, 0.25),
-  });
-
-  page.drawLine({
-    start: {x: 32, y: 112},
-    end: {x: pageWidth - 32, y: 112},
-    thickness: 1,
-    color: rgb(0.08, 0.08, 0.08),
-  });
-
-  drawRightAlignedPdfText(
-      page,
-      "חתימה דיגיטלית מאובטחת",
-      {
-        font,
-        size: 16,
-        x: pageWidth - 32,
-        y: 84,
-        color: rgb(0.03, 0.03, 0.03),
-      },
-  );
-  drawRightAlignedPdfText(
-      page,
-      "מסמך זה נחתם דיגיטלית באמצעות מערכת הירו",
-      {
-        font,
-        size: 8.5,
-        x: pageWidth - 32,
-        y: 64,
-        color: rgb(0.08, 0.08, 0.08),
-      },
-  );
-
-  const documentLabel =
-    normalizeString(signingRequest.documentName) ||
-    normalizeString(signingRequest.fileName) ||
-    "מסמך";
-  const pageCount = pdfDocument.getPageCount();
-  drawPdfParts(page, [
-    {text: "הופק ב", direction: "rtl"},
-    {text: formatSigningDate(signedAt), direction: "ltr"},
-    {text: "|", direction: "ltr"},
-    {text: documentLabel, direction: "ltr"},
-    {text: "|", direction: "ltr"},
-    {text: "עמוד", direction: "rtl"},
-    {text: String(pageCount), direction: "ltr"},
-    {text: "מתוך", direction: "rtl"},
-    {text: String(pageCount), direction: "ltr"},
-  ], {
-    x: 32,
-    y: 64,
-    size: 8,
-    font,
-    color: rgb(0.08, 0.08, 0.08),
   });
 
   const signedBytes = await pdfDocument.save();
@@ -7066,17 +6985,6 @@ function formatSigningDate(date) {
   );
   return `${values.hour}:${values.minute} ` +
     `${values.day}/${values.month}/${values.year}`;
-}
-
-function drawRightAlignedPdfText(page, text, options) {
-  const width = options.font.widthOfTextAtSize(text, options.size);
-  page.drawText(text, {
-    x: options.x - width,
-    y: options.y,
-    size: options.size,
-    font: options.font,
-    color: options.color,
-  });
 }
 
 function drawCenteredPdfText(page, text, options) {
