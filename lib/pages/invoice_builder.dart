@@ -959,6 +959,11 @@ class InvoiceBuilderPage extends StatefulWidget {
 
 class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   static const int _sandboxAccountingSoftwareNumber = 987654321;
+  static const Set<String> _licensedOnlyDocumentTypes = {
+    'invoice',
+    'invoice_receipt',
+    'credit_note',
+  };
   static const List<String> _bankNames = [
     'יהב - 4',
     'U-Bank - 26',
@@ -1013,6 +1018,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
 
   bool get _isLicensedDealerType =>
       _dealerType == 'licensed' || _dealerType == 'company';
+  bool get _showsLicensedOnlyDocumentTypes => _isLicensedDealerType;
 
   String _normalizePaymentMethod(String? raw) {
     switch (raw) {
@@ -1430,6 +1436,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
 
   // State for dealer logic
   String _dealerType = 'exempt';
+  bool _hasLoadedDealerType = false;
   String? _businessId;
   String? _workerName;
   String? _verifiedBusinessLogoUrl;
@@ -1549,6 +1556,18 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'account_not_confirmed':
           'We could not confirm that this account belongs to you.',
       'check_details': 'Please check your details and try again.',
+      'email_missing':
+          'No email address is attached to this Firebase Authentication account.',
+      'email_not_verified':
+          'Firebase Authentication reports that this account’s email is not verified. Verify it, then sign out and sign in again.',
+      'verification_email_sent':
+          'Firebase Authentication reports that this email is not verified. We sent a verification link to your email. Open it, then return and try again.',
+      'verification_email_recently_sent':
+          'A verification link was sent recently. Check your inbox or wait one minute before trying again.',
+      'verification_email_delivery_failed':
+          'We could not deliver the email-verification link. Please try again shortly.',
+      'email_delivery_failed':
+          'The email provider could not deliver the verification code. Please try again shortly.',
       'cannot_send_code':
           'We cannot send a verification code right now. Please try again shortly.',
       'code_expired':
@@ -1588,6 +1607,18 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'session_expired': 'תוקף ההתחברות פג. יש להתחבר מחדש.',
       'account_not_confirmed': 'לא הצלחנו לאשר שהחשבון הזה שייך לך.',
       'check_details': 'יש לבדוק את הפרטים ולנסות שוב.',
+      'email_missing':
+          'לא משויכת כתובת דוא״ל לחשבון Firebase Authentication זה.',
+      'email_not_verified':
+          'Firebase Authentication מדווח שכתובת הדוא״ל של החשבון אינה מאומתת. יש לאמת אותה, להתנתק ולהתחבר מחדש.',
+      'verification_email_sent':
+          'כתובת הדוא״ל אינה מאומתת. שלחנו אליך קישור אימות בדוא״ל. יש לפתוח אותו, לחזור לאפליקציה ולנסות שוב.',
+      'verification_email_recently_sent':
+          'קישור אימות נשלח לאחרונה. יש לבדוק את תיבת הדוא״ל או להמתין דקה ולנסות שוב.',
+      'verification_email_delivery_failed':
+          'לא הצלחנו למסור את הקישור לאימות הדוא״ל. יש לנסות שוב בעוד זמן קצר.',
+      'email_delivery_failed':
+          'ספק הדוא״ל לא הצליח למסור את קוד האימות. יש לנסות שוב בעוד זמן קצר.',
       'cannot_send_code':
           'לא ניתן לשלוח קוד אימות כעת. יש לנסות שוב בעוד זמן קצר.',
       'code_expired': 'קוד האימות אינו בתוקף עוד. יש לבקש קוד חדש.',
@@ -1626,6 +1657,18 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'session_expired': 'انتهت صلاحية جلسة الدخول. سجّل الدخول مرة أخرى.',
       'account_not_confirmed': 'تعذر التأكد من أن هذا الحساب يخصك.',
       'check_details': 'تحقق من بياناتك وحاول مرة أخرى.',
+      'email_missing':
+          'لا يوجد عنوان بريد إلكتروني مرتبط بحساب Firebase Authentication هذا.',
+      'email_not_verified':
+          'يشير Firebase Authentication إلى أن بريد هذا الحساب غير موثّق. وثّقه، ثم سجّل الخروج والدخول مجددًا.',
+      'verification_email_sent':
+          'يشير Firebase Authentication إلى أن البريد غير موثّق. أرسلنا رابط توثيق إلى بريدك. افتحه، ثم عُد إلى التطبيق وحاول مجددًا.',
+      'verification_email_recently_sent':
+          'تم إرسال رابط توثيق مؤخرًا. تحقق من بريدك أو انتظر دقيقة ثم حاول مجددًا.',
+      'verification_email_delivery_failed':
+          'تعذر تسليم رابط توثيق البريد الإلكتروني. حاول مرة أخرى بعد قليل.',
+      'email_delivery_failed':
+          'تعذر على مزوّد البريد تسليم رمز التحقق. حاول مرة أخرى بعد قليل.',
       'cannot_send_code':
           'لا يمكن إرسال رمز تحقق الآن. حاول مرة أخرى بعد قليل.',
       'code_expired': 'لم يعد رمز التحقق صالحًا. اطلب رمزًا جديدًا.',
@@ -1666,6 +1709,18 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'account_not_confirmed':
           'Не удалось подтвердить, что этот аккаунт принадлежит вам.',
       'check_details': 'Проверьте введённые данные и попробуйте снова.',
+      'email_missing':
+          'К этой учётной записи Firebase Authentication не привязан адрес электронной почты.',
+      'email_not_verified':
+          'Firebase Authentication сообщает, что почта этой учётной записи не подтверждена. Подтвердите её, затем выйдите и войдите снова.',
+      'verification_email_sent':
+          'Firebase Authentication сообщает, что почта не подтверждена. Мы отправили ссылку для подтверждения. Откройте её, вернитесь в приложение и повторите попытку.',
+      'verification_email_recently_sent':
+          'Ссылка для подтверждения уже отправлена. Проверьте почту или подождите минуту и повторите попытку.',
+      'verification_email_delivery_failed':
+          'Не удалось доставить ссылку для подтверждения почты. Попробуйте ещё раз позже.',
+      'email_delivery_failed':
+          'Почтовый провайдер не смог доставить код подтверждения. Попробуйте ещё раз позже.',
       'cannot_send_code':
           'Сейчас невозможно отправить код. Попробуйте немного позже.',
       'code_expired': 'Код больше не действителен. Запросите новый код.',
@@ -1702,6 +1757,17 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'session_expired': 'የመግቢያ ክፍለ ጊዜዎ ጊዜ አልፏል። እንደገና ይግቡ።',
       'account_not_confirmed': 'ይህ መለያ የእርስዎ መሆኑን ማረጋገጥ አልተቻለም።',
       'check_details': 'ዝርዝሮችዎን ያረጋግጡና እንደገና ይሞክሩ።',
+      'email_missing': 'ከዚህ Firebase Authentication መለያ ጋር የተያያዘ ኢሜይል የለም።',
+      'email_not_verified':
+          'Firebase Authentication የዚህ መለያ ኢሜይል እንዳልተረጋገጠ ያሳያል። ኢሜይሉን ያረጋግጡ፣ ከዚያ ወጥተው እንደገና ይግቡ።',
+      'verification_email_sent':
+          'Firebase Authentication ኢሜይሉ እንዳልተረጋገጠ ያሳያል። የማረጋገጫ አገናኝ ወደ ኢሜይልዎ ልከናል። ይክፈቱትና ወደ መተግበሪያው ተመልሰው እንደገና ይሞክሩ።',
+      'verification_email_recently_sent':
+          'የማረጋገጫ አገናኝ በቅርቡ ተልኳል። ኢሜይልዎን ይፈትሹ ወይም አንድ ደቂቃ ጠብቀው ይሞክሩ።',
+      'verification_email_delivery_failed':
+          'የኢሜይል ማረጋገጫ አገናኙን ማድረስ አልቻልንም። ትንሽ ቆይተው ይሞክሩ።',
+      'email_delivery_failed':
+          'የኢሜይል አቅራቢው የማረጋገጫ ኮዱን ማድረስ አልቻለም። ትንሽ ቆይተው ይሞክሩ።',
       'cannot_send_code': 'አሁን የማረጋገጫ ኮድ መላክ አይቻልም። ትንሽ ቆይተው ይሞክሩ።',
       'code_expired': 'ይህ የማረጋገጫ ኮድ ከእንግዲህ አይሰራም። አዲስ ኮድ ይጠይቁ።',
       'service_unavailable': 'የማረጋገጫ አገልግሎቱ ለጊዜው አይገኝም። እንደገና ይሞክሩ።',
@@ -1725,8 +1791,13 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   }) {
     final strings = _identityStrings();
     if (error is FirebaseFunctionsException) {
+      final details = error.details;
+      final reason = details is Map ? details['reason']?.toString() : null;
       switch (error.code) {
         case 'resource-exhausted':
+          if (sendingCode && reason == 'verification-email-recently-sent') {
+            return strings['verification_email_recently_sent']!;
+          }
           return sendingCode
               ? strings['code_requested_recently']!
               : strings['too_many_attempts']!;
@@ -1739,15 +1810,25 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
               ? strings['check_details']!
               : strings['enter_six_digit_code']!;
         case 'failed-precondition':
-          return sendingCode
-              ? strings['cannot_send_code']!
-              : strings['code_expired']!;
+          if (!sendingCode) return strings['code_expired']!;
+          return switch (reason) {
+            'email-missing' => strings['email_missing']!,
+            'email-not-verified' => strings['email_not_verified']!,
+            'verification-email-sent' => strings['verification_email_sent']!,
+            _ => strings['cannot_send_code']!,
+          };
         case 'deadline-exceeded':
           return sendingCode
               ? strings['service_unavailable']!
               : strings['code_expired']!;
         case 'unavailable':
         case 'internal':
+          if (sendingCode && reason == 'verification-email-delivery-failed') {
+            return strings['verification_email_delivery_failed']!;
+          }
+          if (sendingCode && reason == 'email-delivery-failed') {
+            return strings['email_delivery_failed']!;
+          }
           return strings['service_unavailable']!;
         default:
           return sendingCode
@@ -2499,34 +2580,55 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
               .collection('verification_info')
               .doc('latest')
               .get();
-          if (vInfoDoc.exists && mounted) {
-            final vData = vInfoDoc.data();
-            final businessLogoUrl = (vData?['businessLogoUrl'] ?? '')
-                .toString()
-                .trim();
-            setState(() {
-              _businessId = vData?['businessId'];
-              _dealerType = vData?['dealerType'] ?? 'exempt';
-              _verifiedBusinessLogoUrl = businessLogoUrl.isEmpty
-                  ? null
-                  : businessLogoUrl;
+          if (!mounted) return;
+          final vData = vInfoDoc.data();
+          final businessLogoUrl = (vData?['businessLogoUrl'] ?? '')
+              .toString()
+              .trim();
+          final dealerType = (vData?['dealerType'] ?? 'exempt')
+              .toString()
+              .trim()
+              .toLowerCase();
+          setState(() {
+            _businessId = vData?['businessId']?.toString();
+            _dealerType = dealerType;
+            _hasLoadedDealerType = true;
+            if (!_isLicensedDealerType) {
+              _selectedPriceTaxMode = 'after_tax';
+            }
+            _verifiedBusinessLogoUrl = businessLogoUrl.isEmpty
+                ? null
+                : businessLogoUrl;
 
-              if (widget.initialDocType == null ||
-                  widget.initialDocType!.isEmpty) {
-                if (_isBusinessVerified && _isLicensedDealerType) {
-                  _selectedDocType = 'invoice_receipt';
-                } else {
-                  _selectedDocType = 'quote';
-                }
+            if (!_isLicensedDealerType &&
+                _licensedOnlyDocumentTypes.contains(_selectedDocType)) {
+              _selectedDocType = 'quote';
+              _linkedDocuments.clear();
+              _currentDocumentCounter = null;
+              _invoiceNumber = '';
+            } else if (widget.initialDocType == null ||
+                widget.initialDocType!.isEmpty) {
+              if (_isBusinessVerified && _isLicensedDealerType) {
+                _selectedDocType = 'invoice_receipt';
+              } else {
+                _selectedDocType = 'quote';
               }
-            });
+            }
+          });
+          if (vInfoDoc.exists) {
             await _loadDefaultBusinessLogo();
           }
           await _loadCurrentDocumentNumber(promptIfMissing: true);
         }
       } catch (e) {
         dev.log("Error fetching worker info: $e");
+      } finally {
+        if (mounted && !_hasLoadedDealerType) {
+          setState(() => _hasLoadedDealerType = true);
+        }
       }
+    } else if (mounted) {
+      setState(() => _hasLoadedDealerType = true);
     }
   }
 
@@ -5248,6 +5350,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     if (!_hasInvoiceBuilderLock) {
       return const SizedBox.shrink();
     }
+    if (!_hasLoadedDealerType) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
 
     final strings = _withRequiredDefaults(_getLocalizedStrings(context));
     final isRtl =
@@ -5383,52 +5488,71 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                     value: 'receipt',
                                     child: Text(strings['receipt']!),
                                   ),
-                                  DropdownMenuItem(
-                                    value: 'invoice',
-                                    enabled:
-                                        _isLicensedDealerType &&
-                                        _isBusinessVerified,
-                                    child: Text(
-                                      strings['invoice']! +
-                                          ((!_isLicensedDealerType ||
-                                                  !_isBusinessVerified)
-                                              ? " (${strings['licensed_only']})"
-                                              : ""),
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        color:
-                                            (_isLicensedDealerType &&
-                                                _isBusinessVerified)
-                                            ? Colors.black
-                                            : Colors.grey,
+                                  if (_showsLicensedOnlyDocumentTypes) ...[
+                                    DropdownMenuItem(
+                                      value: 'invoice',
+                                      enabled:
+                                          _isLicensedDealerType &&
+                                          _isBusinessVerified,
+                                      child: Text(
+                                        strings['invoice']! +
+                                            ((!_isLicensedDealerType ||
+                                                    !_isBusinessVerified)
+                                                ? " (${strings['licensed_only']})"
+                                                : ""),
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          color:
+                                              (_isLicensedDealerType &&
+                                                  _isBusinessVerified)
+                                              ? Colors.black
+                                              : Colors.grey,
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                  DropdownMenuItem(
-                                    value: 'invoice_receipt',
-                                    enabled:
-                                        _isLicensedDealerType &&
-                                        _isBusinessVerified,
-                                    child: Text(
-                                      strings['invoice_receipt']! +
-                                          ((!_isLicensedDealerType ||
-                                                  !_isBusinessVerified)
-                                              ? " (${strings['licensed_only']})"
-                                              : ""),
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        color:
-                                            (_isLicensedDealerType &&
-                                                _isBusinessVerified)
-                                            ? Colors.black
-                                            : Colors.grey,
+                                    DropdownMenuItem(
+                                      value: 'invoice_receipt',
+                                      enabled:
+                                          _isLicensedDealerType &&
+                                          _isBusinessVerified,
+                                      child: Text(
+                                        strings['invoice_receipt']! +
+                                            ((!_isLicensedDealerType ||
+                                                    !_isBusinessVerified)
+                                                ? " (${strings['licensed_only']})"
+                                                : ""),
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          color:
+                                              (_isLicensedDealerType &&
+                                                  _isBusinessVerified)
+                                              ? Colors.black
+                                              : Colors.grey,
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                  DropdownMenuItem(
-                                    value: 'credit_note',
-                                    child: Text(strings['credit_note']!),
-                                  ),
+                                    DropdownMenuItem(
+                                      value: 'credit_note',
+                                      enabled:
+                                          _isLicensedDealerType &&
+                                          _isBusinessVerified,
+                                      child: Text(
+                                        strings['credit_note']! +
+                                            ((!_isLicensedDealerType ||
+                                                    !_isBusinessVerified)
+                                                ? " (${strings['licensed_only']})"
+                                                : ""),
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          color:
+                                              (_isLicensedDealerType &&
+                                                  _isBusinessVerified)
+                                              ? Colors.black
+                                              : Colors.grey,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ],
                                 onChanged: (val) async {
                                   if (val == null) return;
@@ -5628,31 +5752,37 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                   ],
                                 ),
                                 const SizedBox(height: 12),
-                                DropdownButtonFormField<String>(
-                                  isExpanded: true,
-                                  initialValue: _selectedPriceTaxMode,
-                                  decoration: _inputStyle(
-                                    strings['price_tax_mode']!,
-                                    Icons.percent_rounded,
+                                if (_isLicensedDealerType) ...[
+                                  DropdownButtonFormField<String>(
+                                    isExpanded: true,
+                                    initialValue: _selectedPriceTaxMode,
+                                    decoration: _inputStyle(
+                                      strings['price_tax_mode']!,
+                                      Icons.percent_rounded,
+                                    ),
+                                    items: [
+                                      DropdownMenuItem(
+                                        value: 'after_tax',
+                                        child: Text(
+                                          strings['price_after_tax']!,
+                                        ),
+                                      ),
+                                      DropdownMenuItem(
+                                        value: 'before_tax',
+                                        child: Text(
+                                          strings['price_before_tax']!,
+                                        ),
+                                      ),
+                                    ],
+                                    onChanged: (value) {
+                                      if (value == null) return;
+                                      setState(
+                                        () => _selectedPriceTaxMode = value,
+                                      );
+                                    },
                                   ),
-                                  items: [
-                                    DropdownMenuItem(
-                                      value: 'after_tax',
-                                      child: Text(strings['price_after_tax']!),
-                                    ),
-                                    DropdownMenuItem(
-                                      value: 'before_tax',
-                                      child: Text(strings['price_before_tax']!),
-                                    ),
-                                  ],
-                                  onChanged: (value) {
-                                    if (value == null) return;
-                                    setState(
-                                      () => _selectedPriceTaxMode = value,
-                                    );
-                                  },
-                                ),
-                                const SizedBox(height: 12),
+                                  const SizedBox(height: 12),
+                                ],
                                 SwitchListTile.adaptive(
                                   contentPadding: EdgeInsets.zero,
                                   title: Text(strings['has_discount']!),
@@ -5797,7 +5927,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                       ),
                                     ),
                                     subtitle: Text(
-                                      "${item.quantity} x ${item.price.toStringAsFixed(2)} ₪ (${item.isPriceBeforeTax ? strings['entered_price_before_tax']! : strings['entered_price_after_tax']!})",
+                                      "${item.quantity} x ${item.price.toStringAsFixed(2)} ₪${_isLicensedDealerType ? ' (${item.isPriceBeforeTax ? strings['entered_price_before_tax']! : strings['entered_price_after_tax']!})' : ''}",
                                     ),
                                     trailing: Row(
                                       mainAxisSize: MainAxisSize.min,

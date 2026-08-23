@@ -3698,9 +3698,75 @@ exports.mirrorReceivedInvoice = onDocumentWritten(
     },
 );
 
-// Sends an invoice only after its PDF has been uploaded and its Storage path
-// has been written to Firestore. The delivery state acts as a lease so retries
-// and later document updates do not create duplicate emails.
+async function sendInvoiceBuilderEmailVerification({db, userId, email}) {
+  const verificationRef = db.collection("users").doc(userId)
+      .collection("invoiceBuilderVerifications").doc("emailVerification");
+  const now = Date.now();
+  const requestId = crypto.randomUUID();
+
+  await db.runTransaction(async (transaction) => {
+    const current = await transaction.get(verificationRef);
+    const lastSentAt = current.data()?.sentAt?.toDate?.();
+    if (lastSentAt &&
+        now - lastSentAt.getTime() <
+          INVOICE_BUILDER_EMAIL_CODE_RESEND_DELAY_MS) {
+      throw new HttpsError(
+          "resource-exhausted",
+          "A verification email was sent recently. Please wait one minute.",
+          {reason: "verification-email-recently-sent"},
+      );
+    }
+    transaction.set(verificationRef, {
+      requestId,
+      sentAt: admin.firestore.Timestamp.fromMillis(now),
+    });
+  });
+
+  try {
+    const link = await admin.auth().generateEmailVerificationLink(email);
+    const safeLink = escapeHtml(link);
+    const {error} = await new Resend(RESEND_API_KEY.value()).emails.send({
+      from: RESEND_FROM_EMAIL.value(),
+      to: [email],
+      subject: "אימות כתובת הדוא״ל שלך בהירו",
+      text: "כדי לאמת את כתובת הדוא״ל שלך בהירו, יש לפתוח את הקישור הבא:\n\n" +
+        `${link}\n\nלאחר האימות יש לחזור לאפליקציה ולנסות שוב.`,
+      html: `<div dir="rtl" style="font-family:Arial,sans-serif;` +
+        `color:#1f2937;line-height:1.6">` +
+        `<h2>אימות כתובת דוא״ל</h2>` +
+        `<p>כדי להמשיך למפיק המסמכים, יש לאמת את כתובת הדוא״ל שלך.</p>` +
+        `<p><a href="${safeLink}" style="display:inline-block;padding:12px 20px;` +
+        `border-radius:8px;background:#1976d2;color:#fff;text-decoration:none;` +
+        `font-weight:700">אימות כתובת הדוא״ל</a></p>` +
+        `<p>לאחר האימות יש לחזור לאפליקציה ולנסות שוב.</p>` +
+        `</div>`,
+    }, {
+      idempotencyKey:
+        `invoice-builder-email-verification/${userId}/${requestId}`,
+    });
+    if (error) {
+      throw new Error(error.message || "Resend rejected the verification email.");
+    }
+  } catch (error) {
+    await db.runTransaction(async (transaction) => {
+      const current = await transaction.get(verificationRef);
+      if (current.data()?.requestId === requestId) {
+        transaction.delete(verificationRef);
+      }
+    }).catch(() => undefined);
+    logger.error("Could not send Firebase email verification link", {
+      userId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw new HttpsError(
+        "internal",
+        "The email verification link could not be delivered.",
+        {reason: "verification-email-delivery-failed"},
+    );
+  }
+}
+
+// Sends the second-factor email used to unlock the invoice builder.
 exports.sendInvoiceBuilderEmailCode = onCall(
     {
       region: "me-west1",
@@ -3714,14 +3780,33 @@ exports.sendInvoiceBuilderEmailCode = onCall(
 
       const authUser = await admin.auth().getUser(userId);
       const email = normalizeEmail(authUser.email);
-      if (!email || !authUser.emailVerified) {
+      const db = admin.firestore();
+      if (!email) {
+        logger.warn("Invoice builder email code precondition failed", {
+          userId,
+          reason: "email-missing",
+          emailVerified: authUser.emailVerified,
+        });
         throw new HttpsError(
             "failed-precondition",
-            "A verified email address is required for this verification.",
+            "No email address is attached to this Firebase Auth account.",
+            {reason: "email-missing"},
+        );
+      }
+      if (!authUser.emailVerified) {
+        logger.warn("Invoice builder email code precondition failed", {
+          userId,
+          reason: "email-not-verified",
+          emailVerified: false,
+        });
+        await sendInvoiceBuilderEmailVerification({db, userId, email});
+        throw new HttpsError(
+            "failed-precondition",
+            "A verification link was sent to the account email address.",
+            {reason: "verification-email-sent"},
         );
       }
 
-      const db = admin.firestore();
       const verificationRef = db.collection("users").doc(userId)
           .collection("invoiceBuilderVerifications").doc("emailCode");
       const now = Date.now();
@@ -3774,7 +3859,11 @@ exports.sendInvoiceBuilderEmailCode = onCall(
           userId,
           error: error instanceof Error ? error.message : String(error),
         });
-        throw new HttpsError("internal", "Unable to send the verification email.");
+        throw new HttpsError(
+            "internal",
+            "The email provider could not deliver the verification email.",
+            {reason: "email-delivery-failed"},
+        );
       }
     },
 );
