@@ -25,6 +25,7 @@ const {
 } = require("./email_saved_invoice");
 const {ownedInvoicePdfPath} = require("./document_security");
 const {
+  canRollbackCancelledInvoice,
   taxAuthorityFailureState,
   taxInvoiceDraftSignature,
   taxInvoicePayloadHash,
@@ -2079,7 +2080,12 @@ exports.submitTaxInvoiceDecision = onCall(
                 "The Tax Authority decision has already been submitted.",
             );
           }
-          return {cached: true, response: storedDecision.response || null};
+          return {
+            cached: true,
+            response: storedDecision.response || null,
+            payload,
+            reservation,
+          };
         }
         if (storedDecision.status === "submitting") {
           throw new HttpsError(
@@ -2102,11 +2108,51 @@ exports.submitTaxInvoiceDecision = onCall(
             admin.firestore.FieldValue.increment(1),
           "taxAuthorityDecision.environment": "sandbox",
         });
-        return {cached: false, payload};
+        return {cached: false, payload, reservation};
       });
 
       if (claim.cached) {
-        return {accepted: true, decision, response: claim.response, cached: true};
+        if (decision === "cancel") {
+          const rollback = await rollbackCancelledTaxInvoice({
+            db,
+            userId,
+            invoiceRef,
+            reservation: claim.reservation,
+            response: claim.response,
+          });
+          if (!rollback.removed || !rollback.counterRolledBack) {
+            throw new HttpsError(
+                "failed-precondition",
+                "The cancellation was accepted, but a newer document number " +
+                  "already exists, so this number cannot be reused safely.",
+                {decisionAccepted: true},
+            );
+          }
+          return {
+            accepted: true,
+            decision,
+            removed: rollback.removed,
+            counterRolledBack: rollback.counterRolledBack,
+            cached: true,
+          };
+        }
+        const document = decision === "continue" ?
+          await finalizeAllocatedTaxInvoice({
+            userId,
+            invoiceRef,
+            payload: claim.payload,
+            allocation: null,
+            reservation: claim.reservation,
+            readyStatus: "continued_without_allocation",
+            workflowStatus: "continued_without_allocation",
+          }) : null;
+        return {
+          accepted: true,
+          decision,
+          response: claim.response,
+          document,
+          cached: true,
+        };
       }
 
       try {
@@ -2115,6 +2161,31 @@ exports.submitTaxInvoiceDecision = onCall(
           decision,
           payload: claim.payload,
         });
+        if (decision === "cancel") {
+          const rollback = await rollbackCancelledTaxInvoice({
+            db,
+            userId,
+            invoiceRef,
+            reservation: claim.reservation,
+            response,
+          });
+          if (!rollback.removed || !rollback.counterRolledBack) {
+            throw new HttpsError(
+                "failed-precondition",
+                "The cancellation was accepted, but a newer document number " +
+                  "already exists, so this number cannot be reused safely.",
+                {decisionAccepted: true},
+            );
+          }
+          return {
+            accepted: true,
+            decision,
+            removed: rollback.removed,
+            counterRolledBack: rollback.counterRolledBack,
+            response,
+            cached: false,
+          };
+        }
         const documentStatus = invoiceDecisionDocumentStatus(decision);
         await invoiceRef.update({
           documentStatus,
@@ -2124,8 +2195,37 @@ exports.submitTaxInvoiceDecision = onCall(
           "taxAuthorityDecision.acceptedAt":
             admin.firestore.FieldValue.serverTimestamp(),
         });
-        return {accepted: true, decision, documentStatus, response, cached: false};
+        let document = null;
+        if (decision === "continue") {
+          try {
+            document = await finalizeAllocatedTaxInvoice({
+              userId,
+              invoiceRef,
+              payload: claim.payload,
+              allocation: null,
+              reservation: claim.reservation,
+              readyStatus: "continued_without_allocation",
+              workflowStatus: "continued_without_allocation",
+            });
+          } catch (error) {
+            throw new HttpsError(
+                "internal",
+                "The decision was accepted, but the invoice could not be " +
+                  "finalized. Trying again will safely resume it.",
+                {decisionAccepted: true},
+            );
+          }
+        }
+        return {
+          accepted: true,
+          decision,
+          documentStatus,
+          response,
+          document,
+          cached: false,
+        };
       } catch (error) {
+        if (error?.details?.decisionAccepted === true) throw error;
         const failureState = taxAuthorityFailureState(error);
         await invoiceRef.update({
           documentStatus: failureState === "failed" ?
@@ -2243,6 +2343,68 @@ async function taxInvoiceBusinessProfile(userId, expectedBusinessId) {
   };
 }
 
+async function rollbackCancelledTaxInvoice({
+  db,
+  userId,
+  invoiceRef,
+  reservation,
+  response,
+}) {
+  const counterRef = db.collection("users").doc(userId)
+      .collection("counters")
+      .doc(`document_counter_${reservation.docType}`);
+  const rollback = await db.runTransaction(async (transaction) => {
+    const [invoiceSnap, counterSnap] = await Promise.all([
+      transaction.get(invoiceRef),
+      transaction.get(counterRef),
+    ]);
+    if (!invoiceSnap.exists) {
+      return {removed: true, counterRolledBack: true, logoStoragePath: ""};
+    }
+    const invoice = invoiceSnap.data() || {};
+    const counterValue = Number(counterSnap.data()?.value);
+    const canRollback = canRollbackCancelledInvoice({
+      invoice,
+      counterValue,
+      sequenceNumber: reservation.sequenceNumber,
+    });
+    if (!canRollback) {
+      transaction.update(invoiceRef, {
+        documentStatus: "allocation_cancelled",
+        "taxAuthorityAllocationRequest.status": "allocation_cancelled",
+        "taxAuthorityDecision.status": "accepted",
+        "taxAuthorityDecision.decision": "cancel",
+        "taxAuthorityDecision.response": response,
+        "taxAuthorityDecision.acceptedAt":
+          admin.firestore.FieldValue.serverTimestamp(),
+        "taxAuthorityDecision.rollbackBlockedAt":
+          admin.firestore.FieldValue.serverTimestamp(),
+      });
+      return {removed: false, counterRolledBack: false, logoStoragePath: ""};
+    }
+    transaction.update(counterRef, {
+      value: reservation.sequenceNumber,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    transaction.delete(invoiceRef);
+    return {
+      removed: true,
+      counterRolledBack: true,
+      logoStoragePath: normalizeString(
+          invoice.taxInvoicePresentation?.documentLogoStoragePath,
+      ).trim(),
+    };
+  });
+
+  if (rollback.removed &&
+      rollback.logoStoragePath.startsWith(`document-assets/${userId}/`)) {
+    await admin.storage().bucket().file(rollback.logoStoragePath)
+        .delete({ignoreNotFound: true})
+        .catch(() => {});
+  }
+  return rollback;
+}
+
 function taxInvoiceDownloadUrl(bucketName, storagePath, token) {
   return "https://firebasestorage.googleapis.com/v0/b/" +
     `${encodeURIComponent(bucketName)}/o/${encodeURIComponent(storagePath)}` +
@@ -2260,6 +2422,7 @@ function taxInvoiceStorageFields({
   downloadUrl,
   size,
   generation,
+  workflowStatus = "finalized",
 }) {
   const invoice = payload.invoices_list[0];
   const totalBeforeRounding = roundMoney(invoice.payment_amount_including_vat);
@@ -2335,11 +2498,13 @@ function taxInvoiceStorageFields({
       ...(paymentDueDate ? {paymentDueDate} : {}),
       paymentStatus: reservation.docType === "invoice" ? "unpaid" : "paid",
       paidAmount: reservation.docType === "invoice" ? 0 : Math.abs(total),
-      allocationNumber: allocation.confirmationNumber,
-      taxAuthorityAllocationNumber: allocation.confirmationNumber,
+      ...(allocation?.confirmationNumber ? {
+        allocationNumber: allocation.confirmationNumber,
+        taxAuthorityAllocationNumber: allocation.confirmationNumber,
+      } : {}),
       documentStatus: "finalized",
       taxAuthorityAllocationRequest: {
-        status: "finalized",
+        status: workflowStatus,
         finalizedAt: admin.firestore.FieldValue.serverTimestamp(),
         finalizationError: admin.firestore.FieldValue.delete(),
         finalizationFailedAt: admin.firestore.FieldValue.delete(),
@@ -2403,9 +2568,13 @@ function taxInvoiceStorageFields({
       timestamp: admin.firestore.FieldValue.serverTimestamp(),
       paymentStatus: reservation.docType === "invoice" ? "unpaid" : "paid",
       paidAmount: reservation.docType === "invoice" ? 0 : Math.abs(total),
-      taxAuthorityAllocation: allocation,
-      allocationNumber: allocation.confirmationNumber,
-      taxAuthorityAllocationNumber: allocation.confirmationNumber,
+      ...(allocation?.confirmationNumber ? {
+        taxAuthorityAllocation: allocation,
+        allocationNumber: allocation.confirmationNumber,
+        taxAuthorityAllocationNumber: allocation.confirmationNumber,
+      } : {
+        continuedWithoutAllocation: true,
+      }),
     },
     total,
   };
@@ -2417,6 +2586,8 @@ async function finalizeAllocatedTaxInvoice({
   payload,
   allocation,
   reservation,
+  readyStatus = "allocation_approved",
+  workflowStatus = "finalized",
 }) {
   const currentSnap = await invoiceRef.get();
   const current = currentSnap.data() || {};
@@ -2432,8 +2603,9 @@ async function finalizeAllocatedTaxInvoice({
       items: Array.isArray(current.items) ? current.items : [],
     };
   }
-  if (current.taxAuthorityAllocation?.confirmationNumber !==
-      allocation.confirmationNumber) {
+  if (allocation?.confirmationNumber &&
+      current.taxAuthorityAllocation?.confirmationNumber !==
+        allocation.confirmationNumber) {
     throw new HttpsError(
         "failed-precondition",
         "The approved allocation does not match the stored invoice.",
@@ -2521,6 +2693,7 @@ async function finalizeAllocatedTaxInvoice({
     downloadUrl,
     size: Number(metadata.size),
     generation: normalizeString(metadata.generation),
+    workflowStatus,
   });
   fields.log.userId = userId;
 
@@ -2534,9 +2707,10 @@ async function finalizeAllocatedTaxInvoice({
     ]);
     const latest = latestSnap.data() || {};
     if (latest.documentStatus === "finalized") return;
-    if (latest.documentStatus !== "allocation_approved" ||
-        latest.taxAuthorityAllocation?.confirmationNumber !==
-          allocation.confirmationNumber) {
+    if (latest.documentStatus !== readyStatus ||
+        (allocation?.confirmationNumber &&
+          latest.taxAuthorityAllocation?.confirmationNumber !==
+            allocation.confirmationNumber)) {
       throw new HttpsError(
           "failed-precondition",
           "The invoice is no longer ready for finalization.",

@@ -2,12 +2,31 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 const {
+  canRollbackCancelledInvoice,
   taxAuthorityFailureState,
   taxInvoiceDraftSignature,
   taxInvoicePayloadHash,
   validTaxInvoiceDraftSignature,
   validateTaxInvoiceAllocation,
 } = require("./tax_invoice_security");
+
+test("rolls back only the latest unfinished cancelled invoice number", () => {
+  assert.equal(canRollbackCancelledInvoice({
+    invoice: {documentStatus: "allocation_cancelled"},
+    counterValue: 43,
+    sequenceNumber: 42,
+  }), true);
+  assert.equal(canRollbackCancelledInvoice({
+    invoice: {documentStatus: "allocation_cancelled"},
+    counterValue: 44,
+    sequenceNumber: 42,
+  }), false);
+  assert.equal(canRollbackCancelledInvoice({
+    invoice: {documentStatus: "finalized", storagePath: "invoices/42.pdf"},
+    counterValue: 43,
+    sequenceNumber: 42,
+  }), false);
+});
 
 function validPayload() {
   return {

@@ -161,7 +161,15 @@ function taxAuthorityFailureState(error) {
     "failed" : "needs_reconciliation";
 }
 
+function canRollbackCancelledInvoice({invoice, counterValue, sequenceNumber}) {
+  return !invoice?.storagePath &&
+    invoice?.documentStatus !== "finalized" &&
+    Number.isSafeInteger(sequenceNumber) &&
+    Number(counterValue) === sequenceNumber + 1;
+}
+
 module.exports = {
+  canRollbackCancelledInvoice,
   taxAuthorityFailureState,
   taxInvoiceDraftSignature,
   taxInvoicePayloadHash,

@@ -2793,12 +2793,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     final strings = _withRequiredDefaults(
       _getLocalizedStrings(context, listen: false),
     );
-    final isRtl =
-        Provider.of<LanguageProvider>(
-          context,
-          listen: false,
-        ).locale.languageCode ==
-        'he';
     final businessVatNumber = _digitsOnly(_businessId);
     final customerVatNumber = _digitsOnly(_clientIdController.text);
     if (businessVatNumber.isEmpty || customerVatNumber.isEmpty) {
@@ -2877,18 +2871,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     }
     final data = Map<String, dynamic>.from(result.data);
     if (data['decisionRequired'] == true) {
-      final hearingRequested = await _offerTaxAuthorityHearingRequest(
+      return _resolveTaxAuthorityDecision(
         draftId: invoiceDocId,
         errors: data['errors'],
-      );
-      throw StateError(
-        isRtl
-            ? (hearingRequested
-                  ? 'בקשת השימוע נרשמה. החשבונית נשמרה וממתינה לבדיקה.'
-                  : 'החשבונית ממתינה להחלטת רשות המסים.')
-            : (hearingRequested
-                  ? 'The hearing request was recorded. The invoice remains saved and pending review.'
-                  : 'The invoice is awaiting a Tax Authority decision.'),
       );
     }
     final confirmationNumber = data['confirmationNumber']?.toString().trim();
@@ -2914,59 +2899,269 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     return _ServerDocumentResult(document: document);
   }
 
-  Future<bool> _offerTaxAuthorityHearingRequest({
+  Future<_ServerDocumentResult> _resolveTaxAuthorityDecision({
     required String draftId,
     required dynamic errors,
   }) async {
-    if (!mounted) return false;
-    final isRtl =
-        Provider.of<LanguageProvider>(
-          context,
-          listen: false,
-        ).locale.languageCode ==
-        'he';
+    if (!mounted) {
+      throw StateError('The invoice is awaiting a Tax Authority decision.');
+    }
+    final languageCode = Provider.of<LanguageProvider>(
+      context,
+      listen: false,
+    ).locale.languageCode;
+    final isHebrew = languageCode == 'he';
+    final isRtl = isHebrew || languageCode == 'ar';
     final authorityMessage = _taxAuthorityErrorMessageFromDetails(errors);
-    final requestHearing = await showDialog<bool>(
+    final decision = await showModalBottomSheet<String>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(
-          isRtl ? 'החשבונית עוכבה' : 'Invoice held by the Tax Authority',
-        ),
-        content: Text(
-          [
-            ?authorityMessage,
-            isRtl
-                ? 'לא התקבל מספר הקצאה. ניתן לשמור את החשבונית במצב המתנה ולבקש שימוע מול חדר הבקרה.'
-                : 'No allocation number was issued. You can keep the invoice pending and request a hearing with the Control Room.',
-          ].join('\n\n'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: Text(isRtl ? 'לא עכשיו' : 'Not now'),
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      barrierColor: Colors.black.withValues(alpha: 0.55),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
+      ),
+      builder: (sheetContext) => Directionality(
+        textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
+        child: SafeArea(
+          top: false,
+          child: SingleChildScrollView(
+            padding: EdgeInsets.fromLTRB(
+              22,
+              10,
+              22,
+              22 + MediaQuery.viewInsetsOf(sheetContext).bottom,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    const Spacer(),
+                    Container(
+                      width: 42,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFCBD5E1),
+                        borderRadius: BorderRadius.circular(99),
+                      ),
+                    ),
+                    Expanded(
+                      child: Align(
+                        alignment: AlignmentDirectional.centerEnd,
+                        child: IconButton(
+                          tooltip: isHebrew ? 'סגירה' : 'Close',
+                          onPressed: () => Navigator.pop(sheetContext),
+                          icon: const Icon(Icons.close_rounded),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Align(
+                  child: Container(
+                    width: 72,
+                    height: 72,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF7ED),
+                      borderRadius: BorderRadius.circular(22),
+                      border: Border.all(color: const Color(0xFFFED7AA)),
+                    ),
+                    child: const Icon(
+                      Icons.receipt_long_rounded,
+                      size: 36,
+                      color: Color(0xFFEA580C),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  isHebrew
+                      ? 'לא התקבל מספר הקצאה'
+                      : 'No allocation number was issued',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Color(0xFF0F172A),
+                    fontSize: 23,
+                    fontWeight: FontWeight.w800,
+                    height: 1.25,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  isHebrew
+                      ? 'רשות המסים עיכבה את החשבונית. בחרו כיצד להמשיך.'
+                      : 'The Tax Authority held this invoice. Choose how you want to continue.',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Color(0xFF64748B),
+                    fontSize: 15,
+                    fontWeight: FontWeight.w500,
+                    height: 1.45,
+                  ),
+                ),
+                if (authorityMessage != null) ...[
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.all(13),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFFBEB),
+                      borderRadius: BorderRadius.circular(15),
+                      border: Border.all(color: const Color(0xFFFDE68A)),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(
+                          Icons.info_outline_rounded,
+                          size: 20,
+                          color: Color(0xFFD97706),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            authorityMessage,
+                            style: const TextStyle(
+                              color: Color(0xFF92400E),
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              height: 1.4,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 20),
+                FilledButton.icon(
+                  onPressed: () =>
+                      Navigator.pop(sheetContext, 'further_objection'),
+                  icon: const Icon(Icons.support_agent_rounded),
+                  label: Text(isHebrew ? 'בקשת שימוע' : 'Request a hearing'),
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(54),
+                    backgroundColor: const Color(0xFF1976D2),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    textStyle: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                OutlinedButton.icon(
+                  onPressed: () => Navigator.pop(sheetContext, 'continue'),
+                  icon: const Icon(Icons.arrow_forward_rounded),
+                  label: Text(
+                    isHebrew
+                        ? 'המשך ללא מספר הקצאה'
+                        : 'Continue without an allocation number',
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(54),
+                    foregroundColor: const Color(0xFFB45309),
+                    side: const BorderSide(color: Color(0xFFF59E0B)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    textStyle: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  isHebrew
+                      ? 'החשבונית תופק ללא מספר הקצאה.'
+                      : 'The invoice will be issued without an allocation number.',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Color(0xFF64748B),
+                    fontSize: 12,
+                    height: 1.35,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextButton.icon(
+                  onPressed: () => Navigator.pop(sheetContext, 'cancel'),
+                  icon: const Icon(Icons.cancel_outlined),
+                  label: Text(
+                    isHebrew ? 'ביטול החשבונית' : 'Cancel the invoice',
+                  ),
+                  style: TextButton.styleFrom(
+                    minimumSize: const Size.fromHeight(48),
+                    foregroundColor: const Color(0xFFB91C1C),
+                    textStyle: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: Text(isRtl ? 'בקשת שימוע' : 'Request hearing'),
-          ),
-        ],
+        ),
       ),
     );
-    if (requestHearing != true || !mounted) return false;
+    if (decision == null || !mounted) {
+      throw StateError(
+        isHebrew
+            ? 'החשבונית נשמרה וממתינה להחלטה.'
+            : 'The invoice remains saved and is awaiting a decision.',
+      );
+    }
 
     final callable = _functions.httpsCallable('submitTaxInvoiceDecision');
     final result = await callable.call<Map<String, dynamic>>({
       'draftId': draftId,
-      'decision': 'further_objection',
+      'decision': decision,
     });
     if (result.data['accepted'] != true) {
       throw StateError(
-        isRtl
-            ? 'רשות המסים לא אישרה את בקשת השימוע.'
-            : 'The Tax Authority did not accept the hearing request.',
+        isHebrew
+            ? 'רשות המסים לא אישרה את הבחירה.'
+            : 'The Tax Authority did not accept the selected action.',
       );
     }
-    return true;
+    if (decision == 'cancel' &&
+        (result.data['removed'] != true ||
+            result.data['counterRolledBack'] != true)) {
+      throw StateError(
+        isHebrew
+            ? 'הביטול התקבל, אך לא ניתן היה לשחרר את מספר החשבונית בבטחה.'
+            : 'The cancellation was accepted, but the invoice number could not be released safely.',
+      );
+    }
+    if (decision == 'continue') {
+      final documentValue = result.data['document'];
+      final document = documentValue is Map
+          ? Map<String, dynamic>.from(documentValue)
+          : const <String, dynamic>{};
+      if (document.isEmpty) {
+        throw StateError(
+          isHebrew
+              ? 'הבחירה אושרה, אך החשבונית עדיין לא הושלמה. נסו לשמור שוב.'
+              : 'The decision was accepted, but the invoice was not finalized. Try saving again.',
+        );
+      }
+      return _ServerDocumentResult(document: document);
+    }
+    throw StateError(
+      decision == 'cancel'
+          ? (isHebrew
+                ? 'החשבונית בוטלה ולא הופקה.'
+                : 'The invoice was cancelled and was not issued.')
+          : (isHebrew
+                ? 'בקשת השימוע נרשמה. החשבונית ממתינה לבדיקה.'
+                : 'The hearing request was recorded. The invoice is awaiting review.'),
+    );
   }
 
   Map<String, dynamic> _serverDocumentRequestPayload() {
@@ -5090,6 +5285,27 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       setState(() => _isPreparing = false);
 
       InvoiceBuilderDraftResult? savedDraftResult;
+      Future<Uint8List?> saveServerResult(
+        _ServerDocumentResult serverResult,
+      ) async {
+        savedDraftResult = serverResult.toDraftResult();
+        if (savedDraftResult == null) {
+          throw StateError('The server did not return a final document.');
+        }
+        final finalPdfBytes = await firebase_storage.FirebaseStorage.instance
+            .ref()
+            .child(savedDraftResult!.storagePath)
+            .getData(25 * 1024 * 1024);
+        if (finalPdfBytes == null || finalPdfBytes.length < 4) {
+          throw StateError(
+            'The final server document could not be downloaded.',
+          );
+        }
+        _markDocumentSaved();
+        _showInvoiceEmailDeliveryToast(savedDraftResult!);
+        return finalPdfBytes;
+      }
+
       final builderRoute = ModalRoute.of(context);
       final navigator = Navigator.of(context);
       final action = await Navigator.push<String>(
@@ -5107,26 +5323,11 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                 : _handleBuilderBack,
             onSave: () async {
               final serverResult = await _finalizeDocumentOnServer();
-              savedDraftResult = serverResult.toDraftResult();
-              if (savedDraftResult == null) {
-                throw StateError('The server did not return a final document.');
-              }
-              final finalPdfBytes = await firebase_storage
-                  .FirebaseStorage
-                  .instance
-                  .ref()
-                  .child(savedDraftResult!.storagePath)
-                  .getData(25 * 1024 * 1024);
-              if (finalPdfBytes == null || finalPdfBytes.length < 4) {
-                throw StateError(
-                  'The final server document could not be downloaded.',
-                );
-              }
-              if (savedDraftResult != null) {
-                _markDocumentSaved();
-                _showInvoiceEmailDeliveryToast(savedDraftResult!);
-              }
-              return finalPdfBytes;
+              return saveServerResult(serverResult);
+            },
+            onSaveWithoutAllocation: () async {
+              final serverResult = await _createServerDocument();
+              return saveServerResult(serverResult);
             },
             onSendForSignature: _isQuoteLike
                 ? () async {
@@ -8182,10 +8383,17 @@ class _AddInvoiceClientDialogState extends State<_AddInvoiceClientDialog> {
   }
 }
 
+enum _TaxAuthorityConnectionChoice {
+  alreadyConnected,
+  continueWithoutAllocation,
+  connect,
+}
+
 class InvoicePreviewPage extends StatefulWidget {
   final Uint8List pdfBytes;
   final String fileName;
   final Future<Uint8List?> Function() onSave;
+  final Future<Uint8List?> Function()? onSaveWithoutAllocation;
   final bool requireTaxAuthorityConnectionPrompt;
   final Future<bool> Function()? isTaxAuthorityConnected;
   final Future<void> Function()? onConnectTaxAuthority;
@@ -8198,6 +8406,7 @@ class InvoicePreviewPage extends StatefulWidget {
     required this.pdfBytes,
     required this.fileName,
     required this.onSave,
+    this.onSaveWithoutAllocation,
     this.requireTaxAuthorityConnectionPrompt = false,
     this.isTaxAuthorityConnected,
     this.onConnectTaxAuthority,
@@ -8210,22 +8419,61 @@ class InvoicePreviewPage extends StatefulWidget {
   State<InvoicePreviewPage> createState() => _InvoicePreviewPageState();
 }
 
-class _InvoicePreviewPageState extends State<InvoicePreviewPage> {
+class _InvoicePreviewPageState extends State<InvoicePreviewPage>
+    with WidgetsBindingObserver {
   bool _isSaved = false;
   bool _isSaving = false;
   bool _isSending = false;
   bool _isSendingForSignature = false;
+  bool _waitingForTaxAuthorityReturn = false;
   late Uint8List _pdfBytes;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _pdfBytes = widget.pdfBytes;
     if (widget.requireTaxAuthorityConnectionPrompt) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _showTaxAuthorityConnectionPromptIfNeeded();
       });
     }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _waitingForTaxAuthorityReturn) {
+      unawaited(_refreshTaxAuthorityConnectionAfterReturn());
+    }
+  }
+
+  Future<void> _refreshTaxAuthorityConnectionAfterReturn() async {
+    await Future<void>.delayed(const Duration(milliseconds: 700));
+    final connected = await widget.isTaxAuthorityConnected?.call() ?? false;
+    if (!mounted) return;
+    _waitingForTaxAuthorityReturn = false;
+    if (!connected) return;
+
+    final languageCode = Provider.of<LanguageProvider>(
+      context,
+      listen: false,
+    ).locale.languageCode;
+    final isRtl = languageCode == 'he' || languageCode == 'ar';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          isRtl
+              ? 'החיבור לרשות המסים הושלם. אפשר לשמור את החשבונית עם מספר הקצאה.'
+              : 'Tax Authority connected. You can now save the invoice with an allocation number.',
+        ),
+      ),
+    );
   }
 
   Future<void> _handleSendForSignature() async {
@@ -8281,14 +8529,14 @@ class _InvoicePreviewPageState extends State<InvoicePreviewPage> {
     final title = isRtl ? 'חיבור לרשות המסים' : 'Connect to the Tax Authority';
     final message = requiredForSave
         ? (isRtl
-              ? 'כדי לשמור את החשבונית צריך לקבל מספר הקצאה. יש להשלים את החיבור לרשות המסים וללחוץ שוב על שמור.'
-              : 'To save this invoice, you need an allocation number. Complete the Tax Authority connection, then press Save again.')
+              ? 'אינך מחובר לרשות המסים, ולכן לא ניתן לקבל מספר הקצאה לחשבונית הזו. אפשר להמשיך ולשמור ללא מספר הקצאה, או להתחבר לרשות המסים כדי לקבל מספר.'
+              : 'You are not connected to the Tax Authority, so this invoice cannot receive an allocation number. You can continue and save without one, or connect to the Tax Authority to receive one.')
         : (isRtl
               ? 'החשבונית הזו מחייבת מספר הקצאה מרשות המסים. התחברו כדי לקבל אותו ולהמשיך בתהליך.'
               : 'This invoice requires a Tax Authority allocation number. Connect to receive it and continue.');
-    final secondaryLabel = requiredForSave
-        ? (isRtl ? 'לא עכשיו' : 'Not now')
-        : (isRtl ? 'להמשיך בלי חיבור' : 'Continue without connecting');
+    final continueLabel = isRtl
+        ? 'להמשיך ללא מספר הקצאה'
+        : 'Continue without an allocation number';
 
     return SafeArea(
       top: false,
@@ -8389,8 +8637,32 @@ class _InvoicePreviewPageState extends State<InvoicePreviewPage> {
               ),
             ),
             const SizedBox(height: 22),
+            OutlinedButton.icon(
+              onPressed: () => Navigator.pop(
+                sheetContext,
+                _TaxAuthorityConnectionChoice.continueWithoutAllocation,
+              ),
+              icon: const Icon(Icons.arrow_forward_rounded, size: 21),
+              label: Text(continueLabel),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFFB45309),
+                side: const BorderSide(color: Color(0xFFF59E0B)),
+                minimumSize: const Size.fromHeight(54),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                textStyle: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
             FilledButton.icon(
-              onPressed: () => Navigator.pop(sheetContext, true),
+              onPressed: () => Navigator.pop(
+                sheetContext,
+                _TaxAuthorityConnectionChoice.connect,
+              ),
               icon: const Icon(Icons.link_rounded, size: 21),
               label: Text(
                 isRtl ? 'התחברות לרשות המסים' : 'Connect to Tax Authority',
@@ -8408,34 +8680,21 @@ class _InvoicePreviewPageState extends State<InvoicePreviewPage> {
                 ),
               ),
             ),
-            const SizedBox(height: 10),
-            TextButton(
-              onPressed: () => Navigator.pop(sheetContext, false),
-              style: TextButton.styleFrom(
-                foregroundColor: const Color(0xFF64748B),
-                minimumSize: const Size.fromHeight(46),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                textStyle: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              child: Text(secondaryLabel),
-            ),
           ],
         ),
       ),
     );
   }
 
-  Future<bool> _showTaxAuthorityConnectionPromptIfNeeded({
+  Future<_TaxAuthorityConnectionChoice?>
+  _showTaxAuthorityConnectionPromptIfNeeded({
     bool requiredForSave = false,
   }) async {
-    if (!mounted) return false;
+    if (!mounted) return null;
     final isConnected = await widget.isTaxAuthorityConnected?.call() ?? true;
-    if (!mounted || isConnected) return true;
+    if (!mounted || isConnected) {
+      return _TaxAuthorityConnectionChoice.alreadyConnected;
+    }
 
     final isRtl =
         Provider.of<LanguageProvider>(
@@ -8449,7 +8708,7 @@ class _InvoicePreviewPageState extends State<InvoicePreviewPage> {
             ).locale.languageCode ==
             'ar';
 
-    final shouldConnect = await showModalBottomSheet<bool>(
+    final choice = await showModalBottomSheet<_TaxAuthorityConnectionChoice>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.white,
@@ -8468,10 +8727,16 @@ class _InvoicePreviewPageState extends State<InvoicePreviewPage> {
       ),
     );
 
-    if (shouldConnect == true) {
-      await widget.onConnectTaxAuthority?.call();
+    if (choice == _TaxAuthorityConnectionChoice.connect) {
+      _waitingForTaxAuthorityReturn = true;
+      try {
+        await widget.onConnectTaxAuthority?.call();
+      } catch (_) {
+        _waitingForTaxAuthorityReturn = false;
+        rethrow;
+      }
     }
-    return false;
+    return choice;
   }
 
   String _friendlySaveError(Object error) {
@@ -8492,13 +8757,24 @@ class _InvoicePreviewPageState extends State<InvoicePreviewPage> {
         final connected = await widget.isTaxAuthorityConnected?.call() ?? true;
         if (!mounted) return;
         if (!connected) {
-          await _showTaxAuthorityConnectionPromptIfNeeded(
+          final choice = await _showTaxAuthorityConnectionPromptIfNeeded(
             requiredForSave: true,
           );
-          return;
+          if (choice !=
+              _TaxAuthorityConnectionChoice.continueWithoutAllocation) {
+            return;
+          }
         }
       }
-      final savedPdfBytes = await widget.onSave();
+      final connected = await widget.isTaxAuthorityConnected?.call() ?? true;
+      final saveWithoutAllocation =
+          widget.requireTaxAuthorityConnectionPrompt && !connected;
+      if (saveWithoutAllocation && widget.onSaveWithoutAllocation == null) {
+        throw StateError('Saving without an allocation number is unavailable.');
+      }
+      final savedPdfBytes = saveWithoutAllocation
+          ? await widget.onSaveWithoutAllocation!.call()
+          : await widget.onSave();
       if (!mounted) return;
       setState(() {
         if (savedPdfBytes != null) {
