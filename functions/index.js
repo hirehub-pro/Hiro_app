@@ -32,6 +32,10 @@ const {
   validateTaxInvoiceAllocation,
 } = require("./tax_invoice_security");
 const {
+  extractInvoiceApproval,
+  singleInvoiceApprovalPayload,
+} = require("./tax_authority_invoice_approval");
+const {
   taxAuthorityTokenDocumentPath,
 } = require("./tax_authority_token_security");
 const {
@@ -177,8 +181,8 @@ const TAX_AUTH_SANDBOX_TOKEN_URL =
   "https://openapi.taxes.gov.il/shaam/tsandbox/longtimetoken/oauth2/token";
 const TAX_AUTH_SANDBOX_TOKEN_FALLBACK_URL =
   "https://ita-api.taxes.gov.il/shaam/tsandbox/longtimetoken/oauth2/token";
-const TAX_AUTH_SANDBOX_MULTI_APPROVAL_URL =
-  "https://openapi.taxes.gov.il/shaam/tsandbox/Multi-invoices/v2/MultiApproval";
+const TAX_AUTH_SANDBOX_INVOICE_APPROVAL_URL =
+  "https://ita-api.taxes.gov.il/shaam/tsandbox/Invoices/v2/Approval";
 const TAX_AUTH_SANDBOX_DAILY_AUTH_URL =
   "https://openapi.taxes.gov.il/shaam/tsandbox/dailytoken/oauth2/authorize";
 const TAX_AUTH_SANDBOX_DAILY_TOKEN_URLS = [
@@ -1896,11 +1900,11 @@ exports.requestTaxInvoiceAllocation = onCall(
       }
 
       try {
-        const response = await callTaxAuthorityMultiApproval({
+        const response = await callTaxAuthorityInvoiceApproval({
           accessToken: tokenData.accessToken,
           payload: claim.payload,
         });
-        const approval = extractTaxAuthorityApproval(response, claim.payload);
+        const approval = extractInvoiceApproval(response, claim.payload);
         if (approval.approved !== true || !approval.confirmationNumber) {
           throw new HttpsError(
               "failed-precondition",
@@ -6309,22 +6313,22 @@ function checkedGoogleStorageUrl(value) {
   return url.toString();
 }
 
-async function callTaxAuthorityMultiApproval({accessToken, payload}) {
-  const response = await fetch(TAX_AUTH_SANDBOX_MULTI_APPROVAL_URL, {
+async function callTaxAuthorityInvoiceApproval({accessToken, payload}) {
+  const response = await fetch(TAX_AUTH_SANDBOX_INVOICE_APPROVAL_URL, {
     method: "POST",
     headers: {
       "authorization": `Bearer ${accessToken}`,
       "content-type": "application/json",
       "accept": "application/json",
     },
-    body: JSON.stringify(payload),
+    body: JSON.stringify(singleInvoiceApprovalPayload(payload)),
   });
   const responsePayload = await parseJsonResponse(response);
   if (!response.ok) {
     const authorityMessage =
       summarizeTaxAuthorityErrorMessages(responsePayload) ||
       "Tax Authority invoice allocation request failed.";
-    logger.error("Tax Authority MultiApproval failed", {
+    logger.error("Tax Authority invoice Approval failed", {
       status: response.status,
       payload: responsePayload,
     });
@@ -6480,29 +6484,6 @@ function normalizeTaxInvoiceItems(items) {
       vat_amount: roundMoney(vatAmount),
     });
   });
-}
-
-function extractTaxAuthorityApproval(response, requestPayload) {
-  const message = response?.message || {};
-  const success = Array.isArray(message.success) ? message.success : [];
-  const errors = Array.isArray(message.errors) ? message.errors : [];
-  const invoiceId = requestPayload.invoices_list?.[0]?.invoice_id || null;
-  const successItem = success.find((item) => item.invoice_id === invoiceId) ||
-    success[0] ||
-    null;
-  const errorItem = errors.find((item) => item.invoice_id === invoiceId) ||
-    errors[0] ||
-    null;
-
-  return {
-    approved: successItem?.approved === true,
-    invoiceId,
-    confirmationNumber: successItem?.confirmation_number ||
-      errorItem?.confirmation_number ||
-      null,
-    transactionId: response?.transaction_id || null,
-    errors: errorItem?.message?.errors || [],
-  };
 }
 
 function summarizeTaxAuthorityErrorMessages(payload) {
