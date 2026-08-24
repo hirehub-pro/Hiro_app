@@ -2854,6 +2854,12 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       if (draftId == null || draftId.isEmpty) {
         throw StateError(strings['tax_authority_allocation_failed']!);
       }
+      final existingStatus = draftResult.data['status']?.toString().trim();
+      final existingAllocation = draftResult.data['allocation'];
+      if (existingStatus == 'continued_without_allocation' ||
+          (existingStatus == 'finalized' && existingAllocation == null)) {
+        return await _finalizeContinuedTaxInvoice(draftId);
+      }
       result = await requestAllocation.call<Map<String, dynamic>>({
         'draftId': draftId,
       });
@@ -2896,6 +2902,25 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       throw StateError(strings['tax_authority_allocation_failed']!);
     }
 
+    return _ServerDocumentResult(document: document);
+  }
+
+  Future<_ServerDocumentResult> _finalizeContinuedTaxInvoice(
+    String draftId,
+  ) async {
+    final callable = _functions.httpsCallable('finalizeTaxInvoiceDocument');
+    final result = await callable.call<Map<String, dynamic>>({
+      'draftId': draftId,
+    });
+    final documentValue = result.data['document'];
+    final document = documentValue is Map
+        ? Map<String, dynamic>.from(documentValue)
+        : const <String, dynamic>{};
+    if (result.data['finalized'] != true || document.isEmpty) {
+      throw StateError(
+        'The invoice could not be finalized without an allocation number.',
+      );
+    }
     return _ServerDocumentResult(document: document);
   }
 
@@ -3145,11 +3170,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           ? Map<String, dynamic>.from(documentValue)
           : const <String, dynamic>{};
       if (document.isEmpty) {
-        throw StateError(
-          isHebrew
-              ? 'הבחירה אושרה, אך החשבונית עדיין לא הושלמה. נסו לשמור שוב.'
-              : 'The decision was accepted, but the invoice was not finalized. Try saving again.',
-        );
+        return await _finalizeContinuedTaxInvoice(draftId);
       }
       return _ServerDocumentResult(document: document);
     }

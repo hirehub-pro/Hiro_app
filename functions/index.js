@@ -28,6 +28,7 @@ const {
   canRollbackCancelledInvoice,
   taxAuthorityFailureState,
   taxInvoiceDraftSignature,
+  taxInvoiceFinalizationMode,
   taxInvoicePayloadHash,
   validTaxInvoiceDraftSignature,
   validateTaxInvoiceAllocation,
@@ -2285,21 +2286,24 @@ exports.finalizeTaxInvoiceDocument = onCall(
             "The Tax Authority draft failed integrity verification.",
         );
       }
-      if (!["allocation_approved", "finalized"].includes(
-        normalizeString(invoice.documentStatus).trim(),
-      ) || invoice.taxAuthorityAllocation?.approved !== true ||
-          !invoice.taxAuthorityAllocation?.confirmationNumber) {
+      const finalizationMode = taxInvoiceFinalizationMode(invoice);
+      if (!finalizationMode) {
         throw new HttpsError(
             "failed-precondition",
-            "The invoice must have an approved allocation before finalization.",
+            "The invoice is not ready for finalization.",
         );
       }
       const document = await finalizeAllocatedTaxInvoice({
         userId,
         invoiceRef,
         payload: invoice.authoritativeTaxInvoice,
-        allocation: invoice.taxAuthorityAllocation,
+        allocation: finalizationMode === "allocated" ?
+          invoice.taxAuthorityAllocation : null,
         reservation,
+        readyStatus: finalizationMode === "allocated" ?
+          "allocation_approved" : "continued_without_allocation",
+        workflowStatus: finalizationMode === "allocated" ?
+          "finalized" : "continued_without_allocation",
       });
       return {finalized: true, draftId, document};
     },

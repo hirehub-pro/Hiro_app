@@ -5,6 +5,7 @@ const {
   canRollbackCancelledInvoice,
   taxAuthorityFailureState,
   taxInvoiceDraftSignature,
+  taxInvoiceFinalizationMode,
   taxInvoicePayloadHash,
   validTaxInvoiceDraftSignature,
   validateTaxInvoiceAllocation,
@@ -26,6 +27,21 @@ test("rolls back only the latest unfinished cancelled invoice number", () => {
     counterValue: 43,
     sequenceNumber: 42,
   }), false);
+});
+
+test("finalizes accepted continuation drafts without requiring allocation", () => {
+  assert.equal(taxInvoiceFinalizationMode({
+    documentStatus: "continued_without_allocation",
+    taxAuthorityDecision: {decision: "continue", status: "accepted"},
+  }), "continued_without_allocation");
+  assert.equal(taxInvoiceFinalizationMode({
+    documentStatus: "allocation_approved",
+    taxAuthorityAllocation: {approved: true, confirmationNumber: "123"},
+  }), "allocated");
+  assert.equal(taxInvoiceFinalizationMode({
+    documentStatus: "continued_without_allocation",
+    taxAuthorityDecision: {decision: "continue", status: "submitting"},
+  }), null);
 });
 
 function validPayload() {

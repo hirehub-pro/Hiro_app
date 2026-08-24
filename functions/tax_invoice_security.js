@@ -168,9 +168,24 @@ function canRollbackCancelledInvoice({invoice, counterValue, sequenceNumber}) {
     Number(counterValue) === sequenceNumber + 1;
 }
 
+function taxInvoiceFinalizationMode(invoice) {
+  const documentStatus = String(invoice?.documentStatus || "").trim();
+  const isAllocated = ["allocation_approved", "finalized"].includes(
+      documentStatus,
+  ) && invoice?.taxAuthorityAllocation?.approved === true &&
+    Boolean(invoice?.taxAuthorityAllocation?.confirmationNumber);
+  if (isAllocated) return "allocated";
+  const isContinued = ["continued_without_allocation", "finalized"].includes(
+      documentStatus,
+  ) && invoice?.taxAuthorityDecision?.decision === "continue" &&
+    invoice?.taxAuthorityDecision?.status === "accepted";
+  return isContinued ? "continued_without_allocation" : null;
+}
+
 module.exports = {
   canRollbackCancelledInvoice,
   taxAuthorityFailureState,
+  taxInvoiceFinalizationMode,
   taxInvoiceDraftSignature,
   taxInvoicePayloadHash,
   validTaxInvoiceDraftSignature,
