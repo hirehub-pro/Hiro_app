@@ -84,6 +84,7 @@ test("preserves V2 rejection details", () => {
     approved: false,
   }, payload());
   assert.equal(approval.approved, false);
+  assert.equal(approval.decisionRequired, true);
   assert.equal(approval.confirmationNumber, null);
   assert.deepEqual(approval.errors, errors);
 });

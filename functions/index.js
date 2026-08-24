@@ -36,6 +36,12 @@ const {
   singleInvoiceApprovalPayload,
 } = require("./tax_authority_invoice_approval");
 const {
+  invoiceDecisionDocumentStatus,
+  invoiceDecisionPath,
+  invoiceDecisionPayload,
+  normalizeInvoiceDecision,
+} = require("./tax_authority_invoice_decision");
+const {
   taxAuthorityTokenDocumentPath,
 } = require("./tax_authority_token_security");
 const {
@@ -183,6 +189,8 @@ const TAX_AUTH_SANDBOX_TOKEN_FALLBACK_URL =
   "https://ita-api.taxes.gov.il/shaam/tsandbox/longtimetoken/oauth2/token";
 const TAX_AUTH_SANDBOX_INVOICE_APPROVAL_URL =
   "https://ita-api.taxes.gov.il/shaam/tsandbox/Invoices/v2/Approval";
+const TAX_AUTH_SANDBOX_INVOICE_DECISION_ORIGIN =
+  "https://ita-api.taxes.gov.il/shaam/tsandbox";
 const TAX_AUTH_SANDBOX_DAILY_AUTH_URL =
   "https://openapi.taxes.gov.il/shaam/tsandbox/dailytoken/oauth2/authorize";
 const TAX_AUTH_SANDBOX_DAILY_TOKEN_URLS = [
@@ -1905,6 +1913,25 @@ exports.requestTaxInvoiceAllocation = onCall(
           payload: claim.payload,
         });
         const approval = extractInvoiceApproval(response, claim.payload);
+        if (approval.decisionRequired) {
+          const decisionRequiredAt = admin.firestore.Timestamp.now();
+          await invoiceRef.update({
+            documentStatus: "decision_required",
+            "taxAuthorityAllocationRequest.status": "decision_required",
+            "taxAuthorityAllocationRequest.decisionRequiredAt":
+              decisionRequiredAt,
+            "taxAuthorityAllocationRequest.authorityErrors": approval.errors,
+            "taxAuthorityAllocationRequest.authorityResponse": response,
+          });
+          return {
+            ...approval,
+            decisionRequired: true,
+            reservation: claim.reservation,
+            payloadHash: claim.payloadHash,
+            document: null,
+            cached: false,
+          };
+        }
         if (approval.approved !== true || !approval.confirmationNumber) {
           throw new HttpsError(
               "failed-precondition",
@@ -1972,6 +1999,142 @@ exports.requestTaxInvoiceAllocation = onCall(
             admin.firestore.Timestamp.now(),
           "taxAuthorityAllocationRequest.lastError":
             normalizeString(error?.message).slice(0, 500),
+        });
+        throw error;
+      }
+    },
+);
+
+exports.submitTaxInvoiceDecision = onCall(
+    {
+      region: "me-west1",
+      secrets: [TAX_AUTH_CLIENT_ID, TAX_AUTH_CLIENT_SECRET],
+      timeoutSeconds: 60,
+      memory: "256MiB",
+    },
+    async (request) => {
+      const userId = request.auth?.uid;
+      if (!userId) {
+        throw new HttpsError("unauthenticated", "Authentication required.");
+      }
+      const draftId = requiredString(request.data?.draftId, "draftId");
+      if (draftId.includes("/") || draftId.length > 180) {
+        throw new HttpsError(
+            "invalid-argument",
+            "Invalid Tax Authority draft ID.",
+        );
+      }
+      let decision;
+      try {
+        decision = normalizeInvoiceDecision(request.data?.decision);
+      } catch (error) {
+        throw new HttpsError("invalid-argument", error.message);
+      }
+
+      const db = admin.firestore();
+      const invoiceRef = db.collection("users").doc(userId)
+          .collection("invoices").doc(draftId);
+      const businessId = await getVerifiedTaxAuthorityBusinessId(userId);
+      const tokenData = await getTaxAuthorityTokenData(userId, businessId);
+      const now = admin.firestore.Timestamp.now();
+
+      const claim = await db.runTransaction(async (transaction) => {
+        const invoiceSnap = await transaction.get(invoiceRef);
+        if (!invoiceSnap.exists) {
+          throw new HttpsError("not-found", "Tax Authority draft not found.");
+        }
+        const invoice = invoiceSnap.data() || {};
+        const payload = invoice.authoritativeTaxInvoice;
+        const allocationRequest = invoice.taxAuthorityAllocationRequest || {};
+        const storedDecision = invoice.taxAuthorityDecision || {};
+        const reservation = {
+          docType: invoice.docType,
+          documentNumber: invoice.invoiceNumber,
+          sequenceNumber: invoice.sequenceNumber,
+          invoiceDocId: draftId,
+        };
+        if (!payload || !allocationRequest.payloadHash ||
+            taxInvoicePayloadHash(payload) !== allocationRequest.payloadHash ||
+            !validTaxInvoiceDraftSignature({
+              secret: TAX_AUTH_CLIENT_SECRET.value(),
+              userId,
+              reservation,
+              payloadHash: allocationRequest.payloadHash,
+            }, allocationRequest.serverSignature)) {
+          throw new HttpsError(
+              "failed-precondition",
+              "The authoritative Tax Authority draft is invalid.",
+          );
+        }
+        if (normalizeBusinessId(payload.vat_number) !== businessId) {
+          throw new HttpsError(
+              "permission-denied",
+              "The draft VAT ID does not match your verified business ID.",
+          );
+        }
+        if (storedDecision.status === "accepted") {
+          if (storedDecision.decision !== decision) {
+            throw new HttpsError(
+                "failed-precondition",
+                "The Tax Authority decision has already been submitted.",
+            );
+          }
+          return {cached: true, response: storedDecision.response || null};
+        }
+        if (storedDecision.status === "submitting") {
+          throw new HttpsError(
+              "aborted",
+              "The Tax Authority decision is already being submitted.",
+          );
+        }
+        if (invoice.documentStatus !== "decision_required") {
+          throw new HttpsError(
+              "failed-precondition",
+              "This invoice is not awaiting a Tax Authority decision.",
+          );
+        }
+
+        transaction.update(invoiceRef, {
+          "taxAuthorityDecision.decision": decision,
+          "taxAuthorityDecision.status": "submitting",
+          "taxAuthorityDecision.requestedAt": now,
+          "taxAuthorityDecision.attempts":
+            admin.firestore.FieldValue.increment(1),
+          "taxAuthorityDecision.environment": "sandbox",
+        });
+        return {cached: false, payload};
+      });
+
+      if (claim.cached) {
+        return {accepted: true, decision, response: claim.response, cached: true};
+      }
+
+      try {
+        const response = await callTaxAuthorityInvoiceDecision({
+          accessToken: tokenData.accessToken,
+          decision,
+          payload: claim.payload,
+        });
+        const documentStatus = invoiceDecisionDocumentStatus(decision);
+        await invoiceRef.update({
+          documentStatus,
+          "taxAuthorityAllocationRequest.status": documentStatus,
+          "taxAuthorityDecision.status": "accepted",
+          "taxAuthorityDecision.response": response,
+          "taxAuthorityDecision.acceptedAt":
+            admin.firestore.FieldValue.serverTimestamp(),
+        });
+        return {accepted: true, decision, documentStatus, response, cached: false};
+      } catch (error) {
+        const failureState = taxAuthorityFailureState(error);
+        await invoiceRef.update({
+          documentStatus: failureState === "failed" ?
+            "decision_required" : "needs_reconciliation",
+          "taxAuthorityDecision.status": failureState,
+          "taxAuthorityDecision.lastError":
+            normalizeString(error?.message).slice(0, 500),
+          "taxAuthorityDecision.failedAt":
+            admin.firestore.FieldValue.serverTimestamp(),
         });
         throw error;
       }
@@ -6345,6 +6508,62 @@ async function callTaxAuthorityInvoiceApproval({accessToken, payload}) {
   return responsePayload;
 }
 
+async function callTaxAuthorityInvoiceDecision({
+  accessToken,
+  decision,
+  payload,
+}) {
+  const url = TAX_AUTH_SANDBOX_INVOICE_DECISION_ORIGIN +
+    invoiceDecisionPath(decision);
+  let response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "authorization": `Bearer ${accessToken}`,
+        "content-type": "application/json",
+        "accept": "application/json",
+      },
+      body: JSON.stringify(invoiceDecisionPayload(payload)),
+      signal: AbortSignal.timeout(30000),
+    });
+  } catch (error) {
+    logger.error("Tax Authority invoice decision network failure", {
+      decision,
+      message: normalizeString(error?.message),
+    });
+    throw new HttpsError(
+        "unavailable",
+        "The Tax Authority decision service is temporarily unavailable.",
+    );
+  }
+  const responsePayload = await parseJsonResponse(response);
+  if (!response.ok) {
+    const authorityMessage =
+      summarizeTaxAuthorityErrorMessages(responsePayload) ||
+      "Tax Authority invoice decision failed.";
+    logger.error("Tax Authority invoice decision failed", {
+      decision,
+      status: response.status,
+      payload: responsePayload,
+    });
+    throw new HttpsError("failed-precondition", authorityMessage, {
+      authorityStatus: response.status,
+      authorityResponse: responsePayload,
+    });
+  }
+  const normalizedResponse = Array.isArray(responsePayload) ?
+    responsePayload[0] : responsePayload;
+  if (Number(normalizedResponse?.status) !== 200) {
+    throw new HttpsError(
+        "failed-precondition",
+        "The Tax Authority did not accept the invoice decision.",
+        {authorityResponse: responsePayload},
+    );
+  }
+  return normalizedResponse;
+}
+
 function normalizeTaxInvoiceAllocationPayload(data) {
   const invoice = data.invoice || data;
   const invoiceId = requiredString(invoice.invoice_id || invoice.invoiceId,
@@ -6514,7 +6733,7 @@ function summarizeTaxAuthorityErrorMessages(payload) {
     }
   }
 
-  collect(payload?.message?.errors);
+  collect(payload?.message);
   return messages.join("; ");
 }
 

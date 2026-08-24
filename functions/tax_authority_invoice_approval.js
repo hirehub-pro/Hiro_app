@@ -12,9 +12,12 @@ function extractInvoiceApproval(response, requestPayload) {
   ).trim();
   const approved = response?.approved === true &&
     confirmationNumber !== "" && confirmationNumber !== "0";
+  const decisionRequired = response?.status === 200 &&
+    response?.approved === false;
 
   return {
     approved,
+    decisionRequired,
     invoiceId: requestPayload?.invoices_list?.[0]?.invoice_id || null,
     confirmationNumber: approved ? confirmationNumber : null,
     transactionId: null,

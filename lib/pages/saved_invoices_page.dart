@@ -252,6 +252,14 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
         return isRtl ? 'ממתין לסיום' : 'Finishing document';
       case 'allocation_failed':
         return isRtl ? 'ההקצאה נכשלה' : 'Allocation failed';
+      case 'decision_required':
+        return isRtl ? 'נדרשת החלטה' : 'Decision required';
+      case 'hearing_requested':
+        return isRtl ? 'ממתין לשימוע' : 'Awaiting hearing';
+      case 'allocation_cancelled':
+        return isRtl ? 'בקשת ההקצאה בוטלה' : 'Allocation cancelled';
+      case 'continued_without_allocation':
+        return isRtl ? 'המשך ללא הקצאה' : 'Continued without allocation';
       case 'needs_reconciliation':
         return isRtl ? 'נדרשת בדיקה' : 'Needs review';
       case 'finalized':
@@ -267,7 +275,12 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
         return const Color(0xFF15803D);
       case 'allocation_failed':
       case 'needs_reconciliation':
+      case 'allocation_cancelled':
         return const Color(0xFFB91C1C);
+      case 'continued_without_allocation':
+      case 'decision_required':
+      case 'hearing_requested':
+        return const Color(0xFFD97706);
       default:
         return const Color(0xFFD97706);
     }

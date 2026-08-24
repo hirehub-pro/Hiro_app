@@ -452,6 +452,9 @@ test("blocks cross-user invoices and protected allocation fields", {
   await assertFails(updateDoc(ref, {
     taxInvoicePresentation: {clientEmail: "attacker@example.com"},
   }));
+  await assertFails(updateDoc(ref, {
+    taxAuthorityDecision: {decision: "continue", status: "accepted"},
+  }));
 
   const fakeId = "invoice_2026-0002";
   await assertFails(setDoc(doc(owner, `users/${uid}/invoices/${fakeId}`), {

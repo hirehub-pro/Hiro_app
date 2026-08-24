@@ -2793,6 +2793,12 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     final strings = _withRequiredDefaults(
       _getLocalizedStrings(context, listen: false),
     );
+    final isRtl =
+        Provider.of<LanguageProvider>(
+          context,
+          listen: false,
+        ).locale.languageCode ==
+        'he';
     final businessVatNumber = _digitsOnly(_businessId);
     final customerVatNumber = _digitsOnly(_clientIdController.text);
     if (businessVatNumber.isEmpty || customerVatNumber.isEmpty) {
@@ -2870,6 +2876,21 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       );
     }
     final data = Map<String, dynamic>.from(result.data);
+    if (data['decisionRequired'] == true) {
+      final hearingRequested = await _offerTaxAuthorityHearingRequest(
+        draftId: invoiceDocId,
+        errors: data['errors'],
+      );
+      throw StateError(
+        isRtl
+            ? (hearingRequested
+                  ? 'בקשת השימוע נרשמה. החשבונית נשמרה וממתינה לבדיקה.'
+                  : 'החשבונית ממתינה להחלטת רשות המסים.')
+            : (hearingRequested
+                  ? 'The hearing request was recorded. The invoice remains saved and pending review.'
+                  : 'The invoice is awaiting a Tax Authority decision.'),
+      );
+    }
     final confirmationNumber = data['confirmationNumber']?.toString().trim();
     final reservationValue = data['reservation'];
     final reservation = reservationValue is Map
@@ -2891,6 +2912,61 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     }
 
     return _ServerDocumentResult(document: document);
+  }
+
+  Future<bool> _offerTaxAuthorityHearingRequest({
+    required String draftId,
+    required dynamic errors,
+  }) async {
+    if (!mounted) return false;
+    final isRtl =
+        Provider.of<LanguageProvider>(
+          context,
+          listen: false,
+        ).locale.languageCode ==
+        'he';
+    final authorityMessage = _taxAuthorityErrorMessageFromDetails(errors);
+    final requestHearing = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(
+          isRtl ? 'החשבונית עוכבה' : 'Invoice held by the Tax Authority',
+        ),
+        content: Text(
+          [
+            ?authorityMessage,
+            isRtl
+                ? 'לא התקבל מספר הקצאה. ניתן לשמור את החשבונית במצב המתנה ולבקש שימוע מול חדר הבקרה.'
+                : 'No allocation number was issued. You can keep the invoice pending and request a hearing with the Control Room.',
+          ].join('\n\n'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(isRtl ? 'לא עכשיו' : 'Not now'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(isRtl ? 'בקשת שימוע' : 'Request hearing'),
+          ),
+        ],
+      ),
+    );
+    if (requestHearing != true || !mounted) return false;
+
+    final callable = _functions.httpsCallable('submitTaxInvoiceDecision');
+    final result = await callable.call<Map<String, dynamic>>({
+      'draftId': draftId,
+      'decision': 'further_objection',
+    });
+    if (result.data['accepted'] != true) {
+      throw StateError(
+        isRtl
+            ? 'רשות המסים לא אישרה את בקשת השימוע.'
+            : 'The Tax Authority did not accept the hearing request.',
+      );
+    }
+    return true;
   }
 
   Map<String, dynamic> _serverDocumentRequestPayload() {
