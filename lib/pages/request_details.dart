@@ -149,6 +149,9 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
           'confirm_decline_body': 'הלקוח יקבל הודעה שהבקשה נדחתה.',
           'success': 'הבקשה אושרה בהצלחה',
           'declined': 'הבקשה נדחתה',
+          'pending_status': 'הבקשה נבדקה',
+          'cancelled_status': 'הבקשה בוטלה',
+          'expired_status': 'פג תוקף — ללא מענה',
           'view_map': 'צפה במיקום במפה',
           'close': 'סגור',
           'confirm': 'אישור',
@@ -190,6 +193,9 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
           'confirm_decline_body': 'سيتم إشعار العميل بأنه تم رفض الطلب.',
           'success': 'تم قبول الطلب بنجاح',
           'declined': 'تم رفض الطلب',
+          'pending_status': 'تمت مراجعة الطلب',
+          'cancelled_status': 'تم إلغاء الطلب',
+          'expired_status': 'منتهي الصلاحية — دون رد',
           'view_map': 'عرض الموقع على الخريطة',
           'close': 'إغلاق',
           'confirm': 'تأكيد',
@@ -231,6 +237,9 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
           'confirm_decline_body': 'ደንበኛው ጥያቄው መተዉን ይቀበላል።',
           'success': 'ጥያቄው በተሳካ ሁኔታ ተቀባ',
           'declined': 'ጥያቄው ተከልክሏል',
+          'pending_status': 'ጥያቄው ታይቷል',
+          'cancelled_status': 'ጥያቄው ተሰርዟል',
+          'expired_status': 'ጊዜው አልፏል — ምላሽ የለም',
           'view_map': 'አካባቢን በካርታ ላይ ክፈት',
           'close': 'ዝጋ',
           'confirm': 'እሺ',
@@ -275,6 +284,9 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
               'Клиент получит уведомление, что вы отклонили запрос.',
           'success': 'Запрос успешно принят',
           'declined': 'Запрос отклонен',
+          'pending_status': 'Запрос просмотрен',
+          'cancelled_status': 'Запрос отменён',
+          'expired_status': 'Срок истёк — нет ответа',
           'view_map': 'Открыть локацию на карте',
           'close': 'Закрыть',
           'confirm': 'Подтвердить',
@@ -319,6 +331,9 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
               'The client will be notified that you declined this request.',
           'success': 'Request accepted successfully',
           'declined': 'Request declined',
+          'pending_status': 'Request reviewed',
+          'cancelled_status': 'Request cancelled',
+          'expired_status': 'Expired — no response',
           'view_map': 'View location on Map',
           'close': 'Close',
           'confirm': 'Confirm',
@@ -385,61 +400,44 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
   }
 
   Widget _buildPriceInput(Map<String, String> strings) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            strings['quote_price_label']!,
-            style: const TextStyle(
-              fontSize: 17,
-              fontWeight: FontWeight.w800,
-              color: Color(0xFF1E3A8A),
+    return _sectionCard(
+      title: strings['quote_price_label']!,
+      children: [
+        TextField(
+          controller: _priceController,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: InputDecoration(
+            hintText: strings['quote_price_hint'],
+            prefixIcon: const Icon(Icons.money),
+            filled: true,
+            fillColor: const Color(0xFFF8FAFC),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 14,
             ),
           ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _priceController,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: InputDecoration(
-              hintText: strings['quote_price_hint'],
-              prefixIcon: const Icon(Icons.money),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 14,
-              ),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _quoteDescController,
+          maxLines: 3,
+          decoration: InputDecoration(
+            hintText: strings['quote_description_hint'],
+            prefixIcon: const Padding(
+              padding: EdgeInsets.only(bottom: 40),
+              child: Icon(Icons.notes_rounded),
+            ),
+            filled: true,
+            fillColor: const Color(0xFFF8FAFC),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 14,
             ),
           ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _quoteDescController,
-            maxLines: 3,
-            decoration: InputDecoration(
-              hintText: strings['quote_description_hint'],
-              prefixIcon: const Padding(
-                padding: EdgeInsets.only(bottom: 40),
-                child: Icon(Icons.notes_rounded),
-              ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 14,
-              ),
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -886,72 +884,66 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
     final isQuoteRequest =
         data['type'] == 'quote_request' ||
         data['requestType'] == 'quote_request';
-    final isPending =
-        _normalizeRequestStatus(data['status']) == 'pending' &&
-        !isPendingRequestExpired(data);
+    final normalizedStatus = isPendingRequestExpired(data)
+        ? 'expired'
+        : _normalizeRequestStatus(data['status']);
+    final isPending = normalizedStatus == 'pending';
+    final statusColor = _statusColor(normalizedStatus);
 
     return Directionality(
       textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
       child: Scaffold(
-        backgroundColor: const Color(0xFFF4F8FC),
+        backgroundColor: const Color(0xFFF8FAFC),
         appBar: AppBar(
           title: Text(strings['title']!),
+          centerTitle: true,
           backgroundColor: Colors.white,
-          foregroundColor: const Color(0xFF1E3A8A),
+          foregroundColor: const Color(0xFF0F172A),
+          surfaceTintColor: Colors.white,
           elevation: 0,
+          scrolledUnderElevation: 1,
         ),
         body: Stack(
           children: [
             SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
+              padding: EdgeInsets.fromLTRB(
+                16,
+                16,
+                16,
+                24 + MediaQuery.paddingOf(context).bottom,
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  _buildStatusHero(
+                    strings,
+                    data,
+                    normalizedStatus,
+                    statusColor,
+                  ),
+                  const SizedBox(height: 12),
                   _buildInfoCard(strings, data),
+                  if (_hasMap(data) || data['fromId'] != null) ...[
+                    const SizedBox(height: 12),
+                    _buildQuickActions(strings, data),
+                  ],
                   if (isQuoteRequest && isPending) ...[
                     const SizedBox(height: 14),
                     _buildPriceInput(strings),
                   ],
                   if (!isQuoteRequest) ...[
-                    const SizedBox(height: 14),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            strings['my_arrival']!,
-                            style: const TextStyle(
-                              fontSize: 17,
-                              fontWeight: FontWeight.w800,
-                              color: Color(0xFF1E3A8A),
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            strings['arrival_hint']!,
-                            style: const TextStyle(
-                              color: Color(0xFF64748B),
-                              fontSize: 13,
-                            ),
-                          ),
-                          const SizedBox(height: 14),
-                          _buildTimePickers(strings, enabled: isPending),
-                        ],
-                      ),
+                    const SizedBox(height: 12),
+                    _sectionCard(
+                      title: strings['my_arrival']!,
+                      subtitle: strings['arrival_hint']!,
+                      children: [
+                        _buildTimePickers(strings, enabled: isPending),
+                      ],
                     ),
                   ],
-                  const SizedBox(height: 14),
-                  _buildOpenChatButton(strings),
                   if (isPending) ...[
-                    const SizedBox(height: 20),
-                    _buildActionButtons(strings),
                     const SizedBox(height: 16),
+                    _buildActionButtons(strings),
                   ],
                 ],
               ),
@@ -969,183 +961,345 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
     );
   }
 
+  bool _hasMap(Map<String, dynamic> data) =>
+      data['latitude'] != null && data['longitude'] != null;
+
+  Color _statusColor(String status) {
+    switch (status) {
+      case 'accepted':
+        return const Color(0xFF15803D);
+      case 'declined':
+      case 'expired':
+        return const Color(0xFFB91C1C);
+      case 'cancelled':
+        return const Color(0xFF475569);
+      default:
+        return const Color(0xFF1976D2);
+    }
+  }
+
+  IconData _statusIcon(String status) {
+    switch (status) {
+      case 'accepted':
+        return Icons.check_circle_rounded;
+      case 'declined':
+        return Icons.block_rounded;
+      case 'expired':
+        return Icons.timer_off_rounded;
+      case 'cancelled':
+        return Icons.cancel_rounded;
+      default:
+        return Icons.visibility_rounded;
+    }
+  }
+
+  String _statusLabel(String status, Map<String, String> strings) {
+    if (status == 'accepted') return strings['success']!;
+    if (status == 'declined') return strings['declined']!;
+    if (status == 'cancelled') return strings['cancelled_status']!;
+    if (status == 'expired') return strings['expired_status']!;
+    return strings['pending_status']!;
+  }
+
+  Widget _buildStatusHero(
+    Map<String, String> strings,
+    Map<String, dynamic> data,
+    String status,
+    Color statusColor,
+  ) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color.lerp(statusColor, Colors.black, 0.22)!, statusColor],
+        ),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: statusColor.withValues(alpha: 0.2),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(_statusIcon(status), color: Colors.white, size: 24),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      strings['client']!,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.78),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      (data['fromName'] ?? strings['unknown']!).toString(),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 19,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.18),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const CircleAvatar(radius: 3.5, backgroundColor: Colors.white),
+                const SizedBox(width: 7),
+                Text(
+                  _statusLabel(status, strings),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildInfoCard(
     Map<String, String> strings,
     Map<String, dynamic> data,
   ) {
-    final hasMap = data['latitude'] != null && data['longitude'] != null;
     final imageUrls = _extractImageUrls(data['images']);
 
+    return Column(
+      children: [
+        _sectionCard(
+          children: [
+            _buildInfoRow(
+              Icons.location_on_outlined,
+              strings['location']!,
+              (data['fromLocation'] ?? strings['not_specified']!).toString(),
+            ),
+            _buildInfoRow(
+              Icons.calendar_month_outlined,
+              strings['date']!,
+              (data['date'] ?? strings['not_specified']!).toString(),
+              showDivider: data['requestedFrom'] != null,
+            ),
+            if (data['requestedFrom'] != null)
+              _buildInfoRow(
+                Icons.schedule_outlined,
+                strings['requested_hours']!,
+                "${data['requestedFrom']} - ${data['requestedTo']}",
+                showDivider: false,
+              ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        _sectionCard(
+          title: strings['job_description']!,
+          children: [
+            Text(
+              (data['jobDescription'] ?? strings['no_description']!).toString(),
+              style: const TextStyle(
+                color: Color(0xFF334155),
+                height: 1.5,
+                fontSize: 15,
+              ),
+            ),
+          ],
+        ),
+        if (imageUrls.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          _sectionCard(
+            title: strings['images']!,
+            children: [_buildImagesSection(imageUrls)],
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildImagesSection(List<String> imageUrls) {
+    return SizedBox(
+      height: 92,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: imageUrls.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 10),
+        itemBuilder: (context, index) {
+          final imageUrl = imageUrls[index];
+          return Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () => _openImagePreview(imageUrl),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image.network(
+                  imageUrl,
+                  width: 92,
+                  height: 92,
+                  fit: BoxFit.cover,
+                  loadingBuilder: (context, child, progress) {
+                    if (progress == null) return child;
+                    return Container(
+                      width: 92,
+                      height: 92,
+                      color: const Color(0xFFF1F5F9),
+                      alignment: Alignment.center,
+                      child: const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    );
+                  },
+                  errorBuilder: (_, _, _) => Container(
+                    width: 92,
+                    height: 92,
+                    color: const Color(0xFFF1F5F9),
+                    alignment: Alignment.center,
+                    child: const Icon(Icons.broken_image_outlined),
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _sectionCard({
+    String? title,
+    String? subtitle,
+    required List<Widget> children,
+  }) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF0F172A).withValues(alpha: 0.035),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
+          ),
+        ],
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(2),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (title != null) ...[
             Text(
-              strings['summary']!,
+              title,
               style: const TextStyle(
-                fontSize: 17,
+                fontSize: 15,
                 fontWeight: FontWeight.w800,
-                color: Color(0xFF1E3A8A),
+                color: Color(0xFF0F172A),
               ),
             ),
-            const SizedBox(height: 14),
-            _buildInfoRow(
-              Icons.person,
-              strings['client']!,
-              data['fromName'] ?? strings['unknown']!,
-            ),
-            const Divider(height: 20),
-            _buildInfoRow(
-              Icons.location_on,
-              strings['location']!,
-              data['fromLocation'] ?? strings['not_specified']!,
-            ),
-            if (hasMap) ...[
-              const SizedBox(height: 8),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: FilledButton.tonalIcon(
-                  onPressed: _openMap,
-                  icon: const Icon(Icons.map_outlined, size: 18),
-                  label: Text(strings['view_map']!),
-                ),
+            if (subtitle != null) ...[
+              const SizedBox(height: 2),
+              Text(
+                subtitle,
+                style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
               ),
             ],
-            const Divider(height: 20),
-            _buildInfoRow(
-              Icons.calendar_month,
-              strings['date']!,
-              data['date'] ?? '',
-            ),
-            if (data['requestedFrom'] != null) ...[
-              const Divider(height: 20),
-              _buildInfoRow(
-                Icons.access_time,
-                strings['requested_hours']!,
-                "${data['requestedFrom']} - ${data['requestedTo']}",
-              ),
-            ],
-            const Divider(height: 20),
-            _buildInfoRow(
-              Icons.description,
-              strings['job_description']!,
-              data['jobDescription'] ?? strings['no_description']!,
-            ),
-            if (imageUrls.isNotEmpty) ...[
-              const Divider(height: 20),
-              _buildImagesSection(strings['images']!, imageUrls),
-            ],
+            const SizedBox(height: 10),
           ],
-        ),
+          ...children,
+        ],
       ),
     );
   }
 
-  Widget _buildImagesSection(String label, List<String> imageUrls) {
+  Widget _buildInfoRow(
+    IconData icon,
+    String label,
+    String value, {
+    bool showDivider = true,
+  }) {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            const Icon(
-              Icons.photo_library_outlined,
-              color: Color(0xFF1976D2),
-              size: 24,
-            ),
-            const SizedBox(width: 15),
-            Expanded(
-              child: Text(
-                label,
-                style: const TextStyle(color: Colors.grey, fontSize: 14),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          child: Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEFF6FF),
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: Icon(icon, size: 19, color: const Color(0xFF1976D2)),
               ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        SizedBox(
-          height: 92,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            itemCount: imageUrls.length,
-            separatorBuilder: (_, _) => const SizedBox(width: 10),
-            itemBuilder: (context, index) {
-              final imageUrl = imageUrls[index];
-              return Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(12),
-                  onTap: () => _openImagePreview(imageUrl),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: Image.network(
-                      imageUrl,
-                      width: 92,
-                      height: 92,
-                      fit: BoxFit.cover,
-                      loadingBuilder: (context, child, progress) {
-                        if (progress == null) return child;
-                        return Container(
-                          width: 92,
-                          height: 92,
-                          color: const Color(0xFFF1F5F9),
-                          alignment: Alignment.center,
-                          child: const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          ),
-                        );
-                      },
-                      errorBuilder: (_, _, _) => Container(
-                        width: 92,
-                        height: 92,
-                        color: const Color(0xFFF1F5F9),
-                        alignment: Alignment.center,
-                        child: const Icon(Icons.broken_image_outlined),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: const TextStyle(
+                        color: Color(0xFF64748B),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildInfoRow(IconData icon, String label, String value) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, color: const Color(0xFF1976D2), size: 24),
-        const SizedBox(width: 15),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: const TextStyle(color: Colors.grey, fontSize: 14),
-              ),
-              Text(
-                value,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
+                    const SizedBox(height: 2),
+                    Text(
+                      value,
+                      style: const TextStyle(
+                        color: Color(0xFF0F172A),
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        height: 1.25,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
           ),
         ),
+        if (showDivider)
+          const Divider(height: 1, thickness: 1, color: Color(0xFFF1F5F9)),
       ],
     );
   }
@@ -1235,35 +1389,56 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
     );
   }
 
-  Widget _buildOpenChatButton(Map<String, String> strings) {
-    final clientId = widget.data['fromId'];
-    final clientName = widget.data['fromName'] ?? '';
-    return SizedBox(
-      width: double.infinity,
-      height: 50,
-      child: OutlinedButton.icon(
-        onPressed: clientId == null
-            ? null
-            : () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) =>
-                      ChatPage(receiverId: clientId, receiverName: clientName),
-                ),
-              ),
-        icon: const Icon(Icons.chat_bubble_outline_rounded),
-        label: Text(
-          strings['open_chat']!,
-          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-        ),
-        style: OutlinedButton.styleFrom(
-          side: const BorderSide(color: Color(0xFF1E3A8A)),
-          foregroundColor: const Color(0xFF1E3A8A),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+  Widget _buildQuickActions(
+    Map<String, String> strings,
+    Map<String, dynamic> data,
+  ) {
+    final clientId = data['fromId']?.toString();
+    final clientName = (data['fromName'] ?? '').toString();
+    final buttons = <Widget>[
+      if (_hasMap(data))
+        OutlinedButton.icon(
+          onPressed: _openMap,
+          icon: const Icon(Icons.map_outlined, size: 20),
+          label: Text(strings['view_map']!),
+          style: OutlinedButton.styleFrom(
+            minimumSize: const Size.fromHeight(50),
+            foregroundColor: const Color(0xFF0F172A),
+            side: const BorderSide(color: Color(0xFFCBD5E1)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
           ),
         ),
-      ),
+      if (clientId != null && clientId.isNotEmpty)
+        FilledButton.tonalIcon(
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) =>
+                  ChatPage(receiverId: clientId, receiverName: clientName),
+            ),
+          ),
+          icon: const Icon(Icons.chat_bubble_outline_rounded, size: 20),
+          label: Text(strings['open_chat']!),
+          style: FilledButton.styleFrom(
+            minimumSize: const Size.fromHeight(50),
+            backgroundColor: const Color(0xFFDBEAFE),
+            foregroundColor: const Color(0xFF1E3A8A),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+          ),
+        ),
+    ];
+
+    return Row(
+      children: [
+        for (var index = 0; index < buttons.length; index++) ...[
+          if (index > 0) const SizedBox(width: 10),
+          Expanded(child: buttons[index]),
+        ],
+      ],
     );
   }
 
@@ -1271,70 +1446,60 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
     final isQuoteRequest =
         widget.data['type'] == 'quote_request' ||
         widget.data['requestType'] == 'quote_request';
-    return Column(
+    return Row(
       children: [
-        SizedBox(
-          width: double.infinity,
-          height: 55,
-          child: ElevatedButton(
-            onPressed: _isLoading
-                ? null
-                : (isQuoteRequest
-                      ? _confirmAndSendQuote
-                      : () => _confirmAndProcess(true)),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.green,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+        Expanded(
+          child: SizedBox(
+            height: 52,
+            child: FilledButton.icon(
+              onPressed: _isLoading
+                  ? null
+                  : (isQuoteRequest
+                        ? _confirmAndSendQuote
+                        : () => _confirmAndProcess(true)),
+              icon: Icon(
+                isQuoteRequest
+                    ? Icons.send_rounded
+                    : Icons.check_circle_outline_rounded,
               ),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  isQuoteRequest
-                      ? Icons.send_rounded
-                      : Icons.check_circle_outline_rounded,
+              label: Text(
+                isQuoteRequest ? strings['send_quote']! : strings['accept']!,
+                maxLines: 2,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFF15803D),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
                 ),
-                const SizedBox(width: 8),
-                Text(
-                  isQuoteRequest ? strings['send_quote']! : strings['accept']!,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
         ),
-        const SizedBox(height: 15),
-        SizedBox(
-          width: double.infinity,
-          height: 55,
-          child: OutlinedButton(
-            onPressed: _isLoading ? null : () => _confirmAndProcess(false),
-            style: OutlinedButton.styleFrom(
-              side: const BorderSide(color: Colors.red),
-              foregroundColor: Colors.red,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+        const SizedBox(width: 10),
+        Expanded(
+          child: SizedBox(
+            height: 52,
+            child: ElevatedButton.icon(
+              onPressed: _isLoading ? null : () => _confirmAndProcess(false),
+              icon: const Icon(Icons.close_rounded),
+              label: Text(
+                strings['decline']!,
+                maxLines: 2,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontWeight: FontWeight.w700),
               ),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.close_rounded),
-                const SizedBox(width: 8),
-                Text(
-                  strings['decline']!,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFFEF2F2),
+                foregroundColor: const Color(0xFFB91C1C),
+                elevation: 0,
+                side: const BorderSide(color: Color(0xFFFECACA)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
                 ),
-              ],
+              ),
             ),
           ),
         ),
