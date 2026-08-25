@@ -25,7 +25,6 @@ const {
 } = require("./email_saved_invoice");
 const {ownedInvoicePdfPath} = require("./document_security");
 const {
-  canRollbackCancelledInvoice,
   taxAuthorityFailureState,
   taxInvoiceDraftSignature,
   taxInvoiceFinalizationMode,
@@ -2114,26 +2113,17 @@ exports.submitTaxInvoiceDecision = onCall(
 
       if (claim.cached) {
         if (decision === "cancel") {
-          const rollback = await rollbackCancelledTaxInvoice({
-            db,
+          const documents = await finalizeCancelledTaxInvoice({
             userId,
             invoiceRef,
+            payload: claim.payload,
             reservation: claim.reservation,
-            response: claim.response,
           });
-          if (!rollback.removed || !rollback.counterRolledBack) {
-            throw new HttpsError(
-                "failed-precondition",
-                "The cancellation was accepted, but a newer document number " +
-                  "already exists, so this number cannot be reused safely.",
-                {decisionAccepted: true},
-            );
-          }
           return {
             accepted: true,
             decision,
-            removed: rollback.removed,
-            counterRolledBack: rollback.counterRolledBack,
+            document: documents.document,
+            creditDocument: documents.creditDocument,
             cached: true,
           };
         }
@@ -2163,26 +2153,36 @@ exports.submitTaxInvoiceDecision = onCall(
           payload: claim.payload,
         });
         if (decision === "cancel") {
-          const rollback = await rollbackCancelledTaxInvoice({
-            db,
-            userId,
-            invoiceRef,
-            reservation: claim.reservation,
-            response,
+          await invoiceRef.update({
+            documentStatus: "allocation_cancelled",
+            "taxAuthorityAllocationRequest.status": "allocation_cancelled",
+            "taxAuthorityDecision.status": "accepted",
+            "taxAuthorityDecision.response": response,
+            "taxAuthorityDecision.acceptedAt":
+              admin.firestore.FieldValue.serverTimestamp(),
           });
-          if (!rollback.removed || !rollback.counterRolledBack) {
+          let documents;
+          try {
+            documents = await finalizeCancelledTaxInvoice({
+              userId,
+              invoiceRef,
+              payload: claim.payload,
+              reservation: claim.reservation,
+            });
+          } catch (error) {
             throw new HttpsError(
-                "failed-precondition",
-                "The cancellation was accepted, but a newer document number " +
-                  "already exists, so this number cannot be reused safely.",
+                "internal",
+                "The cancellation was accepted, but the invoice and its " +
+                  "automatic Tax Invoice Credit could not both be finalized. " +
+                  "Trying again will safely resume them.",
                 {decisionAccepted: true},
             );
           }
           return {
             accepted: true,
             decision,
-            removed: rollback.removed,
-            counterRolledBack: rollback.counterRolledBack,
+            document: documents.document,
+            creditDocument: documents.creditDocument,
             response,
             cached: false,
           };
@@ -2347,66 +2347,340 @@ async function taxInvoiceBusinessProfile(userId, expectedBusinessId) {
   };
 }
 
-async function rollbackCancelledTaxInvoice({
-  db,
+async function finalizeCancelledTaxInvoice({
   userId,
   invoiceRef,
+  payload,
   reservation,
-  response,
 }) {
-  const counterRef = db.collection("users").doc(userId)
-      .collection("counters")
-      .doc(`document_counter_${reservation.docType}`);
-  const rollback = await db.runTransaction(async (transaction) => {
-    const [invoiceSnap, counterSnap] = await Promise.all([
-      transaction.get(invoiceRef),
+  const document = await finalizeAllocatedTaxInvoice({
+    userId,
+    invoiceRef,
+    payload,
+    allocation: null,
+    reservation,
+    readyStatus: "allocation_cancelled",
+    workflowStatus: "allocation_cancelled",
+  });
+  const creditDocument = await createAutomaticCancellationCreditNote({
+    userId,
+    sourceInvoiceRef: invoiceRef,
+  });
+  return {document, creditDocument};
+}
+
+function israelIsoDate(now = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: REQUEST_EXPIRY_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now).reduce((result, part) => {
+    if (part.type !== "literal") result[part.type] = part.value;
+    return result;
+  }, {});
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+function storedDocumentIsoDate(value, fallback) {
+  const text = normalizeString(value).trim();
+  if (/^\d{8}$/.test(text)) {
+    return `${text.slice(0, 4)}-${text.slice(4, 6)}-${text.slice(6, 8)}`;
+  }
+  return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : fallback;
+}
+
+async function createAutomaticCancellationCreditNote({
+  userId,
+  sourceInvoiceRef,
+}) {
+  const db = admin.firestore();
+  const userRef = db.collection("users").doc(userId);
+  const counterRef = userRef.collection("counters")
+      .doc("document_counter_credit_note");
+  const context = await serverDocumentContext(userId);
+  const issueDate = israelIsoDate();
+  const now = admin.firestore.Timestamp.now();
+
+  const claim = await db.runTransaction(async (transaction) => {
+    const [sourceSnap, counterSnap] = await Promise.all([
+      transaction.get(sourceInvoiceRef),
       transaction.get(counterRef),
     ]);
-    if (!invoiceSnap.exists) {
-      return {removed: true, counterRolledBack: true, logoStoragePath: ""};
+    if (!sourceSnap.exists) {
+      throw new HttpsError(
+          "failed-precondition",
+          "The cancelled source invoice no longer exists.",
+      );
     }
-    const invoice = invoiceSnap.data() || {};
-    const counterValue = Number(counterSnap.data()?.value);
-    const canRollback = canRollbackCancelledInvoice({
-      invoice,
-      counterValue,
-      sequenceNumber: reservation.sequenceNumber,
-    });
-    if (!canRollback) {
-      transaction.update(invoiceRef, {
-        documentStatus: "allocation_cancelled",
-        "taxAuthorityAllocationRequest.status": "allocation_cancelled",
-        "taxAuthorityDecision.status": "accepted",
-        "taxAuthorityDecision.decision": "cancel",
-        "taxAuthorityDecision.response": response,
-        "taxAuthorityDecision.acceptedAt":
-          admin.firestore.FieldValue.serverTimestamp(),
-        "taxAuthorityDecision.rollbackBlockedAt":
-          admin.firestore.FieldValue.serverTimestamp(),
+    const source = sourceSnap.data() || {};
+    const workflow = source.automaticCancellationCreditNote || {};
+    const existingCreditId = normalizeString(workflow.creditNoteDocId).trim();
+    if (existingCreditId) {
+      const existingRef = userRef.collection("invoices").doc(existingCreditId);
+      const existingSnap = await transaction.get(existingRef);
+      if (!existingSnap.exists) {
+        throw new HttpsError(
+            "failed-precondition",
+            "The reserved cancellation credit note is missing.",
+        );
+      }
+      return {
+        creditRef: existingRef,
+        document: existingSnap.data()?.authoritativeServerDocument,
+        cached: existingSnap.data()?.documentStatus === "finalized",
+        stored: existingSnap.data(),
+      };
+    }
+
+    if (source.documentStatus !== "finalized" || !source.storagePath) {
+      throw new HttpsError(
+          "failed-precondition",
+          "The original invoice must be finalized before it can be credited.",
+      );
+    }
+    const sequenceNumber = Number(counterSnap.data()?.value);
+    if (!Number.isSafeInteger(sequenceNumber) || sequenceNumber < 1) {
+      throw new HttpsError(
+          "failed-precondition",
+          "Set the starting Tax Invoice Credit number before cancelling an invoice.",
+      );
+    }
+    const documentNumber = `${issueDate.slice(0, 4)}-` +
+      String(sequenceNumber).padStart(4, "0");
+    const sourceNumber = normalizeString(source.invoiceNumber).trim();
+    const sourceDate = storedDocumentIsoDate(source.date, issueDate);
+    let document;
+    try {
+      document = normalizeServerDocumentRequest({
+        operationId: `cancel_credit_${crypto.createHash("sha256")
+            .update(sourceInvoiceRef.id).digest("hex").slice(0, 24)}`,
+        docType: "credit_note",
+        documentNumber,
+        sequenceNumber,
+        date: issueDate,
+        client: {
+          id: source.clientTaxId,
+          name: source.clientName,
+          address: source.clientAddress,
+          phone: source.clientPhone,
+          email: source.clientEmail,
+          externalClientNumber: source.externalClientNumber,
+          savedClientId: source.savedClientId,
+        },
+        items: Array.isArray(source.items) ? source.items : [],
+        discountAmount: Number(source.discountAmount || 0),
+        roundTotalEnabled: source.roundTotalEnabled === true,
+        priceTaxModeDefault: source.priceTaxModeDefault,
+        notes: `Automatic cancellation of invoice ${sourceNumber}`,
+        sourceInvoiceDocId: sourceInvoiceRef.id,
+        sourceInvoiceNumber: sourceNumber,
+        linkedDocuments: [{
+          invoiceDocId: sourceInvoiceRef.id,
+          docType: source.docType,
+          documentNumber: sourceNumber,
+          name: source.name,
+          date: source.date,
+          amount: source.amount,
+        }],
+        creditNoteLegal: {
+          originalInvoiceNumber: sourceNumber,
+          originalInvoiceDate: sourceDate,
+          creditReason: "Invoice cancelled after allocation number refusal",
+          deliveryMethod: "digital",
+        },
+        documentLogoMode: "default",
+      }, {
+        dealerType: context.dealerType,
+        vatPercent: context.vatPercent,
       });
-      return {removed: false, counterRolledBack: false, logoStoragePath: ""};
+    } catch (error) {
+      throw new HttpsError("failed-precondition", error.message);
+    }
+    const creditRef = userRef.collection("invoices").doc(document.invoiceDocId);
+    const creditSnap = await transaction.get(creditRef);
+    if (creditSnap.exists) {
+      throw new HttpsError(
+          "already-exists",
+          "The reserved Tax Invoice Credit number is already in use.",
+      );
     }
     transaction.update(counterRef, {
-      value: reservation.sequenceNumber,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      value: sequenceNumber + 1,
+      docType: "credit_note",
+      lastInvoiceDocId: document.invoiceDocId,
+      lastSequenceNumber: sequenceNumber,
+      updatedAt: now,
     });
-    transaction.delete(invoiceRef);
-    return {
-      removed: true,
-      counterRolledBack: true,
-      logoStoragePath: normalizeString(
-          invoice.taxInvoicePresentation?.documentLogoStoragePath,
-      ).trim(),
-    };
+    transaction.create(creditRef, {
+      type: "credit_note",
+      docType: "credit_note",
+      invoiceDocId: document.invoiceDocId,
+      invoiceNumber: document.documentNumber,
+      sequenceNumber: document.sequenceNumber,
+      authoritativeServerDocument: document,
+      serverDocument: {
+        operationId: document.operationId,
+        payloadHash: document.payloadHash,
+        status: "processing",
+        attempts: 1,
+        startedAt: now,
+      },
+      documentStatus: "processing",
+      automaticallyCreated: true,
+      cancellationSourceDocumentId: sourceInvoiceRef.id,
+      createdAt: now,
+    });
+    transaction.update(sourceInvoiceRef, {
+      automaticCancellationCreditNote: {
+        status: "processing",
+        creditNoteDocId: document.invoiceDocId,
+        creditNoteNumber: document.documentNumber,
+        startedAt: now,
+      },
+    });
+    return {creditRef, document, cached: false, stored: null};
   });
 
-  if (rollback.removed &&
-      rollback.logoStoragePath.startsWith(`document-assets/${userId}/`)) {
-    await admin.storage().bucket().file(rollback.logoStoragePath)
-        .delete({ignoreNotFound: true})
-        .catch(() => {});
+  if (!claim.document) {
+    throw new HttpsError(
+        "failed-precondition",
+        "The automatic cancellation credit note is invalid.",
+    );
   }
-  return rollback;
+  if (claim.cached) {
+    return serverDocumentResponse(claim.stored, claim.document);
+  }
+
+  const document = claim.document;
+  const creditRef = claim.creditRef;
+  try {
+    const pdfBytes = await generateServerDocumentPdf(document, context, false);
+    if (pdfBytes.length < 1 || pdfBytes.length > 25 * 1024 * 1024) {
+      throw new Error("The generated Tax Invoice Credit PDF has an invalid size.");
+    }
+    const safeId = document.invoiceDocId.replace(/[^A-Za-z0-9_-]/g, "_");
+    const fileName = `server_document_${safeId}.pdf`;
+    const storagePath = `invoices/${userId}/${fileName}`;
+    const file = admin.storage().bucket().file(storagePath);
+    let token = null;
+    try {
+      const [existingMetadata] = await file.getMetadata();
+      token = normalizeString(
+          existingMetadata.metadata?.firebaseStorageDownloadTokens,
+      ).split(",")[0].trim();
+    } catch (error) {
+      // Missing deterministic output is expected on the first attempt.
+    }
+    token = token || crypto.randomUUID();
+    await file.save(pdfBytes, {
+      resumable: false,
+      validation: "crc32c",
+      metadata: {
+        contentType: "application/pdf",
+        cacheControl: "private, max-age=0, no-transform",
+        contentDisposition: `attachment; filename="${fileName}"`,
+        metadata: {
+          firebaseStorageDownloadTokens: token,
+          invoiceDocId: document.invoiceDocId,
+          ownerUid: userId,
+          generatedBy: "server-automatic-cancellation",
+        },
+      },
+    });
+    const [metadata] = await file.getMetadata();
+    const downloadUrl = taxInvoiceDownloadUrl(
+        admin.storage().bucket().name,
+        storagePath,
+        token,
+    );
+    const stored = serverDocumentStoredFields({
+      document,
+      business: context.business,
+      fileName,
+      storagePath,
+      downloadUrl,
+      size: Number(metadata.size),
+      generation: normalizeString(metadata.generation),
+    });
+    const logBucketRef = userRef.collection("logs").doc("credit_notes");
+    await db.runTransaction(async (transaction) => {
+      const [latestSnap, logBucketSnap, sourceSnap] = await Promise.all([
+        transaction.get(creditRef),
+        transaction.get(logBucketRef),
+        transaction.get(sourceInvoiceRef),
+      ]);
+      const latest = latestSnap.data() || {};
+      if (latest.documentStatus === "finalized") return;
+      if (latest.serverDocument?.payloadHash !== document.payloadHash ||
+          !sourceSnap.exists) {
+        throw new HttpsError(
+            "failed-precondition",
+            "The automatic cancellation documents failed integrity verification.",
+        );
+      }
+      const logCounter = Number(logBucketSnap.data()?.value || 0) + 1;
+      transaction.set(creditRef, {
+        ...stored,
+        automaticallyCreated: true,
+        cancellationSourceDocumentId: sourceInvoiceRef.id,
+      }, {merge: true});
+      transaction.set(logBucketRef, {
+        value: logCounter,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        docType: "credit_notes",
+      }, {merge: true});
+      transaction.set(
+          logBucketRef.collection("files").doc(document.invoiceDocId),
+          {
+            ...serverDocumentLogFields({
+              userId,
+              document,
+              business: context.business,
+              stored,
+              bucket: "credit_notes",
+            }),
+            counter: logCounter,
+            automaticallyCreated: true,
+          },
+      );
+      transaction.set(db.collection("metadata").doc("invoice_counts"), {
+        credit_note: admin.firestore.FieldValue.increment(1),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, {merge: true});
+      transaction.set(userRef.collection("metadata").doc("financial_summary"), {
+        totalEarned: admin.firestore.FieldValue.increment(-document.finalTotal),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, {merge: true});
+      transaction.update(sourceInvoiceRef, {
+        cancellationStatus: "cancelled",
+        cancelledByDocumentId: document.invoiceDocId,
+        cancelledByDocumentNumber: document.documentNumber,
+        cancelledAt: admin.firestore.FieldValue.serverTimestamp(),
+        "automaticCancellationCreditNote.status": "finalized",
+        "automaticCancellationCreditNote.finalizedAt":
+          admin.firestore.FieldValue.serverTimestamp(),
+      });
+    });
+    return serverDocumentResponse(stored, document);
+  } catch (error) {
+    await Promise.all([
+      creditRef.set({
+        documentStatus: "generation_failed",
+        "serverDocument.status": "failed",
+        "serverDocument.lastError": normalizeString(error?.message).slice(0, 500),
+        "serverDocument.failedAt": admin.firestore.FieldValue.serverTimestamp(),
+      }, {merge: true}),
+      sourceInvoiceRef.set({
+        "automaticCancellationCreditNote.status": "failed",
+        "automaticCancellationCreditNote.lastError":
+          normalizeString(error?.message).slice(0, 500),
+        "automaticCancellationCreditNote.failedAt":
+          admin.firestore.FieldValue.serverTimestamp(),
+      }, {merge: true}),
+    ]);
+    throw error;
+  }
 }
 
 function taxInvoiceDownloadUrl(bucketName, storagePath, token) {
@@ -2505,7 +2779,11 @@ function taxInvoiceStorageFields({
       ...(allocation?.confirmationNumber ? {
         allocationNumber: allocation.confirmationNumber,
         taxAuthorityAllocationNumber: allocation.confirmationNumber,
-      } : {}),
+      } : workflowStatus === "allocation_cancelled" ? {
+        allocationCancelled: true,
+      } : {
+        continuedWithoutAllocation: true,
+      }),
       documentStatus: "finalized",
       taxAuthorityAllocationRequest: {
         status: workflowStatus,
@@ -2576,6 +2854,8 @@ function taxInvoiceStorageFields({
         taxAuthorityAllocation: allocation,
         allocationNumber: allocation.confirmationNumber,
         taxAuthorityAllocationNumber: allocation.confirmationNumber,
+      } : workflowStatus === "allocation_cancelled" ? {
+        allocationCancelled: true,
       } : {
         continuedWithoutAllocation: true,
       }),

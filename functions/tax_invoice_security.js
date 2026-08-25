@@ -161,13 +161,6 @@ function taxAuthorityFailureState(error) {
     "failed" : "needs_reconciliation";
 }
 
-function canRollbackCancelledInvoice({invoice, counterValue, sequenceNumber}) {
-  return !invoice?.storagePath &&
-    invoice?.documentStatus !== "finalized" &&
-    Number.isSafeInteger(sequenceNumber) &&
-    Number(counterValue) === sequenceNumber + 1;
-}
-
 function taxInvoiceFinalizationMode(invoice) {
   const documentStatus = String(invoice?.documentStatus || "").trim();
   const isAllocated = ["allocation_approved", "finalized"].includes(
@@ -183,7 +176,6 @@ function taxInvoiceFinalizationMode(invoice) {
 }
 
 module.exports = {
-  canRollbackCancelledInvoice,
   taxAuthorityFailureState,
   taxInvoiceFinalizationMode,
   taxInvoiceDraftSignature,

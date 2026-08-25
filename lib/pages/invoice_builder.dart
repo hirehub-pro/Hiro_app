@@ -3118,7 +3118,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                   onPressed: () => Navigator.pop(sheetContext, 'cancel'),
                   icon: const Icon(Icons.cancel_outlined),
                   label: Text(
-                    isHebrew ? 'ביטול החשבונית' : 'Cancel the invoice',
+                    isHebrew
+                        ? 'ביטול והפקת חשבונית מס זיכוי'
+                        : 'Cancel and create a Tax Invoice Credit',
                   ),
                   style: TextButton.styleFrom(
                     minimumSize: const Size.fromHeight(48),
@@ -3127,6 +3129,17 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                       fontSize: 14,
                       fontWeight: FontWeight.w800,
                     ),
+                  ),
+                ),
+                Text(
+                  isHebrew
+                      ? 'החשבונית המקורית תישמר, ולאחר מכן תופק חשבונית מס זיכוי אוטומטית.'
+                      : 'The original invoice will be saved, then a linked Tax Invoice Credit will be generated automatically.',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Color(0xFF64748B),
+                    fontSize: 12,
+                    height: 1.35,
                   ),
                 ),
               ],
@@ -3143,6 +3156,17 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       );
     }
 
+    if (decision == 'cancel') {
+      final hasCreditCounter = await _ensureCancellationCreditNoteCounter();
+      if (!hasCreditCounter) {
+        throw StateError(
+          isHebrew
+              ? 'הביטול לא נשלח. יש להגדיר מספר התחלתי לחשבונית מס זיכוי כדי להמשיך.'
+              : 'The cancellation was not submitted. Set the starting Tax Invoice Credit number to continue.',
+        );
+      }
+    }
+
     final callable = _functions.httpsCallable('submitTaxInvoiceDecision');
     final result = await callable.call<Map<String, dynamic>>({
       'draftId': draftId,
@@ -3155,33 +3179,38 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
             : 'The Tax Authority did not accept the selected action.',
       );
     }
-    if (decision == 'cancel' &&
-        (result.data['removed'] != true ||
-            result.data['counterRolledBack'] != true)) {
-      throw StateError(
-        isHebrew
-            ? 'הביטול התקבל, אך לא ניתן היה לשחרר את מספר החשבונית בבטחה.'
-            : 'The cancellation was accepted, but the invoice number could not be released safely.',
-      );
-    }
-    if (decision == 'continue') {
+    if (decision == 'continue' || decision == 'cancel') {
       final documentValue = result.data['document'];
       final document = documentValue is Map
           ? Map<String, dynamic>.from(documentValue)
           : const <String, dynamic>{};
       if (document.isEmpty) {
+        if (decision == 'cancel') {
+          throw StateError(
+            isHebrew
+                ? 'החשבונית בוטלה, אך לא ניתן היה להפיק את החשבונית ואת חשבונית מס הזיכוי.'
+                : 'The cancellation was accepted, but the invoice and Tax Invoice Credit could not be generated.',
+          );
+        }
         return await _finalizeContinuedTaxInvoice(draftId);
+      }
+      if (decision == 'cancel' && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              isHebrew
+                  ? 'החשבונית נשמרה וחשבונית מס זיכוי נוצרה אוטומטית.'
+                  : 'The invoice was saved and a Tax Invoice Credit was created automatically.',
+            ),
+          ),
+        );
       }
       return _ServerDocumentResult(document: document);
     }
     throw StateError(
-      decision == 'cancel'
-          ? (isHebrew
-                ? 'החשבונית בוטלה ולא הופקה.'
-                : 'The invoice was cancelled and was not issued.')
-          : (isHebrew
-                ? 'בקשת השימוע נרשמה. החשבונית ממתינה לבדיקה.'
-                : 'The hearing request was recorded. The invoice is awaiting review.'),
+      isHebrew
+          ? 'בקשת השימוע נרשמה. החשבונית ממתינה לבדיקה.'
+          : 'The hearing request was recorded. The invoice is awaiting review.',
     );
   }
 
@@ -4404,8 +4433,10 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     required BuildContext context,
     required Map<String, String> strings,
     required int number,
+    String? docType,
   }) async {
-    final documentType = _documentTypeDisplayName(strings, _selectedDocType);
+    final targetDocType = docType ?? _selectedDocType;
+    final documentType = _documentTypeDisplayName(strings, targetDocType);
     final message = strings['doc_start_confirm_message']!
         .replaceFirst('{docType}', documentType)
         .replaceFirst('{number}', number.toString());
@@ -4536,14 +4567,15 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         false;
   }
 
-  Future<bool> _promptForStartingDocumentNumber() async {
-    final ref = _counterRefForDocType(_selectedDocType);
+  Future<bool> _promptForStartingDocumentNumber({String? docType}) async {
+    final targetDocType = docType ?? _selectedDocType;
+    final ref = _counterRefForDocType(targetDocType);
     if (ref == null || !mounted) return false;
 
     final strings = _withRequiredDefaults(
       _getLocalizedStrings(context, listen: false),
     );
-    final suggestedNumber = _suggestedStartingDocumentNumbers[_selectedDocType];
+    final suggestedNumber = _suggestedStartingDocumentNumbers[targetDocType];
     final controller = _startingDocumentNumberController;
     controller.text = suggestedNumber?.toString() ?? '';
     String? errorText;
@@ -4632,7 +4664,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                 child: Text(
                                   _documentTypeDisplayName(
                                     strings,
-                                    _selectedDocType,
+                                    targetDocType,
                                   ),
                                   style: const TextStyle(
                                     color: Color(0xFF1D4ED8),
@@ -4654,7 +4686,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                   '{docType}',
                                   _documentTypeDisplayName(
                                     strings,
-                                    _selectedDocType,
+                                    targetDocType,
                                   ),
                                 ),
                                 textAlign: TextAlign.center,
@@ -4812,6 +4844,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                               context: dialogContext,
                                               strings: strings,
                                               number: parsed,
+                                              docType: targetDocType,
                                             );
                                         if (!shouldSave ||
                                             !dialogContext.mounted) {
@@ -4861,23 +4894,34 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     try {
       final callable = _functions.httpsCallable('initializeDocumentCounter');
       final result = await callable.call<Map<String, dynamic>>({
-        'docType': _selectedDocType,
+        'docType': targetDocType,
         'startNumber': startNumber,
       });
       final assignedNumber = (result.data['value'] as num?)?.toInt();
       if (assignedNumber == null || assignedNumber < 1) return false;
 
       if (!mounted) return false;
-      setState(() {
-        _currentDocumentCounter = assignedNumber;
-        _invoiceNumber = _formatDocumentNumber(assignedNumber);
-        _isLoadingCounterAssignment = false;
-      });
+      if (targetDocType == _selectedDocType) {
+        setState(() {
+          _currentDocumentCounter = assignedNumber;
+          _invoiceNumber = _formatDocumentNumber(assignedNumber);
+          _isLoadingCounterAssignment = false;
+        });
+      }
       return true;
     } catch (e) {
       dev.log('Error saving starting document counter: $e');
       return false;
     }
+  }
+
+  Future<bool> _ensureCancellationCreditNoteCounter() async {
+    final ref = _counterRefForDocType('credit_note');
+    if (ref == null) return false;
+    final snapshot = await ref.get();
+    final value = (snapshot.data()?['value'] as num?)?.toInt();
+    if (value != null && value > 0) return true;
+    return _promptForStartingDocumentNumber(docType: 'credit_note');
   }
 
   bool get _isWaitingForStartingNumber =>
