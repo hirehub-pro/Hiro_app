@@ -28,7 +28,11 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
   final _formKey = GlobalKey<FormState>();
   final _idController = TextEditingController();
   final _businessNameController = TextEditingController();
-  final _addressController = TextEditingController();
+  final _streetController = TextEditingController();
+  final _houseNumberController = TextEditingController();
+  final _cityController = TextEditingController();
+  final _postalCodeController = TextEditingController();
+  final _branchNumberController = TextEditingController();
   final ImagePicker _picker = ImagePicker();
   final FirebaseFunctions _functions = FirebaseFunctions.instanceFor(
     region: 'me-west1',
@@ -43,6 +47,7 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
   bool _acceptedTerms = false;
   bool _isLegalDeclarationSigned = false;
   bool _acceptedResponsibility = false;
+  bool _hasBranches = false;
 
   @override
   void initState() {
@@ -54,7 +59,11 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
   void dispose() {
     _idController.dispose();
     _businessNameController.dispose();
-    _addressController.dispose();
+    _streetController.dispose();
+    _houseNumberController.dispose();
+    _cityController.dispose();
+    _postalCodeController.dispose();
+    _branchNumberController.dispose();
     super.dispose();
   }
 
@@ -78,7 +87,13 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
           'step_business': 'פרטי העסק והרישום',
           'business_name': 'שם העסק הרשום',
           'business_id': 'מספר עוסק / ח.פ / ת.ז',
-          'business_address': 'כתובת העסק המלאה',
+          'business_street': 'רחוב (אופציונלי)',
+          'business_house_number': 'מספר בית (אופציונלי)',
+          'business_city': 'עיר (אופציונלי)',
+          'business_postal_code': 'מיקוד (אופציונלי)',
+          'has_branches': 'האם לעסק יש סניפים?',
+          'branch_number': 'מספר סניף',
+          'branch_number_invalid': 'יש להזין מספר סניף של 1–7 ספרות',
           'business_logo': 'לוגו העסק',
           'business_logo_optional': 'לוגו העסק (אופציונלי)',
           'business_logo_hint':
@@ -128,7 +143,13 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
           'step_business': 'تفاصيل النشاط والتسجيل',
           'business_name': 'الاسم التجاري المسجل',
           'business_id': 'رقم النشاط / ضريبة القيمة المضافة / الهوية',
-          'business_address': 'عنوان النشاط التجاري',
+          'business_street': 'الشارع (اختياري)',
+          'business_house_number': 'رقم المنزل (اختياري)',
+          'business_city': 'المدينة (اختياري)',
+          'business_postal_code': 'الرمز البريدي (اختياري)',
+          'has_branches': 'هل للنشاط التجاري فروع؟',
+          'branch_number': 'رقم الفرع',
+          'branch_number_invalid': 'أدخل رقم فرع يتكون من 1–7 أرقام',
           'business_logo': 'شعار النشاط التجاري',
           'business_logo_optional': 'شعار النشاط التجاري (اختياري)',
           'business_logo_hint':
@@ -182,7 +203,13 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
           'step_business': 'Данные бизнеса и регистрации',
           'business_name': 'Зарегистрированное название бизнеса',
           'business_id': 'Бизнес ID / VAT ID',
-          'business_address': 'Адрес бизнеса',
+          'business_street': 'Улица (необязательно)',
+          'business_house_number': 'Номер дома (необязательно)',
+          'business_city': 'Город (необязательно)',
+          'business_postal_code': 'Почтовый индекс (необязательно)',
+          'has_branches': 'У бизнеса есть филиалы?',
+          'branch_number': 'Номер филиала',
+          'branch_number_invalid': 'Введите номер филиала из 1–7 цифр',
           'business_logo': 'Логотип бизнеса',
           'business_logo_optional': 'Логотип бизнеса (необязательно)',
           'business_logo_hint':
@@ -233,7 +260,13 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
           'step_business': 'የንግድ እና ምዝገባ ዝርዝሮች',
           'business_name': 'የተመዘገበ የንግድ ስም',
           'business_id': 'የንግድ መለያ / VAT ID',
-          'business_address': 'የንግድ አድራሻ',
+          'business_street': 'መንገድ (አማራጭ)',
+          'business_house_number': 'የቤት ቁጥር (አማራጭ)',
+          'business_city': 'ከተማ (አማራጭ)',
+          'business_postal_code': 'የፖስታ ኮድ (አማራጭ)',
+          'has_branches': 'ንግዱ ቅርንጫፎች አሉት?',
+          'branch_number': 'የቅርንጫፍ ቁጥር',
+          'branch_number_invalid': 'ከ1–7 አሃዞች ያለው የቅርንጫፍ ቁጥር ያስገቡ',
           'business_logo': 'የንግድ አርማ',
           'business_logo_optional': 'የንግድ አርማ (አማራጭ)',
           'business_logo_hint': 'ንግድዎን በፍጥነት እንድንለይ ለማገዝ አርማ ማከል ይችላሉ።',
@@ -283,7 +316,13 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
           'step_business': 'Business & Registration Details',
           'business_name': 'Registered Business Name',
           'business_id': 'Business ID / VAT ID',
-          'business_address': 'Business Address',
+          'business_street': 'Street (Optional)',
+          'business_house_number': 'House Number (Optional)',
+          'business_city': 'City (Optional)',
+          'business_postal_code': 'Postal Code (Optional)',
+          'has_branches': 'Does the business have branches?',
+          'branch_number': 'Branch Number',
+          'branch_number_invalid': 'Enter a branch number of 1–7 digits',
           'business_logo': 'Business Logo',
           'business_logo_optional': 'Business Logo (Optional)',
           'business_logo_hint': 'Add logo to put on your documents.',
@@ -333,10 +372,18 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
             .doc('latest')
             .get();
         if (doc.exists && mounted) {
+          final data = doc.data() ?? <String, dynamic>{};
           setState(() {
             _currentStatus =
-                doc.data()?['businessVerificationStatus'] ??
-                doc.data()?['status'];
+                data['businessVerificationStatus'] ?? data['status'];
+            _streetController.text = (data['street'] ?? '').toString();
+            _houseNumberController.text = (data['houseNumber'] ?? '')
+                .toString();
+            _cityController.text = (data['city'] ?? '').toString();
+            _postalCodeController.text = (data['postalCode'] ?? '').toString();
+            _hasBranches = data['hasBranches'] == true;
+            _branchNumberController.text = (data['branchNumber'] ?? '')
+                .toString();
           });
         }
       } catch (e) {
@@ -380,7 +427,12 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
       await _functions.httpsCallable('submitBusinessVerification').call({
         'businessId': businessId,
         'businessName': _businessNameController.text.trim(),
-        'address': _addressController.text.trim(),
+        'street': _streetController.text.trim(),
+        'houseNumber': _houseNumberController.text.trim(),
+        'city': _cityController.text.trim(),
+        'postalCode': _postalCodeController.text.trim(),
+        'hasBranches': _hasBranches,
+        'branchNumber': _hasBranches ? _branchNumberController.text.trim() : '',
         'dealerType': _dealerType,
         'legalAccepted': _acceptedTerms && _isLegalDeclarationSigned,
         'termsAccepted': _acceptedTerms,
@@ -692,16 +744,89 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
           ),
           const SizedBox(height: 14),
           TextFormField(
-            controller: _addressController,
-            textInputAction: TextInputAction.done,
+            controller: _streetController,
+            textInputAction: TextInputAction.next,
             textCapitalization: TextCapitalization.words,
             decoration: _inputStyle(
-              strings['business_address']!,
-              Icons.location_on_outlined,
+              strings['business_street']!,
+              Icons.signpost_outlined,
             ),
-            validator: (value) =>
-                (value?.trim().isEmpty ?? true) ? strings['required'] : null,
+            inputFormatters: [LengthLimitingTextInputFormatter(50)],
           ),
+          const SizedBox(height: 14),
+          TextFormField(
+            controller: _houseNumberController,
+            textInputAction: TextInputAction.next,
+            decoration: _inputStyle(
+              strings['business_house_number']!,
+              Icons.home_outlined,
+            ),
+            inputFormatters: [LengthLimitingTextInputFormatter(10)],
+          ),
+          const SizedBox(height: 14),
+          TextFormField(
+            controller: _cityController,
+            textInputAction: TextInputAction.next,
+            textCapitalization: TextCapitalization.words,
+            decoration: _inputStyle(
+              strings['business_city']!,
+              Icons.location_city_outlined,
+            ),
+            inputFormatters: [LengthLimitingTextInputFormatter(30)],
+          ),
+          const SizedBox(height: 14),
+          TextFormField(
+            controller: _postalCodeController,
+            textInputAction: TextInputAction.next,
+            keyboardType: TextInputType.number,
+            decoration: _inputStyle(
+              strings['business_postal_code']!,
+              Icons.local_post_office_outlined,
+            ),
+            inputFormatters: [
+              FilteringTextInputFormatter.digitsOnly,
+              LengthLimitingTextInputFormatter(8),
+            ],
+          ),
+          const SizedBox(height: 14),
+          SwitchListTile.adaptive(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+            title: Text(
+              strings['has_branches']!,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+            value: _hasBranches,
+            activeThumbColor: _primary,
+            onChanged: (value) {
+              setState(() {
+                _hasBranches = value;
+                if (!value) _branchNumberController.clear();
+              });
+            },
+          ),
+          if (_hasBranches) ...[
+            const SizedBox(height: 8),
+            TextFormField(
+              controller: _branchNumberController,
+              textInputAction: TextInputAction.done,
+              keyboardType: TextInputType.number,
+              decoration: _inputStyle(
+                strings['branch_number']!,
+                Icons.account_tree_outlined,
+              ),
+              inputFormatters: [
+                FilteringTextInputFormatter.digitsOnly,
+                LengthLimitingTextInputFormatter(7),
+              ],
+              validator: (value) {
+                if (!_hasBranches) return null;
+                final branchNumber = value?.trim() ?? '';
+                return RegExp(r'^\d{1,7}$').hasMatch(branchNumber)
+                    ? null
+                    : strings['branch_number_invalid'];
+              },
+            ),
+          ],
           const SizedBox(height: 14),
           _buildLogoPicker(strings),
         ],

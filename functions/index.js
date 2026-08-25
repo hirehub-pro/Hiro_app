@@ -4315,7 +4315,16 @@ exports.submitBusinessVerification = onCall(
       const payload = request.data || {};
       const businessId = normalizeBusinessId(payload.businessId);
       const businessName = normalizeString(payload.businessName).trim();
-      const address = normalizeString(payload.address).trim();
+      const street = normalizeString(payload.street).trim();
+      const houseNumber = normalizeString(payload.houseNumber).trim();
+      const city = normalizeString(payload.city).trim();
+      const postalCode = normalizeString(payload.postalCode).trim();
+      const hasBranches = payload.hasBranches === true;
+      const branchNumber = hasBranches ?
+          normalizeString(payload.branchNumber).trim() : "";
+      const streetLine = [street, houseNumber].filter(Boolean).join(" ");
+      const address = [streetLine, city, postalCode]
+          .filter(Boolean).join(", ");
       const dealerType = normalizeString(payload.dealerType).trim();
       const businessLogoUrl = normalizeString(payload.businessLogoUrl).trim();
 
@@ -4325,8 +4334,12 @@ exports.submitBusinessVerification = onCall(
       if (!businessName || businessName.length > 200) {
         throw new HttpsError("invalid-argument", "Invalid business name.");
       }
-      if (!address || address.length > 500) {
+      if (street.length > 50 || houseNumber.length > 10 || city.length > 30 ||
+          postalCode.length > 8 || (postalCode && !/^\d+$/.test(postalCode))) {
         throw new HttpsError("invalid-argument", "Invalid business address.");
+      }
+      if (hasBranches && !/^\d{1,7}$/.test(branchNumber)) {
+        throw new HttpsError("invalid-argument", "Invalid branch number.");
       }
       if (!["exempt", "licensed", "company"].includes(dealerType)) {
         throw new HttpsError("invalid-argument", "Invalid dealer type.");
@@ -4377,6 +4390,12 @@ exports.submitBusinessVerification = onCall(
           businessId,
           businessName,
           address,
+          street,
+          houseNumber,
+          city,
+          postalCode,
+          hasBranches,
+          branchNumber,
           dealerType,
           businessVerificationStatus: "pending",
           status: admin.firestore.FieldValue.delete(),

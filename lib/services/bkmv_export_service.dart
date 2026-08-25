@@ -124,24 +124,38 @@ class BkmvAnnex4Summary {
 class _BusinessContext {
   final String userId;
   final String businessNumber;
+  final String companyNumber;
   final String businessName;
-  final String address;
+  final String street;
+  final String houseNumber;
+  final String city;
+  final String postalCode;
+  final bool hasBranches;
+  final String branchNumber;
   final String softwareName;
   final String softwareVersion;
   final String softwareRegistrationNumber;
   final String softwareMakerVatNumber;
   final String softwareMakerName;
+  final double vatPercent;
 
   const _BusinessContext({
     required this.userId,
     required this.businessNumber,
+    required this.companyNumber,
     required this.businessName,
-    required this.address,
+    required this.street,
+    required this.houseNumber,
+    required this.city,
+    required this.postalCode,
+    required this.hasBranches,
+    required this.branchNumber,
     required this.softwareName,
     required this.softwareVersion,
     required this.softwareRegistrationNumber,
     required this.softwareMakerVatNumber,
     required this.softwareMakerName,
+    required this.vatPercent,
   });
 }
 
@@ -542,6 +556,7 @@ class BkmvExportService {
         _buildB110(
           recordNumber: recordNumber,
           businessNumber: context.businessNumber,
+          branchNumber: context.branchNumber,
           client: client,
         ),
       );
@@ -650,6 +665,7 @@ class BkmvExportService {
             customerKey: customerKey,
             documentDate: documentDate,
             linkId: linkId,
+            branchNumber: context.branchNumber,
           ),
         );
       }
@@ -676,9 +692,13 @@ class BkmvExportService {
               unitPrice: item.unitPrice,
               discountAmount: item.discountAmount,
               lineTotal: item.lineTotal,
-              vatRate: vatAmount > 0 ? 17 : 0,
+              vatRate: vatAmount > 0 ? context.vatPercent : 0,
               documentDate: documentDate,
               linkId: linkId,
+              branchNumber: context.branchNumber,
+              baseBranchNumber: docType == 'credit_note'
+                  ? context.branchNumber
+                  : '',
             ),
           );
           detailLine += 1;
@@ -715,6 +735,7 @@ class BkmvExportService {
               creditDealType: paymentDetails.creditDealType,
               documentDate: documentDate,
               linkId: linkId,
+              businessBranchNumber: context.branchNumber,
             ),
           );
           paymentLine += 1;
@@ -974,18 +995,70 @@ class BkmvExportService {
         (verificationData['businessName'] ?? userData['businessName'] ?? '')
             .toString()
             .trim();
+    final dealerType =
+        (verificationData['dealerType'] ?? userData['dealerType'] ?? '')
+            .toString()
+            .trim()
+            .toLowerCase();
+    final vatPercent = _num(metadata['vatPercent'], fallback: -1);
+    final hasBranches = verificationData['hasBranches'] == true;
+    final branchNumber = hasBranches
+        ? _digitsOnly((verificationData['branchNumber'] ?? '').toString())
+        : '';
 
     if (businessNumber.isEmpty || businessName.isEmpty) {
       return null;
+    }
+    if (!const {'exempt', 'licensed', 'company'}.contains(dealerType)) {
+      throw StateError(
+        'The verified business dealerType must be exempt, licensed, or company.',
+      );
+    }
+    if (vatPercent < 0 || vatPercent > 99.99) {
+      throw StateError(
+        'metadata/system.vatPercent must be a number from 0 through 99.99.',
+      );
+    }
+    if (hasBranches && !RegExp(r'^\d{1,7}$').hasMatch(branchNumber)) {
+      throw StateError(
+        'The verified business branchNumber must contain 1 through 7 digits.',
+      );
+    }
+
+    final legacyAddress = _splitAddress(
+      (verificationData['address'] ?? userData['address'] ?? '').toString(),
+    );
+    final hasStructuredAddress =
+        const ['street', 'houseNumber', 'city', 'postalCode'].any(
+          (field) =>
+              verificationData.containsKey(field) ||
+              userData.containsKey(field),
+        );
+    String structuredAddressValue(String field, String legacyValue) {
+      if (!hasStructuredAddress) return legacyValue;
+      return (verificationData[field] ?? userData[field] ?? '')
+          .toString()
+          .trim();
     }
 
     return _BusinessContext(
       userId: userId,
       businessNumber: businessNumber,
+      companyNumber: dealerType == 'company' ? businessNumber : '',
       businessName: businessName,
-      address: (verificationData['address'] ?? userData['address'] ?? '')
-          .toString(),
-      softwareName: 'hiro',
+      street: structuredAddressValue('street', legacyAddress.street),
+      houseNumber: structuredAddressValue(
+        'houseNumber',
+        legacyAddress.houseNumber,
+      ),
+      city: structuredAddressValue('city', legacyAddress.city),
+      postalCode: structuredAddressValue(
+        'postalCode',
+        legacyAddress.postalCode,
+      ),
+      hasBranches: hasBranches,
+      branchNumber: branchNumber,
+      softwareName: 'הירו Hiro',
       softwareVersion: (metadata['minRequiredVersion'] ?? '1.0.0').toString(),
       softwareRegistrationNumber: _digitsOnly(
         (metadata['softwareRegistrationNumber'] ?? '').toString(),
@@ -996,6 +1069,7 @@ class BkmvExportService {
       softwareMakerName:
           (metadata['softwareMakerName'] ?? metadata['appName'] ?? 'hiro')
               .toString(),
+      vatPercent: vatPercent,
     );
   }
 
@@ -1085,7 +1159,6 @@ class BkmvExportService {
     required String exportDate,
     required String exportTime,
   }) {
-    final address = _splitAddress(context.address);
     return _joinFixed([
       _fitAlpha('A000', 4),
       _fitAlpha('', 5),
@@ -1099,17 +1172,17 @@ class BkmvExportService {
       _fitNumeric(context.softwareMakerVatNumber, 9),
       _fitAlpha(context.softwareMakerName, 20),
       _fitNumeric('2', 1),
-      _fitAlpha('', 50),
+      _fitAlpha(_logicalExportPath(exportDirectory), 50),
       _fitNumeric('0', 1),
       _fitNumeric('0', 1),
-      _fitNumeric(context.businessNumber, 9),
+      _fitNumeric(context.companyNumber, 9),
       _fitNumeric('', 9),
       _fitAlpha('', 10),
       _fitAlpha(context.businessName, 50),
-      _fitAlpha(address.street, 50),
-      _fitAlpha(address.houseNumber, 10),
-      _fitAlpha(address.city, 30),
-      _fitAlpha(address.postalCode, 8),
+      _fitAlpha(context.street, 50),
+      _fitAlpha(context.houseNumber, 10),
+      _fitAlpha(context.city, 30),
+      _fitAlpha(context.postalCode, 8),
       _fitNumeric('', 4),
       _fitNumeric(fromDate, 8),
       _fitNumeric(toDate, 8),
@@ -1119,7 +1192,7 @@ class BkmvExportService {
       _fitNumeric('1', 1),
       _fitAlpha('zip', 20),
       _fitAlpha('ILS', 3),
-      _fitNumeric('0', 1),
+      _fitNumeric(context.hasBranches ? '1' : '0', 1),
       _fitAlpha('', 46),
     ], 466);
   }
@@ -1159,6 +1232,7 @@ class BkmvExportService {
   static String _buildB110({
     required int recordNumber,
     required String businessNumber,
+    required String branchNumber,
     required _ClientAccountRecord client,
   }) {
     final address = _splitAddress(client.address);
@@ -1182,7 +1256,7 @@ class BkmvExportService {
       _fitSignedAmount(0, wholeDigits: 12, decimalDigits: 2),
       _fitNumeric('0', 4),
       _fitNumeric(client.taxId, 9),
-      _fitAlpha('0000000', 7),
+      _fitAlpha(branchNumber, 7),
       _fitSignedAmount(0, wholeDigits: 12, decimalDigits: 2),
       _fitAlpha('ILS', 3),
       _fitAlpha('', 16),
@@ -1209,6 +1283,7 @@ class BkmvExportService {
     required String customerKey,
     required String documentDate,
     required int linkId,
+    required String branchNumber,
   }) {
     final address = _splitAddress(clientAddress);
     return _joinFixed([
@@ -1241,7 +1316,7 @@ class BkmvExportService {
       _fitAlpha('', 10),
       _fitAlpha('', 1),
       _fitNumeric(documentDate, 8),
-      _fitAlpha('', 7),
+      _fitAlpha(branchNumber, 7),
       _fitAlpha('', 9),
       _fitNumeric(linkId.toString(), 7),
       _fitAlpha('', 13),
@@ -1261,9 +1336,11 @@ class BkmvExportService {
     required double unitPrice,
     required double discountAmount,
     required double lineTotal,
-    required int vatRate,
+    required double vatRate,
     required String documentDate,
     required int linkId,
+    required String branchNumber,
+    required String baseBranchNumber,
   }) {
     return _joinFixed([
       _fitAlpha('D110', 4),
@@ -1284,11 +1361,11 @@ class BkmvExportService {
       _fitSignedAmount(unitPrice, wholeDigits: 12, decimalDigits: 2),
       _fitSignedAmount(discountAmount, wholeDigits: 12, decimalDigits: 2),
       _fitSignedAmount(lineTotal, wholeDigits: 12, decimalDigits: 2),
-      _fitNumeric(vatRate.toString(), 4),
-      _fitAlpha('', 7),
+      _fitNumeric((vatRate * 100).round().toString(), 4),
+      _fitAlpha(branchNumber, 7),
       _fitNumeric(documentDate, 8),
       _fitNumeric(linkId.toString(), 7),
-      _fitAlpha('', 7),
+      _fitAlpha(baseBranchNumber, 7),
       _fitAlpha('', 21),
     ], 339);
   }
@@ -1311,6 +1388,7 @@ class BkmvExportService {
     required int? creditDealType,
     required String documentDate,
     required int linkId,
+    required String businessBranchNumber,
   }) {
     return _joinFixed([
       _fitAlpha('D120', 4),
@@ -1329,7 +1407,7 @@ class BkmvExportService {
       _fitNumeric(creditCompany?.toString() ?? '', 1),
       _fitAlpha(cardName, 20),
       _fitNumeric(creditDealType?.toString() ?? '', 1),
-      _fitAlpha('', 7),
+      _fitAlpha(businessBranchNumber, 7),
       _fitNumeric(documentDate, 8),
       _fitNumeric(linkId.toString(), 7),
       _fitAlpha('', 60),
@@ -1603,6 +1681,22 @@ class BkmvExportService {
     return line;
   }
 
+  static String _logicalExportPath(String exportDirectory) {
+    final normalized = exportDirectory.replaceAll('\\', '/');
+    final markerIndex = normalized.toUpperCase().lastIndexOf('/OPENFRMT/');
+    final logicalPath = markerIndex >= 0
+        ? normalized.substring(markerIndex + 1)
+        : normalized.toUpperCase().startsWith('OPENFRMT/')
+        ? normalized
+        : '';
+    if (logicalPath.isEmpty) {
+      throw StateError(
+        'The BKMV export directory must contain an OPENFRMT path.',
+      );
+    }
+    return logicalPath.replaceAll('/', '\\');
+  }
+
   static String _fitAlpha(String value, int length) {
     final normalized = _sanitizeIso88598Text(
       value
@@ -1695,7 +1789,7 @@ class BkmvExportService {
   }
 
   static String _randomDigits(int length) {
-    final random = Random();
+    final random = Random.secure();
     final buffer = StringBuffer();
     for (var i = 0; i < length; i++) {
       buffer.write(random.nextInt(10));
