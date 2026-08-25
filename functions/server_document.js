@@ -60,6 +60,11 @@ function normalizePaymentMethods(value) {
     }
     const amount = money(finite(data.amount, `Payment ${index + 1} amount`));
     if (amount <= 0) throw new Error(`Payment ${index + 1} must be positive.`);
+    const paymentDate = validIsoDate(
+        data.paymentDate,
+        `Payment ${index + 1} date`,
+        true,
+    );
     const result = {
       method,
       amount,
@@ -71,9 +76,13 @@ function normalizePaymentMethods(value) {
       bank: optionalString(data.bank, 80),
       branch: optionalString(data.branch, 32),
       account: optionalString(data.account, 40),
+      ...(paymentDate ? {paymentDate} : {}),
     };
     if (method === "check" && !result.checkNumber) {
       throw new Error(`Payment method ${index + 1} requires a check number.`);
+    }
+    if (method === "check" && !result.paymentDate) {
+      throw new Error(`Payment method ${index + 1} requires a due date.`);
     }
     return result;
   });

@@ -801,6 +801,8 @@ class _PaymentMethodEntry {
   final cardExpirationController = TextEditingController();
   final installmentsController = TextEditingController(text: '1');
   final checkNumberController = TextEditingController();
+  final checkPaymentDateController = TextEditingController();
+  DateTime? checkPaymentDate;
   final checkBankController = TextEditingController();
   final checkBankFocusNode = FocusNode();
   final checkBranchController = TextEditingController();
@@ -837,6 +839,11 @@ class _PaymentMethodEntry {
         break;
       case 'check':
         data['checkNumber'] = checkNumberController.text.trim();
+        if (checkPaymentDate != null) {
+          data['paymentDate'] = intl.DateFormat(
+            'yyyy-MM-dd',
+          ).format(checkPaymentDate!);
+        }
         if (checkBankController.text.trim().isNotEmpty) {
           data['bank'] = checkBankController.text.trim();
         }
@@ -872,6 +879,7 @@ class _PaymentMethodEntry {
     cardExpirationController.dispose();
     installmentsController.dispose();
     checkNumberController.dispose();
+    checkPaymentDateController.dispose();
     checkBankController.dispose();
     checkBankFocusNode.dispose();
     checkBranchController.dispose();
@@ -989,10 +997,10 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     'סיטי בנק - 22',
     'בנק ישראל - 99',
   ];
-  static const List<String> _cardTypes = [
+  static const List<String> _creditCompanies = [
     'Diners',
-    'Mastercard',
-    'Visa',
+    'CAL',
+    'Leumi Card',
     'American Express',
     'Isracard',
   ];
@@ -5425,21 +5433,21 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     }
   }
 
-  String _cardTypeLabel(String cardType, bool isRtl) {
-    if (!isRtl) return cardType;
-    switch (cardType) {
+  String _creditCompanyLabel(String company, bool isRtl) {
+    if (!isRtl) return company;
+    switch (company) {
       case 'Diners':
         return 'דיינרס';
-      case 'Mastercard':
-        return 'מאסטרקארד';
-      case 'Visa':
-        return 'ויזה';
+      case 'CAL':
+        return 'כאל';
+      case 'Leumi Card':
+        return 'לאומי קארד';
       case 'American Express':
         return 'אמריקן אקספרס';
       case 'Isracard':
         return 'ישראכרט';
       default:
-        return cardType;
+        return company;
     }
   }
 
@@ -5493,6 +5501,22 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     }).toList();
   }
 
+  Future<void> _pickCheckPaymentDate(_PaymentMethodEntry entry) async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: entry.checkPaymentDate ?? _selectedInvoiceDate,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      entry.checkPaymentDate = picked;
+      entry.checkPaymentDateController.text = intl.DateFormat(
+        'dd/MM/yyyy',
+      ).format(picked);
+    });
+  }
+
   bool _validatePaymentMethods() {
     if (!_showsPaymentMethodSection) return true;
 
@@ -5527,6 +5551,20 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
               isRtl
                   ? 'בשיטת צ׳ק חובה למלא מספר צ׳ק (שורה ${i + 1}).'
                   : 'Check number is required for check payments (row ${i + 1}).',
+            ),
+          ),
+        );
+        return false;
+      }
+
+      if (methodEntry.method == 'check' &&
+          methodEntry.checkPaymentDate == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              isRtl
+                  ? 'בשיטת צ׳ק חובה לבחור תאריך פירעון (שורה ${i + 1}).'
+                  : 'A due date is required for check payments (row ${i + 1}).',
             ),
           ),
         );
@@ -7428,22 +7466,25 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           if (entry.method == 'credit') ...[
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
-              key: ValueKey('card-type-${entry.cardNameController.text}'),
+              key: ValueKey('credit-company-${entry.cardNameController.text}'),
               isExpanded: true,
-              initialValue: _cardTypes.contains(entry.cardNameController.text)
+              initialValue:
+                  _creditCompanies.contains(entry.cardNameController.text)
                   ? entry.cardNameController.text
                   : null,
               decoration: _inputStyle(
-                isRtl ? 'סוג כרטיס (אופציונלי)' : 'Card Type (Optional)',
+                isRtl
+                    ? 'חברת סליקה (אופציונלי)'
+                    : 'Clearing Company (Optional)',
                 Icons.badge_outlined,
               ),
-              hint: Text(isRtl ? 'בחר סוג כרטיס' : 'Select card type'),
-              items: _cardTypes
+              hint: Text(isRtl ? 'בחר חברת סליקה' : 'Select clearing company'),
+              items: _creditCompanies
                   .map(
-                    (cardType) => DropdownMenuItem(
-                      value: cardType,
+                    (company) => DropdownMenuItem(
+                      value: company,
                       child: Text(
-                        _cardTypeLabel(cardType, isRtl),
+                        _creditCompanyLabel(company, isRtl),
                         textDirection: isRtl
                             ? TextDirection.rtl
                             : TextDirection.ltr,
@@ -7451,9 +7492,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                     ),
                   )
                   .toList(),
-              onChanged: (cardType) {
-                if (cardType == null) return;
-                setState(() => entry.cardNameController.text = cardType);
+              onChanged: (company) {
+                if (company == null) return;
+                setState(() => entry.cardNameController.text = company);
               },
             ),
             const SizedBox(height: 12),
@@ -7513,6 +7554,20 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
               Icons.confirmation_number,
               required: true,
               keyboardType: TextInputType.number,
+            ),
+            const SizedBox(height: 12),
+            _buildTextField(
+              entry.checkPaymentDateController,
+              isRtl ? 'תאריך פירעון (חובה)' : 'Check Due Date (Required)',
+              Icons.event_outlined,
+              required: true,
+              readOnly: true,
+              onTap: () => _pickCheckPaymentDate(entry),
+              suffixIcon: IconButton(
+                tooltip: isRtl ? 'בחירת תאריך' : 'Select date',
+                onPressed: () => _pickCheckPaymentDate(entry),
+                icon: const Icon(Icons.calendar_month_outlined),
+              ),
             ),
             const SizedBox(height: 12),
             _buildBankAutocomplete(entry, isRtl, isCheck: true),
@@ -8182,12 +8237,16 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     ValueChanged<String>? onChanged,
     ValueChanged<String>? onSubmitted,
     bool enabled = true,
+    bool readOnly = false,
+    VoidCallback? onTap,
     Widget? suffixIcon,
     FocusNode? focusNode,
   }) {
     return TextField(
       controller: controller,
       enabled: enabled,
+      readOnly: readOnly,
+      onTap: onTap,
       focusNode: focusNode,
       keyboardType: keyboardType,
       textInputAction: textInputAction,

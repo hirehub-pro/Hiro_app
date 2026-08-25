@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:archive/archive_io.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
@@ -19,6 +18,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:pdf/pdf.dart' as pdf;
 import 'package:pdf/widgets.dart' as pw;
 import 'package:untitled1/services/auth_service.dart';
+import 'package:untitled1/services/bkmv_archive_service.dart';
 import 'package:untitled1/services/bkmv_export_service.dart';
 import 'package:untitled1/services/language_provider.dart';
 import 'package:untitled1/sign_in.dart';
@@ -475,55 +475,18 @@ class _SettingsPageState extends State<SettingsPage>
     required String stamp,
   }) async {
     final tempRoot = await getTemporaryDirectory();
-    final stagingRoot = Directory(
-      '${tempRoot.path}${Platform.pathSeparator}openfrmt_export_$stamp',
+    return BkmvArchiveService.buildOpenFrmtBundle(
+      sources: [
+        for (final package in packages)
+          BkmvArchiveSource(
+            directory: package.directory,
+            bkmvFile: package.bkmvFile,
+            iniFile: package.iniFile,
+          ),
+      ],
+      stamp: stamp,
+      tempRoot: tempRoot,
     );
-    if (await stagingRoot.exists()) {
-      await stagingRoot.delete(recursive: true);
-    }
-
-    final openFrmtRoot = Directory(
-      '${stagingRoot.path}${Platform.pathSeparator}OPENFRMT',
-    );
-    await openFrmtRoot.create(recursive: true);
-
-    for (final package in packages) {
-      final relativePath = package.directory.path.split('OPENFRMT').last;
-      final normalizedRelative = relativePath.startsWith(Platform.pathSeparator)
-          ? relativePath.substring(1)
-          : relativePath;
-      final targetDirectory = Directory(
-        '${openFrmtRoot.path}${Platform.pathSeparator}$normalizedRelative',
-      );
-      await targetDirectory.create(recursive: true);
-
-      final targetBkmvFile = File(
-        '${targetDirectory.path}${Platform.pathSeparator}${package.bkmvFile.uri.pathSegments.last}',
-      );
-      final targetIniFile = File(
-        '${targetDirectory.path}${Platform.pathSeparator}${package.iniFile.uri.pathSegments.last}',
-      );
-      await package.bkmvFile.copy(targetBkmvFile.path);
-      await package.iniFile.copy(targetIniFile.path);
-    }
-
-    final zipFile = File(
-      '${tempRoot.path}${Platform.pathSeparator}OPENFRMT_$stamp.zip',
-    );
-    if (await zipFile.exists()) {
-      await zipFile.delete();
-    }
-
-    final encoder = ZipFileEncoder();
-    encoder.create(zipFile.path);
-    await encoder.addDirectory(openFrmtRoot);
-    encoder.close();
-
-    if (await stagingRoot.exists()) {
-      await stagingRoot.delete(recursive: true);
-    }
-
-    return zipFile;
   }
 
   Future<String?> _promptExportEmail() async {

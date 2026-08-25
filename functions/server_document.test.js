@@ -110,6 +110,32 @@ test("builds receipts from payment methods without accepting line items", () => 
   assert.deepEqual(document.items, []);
 });
 
+test("validates and preserves a check due date", () => {
+  const document = normalize(base({
+    docType: "receipt",
+    documentNumber: "2026-0046",
+    sequenceNumber: 46,
+    paymentMethods: [{
+      method: "check",
+      amount: 100,
+      checkNumber: "123456",
+      paymentDate: "2026-09-30",
+    }],
+  }));
+  assert.equal(document.paymentMethods[0].paymentDate, "2026-09-30");
+
+  assert.throws(() => normalize(base({
+    docType: "receipt",
+    documentNumber: "2026-0047",
+    sequenceNumber: 47,
+    paymentMethods: [{
+      method: "check",
+      amount: 100,
+      checkNumber: "123456",
+    }],
+  })), /requires a due date/);
+});
+
 test("rejects mismatched numbers, invalid email, and incomplete cancellation", () => {
   assert.throws(() => normalize(base({sequenceNumber: 41})), /sequence/);
   assert.throws(() => normalize(base({
