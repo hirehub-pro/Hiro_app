@@ -2856,6 +2856,10 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       }
       final existingStatus = draftResult.data['status']?.toString().trim();
       final existingAllocation = draftResult.data['allocation'];
+      final existingDecision = draftResult.data['decision']?.toString().trim();
+      if (existingDecision == 'reverse_charge') {
+        return await _resumeReverseChargeTaxInvoice(draftId);
+      }
       if (existingStatus == 'continued_without_allocation' ||
           (existingStatus == 'finalized' && existingAllocation == null)) {
         return await _finalizeContinuedTaxInvoice(draftId);
@@ -2922,6 +2926,202 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       );
     }
     return _ServerDocumentResult(document: document);
+  }
+
+  Future<_ServerDocumentResult> _resumeReverseChargeTaxInvoice(
+    String draftId,
+  ) async {
+    final callable = _functions.httpsCallable('submitTaxInvoiceDecision');
+    final result = await callable.call<Map<String, dynamic>>({
+      'draftId': draftId,
+      'decision': 'reverse_charge',
+    });
+    final documentValue = result.data['document'];
+    final document = documentValue is Map
+        ? Map<String, dynamic>.from(documentValue)
+        : const <String, dynamic>{};
+    if (result.data['accepted'] != true || document.isEmpty) {
+      throw StateError(
+        'The reverse-charge invoice could not be safely resumed.',
+      );
+    }
+    return _ServerDocumentResult(document: document);
+  }
+
+  Future<Map<String, dynamic>?> _collectReverseChargeEvidence({
+    required bool isHebrew,
+  }) async {
+    var dealerVerified = false;
+    var customerConsented = false;
+    String? consentMethod;
+    final customerName = _clientNameController.text.trim();
+    final customerVat = _digitsOnly(_clientIdController.text);
+    const registryUrl = 'https://www.gov.il/he/service/vat-apply-online';
+    final methods = <String, String>{
+      'email': isHebrew ? 'דוא״ל' : 'Email',
+      'signed_document': isHebrew ? 'מסמך חתום' : 'Signed document',
+      'whatsapp': 'WhatsApp',
+      'phone': isHebrew ? 'טלפון' : 'Phone',
+      'other': isHebrew ? 'אחר' : 'Other',
+    };
+
+    return showDialog<Map<String, dynamic>>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          final canContinue =
+              dealerVerified && customerConsented && consentMethod != null;
+          return AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(22),
+            ),
+            title: Text(
+              isHebrew ? 'אישור היפוך חיוב' : 'Confirm reverse charge',
+              textAlign: TextAlign.center,
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF5F3FF),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: const Color(0xFFDDD6FE)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          customerName.isEmpty ? '—' : customerName,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 15,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          isHebrew
+                              ? 'מספר עוסק: $customerVat'
+                              : 'VAT number: $customerVat',
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    isHebrew
+                        ? 'יש לבדוק באתר הרשמי שהלקוח רשום כעוסק מורשה ושהשם תואם.'
+                        : 'Use the official registry to confirm that the customer is a licensed dealer and the registered name matches.',
+                    style: const TextStyle(height: 1.35),
+                  ),
+                  const SizedBox(height: 10),
+                  OutlinedButton.icon(
+                    onPressed: () async {
+                      final uri = Uri.parse(registryUrl);
+                      if (!await launchUrl(
+                        uri,
+                        mode: LaunchMode.externalApplication,
+                      )) {
+                        throw StateError('Could not open the Tax Authority.');
+                      }
+                    },
+                    icon: const Icon(Icons.open_in_new_rounded),
+                    label: Text(
+                      isHebrew
+                          ? 'פתיחת בדיקת עוסק ברשות המסים'
+                          : 'Open Tax Authority dealer lookup',
+                    ),
+                  ),
+                  CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    value: dealerVerified,
+                    controlAffinity: ListTileControlAffinity.leading,
+                    onChanged: (value) =>
+                        setDialogState(() => dealerVerified = value == true),
+                    title: Text(
+                      isHebrew
+                          ? 'בדקתי ואישרתי שהלקוח הוא עוסק מורשה פעיל.'
+                          : 'I checked and confirmed that the customer is an active licensed dealer.',
+                      style: const TextStyle(fontSize: 13.5),
+                    ),
+                  ),
+                  CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    value: customerConsented,
+                    controlAffinity: ListTileControlAffinity.leading,
+                    onChanged: (value) =>
+                        setDialogState(() => customerConsented = value == true),
+                    title: Text(
+                      isHebrew
+                          ? 'אני מאשר שהלקוח הסכים לקבל על עצמו את דיווח המע״מ.'
+                          : 'I confirm that the customer agreed to report the VAT.',
+                      style: const TextStyle(fontSize: 13.5),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<String>(
+                    initialValue: consentMethod,
+                    decoration: InputDecoration(
+                      labelText: isHebrew
+                          ? 'כיצד התקבלה הסכמת הלקוח?'
+                          : 'How did the customer consent?',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    items: methods.entries
+                        .map(
+                          (entry) => DropdownMenuItem(
+                            value: entry.key,
+                            child: Text(entry.value),
+                          ),
+                        )
+                        .toList(growable: false),
+                    onChanged: (value) =>
+                        setDialogState(() => consentMethod = value),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    isHebrew
+                        ? 'לאחר האישור, החשבונית המקורית תבוטל ותופק חשבונית חדשה בשיעור מע״מ אפס. הלקוח יפיק חשבונית עצמית במערכת שלו.'
+                        : 'After approval, the original invoice will be cancelled and a new zero-VAT invoice will be issued. The customer creates the self-invoice in their own system.',
+                    style: const TextStyle(
+                      color: Color(0xFF64748B),
+                      fontSize: 12.5,
+                      height: 1.4,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: Text(isHebrew ? 'חזרה' : 'Back'),
+              ),
+              FilledButton(
+                onPressed: canContinue
+                    ? () => Navigator.pop(dialogContext, {
+                        'dealerVerificationConfirmed': true,
+                        'customerConsentConfirmed': true,
+                        'consentMethod': consentMethod,
+                      })
+                    : null,
+                child: Text(
+                  isHebrew
+                      ? 'המשך להיפוך חיוב'
+                      : 'Continue with reverse charge',
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
   }
 
   Future<_ServerDocumentResult> _resolveTaxAuthorityDecision({
@@ -3114,6 +3314,41 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                   ),
                 ),
                 const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: () =>
+                      Navigator.pop(sheetContext, 'reverse_charge'),
+                  icon: const Icon(Icons.swap_horiz_rounded),
+                  label: Text(
+                    isHebrew
+                        ? 'היפוך חיוב – הלקוח מדווח את המע״מ'
+                        : 'Reverse charge — customer reports VAT',
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(54),
+                    foregroundColor: const Color(0xFF6D28D9),
+                    side: const BorderSide(color: Color(0xFF8B5CF6)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    textStyle: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  isHebrew
+                      ? 'זמין רק ללקוח עוסק מורשה שהסכים להיפוך החיוב.'
+                      : 'Available only when the customer is a licensed dealer and has agreed.',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Color(0xFF64748B),
+                    fontSize: 12,
+                    height: 1.35,
+                  ),
+                ),
+                const SizedBox(height: 8),
                 TextButton.icon(
                   onPressed: () => Navigator.pop(sheetContext, 'cancel'),
                   icon: const Icon(Icons.cancel_outlined),
@@ -3167,10 +3402,35 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       }
     }
 
+    Map<String, dynamic>? reverseChargeEvidence;
+    if (decision == 'reverse_charge') {
+      reverseChargeEvidence = await _collectReverseChargeEvidence(
+        isHebrew: isHebrew,
+      );
+      if (reverseChargeEvidence == null) {
+        throw StateError(
+          isHebrew
+              ? 'היפוך החיוב לא נשלח. החשבונית עדיין ממתינה לבחירה.'
+              : 'Reverse charge was not submitted. The invoice is still awaiting a decision.',
+        );
+      }
+      final hasCreditCounter = await _ensureCancellationCreditNoteCounter();
+      if (!hasCreditCounter) {
+        throw StateError(
+          isHebrew
+              ? 'היפוך החיוב לא נשלח. יש להגדיר מספר התחלתי לחשבונית מס זיכוי.'
+              : 'Reverse charge was not submitted. Set the starting Tax Invoice Credit number first.',
+        );
+      }
+    }
+
     final callable = _functions.httpsCallable('submitTaxInvoiceDecision');
     final result = await callable.call<Map<String, dynamic>>({
       'draftId': draftId,
       'decision': decision,
+      ...?(reverseChargeEvidence == null
+          ? null
+          : {'reverseChargeEvidence': reverseChargeEvidence}),
     });
     if (result.data['accepted'] != true) {
       throw StateError(
@@ -3179,13 +3439,15 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
             : 'The Tax Authority did not accept the selected action.',
       );
     }
-    if (decision == 'continue' || decision == 'cancel') {
+    if (decision == 'continue' ||
+        decision == 'cancel' ||
+        decision == 'reverse_charge') {
       final documentValue = result.data['document'];
       final document = documentValue is Map
           ? Map<String, dynamic>.from(documentValue)
           : const <String, dynamic>{};
       if (document.isEmpty) {
-        if (decision == 'cancel') {
+        if (decision == 'cancel' || decision == 'reverse_charge') {
           throw StateError(
             isHebrew
                 ? 'החשבונית בוטלה, אך לא ניתן היה להפיק את החשבונית ואת חשבונית מס הזיכוי.'
@@ -3201,6 +3463,17 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
               isHebrew
                   ? 'החשבונית נשמרה וחשבונית מס זיכוי נוצרה אוטומטית.'
                   : 'The invoice was saved and a Tax Invoice Credit was created automatically.',
+            ),
+          ),
+        );
+      }
+      if (decision == 'reverse_charge' && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              isHebrew
+                  ? 'החשבונית המקורית בוטלה, וחשבונית חדשה בשיעור מע״מ אפס הופקה.'
+                  : 'The original invoice was cancelled and a new zero-VAT invoice was issued.',
             ),
           ),
         );

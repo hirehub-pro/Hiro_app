@@ -256,6 +256,11 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
         return isRtl ? 'נדרשת החלטה' : 'Decision required';
       case 'hearing_requested':
         return isRtl ? 'ממתין לשימוע' : 'Awaiting hearing';
+      case 'reverse_charge_requested':
+      case 'reverse_charge_reserved':
+        return isRtl ? 'היפוך חיוב בתהליך' : 'Reverse charge in progress';
+      case 'reverse_charge_rejected':
+        return isRtl ? 'היפוך החיוב נדחה' : 'Reverse charge rejected';
       case 'allocation_cancelled':
         return isRtl ? 'בקשת ההקצאה בוטלה' : 'Allocation cancelled';
       case 'continued_without_allocation':
@@ -276,10 +281,13 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
       case 'allocation_failed':
       case 'needs_reconciliation':
       case 'allocation_cancelled':
+      case 'reverse_charge_rejected':
         return const Color(0xFFB91C1C);
       case 'continued_without_allocation':
       case 'decision_required':
       case 'hearing_requested':
+      case 'reverse_charge_requested':
+      case 'reverse_charge_reserved':
         return const Color(0xFFD97706);
       default:
         return const Color(0xFFD97706);

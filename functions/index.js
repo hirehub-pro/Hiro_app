@@ -1681,6 +1681,12 @@ exports.createTaxInvoiceDraft = onCall(
           return {
             status: normalizeString(existing.documentStatus).trim(),
             allocation: existing.taxAuthorityAllocation || null,
+            decision: normalizeString(
+                existing.taxAuthorityDecision?.decision,
+            ).trim() || null,
+            reverseChargeReplacementId: normalizeString(
+                existing.reverseChargeWorkflow?.replacementInvoiceDocId,
+            ).trim() || null,
           };
         }
 
@@ -1728,7 +1734,12 @@ exports.createTaxInvoiceDraft = onCall(
           },
           createdAt: now,
         });
-        return {status: "reserved", allocation: null};
+        return {
+          status: "reserved",
+          allocation: null,
+          decision: null,
+          reverseChargeReplacementId: null,
+        };
       });
 
       return {
@@ -1737,6 +1748,8 @@ exports.createTaxInvoiceDraft = onCall(
         payloadHash,
         status: claim.status,
         allocation: claim.allocation,
+        decision: claim.decision,
+        reverseChargeReplacementId: claim.reverseChargeReplacementId,
       };
     },
 );
@@ -2010,8 +2023,8 @@ exports.submitTaxInvoiceDecision = onCall(
     {
       region: "me-west1",
       secrets: [TAX_AUTH_CLIENT_ID, TAX_AUTH_CLIENT_SECRET],
-      timeoutSeconds: 60,
-      memory: "256MiB",
+      timeoutSeconds: 120,
+      memory: "512MiB",
     },
     async (request) => {
       const userId = request.auth?.uid;
@@ -2031,6 +2044,10 @@ exports.submitTaxInvoiceDecision = onCall(
       } catch (error) {
         throw new HttpsError("invalid-argument", error.message);
       }
+      const reverseChargeEvidence = decision === "reverse_charge" &&
+        request.data?.reverseChargeEvidence ?
+        normalizeReverseChargeEvidence(request.data.reverseChargeEvidence) :
+        null;
 
       const db = admin.firestore();
       const invoiceRef = db.collection("users").doc(userId)
@@ -2099,6 +2116,12 @@ exports.submitTaxInvoiceDecision = onCall(
               "This invoice is not awaiting a Tax Authority decision.",
           );
         }
+        if (decision === "reverse_charge" && !reverseChargeEvidence) {
+          throw new HttpsError(
+              "invalid-argument",
+              "Dealer verification and customer consent are required for reverse charge.",
+          );
+        }
 
         transaction.update(invoiceRef, {
           "taxAuthorityDecision.decision": decision,
@@ -2107,11 +2130,33 @@ exports.submitTaxInvoiceDecision = onCall(
           "taxAuthorityDecision.attempts":
             admin.firestore.FieldValue.increment(1),
           "taxAuthorityDecision.environment": "sandbox",
+          ...(reverseChargeEvidence ? {
+            "taxAuthorityDecision.reverseChargeEvidence": {
+              ...reverseChargeEvidence,
+              customerVatNumber: payload.invoices_list[0].customer_vat_number,
+              customerName: normalizeString(
+                  payload.invoices_list[0].customer_name,
+              ).trim(),
+              recordedAt: now,
+              recordedBy: userId,
+            },
+          } : {}),
         });
         return {cached: false, payload, reservation};
       });
 
       if (claim.cached) {
+        if (decision === "reverse_charge") {
+          return finalizeReverseChargeTaxInvoice({
+            db,
+            userId,
+            invoiceRef,
+            payload: claim.payload,
+            reservation: claim.reservation,
+            accessToken: tokenData.accessToken,
+            evidence: null,
+          });
+        }
         if (decision === "cancel") {
           const documents = await finalizeCancelledTaxInvoice({
             userId,
@@ -2147,6 +2192,17 @@ exports.submitTaxInvoiceDecision = onCall(
       }
 
       try {
+        if (decision === "reverse_charge") {
+          return await finalizeReverseChargeTaxInvoice({
+            db,
+            userId,
+            invoiceRef,
+            payload: claim.payload,
+            reservation: claim.reservation,
+            accessToken: tokenData.accessToken,
+            evidence: reverseChargeEvidence,
+          });
+        }
         const response = await callTaxAuthorityInvoiceDecision({
           accessToken: tokenData.accessToken,
           decision,
@@ -2347,11 +2403,424 @@ async function taxInvoiceBusinessProfile(userId, expectedBusinessId) {
   };
 }
 
+function normalizeReverseChargeEvidence(value) {
+  const data = value && typeof value === "object" ? value : {};
+  if (data.dealerVerificationConfirmed !== true ||
+      data.customerConsentConfirmed !== true) {
+    throw new HttpsError(
+        "invalid-argument",
+        "Dealer verification and customer consent are required for reverse charge.",
+    );
+  }
+  const consentMethod = normalizeString(data.consentMethod).trim();
+  const allowedMethods = new Set([
+    "email",
+    "signed_document",
+    "whatsapp",
+    "phone",
+    "other",
+  ]);
+  if (!allowedMethods.has(consentMethod)) {
+    throw new HttpsError(
+        "invalid-argument",
+        "Select how the customer gave reverse-charge consent.",
+    );
+  }
+  return {
+    dealerVerificationConfirmed: true,
+    dealerVerificationSource: "tax_authority_public_registry",
+    customerConsentConfirmed: true,
+    consentMethod,
+  };
+}
+
+function reverseChargePayload(payload, reservation, issueDate) {
+  const source = payload.invoices_list[0];
+  const mandatoryNote =
+    "בגין חשבונית זו לקוח חייב לדווח חשבונית עצמית";
+  const note = [
+    mandatoryNote,
+    normalizeString(source.invoice_note).trim(),
+  ].filter(Boolean).join(" | ").slice(0, 100);
+  const invoice = {
+    ...source,
+    invoice_reference_number: reservation.documentNumber,
+    invoice_date: issueDate,
+    invoice_issuance_date: issueDate,
+    vat_amount: 0,
+    payment_amount_including_vat: Number(source.payment_amount),
+    invoice_note: note,
+    action: 3,
+    items: source.items.map((item) => ({
+      ...item,
+      vat_rate: 0,
+      vat_amount: 0,
+    })),
+  };
+  return {
+    ...payload,
+    invoices_vat_amount: 0,
+    invoices_list: [invoice],
+  };
+}
+
+function reverseChargePresentation(presentation, payload, docType) {
+  const source = presentation && typeof presentation === "object" ?
+    presentation : {};
+  if (docType !== "invoice_receipt" ||
+      !Array.isArray(source.paymentMethods) ||
+      source.paymentMethods.length === 0) {
+    return source;
+  }
+  const target = roundMoney(payload.invoices_list[0].payment_amount);
+  const current = source.paymentMethods.reduce(
+      (sum, method) => sum + Number(method.amount || 0),
+      0,
+  );
+  if (current <= 0) return source;
+  let remaining = target;
+  const paymentMethods = source.paymentMethods.map((method, index) => {
+    const amount = index === source.paymentMethods.length - 1 ?
+      remaining : roundMoney(Number(method.amount || 0) * target / current);
+    remaining = roundMoney(remaining - amount);
+    return {...method, amount};
+  });
+  return {...source, paymentMethods};
+}
+
+async function reserveReverseChargeInvoice({
+  db,
+  userId,
+  invoiceRef,
+  payload,
+  sourceReservation,
+  evidence,
+}) {
+  const userRef = db.collection("users").doc(userId);
+  const counterRef = userRef.collection("counters")
+      .doc(`document_counter_${sourceReservation.docType}`);
+  const issueDate = israelIsoDate();
+  const now = admin.firestore.Timestamp.now();
+  return db.runTransaction(async (transaction) => {
+    const [sourceSnap, counterSnap] = await Promise.all([
+      transaction.get(invoiceRef),
+      transaction.get(counterRef),
+    ]);
+    if (!sourceSnap.exists) {
+      throw new HttpsError("not-found", "The source invoice no longer exists.");
+    }
+    const source = sourceSnap.data() || {};
+    const workflow = source.reverseChargeWorkflow || {};
+    const existingId = normalizeString(workflow.replacementInvoiceDocId).trim();
+    if (existingId) {
+      const replacementRef = userRef.collection("invoices").doc(existingId);
+      const replacementSnap = await transaction.get(replacementRef);
+      if (!replacementSnap.exists) {
+        throw new HttpsError(
+            "failed-precondition",
+            "The reserved reverse-charge invoice is missing.",
+        );
+      }
+      return {
+        replacementRef,
+        replacement: replacementSnap.data() || {},
+        reservation: {
+          docType: replacementSnap.data()?.docType,
+          documentNumber: replacementSnap.data()?.invoiceNumber,
+          sequenceNumber: replacementSnap.data()?.sequenceNumber,
+          invoiceDocId: existingId,
+        },
+        payload: replacementSnap.data()?.authoritativeTaxInvoice,
+        sourceLogoPath: normalizeString(
+            source.taxInvoicePresentation?.documentLogoStoragePath,
+        ).trim(),
+        replacementLogoPath: normalizeString(
+            replacementSnap.data()?.taxInvoicePresentation
+                ?.documentLogoStoragePath,
+        ).trim(),
+      };
+    }
+    if (!evidence) {
+      throw new HttpsError(
+          "failed-precondition",
+          "Reverse-charge verification evidence is missing.",
+      );
+    }
+    const sequenceNumber = Number(counterSnap.data()?.value);
+    if (!Number.isSafeInteger(sequenceNumber) || sequenceNumber < 1) {
+      throw new HttpsError(
+          "failed-precondition",
+          "The invoice numbering series is not configured.",
+      );
+    }
+    const documentNumber = `${issueDate.slice(0, 4)}-` +
+      String(sequenceNumber).padStart(4, "0");
+    const replacementId = `${sourceReservation.docType}_${documentNumber}`;
+    const replacementRef = userRef.collection("invoices").doc(replacementId);
+    const replacementSnap = await transaction.get(replacementRef);
+    if (replacementSnap.exists) {
+      throw new HttpsError(
+          "already-exists",
+          "The next invoice number is already in use.",
+      );
+    }
+    const reservation = {
+      docType: sourceReservation.docType,
+      documentNumber,
+      sequenceNumber,
+      invoiceDocId: replacementId,
+    };
+    const replacementPayload = reverseChargePayload(
+        payload,
+        reservation,
+        issueDate,
+    );
+    const replacementPresentation = reverseChargePresentation(
+        source.taxInvoicePresentation,
+        replacementPayload,
+        sourceReservation.docType,
+    );
+    const sourceLogoPath = normalizeString(
+        source.taxInvoicePresentation?.documentLogoStoragePath,
+    ).trim();
+    if (replacementPresentation.documentLogoMode === "inline") {
+      replacementPresentation.documentLogoStoragePath =
+        `document-assets/${userId}/${replacementId}_` +
+        replacementPresentation.documentLogoHash;
+    }
+    transaction.update(counterRef, {
+      value: sequenceNumber + 1,
+      docType: sourceReservation.docType,
+      lastInvoiceDocId: replacementId,
+      lastSequenceNumber: sequenceNumber,
+      updatedAt: now,
+    });
+    transaction.create(replacementRef, {
+      type: sourceReservation.docType,
+      docType: sourceReservation.docType,
+      invoiceDocId: replacementId,
+      invoiceNumber: documentNumber,
+      sequenceNumber,
+      documentStatus: "reverse_charge_reserved",
+      authoritativeTaxInvoice: replacementPayload,
+      taxInvoicePresentation: replacementPresentation,
+      reverseCharge: {
+        status: "reserved",
+        sourceInvoiceDocId: sourceReservation.invoiceDocId,
+        sourceInvoiceNumber: sourceReservation.documentNumber,
+        evidence,
+        reservedAt: now,
+      },
+      taxAuthorityAllocationRequest: {
+        status: "reverse_charge_reserved",
+        attempts: 0,
+        environment: "sandbox",
+        reservedAt: now,
+      },
+      createdAt: now,
+    });
+    transaction.update(invoiceRef, {
+      documentStatus: "reverse_charge_requested",
+      reverseChargeWorkflow: {
+        status: "reserved",
+        replacementInvoiceDocId: replacementId,
+        replacementInvoiceNumber: documentNumber,
+        evidence,
+        reservedAt: now,
+      },
+    });
+    return {
+      replacementRef,
+      replacement: null,
+      reservation,
+      payload: replacementPayload,
+      sourceLogoPath,
+      replacementLogoPath: normalizeString(
+          replacementPresentation.documentLogoStoragePath,
+      ).trim(),
+    };
+  });
+}
+
+async function ensureReverseChargeLogoCopy({
+  userId,
+  sourceLogoPath,
+  replacementLogoPath,
+}) {
+  if (!replacementLogoPath) return;
+  if (!sourceLogoPath.startsWith(`document-assets/${userId}/`) ||
+      !replacementLogoPath.startsWith(`document-assets/${userId}/`)) {
+    throw new HttpsError(
+        "failed-precondition",
+        "The reverse-charge document logo reference is invalid.",
+    );
+  }
+  const bucket = admin.storage().bucket();
+  const replacementFile = bucket.file(replacementLogoPath);
+  const [replacementExists] = await replacementFile.exists();
+  if (replacementExists) return;
+  const sourceFile = bucket.file(sourceLogoPath);
+  const [sourceExists] = await sourceFile.exists();
+  if (!sourceExists) {
+    throw new HttpsError(
+        "failed-precondition",
+        "The selected document logo is no longer available.",
+    );
+  }
+  await sourceFile.copy(replacementFile);
+}
+
+async function finalizeReverseChargeTaxInvoice({
+  db,
+  userId,
+  invoiceRef,
+  payload,
+  reservation,
+  accessToken,
+  evidence,
+}) {
+  const claim = await reserveReverseChargeInvoice({
+    db,
+    userId,
+    invoiceRef,
+    payload,
+    sourceReservation: reservation,
+    evidence: evidence ? {
+      ...evidence,
+      customerVatNumber: payload.invoices_list[0].customer_vat_number,
+      customerName: normalizeString(
+          payload.invoices_list[0].customer_name,
+      ).trim(),
+    } : null,
+  });
+  await ensureReverseChargeLogoCopy({
+    userId,
+    sourceLogoPath: claim.sourceLogoPath,
+    replacementLogoPath: claim.replacementLogoPath,
+  });
+  let allocation = claim.replacement?.taxAuthorityAllocation || null;
+  let authorityResponse = claim.replacement?.reverseCharge?.authorityResponse ||
+    null;
+  if (!allocation?.confirmationNumber) {
+    const response = await callTaxAuthorityInvoiceApproval({
+      accessToken,
+      payload: claim.payload,
+    });
+    const approval = extractInvoiceApproval(response, claim.payload);
+    if (!approval.approved || !approval.confirmationNumber) {
+      await Promise.all([
+        invoiceRef.update({
+          documentStatus: "decision_required",
+          "taxAuthorityDecision.status": "failed",
+          "reverseChargeWorkflow.status": "rejected",
+          "reverseChargeWorkflow.authorityResponse": response,
+        }),
+        claim.replacementRef.update({
+          documentStatus: "reverse_charge_rejected",
+          "reverseCharge.status": "rejected",
+          "reverseCharge.authorityResponse": response,
+        }),
+      ]);
+      throw new HttpsError(
+          "failed-precondition",
+          "The Tax Authority did not approve reverse charge for this customer.",
+          {decisionAccepted: true, authorityResponse: response},
+      );
+    }
+    authorityResponse = response;
+    allocation = {
+      ...approval,
+      rawResponse: response,
+      requestedAt: admin.firestore.Timestamp.now(),
+      environment: "sandbox",
+      reverseCharge: true,
+    };
+    await Promise.all([
+      claim.replacementRef.update({
+        documentStatus: "allocation_approved",
+        taxAuthorityAllocation: allocation,
+        "taxAuthorityAllocationRequest.status": "approved",
+        "taxAuthorityAllocationRequest.completedAt":
+          admin.firestore.FieldValue.serverTimestamp(),
+        "reverseCharge.status": "approved",
+        "reverseCharge.authorityResponse": response,
+      }),
+      invoiceRef.update({
+        documentStatus: "allocation_cancelled",
+        "taxAuthorityAllocationRequest.status": "allocation_cancelled",
+        "taxAuthorityDecision.status": "accepted",
+        "taxAuthorityDecision.response": response,
+        "taxAuthorityDecision.acceptedAt":
+          admin.firestore.FieldValue.serverTimestamp(),
+        "reverseChargeWorkflow.status": "approved",
+        "reverseChargeWorkflow.authorityResponse": response,
+      }),
+    ]);
+  }
+
+  let cancelled;
+  let replacementDocument;
+  try {
+    cancelled = await finalizeCancelledTaxInvoice({
+      userId,
+      invoiceRef,
+      payload,
+      reservation,
+      creditReason: "Original invoice cancelled due to reverse charge",
+    });
+    replacementDocument = await finalizeAllocatedTaxInvoice({
+      userId,
+      invoiceRef: claim.replacementRef,
+      payload: claim.payload,
+      allocation,
+      reservation: claim.reservation,
+      readyStatus: "allocation_approved",
+      workflowStatus: "reverse_charge_finalized",
+    });
+  } catch (error) {
+    throw new HttpsError(
+        "internal",
+        "Reverse charge was approved, but its documents could not all be " +
+          "finalized. Trying again will safely resume them.",
+        {decisionAccepted: true},
+    );
+  }
+  await Promise.all([
+    invoiceRef.set({
+      "reverseChargeWorkflow.status": "finalized",
+      "reverseChargeWorkflow.specialAllocationNumber":
+        allocation.confirmationNumber,
+      "reverseChargeWorkflow.finalizedAt":
+        admin.firestore.FieldValue.serverTimestamp(),
+    }, {merge: true}),
+    claim.replacementRef.set({
+      reverseCharge: {
+        status: "finalized",
+        sourceInvoiceDocId: reservation.invoiceDocId,
+        sourceInvoiceNumber: reservation.documentNumber,
+        specialAllocationNumber: allocation.confirmationNumber,
+        authorityResponse,
+        finalizedAt: admin.firestore.FieldValue.serverTimestamp(),
+      },
+    }, {merge: true}),
+  ]);
+  return {
+    accepted: true,
+    decision: "reverse_charge",
+    document: replacementDocument,
+    originalDocument: cancelled.document,
+    creditDocument: cancelled.creditDocument,
+    allocationNumber: allocation.confirmationNumber,
+    cached: Boolean(claim.replacement),
+  };
+}
+
 async function finalizeCancelledTaxInvoice({
   userId,
   invoiceRef,
   payload,
   reservation,
+  creditReason = "Invoice cancelled after allocation number refusal",
 }) {
   const document = await finalizeAllocatedTaxInvoice({
     userId,
@@ -2365,6 +2834,7 @@ async function finalizeCancelledTaxInvoice({
   const creditDocument = await createAutomaticCancellationCreditNote({
     userId,
     sourceInvoiceRef: invoiceRef,
+    creditReason,
   });
   return {document, creditDocument};
 }
@@ -2393,6 +2863,7 @@ function storedDocumentIsoDate(value, fallback) {
 async function createAutomaticCancellationCreditNote({
   userId,
   sourceInvoiceRef,
+  creditReason,
 }) {
   const db = admin.firestore();
   const userRef = db.collection("users").doc(userId);
@@ -2486,7 +2957,7 @@ async function createAutomaticCancellationCreditNote({
         creditNoteLegal: {
           originalInvoiceNumber: sourceNumber,
           originalInvoiceDate: sourceDate,
-          creditReason: "Invoice cancelled after allocation number refusal",
+          creditReason,
           deliveryMethod: "digital",
         },
         documentLogoMode: "default",

@@ -26,8 +26,8 @@ test("maps supported decisions to the documented V1 paths", () => {
       "/InvoiceDecisionApi/v1/Continue");
   assert.equal(invoiceDecisionPath("further_objection"),
       "/InvoiceDecisionApi/v1/FurtherObjection");
-  assert.throws(() => normalizeInvoiceDecision("reverse_charge"),
-      /Unsupported/);
+  assert.throws(() => invoiceDecisionPath("reverse_charge"), /action 3/);
+  assert.equal(normalizeInvoiceDecision("reverse_charge"), "reverse_charge");
 });
 
 test("builds only fields allowed by ChoiceRequest", () => {
@@ -47,4 +47,6 @@ test("maps decisions to persisted workflow states", () => {
       "continued_without_allocation");
   assert.equal(invoiceDecisionDocumentStatus("further_objection"),
       "hearing_requested");
+  assert.equal(invoiceDecisionDocumentStatus("reverse_charge"),
+      "reverse_charge_requested");
 });

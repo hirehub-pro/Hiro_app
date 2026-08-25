@@ -2,6 +2,7 @@ const DECISION_PATHS = Object.freeze({
   cancel: "Cancel",
   continue: "Continue",
   further_objection: "FurtherObjection",
+  reverse_charge: null,
 });
 
 function normalizeInvoiceDecision(value) {
@@ -13,9 +14,11 @@ function normalizeInvoiceDecision(value) {
 }
 
 function invoiceDecisionPath(decision) {
-  return `/InvoiceDecisionApi/v1/${DECISION_PATHS[
-    normalizeInvoiceDecision(decision)
-  ]}`;
+  const path = DECISION_PATHS[normalizeInvoiceDecision(decision)];
+  if (!path) {
+    throw new Error("Reverse charge uses Invoices/v2/Approval with action 3.");
+  }
+  return `/InvoiceDecisionApi/v1/${path}`;
 }
 
 function invoiceDecisionPayload(authoritativePayload) {
@@ -44,6 +47,8 @@ function invoiceDecisionDocumentStatus(decision) {
       return "continued_without_allocation";
     case "further_objection":
       return "hearing_requested";
+    case "reverse_charge":
+      return "reverse_charge_requested";
   }
 }
 

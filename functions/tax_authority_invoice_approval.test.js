@@ -49,6 +49,23 @@ test("unwraps exactly one invoice for Invoices/v2/Approval", () => {
   assert.equal("invoices_list" in request, false);
 });
 
+test("passes a reverse-charge action 3 invoice to Approval unchanged", () => {
+  const requestPayload = payload();
+  const invoice = requestPayload.invoices_list[0];
+  invoice.action = 3;
+  invoice.invoice_reference_number = "2026-0043";
+  invoice.vat_amount = 0;
+  invoice.payment_amount_including_vat = invoice.payment_amount;
+  invoice.items[0].vat_rate = 0;
+  invoice.items[0].vat_amount = 0;
+  const request = singleInvoiceApprovalPayload(requestPayload);
+  assert.equal(request.action, 3);
+  assert.equal(request.invoice_id, "invoice_2026-0042");
+  assert.equal(request.invoice_reference_number, "2026-0043");
+  assert.equal(request.vat_amount, 0);
+  assert.equal(request.items[0].vat_rate, 0);
+});
+
 test("rejects a batch before calling the single-invoice endpoint", () => {
   const request = payload();
   request.invoices_list.push({...request.invoices_list[0]});
