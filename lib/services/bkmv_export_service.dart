@@ -685,7 +685,9 @@ class BkmvExportService {
               documentType: docTypeCode,
               documentNumber: documentNumber,
               lineNumber: detailLine,
-              baseDocumentType: docType == 'credit_note' ? 305 : null,
+              baseDocumentType: docType == 'credit_note'
+                  ? _creditBaseDocumentType(invoiceData)
+                  : null,
               baseDocumentNumber: _creditOriginalNumber(invoiceData),
               description: item.description,
               quantity: item.quantity,
@@ -1601,6 +1603,53 @@ class BkmvExportService {
         return originalNumber;
       }
     }
+    return null;
+  }
+
+  static int? _creditBaseDocumentType(Map<String, dynamic> invoiceData) {
+    final originalNumber = _creditOriginalNumber(invoiceData);
+    final sourceDocumentId =
+        (invoiceData['sourceInvoiceDocId'] ??
+                invoiceData['cancellationSourceDocumentId'] ??
+                '')
+            .toString()
+            .trim();
+    final linkedDocuments = invoiceData['linkedDocuments'];
+    if (linkedDocuments is Iterable) {
+      Map<dynamic, dynamic>? fallback;
+      for (final linkedDocument in linkedDocuments) {
+        if (linkedDocument is! Map) continue;
+        final mappedType = _mapDocumentType(
+          (linkedDocument['docType'] ?? linkedDocument['type'] ?? '')
+              .toString()
+              .trim(),
+        );
+        if (mappedType != 305 && mappedType != 320) continue;
+
+        fallback ??= linkedDocument;
+        final linkedNumber =
+            (linkedDocument['documentNumber'] ??
+                    linkedDocument['invoiceNumber'] ??
+                    '')
+                .toString()
+                .trim();
+        final linkedId =
+            (linkedDocument['invoiceDocId'] ?? linkedDocument['id'] ?? '')
+                .toString()
+                .trim();
+        if ((originalNumber != null && linkedNumber == originalNumber) ||
+            (sourceDocumentId.isNotEmpty && linkedId == sourceDocumentId)) {
+          return mappedType;
+        }
+      }
+      if (fallback != null) {
+        return _mapDocumentType(
+          (fallback['docType'] ?? fallback['type'] ?? '').toString().trim(),
+        );
+      }
+    }
+
+    // An original number alone does not prove the original document type.
     return null;
   }
 
