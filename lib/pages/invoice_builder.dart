@@ -2032,6 +2032,19 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     }
   }
 
+  void _temporarilySkipIdentityVerification() {
+    if (!kDebugMode || _isVerifyingIdentity) return;
+    _identityResendTimer?.cancel();
+    setState(() {
+      _isIdentityVerified = true;
+      _isAcquiringLock = true;
+      _isVerifyingIdentity = false;
+      _identityVerificationError = null;
+      _identityResendSecondsRemaining = 0;
+    });
+    unawaited(_acquireInvoiceBuilderLock());
+  }
+
   Widget _buildIdentityVerificationGate(BuildContext context) {
     final strings = _identityStrings(listen: true);
     return Scaffold(
@@ -2041,6 +2054,19 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         backgroundColor: Colors.white,
         foregroundColor: const Color(0xFF1976D2),
         elevation: 0,
+        actions: [
+          if (kDebugMode)
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              iconSize: 18,
+              tooltip: 'Temporary: skip identity verification',
+              onPressed: _isVerifyingIdentity
+                  ? null
+                  : _temporarilySkipIdentityVerification,
+              icon: const Icon(Icons.bug_report_outlined),
+            ),
+          const SizedBox(width: 4),
+        ],
       ),
       body: SafeArea(
         child: Center(
@@ -5540,6 +5566,48 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         return false;
       }
 
+      if (methodEntry.method == 'check' &&
+          methodEntry.checkBankController.text.trim().isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              isRtl
+                  ? 'בשיטת צ׳ק חובה לבחור בנק (שורה ${i + 1}).'
+                  : 'A bank is required for check payments (row ${i + 1}).',
+            ),
+          ),
+        );
+        return false;
+      }
+
+      if (methodEntry.method == 'check' &&
+          methodEntry.checkBranchController.text.trim().isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              isRtl
+                  ? 'בשיטת צ׳ק חובה לבחור סניף (שורה ${i + 1}).'
+                  : 'A branch is required for check payments (row ${i + 1}).',
+            ),
+          ),
+        );
+        return false;
+      }
+
+      if (methodEntry.method == 'check' &&
+          methodEntry.checkAccountController.text.trim().isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              isRtl
+                  ? 'בשיטת צ׳ק חובה למלא חשבון בנק (שורה ${i + 1}).'
+                  : 'A bank account is required for check payments (row ${i + 1}).',
+            ),
+          ),
+        );
+        return false;
+      }
+
       if (methodEntry.method == 'credit') {
         final installments = methodEntry.installmentsController.text.trim();
         final parsed = int.tryParse(installments);
@@ -7545,8 +7613,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
             const SizedBox(height: 12),
             _buildTextField(
               entry.checkAccountController,
-              isRtl ? 'חשבון בנק (אופציונלי)' : 'Bank Account (Optional)',
+              isRtl ? 'חשבון בנק (חובה)' : 'Bank Account (Required)',
               Icons.account_balance_wallet_outlined,
+              required: true,
             ),
           ],
           if (entry.method == 'transfer') ...[
@@ -7626,8 +7695,11 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
             },
             textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
             decoration: _inputStyle(
-              isRtl ? 'בנק (אופציונלי)' : 'Bank Name (Optional)',
+              isCheck
+                  ? (isRtl ? 'בנק (חובה)' : 'Bank Name (Required)')
+                  : (isRtl ? 'בנק (אופציונלי)' : 'Bank Name (Optional)'),
               Icons.account_balance,
+              required: isCheck,
             ),
           );
         },
@@ -7738,8 +7810,11 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
             textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
             decoration:
                 _inputStyle(
-                  isRtl ? 'סניף (אופציונלי)' : 'Branch (Optional)',
+                  isCheck
+                      ? (isRtl ? 'סניף (חובה)' : 'Branch (Required)')
+                      : (isRtl ? 'סניף (אופציונלי)' : 'Branch (Optional)'),
                   Icons.store_mall_directory_outlined,
+                  required: isCheck,
                 ).copyWith(
                   hintText: _isLoadingBankBranches
                       ? (isRtl ? 'טוען סניפים...' : 'Loading branches...')

@@ -179,9 +179,13 @@ function validateUniformFileContents({
       .split(/\r?\n/).filter(Boolean);
   const compactFrom = fromDate.replaceAll("-", "");
   const compactTo = toDate.replaceAll("-", "");
+  // The second identifier in A000 is a company number.  It is optional for
+  // licensed/exempt dealers and is correctly represented by nine zeroes.
+  const companyNumber = iniLine.slice(186, 195);
+  const hasCompanyNumber = /[1-9]/.test(companyNumber);
   if (iniLine.length < 382 || !iniLine.startsWith("A000") ||
       iniLine.slice(24, 33) !== businessId ||
-      iniLine.slice(186, 195) !== businessId ||
+      (hasCompanyNumber && companyNumber !== businessId) ||
       iniLine.slice(366, 374) !== compactFrom ||
       iniLine.slice(374, 382) !== compactTo) {
     throw new Error("INI.txt does not match the verified business and period.");

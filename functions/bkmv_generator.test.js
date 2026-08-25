@@ -4,6 +4,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 const {
+  PRINTED_SUMMARY_ROWS,
   RECORD_LENGTHS,
   encodeIso88598,
   generateBkmvPackage,
@@ -11,6 +12,13 @@ const {
   sanitizeIso88598Text,
   splitPaymentAmount,
 } = require("./bkmv_generator");
+
+test("uses the official Annex 1 labels in the printed summary", () => {
+  const labelsByCode = new Map(PRINTED_SUMMARY_ROWS);
+  assert.equal(labelsByCode.get(340), "חשבונית שריון");
+  assert.equal(labelsByCode.get(800), "יתרת פתיחה");
+  assert.equal(labelsByCode.has(406), false);
+});
 
 function businessContext() {
   return {
@@ -151,6 +159,8 @@ test("generates fixed-width 1.31 records from canonical server documents", () =>
 
   const c100 = result.records.find((record) => record.startsWith("C100"));
   assert.equal(c100.slice(25, 45).trim(), "2026-0042");
+  assert.equal(c100.slice(269, 284), " ".repeat(15));
+  assert.equal(c100.slice(284, 287), " ".repeat(3));
   assert.equal(c100.slice(287, 302), "+00000000010000");
   assert.equal(c100.slice(302, 317), "-00000000001000");
   assert.equal(c100.slice(317, 332), "+00000000009000");

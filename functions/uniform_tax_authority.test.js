@@ -173,6 +173,14 @@ test("validates the business, period, and main ID inside uniform files", () => {
     fromDate: "2026-01-01",
     toDate: "2026-01-31",
   }));
+  const licensedDealerIni = `${ini.slice(0, 186)}${"0".repeat(9)}${ini.slice(195)}`;
+  assert.doesNotThrow(() => validateUniformFileContents({
+    iniBytes: Buffer.from(licensedDealerIni, "latin1"),
+    bkmvBytes: Buffer.from(bkmv, "latin1"),
+    businessId,
+    fromDate: "2026-01-01",
+    toDate: "2026-01-31",
+  }));
   assert.throws(() => validateUniformFileContents({
     iniBytes: Buffer.from(ini, "latin1"),
     bkmvBytes: Buffer.from(bkmv, "latin1"),
