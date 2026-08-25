@@ -576,6 +576,28 @@ test("allows owners to read but not forge uniform submission status", {
   await assertFails(setDoc(doc(ownerDb, pathValue), {status: "approved"}));
 });
 
+test("allows owners to read but not forge server uniform exports", {
+  skip: !emulatorAvailable,
+}, async () => {
+  const uid = "uniform-export-owner-0001";
+  const otherUid = "uniform-export-other-0001";
+  const pathValue = `users/${uid}/uniformExports/export-123456789012`;
+  await seed(pathValue, {
+    userId: uid,
+    status: "ready",
+    fromDate: "2026-01-01",
+    toDate: "2026-01-31",
+  });
+  const ownerDb = testEnv.authenticatedContext(uid).firestore();
+  const otherDb = testEnv.authenticatedContext(otherUid).firestore();
+  await assertSucceeds(getDoc(doc(ownerDb, pathValue)));
+  await assertFails(getDoc(doc(otherDb, pathValue)));
+  await assertFails(setDoc(doc(ownerDb, pathValue), {
+    userId: uid,
+    status: "ready",
+  }));
+});
+
 test("enforces invoice-builder lock ownership and expiry", {
   skip: !emulatorAvailable,
 }, async () => {

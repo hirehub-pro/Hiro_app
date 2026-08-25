@@ -5,13 +5,76 @@ const assert = require("node:assert/strict");
 const {
   mapAuthorityUploadFiles,
   maximumUploadBytes,
+  normalizeUniformExportId,
   normalizeSandboxPdfPaths,
   normalizeUniformSubmissionInput,
   safeSignedUploadHeaders,
+  uniformSubmissionFromExport,
   uniformOverallStatus,
   validateUniformFileContents,
   validateSandboxPdf,
 } = require("./uniform_tax_authority");
+
+test("resolves Tax Authority files from a server-owned export", () => {
+  const exportId = normalizeUniformExportId({
+    exportId: "12345678-1234-1234-1234-123456789012",
+  });
+  const root = `users/u1/uniform_exports/${exportId}`;
+  assert.deepEqual(uniformSubmissionFromExport({
+    userId: "u1",
+    exportId,
+    data: {
+      userId: "u1",
+      status: "ready",
+      fromDate: "2026-01-01",
+      toDate: "2026-01-31",
+      paths: {
+        ini: `${root}/authority/INI.TXT`,
+        bkmv: `${root}/authority/BKMVDATA.TXT`,
+        printedSummary: `${root}/summary.pdf`,
+        annex4: `${root}/annex.pdf`,
+      },
+    },
+  }), {
+    exportId,
+    fromDate: "2026-01-01",
+    toDate: "2026-01-31",
+    iniPath: `${root}/authority/INI.TXT`,
+    bkmvPath: `${root}/authority/BKMVDATA.TXT`,
+    sandboxPdfPaths: [`${root}/summary.pdf`, `${root}/annex.pdf`],
+  });
+});
+
+test("rejects cross-user or client-selected server export artifacts", () => {
+  const exportId = "12345678-1234-1234-1234-123456789012";
+  assert.throws(() => uniformSubmissionFromExport({
+    userId: "u1",
+    exportId,
+    data: {
+      userId: "u2",
+      status: "ready",
+      fromDate: "2026-01-01",
+      toDate: "2026-01-31",
+      paths: {},
+    },
+  }), /not ready/);
+  assert.throws(() => uniformSubmissionFromExport({
+    userId: "u1",
+    exportId,
+    data: {
+      userId: "u1",
+      status: "ready",
+      fromDate: "2026-01-01",
+      toDate: "2026-01-31",
+      paths: {
+        ini: "users/u2/uniform_exports/run/INI.TXT",
+        bkmv: "users/u2/uniform_exports/run/BKMVDATA.TXT",
+        printedSummary: "users/u2/uniform_exports/run/summary.pdf",
+        annex4: "users/u2/uniform_exports/run/annex.pdf",
+      },
+    },
+  }), /invalid artifact path/);
+});
 
 test("normalizes a user-owned uniform export", () => {
   assert.deepEqual(normalizeUniformSubmissionInput({

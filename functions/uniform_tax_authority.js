@@ -2,6 +2,60 @@
 
 const UNIFORM_EXPORT_PREFIX = "uniform_exports";
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const EXPORT_ID_PATTERN = /^[A-Za-z0-9_-]{12,180}$/;
+
+function normalizeUniformExportId(data) {
+  const exportId = String(data?.exportId || "").trim();
+  if (!EXPORT_ID_PATTERN.test(exportId)) {
+    throw new Error("A valid server-generated export ID is required.");
+  }
+  return exportId;
+}
+
+function uniformSubmissionFromExport({data, userId, exportId}) {
+  const exportData = data && typeof data === "object" ? data : {};
+  if (exportData.userId !== userId ||
+      !["ready", "submitted"].includes(exportData.status)) {
+    throw new Error("The server-generated export is not ready for submission.");
+  }
+  const fromDate = String(exportData.fromDate || "").trim();
+  const toDate = String(exportData.toDate || "").trim();
+  if (!validIsoDate(fromDate) || !validIsoDate(toDate) || fromDate > toDate) {
+    throw new Error("The server-generated export has an invalid period.");
+  }
+  const paths = exportData.paths && typeof exportData.paths === "object" ?
+    exportData.paths : {};
+  const allowedPrefix =
+    `users/${userId}/${UNIFORM_EXPORT_PREFIX}/${exportId}/`;
+  const requiredPaths = {
+    iniPath: String(paths.ini || "").trim(),
+    bkmvPath: String(paths.bkmv || "").trim(),
+    printedSummaryPath: String(paths.printedSummary || "").trim(),
+    annex4Path: String(paths.annex4 || "").trim(),
+  };
+  if (Object.values(requiredPaths).some((value) =>
+    !value.startsWith(allowedPrefix))) {
+    throw new Error("The export contains an invalid artifact path.");
+  }
+  if (requiredPaths.iniPath.split("/").pop().toUpperCase() !== "INI.TXT" ||
+      requiredPaths.bkmvPath.split("/").pop().toUpperCase() !==
+        "BKMVDATA.TXT" ||
+      !requiredPaths.printedSummaryPath.toLowerCase().endsWith(".pdf") ||
+      !requiredPaths.annex4Path.toLowerCase().endsWith(".pdf")) {
+    throw new Error("The export contains invalid Tax Authority artifacts.");
+  }
+  return {
+    exportId,
+    fromDate,
+    toDate,
+    iniPath: requiredPaths.iniPath,
+    bkmvPath: requiredPaths.bkmvPath,
+    sandboxPdfPaths: [
+      requiredPaths.printedSummaryPath,
+      requiredPaths.annex4Path,
+    ],
+  };
+}
 
 function normalizeUniformSubmissionInput(data, userId) {
   const input = data && typeof data === "object" ? data : {};
@@ -164,9 +218,11 @@ function validIsoDate(value) {
 module.exports = {
   mapAuthorityUploadFiles,
   maximumUploadBytes,
+  normalizeUniformExportId,
   normalizeSandboxPdfPaths,
   normalizeUniformSubmissionInput,
   safeSignedUploadHeaders,
+  uniformSubmissionFromExport,
   uniformOverallStatus,
   validateUniformFileContents,
   validateSandboxPdf,

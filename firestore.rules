@@ -987,6 +987,11 @@ service cloud.firestore {
         allow write: if false;
       }
 
+      match /uniformExports/{exportId} {
+        allow read: if isOwner(userId);
+        allow write: if false;
+      }
+
       match /invoiceBuilderVerifications/{document=**} {
         allow read, write: if false;
       }

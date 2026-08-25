@@ -1,25 +1,17 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:cloud_functions/cloud_functions.dart';
-import 'package:firebase_storage/firebase_storage.dart' as firebase_storage;
-import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:pdf/pdf.dart' as pdf;
-import 'package:pdf/widgets.dart' as pw;
 import 'package:untitled1/services/auth_service.dart';
-import 'package:untitled1/services/bkmv_archive_service.dart';
-import 'package:untitled1/services/bkmv_export_service.dart';
 import 'package:untitled1/services/language_provider.dart';
 import 'package:untitled1/sign_in.dart';
 import 'package:untitled1/pages/about.dart';
@@ -29,7 +21,6 @@ import 'package:untitled1/pages/help_page.dart';
 import 'package:untitled1/pages/privacy_policy_page.dart';
 import 'package:untitled1/pages/reports_page.dart';
 import 'package:untitled1/pages/terms_of_service_page.dart';
-import 'package:intl/intl.dart' as intl;
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -380,12 +371,6 @@ class _SettingsPageState extends State<SettingsPage>
     );
   }
 
-  String _formatCompactDate(DateTime date) {
-    final month = date.month.toString().padLeft(2, '0');
-    final day = date.day.toString().padLeft(2, '0');
-    return '${date.year}$month$day';
-  }
-
   String _formatTaxAuthorityDate(DateTime date) {
     final month = date.month.toString().padLeft(2, '0');
     final day = date.day.toString().padLeft(2, '0');
@@ -460,32 +445,6 @@ class _SettingsPageState extends State<SettingsPage>
         start: DateTime(now.year, now.month, 1),
         end: now,
       ),
-    );
-  }
-
-  Future<Directory> _getBkmvExportDirectory() async {
-    final documentsDir = await getApplicationDocumentsDirectory();
-    final directory = Directory(documentsDir.path);
-    await directory.create(recursive: true);
-    return directory;
-  }
-
-  Future<File> _buildOpenFrmtZip({
-    required List<BkmvExportPackage> packages,
-    required String stamp,
-  }) async {
-    final tempRoot = await getTemporaryDirectory();
-    return BkmvArchiveService.buildOpenFrmtBundle(
-      sources: [
-        for (final package in packages)
-          BkmvArchiveSource(
-            directory: package.directory,
-            bkmvFile: package.bkmvFile,
-            iniFile: package.iniFile,
-          ),
-      ],
-      stamp: stamp,
-      tempRoot: tempRoot,
     );
   }
 
@@ -677,500 +636,6 @@ class _SettingsPageState extends State<SettingsPage>
     return result;
   }
 
-  String _formatAmountForPdf(double value) {
-    final formatter = intl.NumberFormat('#,##0.##', 'en_US');
-    return formatter.format(value);
-  }
-
-  String _formatCompactDateForDisplay(String yyyymmdd) {
-    if (yyyymmdd.length != 8) return yyyymmdd;
-    return '${yyyymmdd.substring(6, 8)}/${yyyymmdd.substring(4, 6)}/${yyyymmdd.substring(2, 4)}';
-  }
-
-  String _formatCompactTimeForDisplay(String hhmm) {
-    if (hhmm.length != 4) return hhmm;
-    return '${hhmm.substring(0, 2)}:${hhmm.substring(2, 4)}';
-  }
-
-  Future<pw.Font> _loadPdfFont() async {
-    final fontData = await rootBundle.load(
-      'assets/fonts/Rubik-VariableFont_wght.ttf',
-    );
-    return pw.Font.ttf(fontData);
-  }
-
-  pw.Widget _buildPdfCell(
-    String text, {
-    required pw.Font font,
-    bool isHeader = false,
-    bool compact = false,
-    pw.Alignment alignment = pw.Alignment.centerRight,
-  }) {
-    return pw.Container(
-      alignment: alignment,
-      padding: compact
-          ? const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 2.5)
-          : const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      child: pw.Text(
-        text,
-        textDirection: pw.TextDirection.rtl,
-        style: pw.TextStyle(
-          font: font,
-          fontSize: compact ? (isHeader ? 9.5 : 9) : (isHeader ? 11 : 10.5),
-          height: compact ? 1 : null,
-          fontWeight: isHeader ? pw.FontWeight.bold : pw.FontWeight.normal,
-        ),
-      ),
-    );
-  }
-
-  pw.TableRow _buildPdfTableRow(
-    List<String> values, {
-    required pw.Font font,
-    bool isHeader = false,
-    bool compact = false,
-  }) {
-    return pw.TableRow(
-      decoration: pw.BoxDecoration(
-        color: isHeader ? pdf.PdfColors.grey200 : null,
-      ),
-      children: values
-          .map(
-            (value) => _buildPdfCell(
-              value,
-              font: font,
-              isHeader: isHeader,
-              compact: compact,
-              alignment: value == values.first
-                  ? pw.Alignment.centerLeft
-                  : pw.Alignment.centerRight,
-            ),
-          )
-          .toList(growable: false),
-    );
-  }
-
-  pw.Widget _buildPrintedSummaryDetailRow({
-    required String label,
-    required String value,
-    required pw.Font font,
-  }) {
-    return pw.Directionality(
-      textDirection: pw.TextDirection.ltr,
-      child: pw.Row(
-        children: [
-          pw.Expanded(
-            child: pw.Text(
-              value,
-              textDirection: pw.TextDirection.ltr,
-              textAlign: pw.TextAlign.right,
-              style: pw.TextStyle(font: font, fontSize: 11.5),
-            ),
-          ),
-          pw.SizedBox(width: 12),
-          pw.SizedBox(
-            width: 170,
-            child: pw.Text(
-              label,
-              textDirection: pw.TextDirection.rtl,
-              textAlign: pw.TextAlign.right,
-              style: pw.TextStyle(
-                font: font,
-                fontSize: 11.5,
-                fontWeight: pw.FontWeight.bold,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  pw.Widget _buildPrintedSummaryPage(
-    BkmvPrintedSummary summary, {
-    required pw.Font font,
-  }) {
-    final visibleRows = summary.rows;
-    final displayFromDate = _formatCompactDateForDisplay(summary.fromDate);
-    final displayToDate = _formatCompactDateForDisplay(summary.toDate);
-    final displayExportDate = _formatCompactDateForDisplay(summary.exportDate);
-    final displayExportTime = _formatCompactTimeForDisplay(summary.exportTime);
-    final totalMoney = visibleRows.fold<double>(
-      0,
-      (runningTotal, row) => runningTotal + row.totalAmountIncludingVat,
-    );
-    return pw.Directionality(
-      textDirection: pw.TextDirection.rtl,
-      child: pw.Column(
-        crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-        children: [
-          _buildPrintedSummaryDetailRow(
-            label: 'מספר עוסק מורשה:',
-            value: summary.businessNumber,
-            font: font,
-          ),
-          pw.SizedBox(height: 3),
-          _buildPrintedSummaryDetailRow(
-            label: 'שם בית העסק:',
-            value: summary.businessName,
-            font: font,
-          ),
-          pw.SizedBox(height: 3),
-          _buildPrintedSummaryDetailRow(
-            label: 'טווח תאריכי הנתונים:',
-            value: '$displayFromDate-$displayToDate',
-            font: font,
-          ),
-          pw.SizedBox(height: 8),
-          pw.Table(
-            border: pw.TableBorder.all(width: 0.6),
-            columnWidths: const {
-              0: pw.FlexColumnWidth(1.35),
-              1: pw.FlexColumnWidth(0.8),
-              2: pw.FlexColumnWidth(1.45),
-              3: pw.FlexColumnWidth(0.7),
-            },
-            children: [
-              _buildPdfTableRow(
-                [
-                  'סה"כ כספי כולל מע"מ\n(שדה 1223)',
-                  'סה"כ כמותי',
-                  'סוג המסמך',
-                  'מספר המסמך',
-                ],
-                font: font,
-                isHeader: true,
-                compact: true,
-              ),
-              for (final row in visibleRows)
-                _buildPdfTableRow(
-                  [
-                    _formatAmountForPdf(row.totalAmountIncludingVat),
-                    row.quantity.toString(),
-                    row.documentTypeLabel,
-                    row.documentTypeCode.toString(),
-                  ],
-                  font: font,
-                  compact: true,
-                ),
-            ],
-          ),
-          pw.SizedBox(height: 6),
-          pw.Text(
-            'סה"כ כמות: ${summary.totalDocumentQuantity}',
-            textDirection: pw.TextDirection.rtl,
-            style: pw.TextStyle(font: font, fontSize: 9),
-          ),
-          pw.SizedBox(height: 2),
-          pw.Text(
-            'סה"כ כספי: ${_formatAmountForPdf(totalMoney)}',
-            textDirection: pw.TextDirection.rtl,
-            style: pw.TextStyle(font: font, fontSize: 9),
-          ),
-          pw.SizedBox(height: 6),
-          pw.Row(
-            children: [
-              pw.Expanded(
-                flex: 4,
-                child: pw.Text(
-                  'הנתונים הופקו באמצעות תוכנת',
-                  style: pw.TextStyle(font: font, fontSize: 9),
-                ),
-              ),
-              pw.Expanded(
-                flex: 6,
-                child: pw.Text(
-                  summary.softwareName,
-                  style: pw.TextStyle(
-                    font: font,
-                    fontSize: 9,
-                    fontWeight: pw.FontWeight.bold,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          pw.SizedBox(height: 2),
-          pw.Row(
-            children: [
-              pw.Expanded(
-                flex: 4,
-                child: pw.Text(
-                  'מספר תעודת רישום:',
-                  style: pw.TextStyle(font: font, fontSize: 9),
-                ),
-              ),
-              pw.Expanded(
-                flex: 6,
-                child: pw.Text(
-                  summary.softwareRegistrationNumber,
-                  style: pw.TextStyle(
-                    font: font,
-                    fontSize: 9,
-                    fontWeight: pw.FontWeight.bold,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          pw.SizedBox(height: 2),
-          pw.Row(
-            children: [
-              pw.Expanded(
-                flex: 4,
-                child: pw.Text(
-                  'תאריך הפקה:',
-                  style: pw.TextStyle(font: font, fontSize: 9),
-                ),
-              ),
-              pw.Expanded(
-                flex: 6,
-                child: pw.Text(
-                  '$displayExportDate $displayExportTime',
-                  style: pw.TextStyle(font: font, fontSize: 9),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  pw.Widget _buildAnnex4Page(
-    BkmvAnnex4Summary summary, {
-    required pw.Font font,
-  }) {
-    final displayFromDate = _formatCompactDateForDisplay(summary.fromDate);
-    final displayToDate = _formatCompactDateForDisplay(summary.toDate);
-    final displayExportDate = _formatCompactDateForDisplay(summary.exportDate);
-    final displayExportTime = _formatCompactTimeForDisplay(summary.exportTime);
-
-    return pw.Directionality(
-      textDirection: pw.TextDirection.rtl,
-      child: pw.Column(
-        crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-        children: [
-          pw.SizedBox(height: 24),
-          pw.Center(
-            child: pw.Text(
-              'הפקת קבצים במבנה אחיד',
-              style: pw.TextStyle(
-                font: font,
-                fontSize: 20,
-                fontWeight: pw.FontWeight.bold,
-                decoration: pw.TextDecoration.underline,
-              ),
-            ),
-          ),
-          pw.SizedBox(height: 26),
-          pw.Align(
-            alignment: pw.Alignment.centerRight,
-            child: pw.Text(
-              'עבור:',
-              style: pw.TextStyle(
-                font: font,
-                fontSize: 15,
-                fontWeight: pw.FontWeight.bold,
-              ),
-            ),
-          ),
-          pw.SizedBox(height: 12),
-          pw.Text(
-            'מספר עוסק מורשה: ${summary.businessNumber}',
-            style: pw.TextStyle(font: font, fontSize: 14),
-          ),
-          pw.SizedBox(height: 10),
-          pw.Text(
-            'שם בית העסק: ${summary.businessName}',
-            style: pw.TextStyle(font: font, fontSize: 14),
-          ),
-          pw.SizedBox(height: 28),
-          pw.Center(
-            child: pw.Text(
-              '** ביצוע ממשק פתוח הסתיים בהצלחה **',
-              style: pw.TextStyle(
-                font: font,
-                fontSize: 15,
-                fontWeight: pw.FontWeight.bold,
-              ),
-            ),
-          ),
-          pw.SizedBox(height: 22),
-          pw.Row(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
-            children: [
-              pw.Expanded(
-                flex: 3,
-                child: pw.Text(
-                  'הנתונים נשמרו בנתיב:',
-                  style: pw.TextStyle(
-                    font: font,
-                    fontSize: 14,
-                    fontWeight: pw.FontWeight.bold,
-                  ),
-                ),
-              ),
-              pw.SizedBox(width: 16),
-              pw.Expanded(
-                flex: 5,
-                child: pw.Text(
-                  summary.exportDirectory,
-                  textDirection: pw.TextDirection.ltr,
-                  style: pw.TextStyle(font: font, fontSize: 14),
-                ),
-              ),
-            ],
-          ),
-          pw.SizedBox(height: 18),
-          pw.Row(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
-            children: [
-              pw.Expanded(
-                flex: 3,
-                child: pw.Text(
-                  'טווח תאריכים:',
-                  style: pw.TextStyle(
-                    font: font,
-                    fontSize: 14,
-                    fontWeight: pw.FontWeight.bold,
-                  ),
-                ),
-              ),
-              pw.SizedBox(width: 16),
-              pw.Expanded(
-                flex: 5,
-                child: pw.Row(
-                  children: [
-                    pw.Text(
-                      'מתאריך: $displayFromDate',
-                      style: pw.TextStyle(font: font, fontSize: 14),
-                    ),
-                    pw.SizedBox(width: 28),
-                    pw.Text(
-                      'ועד תאריך: $displayToDate',
-                      style: pw.TextStyle(font: font, fontSize: 14),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          pw.SizedBox(height: 24),
-          pw.Text(
-            'פירוט סך סוגי הרשומות בקובץ BKMVDATA.TXT:',
-            style: pw.TextStyle(
-              font: font,
-              fontSize: 14,
-              fontWeight: pw.FontWeight.bold,
-            ),
-          ),
-          pw.SizedBox(height: 10),
-          pw.Padding(
-            padding: const pw.EdgeInsets.symmetric(horizontal: 42),
-            child: pw.Table(
-              border: const pw.TableBorder(
-                horizontalInside: pw.BorderSide(width: 0.6),
-                top: pw.BorderSide(width: 0.6),
-                bottom: pw.BorderSide(width: 0.6),
-              ),
-              columnWidths: const {
-                0: pw.FixedColumnWidth(90),
-                1: pw.FlexColumnWidth(2.2),
-                2: pw.FixedColumnWidth(80),
-              },
-              children: [
-                _buildPdfTableRow(
-                  ['סוג רשומה', 'תיאור', 'כמות'],
-                  font: font,
-                  isHeader: true,
-                ),
-                for (final row in summary.rows)
-                  _buildPdfTableRow([
-                    row.recordCode,
-                    row.recordLabel,
-                    row.quantity.toString(),
-                  ], font: font),
-                _buildPdfTableRow(
-                  ['סה"כ', '', summary.totalRecords.toString()],
-                  font: font,
-                  isHeader: true,
-                ),
-              ],
-            ),
-          ),
-          pw.SizedBox(height: 28),
-          pw.Divider(thickness: 2),
-          pw.SizedBox(height: 10),
-          pw.Row(
-            children: [
-              pw.Expanded(
-                flex: 4,
-                child: pw.Text(
-                  'הנתונים הופקו באמצעות תוכנת',
-                  style: pw.TextStyle(font: font, fontSize: 13),
-                ),
-              ),
-              pw.Expanded(
-                flex: 6,
-                child: pw.Text(
-                  summary.softwareName,
-                  style: pw.TextStyle(
-                    font: font,
-                    fontSize: 13,
-                    fontWeight: pw.FontWeight.bold,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          pw.SizedBox(height: 6),
-          pw.Row(
-            children: [
-              pw.Expanded(
-                flex: 4,
-                child: pw.Text(
-                  'מספר תעודת רישום:',
-                  style: pw.TextStyle(font: font, fontSize: 13),
-                ),
-              ),
-              pw.Expanded(
-                flex: 6,
-                child: pw.Text(
-                  summary.softwareRegistrationNumber,
-                  style: pw.TextStyle(
-                    font: font,
-                    fontSize: 13,
-                    fontWeight: pw.FontWeight.bold,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          pw.SizedBox(height: 6),
-          pw.Row(
-            children: [
-              pw.Expanded(
-                flex: 4,
-                child: pw.Text(
-                  'תאריך הפקה:',
-                  style: pw.TextStyle(font: font, fontSize: 13),
-                ),
-              ),
-              pw.Expanded(
-                flex: 6,
-                child: pw.Text(
-                  '$displayExportDate $displayExportTime',
-                  style: pw.TextStyle(font: font, fontSize: 13),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
   Future<void> _generateWorkerUniformFiles() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null || _isGeneratingUniformFiles) return;
@@ -1192,8 +657,8 @@ class _SettingsPageState extends State<SettingsPage>
 
       exportProgress = ValueNotifier(
         const _UniformExportProgress(
-          value: 0.04,
-          status: 'Preparing your export…',
+          value: 0.05,
+          status: 'Preparing your secure server export…',
         ),
       );
       progressDialogFuture = _showUniformExportProgressDialog(
@@ -1204,126 +669,50 @@ class _SettingsPageState extends State<SettingsPage>
       );
       await Future<void>.delayed(Duration.zero);
 
-      final fromDate = _formatCompactDate(selectedRange.start);
-      final toDate = _formatCompactDate(selectedRange.end);
-      final directory = await _getBkmvExportDirectory();
-      final result = await BkmvExportService.exportForUser(
-        firestore: FirebaseFirestore.instance,
-        userId: user.uid,
-        fromDate: fromDate,
-        toDate: toDate,
-        rootDirectory: directory,
-      );
-
-      if (!result.hasFiles) {
-        throw StateError(
-          result.warnings.isNotEmpty
-              ? result.warnings.join('\n')
-              : 'No BKMV files were generated for this range.',
-        );
-      }
-
-      exportProgress.value = const _UniformExportProgress(
-        value: 0.38,
-        status: 'Creating PDF reports…',
-      );
-
-      final font = await _loadPdfFont();
-      final timestamp = DateTime.now();
-      final stamp =
-          '${_formatCompactDate(timestamp)}_${timestamp.hour.toString().padLeft(2, '0')}${timestamp.minute.toString().padLeft(2, '0')}';
-      final printedSummaryFile = File(
-        '${directory.path}${Platform.pathSeparator}BKMV_printed_summary_$stamp.pdf',
-      );
-      final annex4File = File(
-        '${directory.path}${Platform.pathSeparator}BKMV_annex_4_$stamp.pdf',
-      );
-
-      final printedSummaryDoc = pw.Document();
-      final annex4Doc = pw.Document();
-
-      for (final package in result.packages) {
-        printedSummaryDoc.addPage(
-          pw.Page(
-            pageFormat: pdf.PdfPageFormat.a4,
-            margin: const pw.EdgeInsets.all(28),
-            build: (_) => _buildPrintedSummaryPage(package.summary, font: font),
-          ),
-        );
-        annex4Doc.addPage(
-          pw.MultiPage(
-            pageFormat: pdf.PdfPageFormat.a4,
-            margin: const pw.EdgeInsets.fromLTRB(36, 32, 36, 28),
-            build: (_) => [_buildAnnex4Page(package.annex4Summary, font: font)],
-          ),
-        );
-      }
-
-      await printedSummaryFile.writeAsBytes(
-        await printedSummaryDoc.save(),
-        flush: true,
-      );
-      await annex4File.writeAsBytes(await annex4Doc.save(), flush: true);
-      exportProgress.value = const _UniformExportProgress(
-        value: 0.56,
-        status: 'Packaging BKMVDATA files…',
-      );
-      final openFrmtZip = await _buildOpenFrmtZip(
-        packages: result.packages,
-        stamp: stamp,
-      );
-      final exportFiles = <File>[openFrmtZip, printedSummaryFile, annex4File];
-      final authorityFiles = <File>[
-        for (final package in result.packages) ...[
-          package.iniFile,
-          package.bkmvFile,
-        ],
-      ];
-      if (authorityFiles.length != 2) {
-        throw StateError(
-          'Exactly one INI.txt and one BKMVDATA.txt file are required.',
-        );
-      }
-      final exportFolder =
-          'users/${user.uid}/uniform_exports/$stamp-${DateTime.now().microsecondsSinceEpoch}';
-      final storage = firebase_storage.FirebaseStorage.instance;
-      exportProgress.value = const _UniformExportProgress(
-        value: 0.62,
-        status: 'Uploading files securely…',
-      );
-      final uploadedPaths = await _uploadUniformExportFiles(
-        files: [...exportFiles, ...authorityFiles],
-        storage: storage,
-        exportFolder: exportFolder,
-        progress: exportProgress,
-      );
-      // Refresh the Firebase Auth token before the callable request. This makes
-      // the function receive request.auth even after a long export operation.
       await user.reload();
       final refreshedUser = FirebaseAuth.instance.currentUser;
       final idToken = await refreshedUser?.getIdToken(true);
       if (idToken == null || idToken.isEmpty) {
-        throw StateError('יש להתחבר מחדש כדי לשלוח את קובצי הייצוא.');
+        throw StateError('יש להתחבר מחדש כדי להפיק את קובצי הייצוא.');
       }
+
       exportProgress.value = const _UniformExportProgress(
-        value: 0.93,
+        value: 0.2,
+        status: 'Generating BKMVDATA and PDF reports on the server…',
+      );
+      final functions = FirebaseFunctions.instanceFor(region: 'me-west1');
+      final generated = await functions
+          .httpsCallable(
+            'generateUniformExport',
+            options: HttpsCallableOptions(timeout: Duration(minutes: 9)),
+          )
+          .call<Map<String, dynamic>>({
+            'fromDate': _formatTaxAuthorityDate(selectedRange.start),
+            'toDate': _formatTaxAuthorityDate(selectedRange.end),
+            'recipientEmail': recipientEmail,
+          });
+      final exportId = generated.data['exportId']?.toString().trim();
+      if (exportId == null || exportId.isEmpty) {
+        throw StateError('The server did not return an export ID.');
+      }
+
+      exportProgress.value = const _UniformExportProgress(
+        value: 0.75,
         status: 'Testing delivery to the Tax Authority sandbox…',
       );
-      final authorityResponse =
-          await FirebaseFunctions.instanceFor(region: 'me-west1')
-              .httpsCallable('submitUniformFilesToTaxAuthority')
-              .call<Map<String, dynamic>>({
-                'fromDate': _formatTaxAuthorityDate(selectedRange.start),
-                'toDate': _formatTaxAuthorityDate(selectedRange.end),
-                'filePaths': uploadedPaths.skip(exportFiles.length).toList(),
-                'sandboxFilePaths': uploadedPaths.skip(1).take(2).toList(),
-              });
+      final authorityResponse = await functions
+          .httpsCallable(
+            'submitUniformFilesToTaxAuthority',
+            options: HttpsCallableOptions(timeout: Duration(minutes: 5)),
+          )
+          .call<Map<String, dynamic>>({'exportId': exportId});
       final submissionId = authorityResponse.data['submissionId']?.toString();
       if (submissionId == null || submissionId.isEmpty) {
         throw StateError('The Tax Authority submission ID is missing.');
       }
+
       exportProgress.value = const _UniformExportProgress(
-        value: 0.96,
+        value: 0.9,
         status: 'Checking the Tax Authority response…',
       );
       final authorityStatus = await _waitForUniformTaxAuthorityStatus(
@@ -1355,17 +744,6 @@ class _SettingsPageState extends State<SettingsPage>
               : 'The Tax Authority rejected the files: $reason',
         );
       }
-
-      exportProgress.value = const _UniformExportProgress(
-        value: 0.98,
-        status: 'Sending your backup copy by email…',
-      );
-      await FirebaseFunctions.instanceFor(
-        region: 'us-central1',
-      ).httpsCallable('sendUniformFilesEmail').call(<String, dynamic>{
-        'recipientEmail': recipientEmail,
-        'filePaths': uploadedPaths.take(exportFiles.length).toList(),
-      });
 
       exportProgress.value = const _UniformExportProgress(
         value: 1,
@@ -1410,45 +788,6 @@ class _SettingsPageState extends State<SettingsPage>
         setState(() => _isGeneratingUniformFiles = false);
       }
     }
-  }
-
-  Future<List<String>> _uploadUniformExportFiles({
-    required List<File> files,
-    required firebase_storage.FirebaseStorage storage,
-    required String exportFolder,
-    required ValueNotifier<_UniformExportProgress> progress,
-  }) async {
-    final uploadedPaths = <String>[];
-    final fileSizes = await Future.wait(files.map((file) => file.length()));
-    final totalBytes = fileSizes.fold<int>(0, (total, size) => total + size);
-    var completedBytes = 0;
-
-    for (var index = 0; index < files.length; index++) {
-      final file = files[index];
-      final fileName = file.uri.pathSegments.last;
-      final ref = storage.ref().child('$exportFolder/$fileName');
-      final task = ref.putFile(file);
-      final subscription = task.snapshotEvents.listen((snapshot) {
-        final transferredBytes = completedBytes + snapshot.bytesTransferred;
-        final uploadFraction = totalBytes == 0
-            ? (index + 1) / files.length
-            : transferredBytes / totalBytes;
-        progress.value = _UniformExportProgress(
-          value: 0.62 + (uploadFraction.clamp(0.0, 1.0) * 0.28),
-          status: 'Uploading file ${index + 1} of ${files.length}…',
-        );
-      });
-
-      try {
-        await task;
-      } finally {
-        await subscription.cancel();
-      }
-      completedBytes += fileSizes[index];
-      uploadedPaths.add(ref.fullPath);
-    }
-
-    return uploadedPaths;
   }
 
   Future<void> _showUniformExportProgressDialog(

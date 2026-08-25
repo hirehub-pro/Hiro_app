@@ -16,9 +16,6 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart' as firebase_storage;
 import 'package:untitled1/services/subscription_access_service.dart';
-import 'dart:io';
-import 'package:path_provider/path_provider.dart';
-import 'package:untitled1/services/bkmv_export_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:untitled1/services/invoice_builder_lock_service.dart';
@@ -1075,34 +1072,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
 
   String _invoiceDocIdFor(String docType, String documentNumber) {
     return '${docType}_$documentNumber';
-  }
-
-  /// Generate BKMVDATA.TXT from logs/ collection
-  Future<void> generateBkmvDataTxt({
-    required String userId,
-    required String fromDate, // format: YYYYMMDD
-    required String toDate, // format: YYYYMMDD
-  }) async {
-    final dir = await getApplicationDocumentsDirectory();
-    final exportRoot = Directory('${dir.path}/BKMVDATA');
-    await exportRoot.create(recursive: true);
-    final result = await BkmvExportService.exportForUser(
-      firestore: FirebaseFirestore.instance,
-      userId: userId,
-      fromDate: fromDate,
-      toDate: toDate,
-      rootDirectory: exportRoot,
-    );
-    if (mounted) {
-      final message = result.hasFiles
-          ? 'BKMVDATA files generated in ${result.packages.first.directory.path}'
-          : (result.warnings.isNotEmpty
-                ? result.warnings.join('\n')
-                : 'No BKMVDATA files were generated.');
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(message)));
-    }
   }
 
   String _labelForDocType(String docType) {

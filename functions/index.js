@@ -61,11 +61,19 @@ const {
   validateTaxInvoicePresentation,
 } = require("./tax_invoice_pdf");
 const {
+  buildUniformArtifacts,
+  loadBkmvSourceData,
+  normalizeUniformExportRequest,
+  saveUniformArtifacts,
+} = require("./bkmv_export_service");
+const {
   mapAuthorityUploadFiles,
   maximumUploadBytes,
+  normalizeUniformExportId,
   normalizeSandboxPdfPaths,
   normalizeUniformSubmissionInput,
   safeSignedUploadHeaders,
+  uniformSubmissionFromExport,
   uniformOverallStatus,
   validateSandboxPdf,
   validateUniformFileContents,
@@ -3627,6 +3635,187 @@ exports.getUniformTaxAuthorityConnectionStatus = onCall(
     },
 );
 
+exports.generateUniformExport = onCall(
+    {
+      region: "me-west1",
+      timeoutSeconds: 540,
+      memory: "1GiB",
+      secrets: [RESEND_API_KEY, RESEND_FROM_EMAIL],
+    },
+    async (request) => {
+      const userId = request.auth?.uid;
+      if (!userId) {
+        throw new HttpsError("unauthenticated", "Authentication required.");
+      }
+
+      let input;
+      try {
+        input = normalizeUniformExportRequest(request.data);
+      } catch (error) {
+        throw new HttpsError("invalid-argument", error.message);
+      }
+
+      const db = admin.firestore();
+      const bucket = admin.storage().bucket();
+      const exportId = crypto.randomUUID();
+      const exportRef = db.collection("users").doc(userId)
+          .collection("uniformExports").doc(exportId);
+      const startedAt = admin.firestore.Timestamp.now();
+      await exportRef.set({
+        userId,
+        status: "generating",
+        schemaVersion: "1.31",
+        environment: "sandbox",
+        fromDate: input.fromDateIso,
+        toDate: input.toDateIso,
+        recipientEmail: input.recipientEmail,
+        createdAt: startedAt,
+        updatedAt: startedAt,
+      });
+
+      try {
+        const source = await loadBkmvSourceData({
+          db,
+          userId,
+          // Log documents store their date as YYYYMMDD, not ISO YYYY-MM-DD.
+          fromDate: input.fromDate,
+          toDate: input.toDate,
+        });
+        const artifacts = await buildUniformArtifacts({
+          source,
+          fromDate: input.fromDate,
+          toDate: input.toDate,
+        });
+        const saved = await saveUniformArtifacts({
+          bucket,
+          userId,
+          exportId,
+          artifacts,
+        });
+        const emailFiles = [
+          artifacts.files.bundle,
+          artifacts.files.printedSummary,
+          artifacts.files.annex4,
+        ];
+        const totalEmailBytes = emailFiles.reduce(
+            (total, file) => total + file.bytes.length, 0,
+        );
+        if (totalEmailBytes > 28 * 1024 * 1024) {
+          throw new Error("The generated files are too large to send by email.");
+        }
+        const {data: emailData, error: emailError} =
+          await new Resend(RESEND_API_KEY.value()).emails.send({
+            from: RESEND_FROM_EMAIL.value(),
+            to: [input.recipientEmail],
+            subject: "קבצים במבנה אחיד מהירו",
+            text: "שלום,\n\nמצורפים קבצי המבנה האחיד שהופקו " +
+              "באמצעות הירו. קישור ההורדה תקף לזמן מוגבל.\n\n" +
+              "בברכה,\nצוות הירו",
+            attachments: emailFiles.map((file) => ({
+              filename: file.fileName,
+              content: file.bytes,
+            })),
+          });
+        if (emailError) {
+          throw new Error(emailError.message || "Resend rejected the email.");
+        }
+
+        const completedAt = admin.firestore.Timestamp.now();
+        await exportRef.set({
+          status: "ready",
+          mainId: artifacts.generated.mainId,
+          recordCounts: artifacts.generated.recordCounts,
+          totalRecords: artifacts.generated.records.length,
+          hashes: artifacts.hashes,
+          paths: saved.paths,
+          storageRoot: saved.root,
+          bundleFileName: artifacts.files.bundle.fileName,
+          downloadUrl: saved.downloadUrl,
+          emailId: emailData?.id || null,
+          emailedAt: completedAt,
+          expiresAt: admin.firestore.Timestamp.fromDate(saved.expiresAt),
+          completedAt,
+          updatedAt: completedAt,
+        }, {merge: true});
+        return {
+          exportId,
+          status: "ready",
+          downloadUrl: saved.downloadUrl,
+          expiresAt: saved.expiresAt.toISOString(),
+          recordCounts: artifacts.generated.recordCounts,
+          totalRecords: artifacts.generated.records.length,
+        };
+      } catch (error) {
+        logger.error("Could not generate uniform export", {
+          userId,
+          exportId,
+          error: normalizeString(error?.message).slice(0, 500),
+        });
+        const failedAt = admin.firestore.Timestamp.now();
+        await exportRef.set({
+          status: "failed",
+          error: normalizeString(error?.message).slice(0, 500),
+          failedAt,
+          updatedAt: failedAt,
+          expiresAt: admin.firestore.Timestamp.fromMillis(
+              Date.now() + 24 * 60 * 60 * 1000,
+          ),
+        }, {merge: true});
+        throw new HttpsError(
+            "failed-precondition",
+            normalizeString(error?.message) ||
+              "Could not generate the uniform export.",
+        );
+      }
+    },
+);
+
+exports.cleanupExpiredUniformExports = onSchedule(
+    {
+      region: "me-west1",
+      schedule: "every 6 hours",
+      timeoutSeconds: 540,
+      memory: "512MiB",
+    },
+    async () => {
+      const db = admin.firestore();
+      const bucket = admin.storage().bucket();
+      const expired = await db.collectionGroup("uniformExports")
+          .where("expiresAt", "<=", admin.firestore.Timestamp.now())
+          .limit(100)
+          .get();
+      let removed = 0;
+      for (const document of expired.docs) {
+        const userRef = document.ref.parent.parent;
+        if (!userRef || userRef.parent.id !== "users") continue;
+        const prefix =
+          `users/${userRef.id}/uniform_exports/${document.id}/`;
+        try {
+          await bucket.deleteFiles({prefix});
+          await document.ref.set({
+            status: "expired",
+            artifactStatus: "deleted",
+            downloadUrl: admin.firestore.FieldValue.delete(),
+            expiresAt: admin.firestore.FieldValue.delete(),
+            expiredAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          }, {merge: true});
+          removed += 1;
+        } catch (error) {
+          logger.warn("Could not clean up an expired uniform export", {
+            exportId: document.id,
+            userId: userRef.id,
+            error: normalizeString(error?.message).slice(0, 300),
+          });
+        }
+      }
+      logger.info("Expired uniform export cleanup finished", {
+        matched: expired.size,
+        removed,
+      });
+    },
+);
+
 exports.submitUniformFilesToTaxAuthority = onCall(
     {
       region: "me-west1",
@@ -3641,10 +3830,35 @@ exports.submitUniformFilesToTaxAuthority = onCall(
 
       let input;
       let sandboxPdfPaths;
+      let exportId = null;
+      let exportRef = null;
       try {
-        input = normalizeUniformSubmissionInput(request.data, userId);
-        sandboxPdfPaths = normalizeSandboxPdfPaths(request.data, userId);
+        if (normalizeString(request.data?.exportId).trim()) {
+          exportId = normalizeUniformExportId(request.data);
+          exportRef = admin.firestore().collection("users").doc(userId)
+              .collection("uniformExports").doc(exportId);
+          const exportSnap = await exportRef.get();
+          if (!exportSnap.exists) {
+            throw new HttpsError("not-found", "Uniform export not found.");
+          }
+          const resolved = uniformSubmissionFromExport({
+            data: exportSnap.data(),
+            userId,
+            exportId,
+          });
+          input = {
+            fromDate: resolved.fromDate,
+            toDate: resolved.toDate,
+            iniPath: resolved.iniPath,
+            bkmvPath: resolved.bkmvPath,
+          };
+          sandboxPdfPaths = resolved.sandboxPdfPaths;
+        } else {
+          input = normalizeUniformSubmissionInput(request.data, userId);
+          sandboxPdfPaths = normalizeSandboxPdfPaths(request.data, userId);
+        }
       } catch (error) {
+        if (error instanceof HttpsError) throw error;
         throw new HttpsError("invalid-argument", error.message);
       }
       const businessId = await getVerifiedTaxAuthorityBusinessId(userId);
@@ -3768,6 +3982,7 @@ exports.submitUniformFilesToTaxAuthority = onCall(
         status: "uploading",
       }));
       await submissionRef.set({
+        exportId,
         environment: "sandbox",
         testPayload: true,
         authorityUniqueId,
@@ -3798,13 +4013,22 @@ exports.submitUniformFilesToTaxAuthority = onCall(
           uploadedAt: admin.firestore.FieldValue.serverTimestamp(),
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         });
-        await Promise.all(uploads.map(({path}) =>
-          bucket.file(path).delete().catch((error) => {
-            logger.warn("Could not remove submitted uniform export", {
-              path,
-              message: normalizeString(error.message),
-            });
-          })));
+        if (exportRef) {
+          await exportRef.set({
+            status: "submitted",
+            submissionId: submissionRef.id,
+            submittedAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          }, {merge: true});
+        } else {
+          await Promise.all(uploads.map(({path}) =>
+            bucket.file(path).delete().catch((error) => {
+              logger.warn("Could not remove submitted uniform export", {
+                path,
+                message: normalizeString(error.message),
+              });
+            })));
+        }
       } catch (error) {
         await submissionRef.update({
           status: "upload-failed",
@@ -3883,6 +4107,25 @@ exports.getUniformTaxAuthoritySubmissionStatus = onCall(
         checkedAt: admin.firestore.FieldValue.serverTimestamp(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
+      const exportId = normalizeString(submission.exportId).trim();
+      if (exportId) {
+        try {
+          normalizeUniformExportId({exportId});
+          await admin.firestore().collection("users").doc(userId)
+              .collection("uniformExports").doc(exportId).set({
+                authorityStatus: status,
+                authorityFiles: files,
+                authorityCheckedAt:
+                  admin.firestore.FieldValue.serverTimestamp(),
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+              }, {merge: true});
+        } catch (error) {
+          logger.warn("Could not update the linked uniform export status", {
+            submissionId,
+            error: normalizeString(error?.message).slice(0, 300),
+          });
+        }
+      }
       return {submissionId, status, files};
     },
 );
@@ -5217,93 +5460,6 @@ exports.emailSavedInvoice = onDocumentWritten(
         });
         await invoiceRef.update(buildFailedInvoiceEmailUpdate(error));
       }
-    },
-);
-
-// Receives short-lived BKMV export files uploaded by the signed-in worker and
-// sends them through Resend. The files are removed after a successful send.
-exports.sendUniformFilesEmail = onCall(
-    {
-      region: "us-central1",
-      secrets: [RESEND_API_KEY, RESEND_FROM_EMAIL],
-    },
-    async (request) => {
-      const userId = request.auth?.uid;
-      if (!userId) {
-        throw new HttpsError("unauthenticated", "Authentication required.");
-      }
-
-      const recipientEmail = normalizeEmail(request.data?.recipientEmail);
-      const filePaths = request.data?.filePaths;
-      if (!recipientEmail || !Array.isArray(filePaths) ||
-          filePaths.length === 0 || filePaths.length > 3) {
-        throw new HttpsError(
-            "invalid-argument",
-            "A recipient email and one to three export files are required.",
-        );
-      }
-
-      const allowedPrefix = `users/${userId}/uniform_exports/`;
-      const paths = filePaths.map((value) => normalizeString(value).trim());
-      if (paths.some((value) => !value.startsWith(allowedPrefix))) {
-        throw new HttpsError(
-            "permission-denied",
-            "Export files must belong to the signed-in user.",
-        );
-      }
-
-      const bucket = admin.storage().bucket();
-      const files = paths.map((filePath) => bucket.file(filePath));
-      const metadata = await Promise.all(files.map(async (file) => {
-        const [exists] = await file.exists();
-        if (!exists) {
-          throw new HttpsError("not-found", "An export file was not found.");
-        }
-        const [fileMetadata] = await file.getMetadata();
-        return fileMetadata;
-      }));
-      const totalSize = metadata.reduce(
-          (total, item) => total + (Number(item.size) || 0), 0,
-      );
-      // Resend's 40 MB attachment limit is measured after Base64 encoding.
-      if (totalSize > 28 * 1024 * 1024) {
-        throw new HttpsError(
-            "resource-exhausted",
-            "The generated files are too large to send by email.",
-        );
-      }
-
-      const contents = await Promise.all(files.map(async (file) => {
-        const [content] = await file.download();
-        return content;
-      }));
-      const attachments = contents.map((content, index) => ({
-        filename: paths[index].split("/").pop() || `uniform-export-${index + 1}`,
-        content,
-      }));
-      const {data, error} = await new Resend(RESEND_API_KEY.value())
-          .emails.send({
-            from: RESEND_FROM_EMAIL.value(),
-            to: [recipientEmail],
-            subject: "קבצים במבנה אחיד מהירו",
-            text: "שלום,\n\nמצורפים קבצי המבנה האחיד שהופקו באמצעות הירו.\n\nבברכה,\nצוות הירו",
-            attachments,
-          });
-      if (error) {
-        throw new HttpsError(
-            "internal", error.message || "Resend rejected the email.",
-        );
-      }
-
-      await Promise.all(files.map(async (file) => {
-        await file.delete().catch((error) => {
-          logger.warn("Unable to delete emailed uniform export", {
-            path: file.name,
-            error: error.message,
-          });
-        });
-      }));
-      return {sent: true, emailId: data?.id || null};
     },
 );
 
