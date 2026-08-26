@@ -9,6 +9,7 @@ const {
 } = require("@firebase/rules-unit-testing");
 const {
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -596,6 +597,43 @@ test("allows owners to read but not forge server uniform exports", {
     userId: uid,
     status: "ready",
   }));
+});
+
+test("allows owners to read but not mutate server-created client ledger entries", {
+  skip: !emulatorAvailable,
+}, async () => {
+  const uid = "ledger-owner-id-0000001";
+  const otherUid = "ledger-other-id-0000001";
+  const pathValue =
+    `users/${uid}/clients/client-1/ledgerEntries/invoice_2026-0001`;
+  await seed(pathValue, {
+    userId: uid,
+    clientId: "client-1",
+    accountKey: "1001",
+    effectiveDate: new Date("2026-08-25T00:00:00Z"),
+    documentDate: "20260825",
+    documentType: 305,
+    documentKind: "invoice",
+    documentNumber: "2026-0001",
+    debitAgorot: 11800,
+    creditAgorot: 0,
+    sourceDocumentId: "invoice_2026-0001",
+    sourceDocumentPath: `users/${uid}/invoices/invoice_2026-0001`,
+    reversalOf: null,
+    createdAt: new Date(),
+  });
+  const owner = testEnv.authenticatedContext(uid).firestore();
+  const other = testEnv.authenticatedContext(otherUid).firestore();
+  await assertSucceeds(getDoc(doc(owner, pathValue)));
+  await assertFails(getDoc(doc(other, pathValue)));
+  await assertFails(setDoc(
+      doc(owner, `users/${uid}/clients/client-1/ledgerEntries/forged`),
+      {debitAgorot: 99999999},
+  ));
+  await assertFails(setDoc(doc(owner, pathValue), {
+    debitAgorot: 99999999,
+  }, {merge: true}));
+  await assertFails(deleteDoc(doc(owner, pathValue)));
 });
 
 test("enforces invoice-builder lock ownership and expiry", {

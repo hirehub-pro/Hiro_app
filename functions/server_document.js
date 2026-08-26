@@ -65,18 +65,34 @@ function normalizePaymentMethods(value) {
         `Payment ${index + 1} date`,
         true,
     );
+    const installments = optionalString(data.installments, 8);
+    const installmentCount = installments ? Number.parseInt(installments, 10) : 1;
+    if (method === "credit" && (!Number.isInteger(installmentCount) ||
+        installmentCount < 1 || installmentCount > 999)) {
+      throw new Error(`Payment ${index + 1} installments must be from 1 through 999.`);
+    }
+    const installmentDates = Array.isArray(data.installmentDates) ?
+      data.installmentDates.map((date, dateIndex) => validIsoDate(
+          date,
+          `Payment ${index + 1} installment ${dateIndex + 1} date`,
+      )) : [];
+    if (method === "credit" && installmentDates.length > 0 &&
+        installmentDates.length !== installmentCount) {
+      throw new Error(`Payment ${index + 1} must include one date per installment.`);
+    }
     const result = {
       method,
       amount,
       cardNumber: optionalString(data.cardNumber, 32),
       cardName: optionalString(data.cardName, 80),
       cardExpiration: optionalString(data.cardExpiration, 12),
-      installments: optionalString(data.installments, 8),
+      installments,
       checkNumber: optionalString(data.checkNumber, 32),
       bank: optionalString(data.bank, 80),
       branch: optionalString(data.branch, 32),
       account: optionalString(data.account, 40),
       ...(paymentDate ? {paymentDate} : {}),
+      ...(installmentDates.length ? {installmentDates} : {}),
     };
     if (method === "check" && !result.checkNumber) {
       throw new Error(`Payment method ${index + 1} requires a check number.`);

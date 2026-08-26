@@ -787,7 +787,9 @@ class InvoiceItem {
 }
 
 class _PaymentMethodEntry {
-  _PaymentMethodEntry();
+  _PaymentMethodEntry() {
+    ensureCreditInstallmentCount(1);
+  }
 
   String method = 'cash';
   bool isExpanded = true;
@@ -797,6 +799,8 @@ class _PaymentMethodEntry {
   final cardNameController = TextEditingController();
   final cardExpirationController = TextEditingController();
   final installmentsController = TextEditingController(text: '1');
+  final List<DateTime?> creditInstallmentDates = [];
+  final List<TextEditingController> creditInstallmentDateControllers = [];
   final checkNumberController = TextEditingController();
   final checkPaymentDateController = TextEditingController();
   DateTime? checkPaymentDate;
@@ -810,6 +814,18 @@ class _PaymentMethodEntry {
   final transferBranchController = TextEditingController();
   final transferBranchFocusNode = FocusNode();
   final transferAccountController = TextEditingController();
+
+  void ensureCreditInstallmentCount(int count) {
+    final safeCount = count.clamp(1, 999);
+    while (creditInstallmentDates.length < safeCount) {
+      creditInstallmentDates.add(null);
+      creditInstallmentDateControllers.add(TextEditingController());
+    }
+    while (creditInstallmentDates.length > safeCount) {
+      creditInstallmentDates.removeLast();
+      creditInstallmentDateControllers.removeLast().dispose();
+    }
+  }
 
   Map<String, dynamic> toMap() {
     final data = <String, dynamic>{'method': method};
@@ -832,6 +848,15 @@ class _PaymentMethodEntry {
         }
         if (installmentsController.text.trim().isNotEmpty) {
           data['installments'] = installmentsController.text.trim();
+        }
+        final installmentCount =
+            int.tryParse(installmentsController.text.trim()) ?? 1;
+        if (installmentCount > 1 &&
+            creditInstallmentDates.length == installmentCount &&
+            creditInstallmentDates.every((date) => date != null)) {
+          data['installmentDates'] = creditInstallmentDates
+              .map((date) => intl.DateFormat('yyyy-MM-dd').format(date!))
+              .toList(growable: false);
         }
         break;
       case 'check':
@@ -875,6 +900,9 @@ class _PaymentMethodEntry {
     cardNameController.dispose();
     cardExpirationController.dispose();
     installmentsController.dispose();
+    for (final controller in creditInstallmentDateControllers) {
+      controller.dispose();
+    }
     checkNumberController.dispose();
     checkPaymentDateController.dispose();
     checkBankController.dispose();
@@ -5512,6 +5540,30 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     });
   }
 
+  Future<void> _pickCreditInstallmentDate(
+    _PaymentMethodEntry entry,
+    int installmentIndex,
+  ) async {
+    final previousDate = installmentIndex > 0
+        ? entry.creditInstallmentDates[installmentIndex - 1]
+        : null;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate:
+          entry.creditInstallmentDates[installmentIndex] ??
+          previousDate?.add(const Duration(days: 30)) ??
+          _selectedInvoiceDate,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      entry.creditInstallmentDates[installmentIndex] = picked;
+      entry.creditInstallmentDateControllers[installmentIndex].text =
+          intl.DateFormat('dd/MM/yyyy').format(picked);
+    });
+  }
+
   bool _validatePaymentMethods() {
     if (!_showsPaymentMethodSection) return true;
 
@@ -5611,7 +5663,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       if (methodEntry.method == 'credit') {
         final installments = methodEntry.installmentsController.text.trim();
         final parsed = int.tryParse(installments);
-        if (installments.isNotEmpty && (parsed == null || parsed < 1)) {
+        if (installments.isNotEmpty &&
+            (parsed == null || parsed < 1 || parsed > 999)) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
@@ -5622,6 +5675,21 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
             ),
           );
           return false;
+        }
+        if (parsed != null && parsed > 1) {
+          methodEntry.ensureCreditInstallmentCount(parsed);
+          if (methodEntry.creditInstallmentDates.any((date) => date == null)) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  isRtl
+                      ? 'חובה לבחור תאריך פירעון לכל תשלום באשראי (שורה ${i + 1}).'
+                      : 'Select a due date for every credit-card installment (row ${i + 1}).',
+                ),
+              ),
+            );
+            return false;
+          }
         }
       }
     }
@@ -7580,8 +7648,46 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                     return newValue;
                   }),
                 ],
+                onChanged: (value) {
+                  final count = int.tryParse(value);
+                  if (count == null || count < 1 || count > 999) return;
+                  setState(() => entry.ensureCreditInstallmentCount(count));
+                },
               ),
             ),
+            if ((int.tryParse(entry.installmentsController.text.trim()) ?? 1) >
+                1) ...[
+              const SizedBox(height: 12),
+              ...List.generate(
+                entry.creditInstallmentDateControllers.length,
+                (installmentIndex) => Padding(
+                  padding: EdgeInsets.only(
+                    bottom:
+                        installmentIndex ==
+                            entry.creditInstallmentDateControllers.length - 1
+                        ? 0
+                        : 12,
+                  ),
+                  child: _buildTextField(
+                    entry.creditInstallmentDateControllers[installmentIndex],
+                    isRtl
+                        ? 'תאריך פירעון תשלום ${installmentIndex + 1}'
+                        : 'Installment ${installmentIndex + 1} Due Date',
+                    Icons.event_outlined,
+                    required: true,
+                    readOnly: true,
+                    onTap: () =>
+                        _pickCreditInstallmentDate(entry, installmentIndex),
+                    suffixIcon: IconButton(
+                      tooltip: isRtl ? 'בחירת תאריך' : 'Select date',
+                      onPressed: () =>
+                          _pickCreditInstallmentDate(entry, installmentIndex),
+                      icon: const Icon(Icons.calendar_month_outlined),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ],
           if (entry.method == 'check') ...[
             const SizedBox(height: 12),

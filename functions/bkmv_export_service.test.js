@@ -7,6 +7,7 @@ const AdmZip = require("adm-zip");
 const {
   buildBusinessContext,
   buildUniformArtifacts,
+  loadClientLedgerBalances,
   normalizeUniformExportRequest,
 } = require("./bkmv_export_service");
 
@@ -115,6 +116,54 @@ test("requires approved verification and manufacturer metadata", () => {
     verificationData: {status: "pending"},
     metadata: {},
   }), /Approved business verification/);
+});
+
+test("loads nested client ledger entries and calculates B110 balances", async () => {
+  const queryCalls = [];
+  const reference = {
+    collection(name) {
+      assert.equal(name, "ledgerEntries");
+      return {
+        where(field, operation, value) {
+          queryCalls.push([field, operation, value]);
+          return this;
+        },
+        orderBy(field) {
+          assert.equal(field, "effectiveDate");
+          return this;
+        },
+        async get() {
+          return {docs: [
+            {data: () => ({
+              documentDate: "20260701",
+              debitAgorot: 50000,
+              creditAgorot: 0,
+            })},
+            {data: () => ({
+              documentDate: "20260815",
+              debitAgorot: 0,
+              creditAgorot: 12500,
+            })},
+          ]};
+        },
+      };
+    },
+  };
+  const clients = await loadClientLedgerBalances({
+    clients: [{id: "client-1", externalClientNumber: "1001", reference}],
+    fromDate: "20260801",
+    toDate: "20260831",
+  });
+  assert.equal(queryCalls.length, 1);
+  assert.deepEqual(queryCalls[0].slice(0, 2), ["effectiveDate", "<="]);
+  assert.deepEqual(clients[0], {
+    id: "client-1",
+    externalClientNumber: "1001",
+    reference,
+    openingBalance: 500,
+    periodDebits: 0,
+    periodCredits: 125,
+  });
 });
 
 test("builds all server artifacts from one canonical snapshot", async () => {

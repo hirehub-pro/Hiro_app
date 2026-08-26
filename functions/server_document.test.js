@@ -136,6 +136,37 @@ test("validates and preserves a check due date", () => {
   })), /requires a due date/);
 });
 
+test("validates and preserves credit installment dates", () => {
+  const document = normalize(base({
+    docType: "invoice_receipt",
+    documentNumber: "2026-0048",
+    sequenceNumber: 48,
+    paymentMethods: [{
+      method: "credit",
+      amount: 224.2,
+      installments: "3",
+      installmentDates: ["2026-09-01", "2026-10-01", "2026-11-01"],
+    }],
+  }));
+  assert.deepEqual(document.paymentMethods[0].installmentDates, [
+    "2026-09-01",
+    "2026-10-01",
+    "2026-11-01",
+  ]);
+
+  assert.throws(() => normalize(base({
+    docType: "invoice_receipt",
+    documentNumber: "2026-0049",
+    sequenceNumber: 49,
+    paymentMethods: [{
+      method: "credit",
+      amount: 224.2,
+      installments: "3",
+      installmentDates: ["2026-09-01", "2026-10-01"],
+    }],
+  })), /one date per installment/);
+});
+
 test("rejects mismatched numbers, invalid email, and incomplete cancellation", () => {
   assert.throws(() => normalize(base({sequenceNumber: 41})), /sequence/);
   assert.throws(() => normalize(base({

@@ -314,10 +314,23 @@ function paymentDetailsFromEntry(entry, defaultAmount) {
   const amount = finiteNumber(entry.amount, defaultAmount);
   if (method === "credit") {
     const installments = installmentCount(entry.installments);
-    return splitPaymentAmount(amount, installments).map((installmentAmount) => ({
+    const installmentDates = Array.isArray(entry.installmentDates) ?
+      entry.installmentDates : [];
+    if (installments > 1 && installmentDates.length !== installments) {
+      return [{
+        typeCode: 3,
+        amount,
+        paymentDate: String(entry.paymentDate || ""),
+        creditCompanyCode: mapCreditCompanyCode(entry.cardName),
+        cardName: String(entry.cardName || "CREDIT"),
+        creditDealType: 2,
+      }];
+    }
+    return splitPaymentAmount(amount, installments).map((installmentAmount,
+        index) => ({
       typeCode: 3,
       amount: installmentAmount,
-      paymentDate: String(entry.paymentDate || ""),
+      paymentDate: String(installmentDates[index] || entry.paymentDate || ""),
       creditCompanyCode: mapCreditCompanyCode(entry.cardName),
       cardName: String(entry.cardName || "CREDIT"),
       creditDealType: installments > 1 ? 2 : mapCreditDealType(entry.dealType),
@@ -437,7 +450,9 @@ function extractItems(logData, invoiceData, subtotal, vatAmount) {
           const quantity = finiteNumber(item.quantity, 1);
           const unitPrice = finiteNumber(item.unitPriceWithoutTax ??
             item.price_per_unit ?? item.unitPrice ?? item.price);
-          const discountAmount = finiteNumber(item.discount);
+          const rawDiscountAmount = finiteNumber(item.discount);
+          const discountAmount = rawDiscountAmount === 0 ?
+            0 : -Math.abs(rawDiscountAmount);
           const storedTotal = item.total_amount ?? item.totalAmount;
           return {
             description: String(item.description || "Item"),
@@ -528,8 +543,9 @@ function buildB110({recordNumber, businessNumber, branchNumber, client}) {
     fitAlpha(client.name, 30), fitAlpha(address.street, 50),
     fitAlpha(address.houseNumber, 10), fitAlpha(address.city, 30),
     fitAlpha(address.postalCode, 8), fitAlpha("", 30), fitAlpha("IL", 2),
-    fitAlpha("", 15), fitSignedAmount(0, 12, 2), fitSignedAmount(0, 12, 2),
-    fitSignedAmount(0, 12, 2), fitNumeric("0", 4),
+    fitAlpha("", 15), fitSignedAmount(client.openingBalance, 12, 2),
+    fitSignedAmount(client.periodDebits, 12, 2),
+    fitSignedAmount(client.periodCredits, 12, 2), fitNumeric("0", 4),
     fitNumeric(client.taxId, 9), fitAlpha(branchNumber, 7),
     fitSignedAmount(0, 12, 2), fitAlpha("ILS", 3), fitAlpha("", 16),
   ], RECORD_LENGTHS.B110, "B110");
@@ -761,10 +777,10 @@ function generateBkmvPackage({context, logs, invoicesById = {}, clients = [],
     if (!documentType) continue;
 
     const canonicalBeforeDiscount = invoiceData.amountBeforeDiscount;
-    const discountAmount = finiteNumber(logData.discountAmount ??
-      storedInvoice.discountAmount ?? (invoiceData.discount == null ? 0 :
-        (docType === "credit_note" ? Math.abs(invoiceData.discount) :
-          -Math.abs(invoiceData.discount))));
+    const rawDiscountAmount = finiteNumber(logData.discountAmount ??
+      storedInvoice.discountAmount ?? invoiceData.discount);
+    const discountAmount = rawDiscountAmount === 0 ?
+      0 : -Math.abs(rawDiscountAmount);
     const beforeTaxAmount = finiteNumber(logData.subtotalBeforeTax ??
       storedInvoice.subtotalBeforeTax ?? invoiceData.paymentAmount ??
       sumBeforeTaxAmount(logData, storedInvoice));
@@ -772,15 +788,20 @@ function generateBkmvPackage({context, logs, invoicesById = {}, clients = [],
         beforeTaxAmount - discountAmount);
     const vatAmount = finiteNumber(logData.vatAmount ?? storedInvoice.vatAmount ??
       invoiceData.vatAmount);
-    const totalAmount = finiteNumber(logData.subtotalAfterTax ??
-      storedInvoice.subtotalAfterTax ?? invoiceData.beforeRounding ??
-      logData.grandTotal ?? storedInvoice.amount ?? invoiceData.finalTotal);
+    const totalAmount = finiteNumber(invoiceData.finalTotal ??
+      logData.grandTotal ?? storedInvoice.amount ??
+      logData.subtotalAfterTax ?? storedInvoice.subtotalAfterTax ??
+      invoiceData.beforeRounding);
     const itemSubtotal = amountBeforeDiscount;
     const rawDate = logData.issueDate || storedInvoice.date ||
       invoiceData.date || logData.date;
     const documentDate = normalizeCompactDate(rawDate, "documentDate");
-    const documentTime = timestampToTime(storedInvoice.createdAt ||
-      invoiceData.createdAt || logData.timestamp);
+    const productionTimestamp = storedInvoice.createdAt ||
+      invoiceData.createdAt || logData.timestamp;
+    const productionMillis = timestampToMillis(productionTimestamp);
+    const productionDate = productionMillis == null ? documentDate :
+      formatCompactDate(new Date(productionMillis));
+    const documentTime = timestampToTime(productionTimestamp);
     const clientDetails = logData.clientDetails &&
       typeof logData.clientDetails === "object" ? logData.clientDetails : {};
     const canonicalClient = invoiceData.client && typeof invoiceData.client === "object" ?
@@ -807,15 +828,28 @@ function generateBkmvPackage({context, logs, invoicesById = {}, clients = [],
     const paymentMapping = ["receipts", "invoice_tax_receipt"].includes(bucket) ?
       mapPaymentDetails({logData, invoiceData: storedInvoice,
         defaultAmount: totalAmount}) : {details: [], withholdingAmount: 0};
-    const c100Total = documentType === 400 ?
+    const isCancellationReceipt = documentType === 400 &&
+      (invoiceData.isNegativeReceipt === true ||
+        storedInvoice.isCancellationDocument === true ||
+        logData.isCancellationDocument === true);
+    let c100Total = documentType === 400 ?
       amountExcludingWithholding(totalAmount, paymentMapping.withholdingAmount) :
       totalAmount;
-    const c100BeforeTax = documentType === 400 ?
+    let c100BeforeTax = documentType === 400 ?
       amountExcludingWithholding(beforeTaxAmount,
           paymentMapping.withholdingAmount) : beforeTaxAmount;
-    const c100BeforeDiscount = documentType === 400 ?
+    let c100BeforeDiscount = documentType === 400 ?
       amountExcludingWithholding(amountBeforeDiscount,
           paymentMapping.withholdingAmount) : amountBeforeDiscount;
+    const paymentDetails = paymentMapping.details.map((detail) => ({
+      ...detail,
+      amount: isCancellationReceipt ? -Math.abs(detail.amount) : detail.amount,
+    }));
+    if (isCancellationReceipt) {
+      c100Total = -Math.abs(c100Total);
+      c100BeforeTax = -Math.abs(c100BeforeTax);
+      c100BeforeDiscount = -Math.abs(c100BeforeDiscount);
+    }
 
     if (includesHeader) {
       addRecord("C100", buildC100({
@@ -823,7 +857,7 @@ function generateBkmvPackage({context, logs, invoicesById = {}, clients = [],
         businessNumber: context.businessNumber,
         documentType,
         documentNumber,
-        issueDate: documentDate,
+        issueDate: productionDate,
         issueTime: documentTime,
         clientName,
         clientAddress,
@@ -875,7 +909,7 @@ function generateBkmvPackage({context, logs, invoicesById = {}, clients = [],
     }
 
     if (["receipts", "invoice_tax_receipt"].includes(bucket)) {
-      for (const [index, detail] of paymentMapping.details.entries()) {
+      for (const [index, detail] of paymentDetails.entries()) {
         addRecord("D120", buildD120({
           recordNumber,
           businessNumber: context.businessNumber,

@@ -19,6 +19,8 @@ service cloud.firestore {
     // is server-only; later increments must be linked to a matching invoice.
     // users/{uid}/tax_authority and invoiceBuilderVerifications: server-only.
     // users/{uid}/receivedInvoices: owner-read, server-write mirror.
+    // users/{uid}/clients/{clientId}/ledgerEntries/{postingId}: immutable
+    // server-created customer debit/credit posting; owner-readable only.
     // chat_rooms/{id}/messages/{id}: room participants only.
     // blog_posts and nested blog_comments: authenticated community content,
     // with author identity and bounded content validation.
@@ -1004,6 +1006,11 @@ service cloud.firestore {
       match /clients/{clientId} {
         allow read, delete: if isOwner(userId);
         allow create, update: if isOwner(userId) && validClient(request.resource.data);
+
+        match /ledgerEntries/{postingId} {
+          allow read: if isOwner(userId);
+          allow write: if false;
+        }
       }
 
       match /projects/{projectId} {

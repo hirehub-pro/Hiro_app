@@ -4,6 +4,10 @@ const crypto = require("crypto");
 
 const {buildBkmvArchives} = require("./bkmv_archive");
 const {
+  aggregateClientLedgerEntries,
+  compactDateToDate,
+} = require("./client_ledger");
+const {
   BUCKET_NAMES,
   generateBkmvPackage,
   normalizeCompactDate,
@@ -121,6 +125,29 @@ async function getDocumentsInChunks(db, references, chunkSize = 100) {
   return snapshots;
 }
 
+async function loadClientLedgerBalances({clients, fromDate, toDate,
+  chunkSize = 25}) {
+  const throughDate = compactDateToDate(toDate, "toDate");
+  const withBalances = [];
+  for (let index = 0; index < clients.length; index += chunkSize) {
+    const clientChunk = clients.slice(index, index + chunkSize);
+    const snapshots = await Promise.all(clientChunk.map((client) =>
+      client.reference.collection("ledgerEntries")
+          .where("effectiveDate", "<=", throughDate)
+          .orderBy("effectiveDate")
+          .get()));
+    for (let offset = 0; offset < clientChunk.length; offset += 1) {
+      const client = clientChunk[offset];
+      const entries = snapshots[offset].docs.map((document) => document.data());
+      withBalances.push({
+        ...client,
+        ...aggregateClientLedgerEntries(entries, {fromDate, toDate}),
+      });
+    }
+  }
+  return withBalances;
+}
+
 async function loadBkmvSourceData({db, userId, fromDate, toDate}) {
   const userRef = db.collection("users").doc(userId);
   const queryPromises = BUCKET_NAMES.map((bucket) =>
@@ -172,15 +199,21 @@ async function loadBkmvSourceData({db, userId, fromDate, toDate}) {
       if (key && !invoicesById[key]) invoicesById[key] = data;
     }
   }
-  const clients = clientSnap.docs.map((doc) => {
+  const clientRecords = clientSnap.docs.map((doc) => {
     const data = doc.data() || {};
     return {
       id: doc.id,
+      reference: doc.ref,
       name: String(data.name || "").trim(),
       externalClientNumber: String(data.externalClientNumber || "").trim(),
       taxId: String(data.taxId || "").trim(),
       address: String(data.address || "").trim(),
     };
+  });
+  const clients = await loadClientLedgerBalances({
+    clients: clientRecords,
+    fromDate,
+    toDate,
   });
   return {context, logs, invoicesById, clients};
 }
@@ -301,6 +334,7 @@ module.exports = {
   buildBusinessContext,
   buildUniformArtifacts,
   firebaseDownloadUrl,
+  loadClientLedgerBalances,
   loadBkmvSourceData,
   normalizeUniformExportRequest,
   saveUniformArtifacts,

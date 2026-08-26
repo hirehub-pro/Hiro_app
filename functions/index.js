@@ -55,6 +55,7 @@ const {
   normalizeServerDocumentRequest,
   serverDocumentPdfPayload,
 } = require("./server_document");
+const {buildClientLedgerPosting} = require("./client_ledger");
 const {
   buildTaxInvoicePdf,
   normalizeTaxInvoicePresentation,
@@ -1041,6 +1042,16 @@ function serverDocumentBucket(docType) {
   }[docType] || null;
 }
 
+function createClientLedgerPosting(transaction, userRef, posting) {
+  if (!posting) return;
+  const postingRef = userRef.collection("clients").doc(posting.clientId)
+      .collection("ledgerEntries").doc(posting.sourceDocumentId);
+  transaction.create(postingRef, {
+    ...posting,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+}
+
 function serverDocumentDisplayType(docType) {
   return {
     quote: "Quote",
@@ -1461,6 +1472,11 @@ exports.createServerDocument = onCall(
           size: Number(metadata.size),
           generation: normalizeString(metadata.generation),
         });
+        const ledgerPosting = buildClientLedgerPosting({
+          userId,
+          document,
+          sourceDocumentPath: invoiceRef.path,
+        });
         const bucket = serverDocumentBucket(document.docType);
         const logBucketRef = bucket ? userRef.collection("logs").doc(bucket) : null;
         const sourceId = document.isNegativeReceipt ?
@@ -1486,6 +1502,7 @@ exports.createServerDocument = onCall(
             );
           }
           transaction.set(invoiceRef, stored, {merge: true});
+          createClientLedgerPosting(transaction, userRef, ledgerPosting);
           if (logBucketRef) {
             const logCounter = Number(logBucketSnap?.data()?.value || 0) + 1;
             transaction.set(logBucketRef, {
@@ -3082,6 +3099,11 @@ async function createAutomaticCancellationCreditNote({
       size: Number(metadata.size),
       generation: normalizeString(metadata.generation),
     });
+    const ledgerPosting = buildClientLedgerPosting({
+      userId,
+      document,
+      sourceDocumentPath: creditRef.path,
+    });
     const logBucketRef = userRef.collection("logs").doc("credit_notes");
     await db.runTransaction(async (transaction) => {
       const [latestSnap, logBucketSnap, sourceSnap] = await Promise.all([
@@ -3104,6 +3126,7 @@ async function createAutomaticCancellationCreditNote({
         automaticallyCreated: true,
         cancellationSourceDocumentId: sourceInvoiceRef.id,
       }, {merge: true});
+      createClientLedgerPosting(transaction, userRef, ledgerPosting);
       transaction.set(logBucketRef, {
         value: logCounter,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -3459,6 +3482,22 @@ async function finalizeAllocatedTaxInvoice({
     workflowStatus,
   });
   fields.log.userId = userId;
+  const userRef = admin.firestore().collection("users").doc(userId);
+  const ledgerPosting = buildClientLedgerPosting({
+    userId,
+    document: {
+      docType: reservation.docType,
+      invoiceDocId: reservation.invoiceDocId,
+      documentNumber: reservation.documentNumber,
+      date: fields.invoice.date,
+      finalTotal: fields.total,
+      client: {
+        savedClientId: presentation.savedClientId,
+        externalClientNumber: presentation.externalClientNumber,
+      },
+    },
+    sourceDocumentPath: invoiceRef.path,
+  });
 
   const db = admin.firestore();
   await db.runTransaction(async (transaction) => {
@@ -3481,6 +3520,7 @@ async function finalizeAllocatedTaxInvoice({
     }
     const logCounter = Number(logBucketSnap.data()?.value || 0) + 1;
     transaction.set(invoiceRef, fields.invoice, {merge: true});
+    createClientLedgerPosting(transaction, userRef, ledgerPosting);
     transaction.set(logBucketRef, {
       value: logCounter,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),

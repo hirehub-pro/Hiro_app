@@ -47,6 +47,7 @@ function invoiceReceiptFixture() {
     method: "credit",
     amount: 106.2,
     installments: "3",
+    installmentDates: ["2026-09-01", "2026-10-01", "2026-11-01"],
     cardName: "CAL",
   }];
   return {
@@ -176,6 +177,103 @@ test("generates fixed-width 1.31 records from canonical server documents", () =>
   ]);
   assert.ok(payments.every((record) => record.slice(118, 119) === "2"));
   assert.ok(payments.every((record) => record.slice(139, 140) === "2"));
+  assert.deepEqual(payments.map((record) => record.slice(95, 103)), [
+    "20260901",
+    "20261001",
+    "20261101",
+  ]);
+});
+
+test("keeps legacy credit installments as one total when dates are unavailable", () => {
+  const mapping = mapPaymentDetails({
+    logData: {paymentMethods: [{
+      method: "credit",
+      amount: 106.2,
+      installments: "3",
+      cardName: "CAL",
+    }]},
+    invoiceData: {},
+    defaultAmount: 106.2,
+  });
+  assert.deepEqual(mapping.details.map((detail) => detail.amount), [106.2]);
+  assert.equal(mapping.details[0].creditDealType, 2);
+});
+
+test("uses the issued final total instead of the amount before rounding", () => {
+  const fixture = invoiceReceiptFixture();
+  const paymentMethods = [{method: "cash", amount: 106}];
+  fixture.logs[0].data.subtotalAfterTax = 106.2;
+  fixture.logs[0].data.grandTotal = 106;
+  fixture.logs[0].data.paymentMethods = paymentMethods;
+  fixture.invoicesById[fixture.logs[0].data.invoiceDocId].paymentMethods =
+    paymentMethods;
+  const authoritative = fixture.invoicesById[
+      fixture.logs[0].data.invoiceDocId].authoritativeServerDocument;
+  authoritative.beforeRounding = 106.2;
+  authoritative.finalTotal = 106;
+  authoritative.paymentMethods = paymentMethods;
+
+  const result = generateBkmvPackage({
+    context: businessContext(),
+    logs: fixture.logs,
+    invoicesById: fixture.invoicesById,
+    clients: [],
+    fromDate: "2026-08-01",
+    toDate: "2026-08-31",
+    exportTimestamp: new Date("2026-08-25T14:30:00+03:00"),
+    mainId: "123456789012345",
+  });
+
+  const c100 = result.records.find((record) => record.startsWith("C100"));
+  const d120 = result.records.find((record) => record.startsWith("D120"));
+  assert.equal(c100.slice(347, 362), "+00000000010600");
+  assert.equal(d120.slice(103, 118), "+00000000010600");
+});
+
+test("separates C100 production date from a backdated document date", () => {
+  const fixture = invoiceReceiptFixture();
+  fixture.logs[0].data.timestamp = new Date("2026-09-02T10:30:00+03:00");
+  const result = generateBkmvPackage({
+    context: businessContext(),
+    logs: fixture.logs,
+    invoicesById: fixture.invoicesById,
+    clients: [],
+    fromDate: "2026-08-01",
+    toDate: "2026-08-31",
+    exportTimestamp: new Date("2026-09-02T14:30:00+03:00"),
+    mainId: "123456789012345",
+  });
+
+  const c100 = result.records.find((record) => record.startsWith("C100"));
+  assert.equal(c100.slice(45, 53), "20260902");
+  assert.equal(c100.slice(400, 408), "20260825");
+});
+
+test("writes calculated customer ledger totals to B110 fields 1414-1416", () => {
+  const fixture = invoiceReceiptFixture();
+  const result = generateBkmvPackage({
+    context: businessContext(),
+    logs: fixture.logs,
+    invoicesById: fixture.invoicesById,
+    clients: [{
+      id: "client-1",
+      name: "לקוח בדיקה",
+      externalClientNumber: "1001",
+      taxId: "515555555",
+      address: "הרצל 10, תל אביב, 6100000",
+      openingBalance: 375,
+      periodDebits: 118,
+      periodCredits: 60,
+    }],
+    fromDate: "2026-08-01",
+    toDate: "2026-08-31",
+    exportTimestamp: new Date("2026-08-25T14:30:00+03:00"),
+    mainId: "123456789012345",
+  });
+  const account = result.records.find((record) => record.startsWith("B110"));
+  assert.equal(account.slice(277, 292), "+00000000037500");
+  assert.equal(account.slice(292, 307), "+00000000011800");
+  assert.equal(account.slice(307, 322), "+00000000006000");
 });
 
 test("maps check dates, omits transfer bank fields, and separates withholding", () => {
@@ -316,6 +414,139 @@ test("writes receipt withholding only to positive C100 field 1224", () => {
   const payments = result.records.filter((record) => record.startsWith("D120"));
   assert.equal(payments.length, 1);
   assert.equal(payments[0].slice(103, 118), "+00000000100000");
+});
+
+test("writes cancellation receipt C100 and D120 amounts as negative", () => {
+  const invoiceDocId = "receipt_2026-0044";
+  const paymentMethods = [{method: "cash", amount: 118}];
+  const stored = {
+    type: "receipt",
+    invoiceNumber: "2026-0044",
+    amount: -118,
+    externalClientNumber: "1001",
+    isCancellationDocument: true,
+    paymentMethods,
+    authoritativeServerDocument: {
+      docType: "receipt",
+      documentNumber: "2026-0044",
+      date: "2026-08-25",
+      amountBeforeDiscount: 118,
+      discount: 0,
+      paymentAmount: 118,
+      vatAmount: 0,
+      beforeRounding: 118,
+      finalTotal: 118,
+      isNegativeReceipt: true,
+      paymentMethods,
+      client: {
+        id: "515555555",
+        name: "לקוח בדיקה",
+        address: "הרצל 10, תל אביב, 6100000",
+        phone: "0501234567",
+        externalClientNumber: "1001",
+      },
+    },
+  };
+  const result = generateBkmvPackage({
+    context: businessContext(),
+    logs: [{
+      id: invoiceDocId,
+      path: `users/worker-1/logs/receipts/files/${invoiceDocId}`,
+      data: {
+        userId: "worker-1",
+        bucket: "receipts",
+        invoiceDocId,
+        date: "2026-08-25",
+        issueDate: "2026-08-25",
+        timestamp: new Date("2026-08-25T10:30:00+03:00"),
+        subtotalBeforeTax: -118,
+        subtotalAfterTax: -118,
+        grandTotal: -118,
+        vatAmount: 0,
+        externalClientNumber: "1001",
+        isCancellationDocument: true,
+        paymentMethods,
+      },
+    }],
+    invoicesById: {[invoiceDocId]: stored},
+    clients: [],
+    fromDate: "2026-08-01",
+    toDate: "2026-08-31",
+    exportTimestamp: new Date("2026-08-25T14:30:00+03:00"),
+    mainId: "123456789012345",
+  });
+  const c100 = result.records.find((record) => record.startsWith("C100"));
+  assert.equal(c100.slice(287, 302), "-00000000011800");
+  assert.equal(c100.slice(317, 332), "-00000000011800");
+  assert.equal(c100.slice(347, 362), "-00000000011800");
+  const payments = result.records.filter((record) => record.startsWith("D120"));
+  assert.equal(payments.length, 1);
+  assert.equal(payments[0].slice(103, 118), "-00000000011800");
+});
+
+test("writes credit-note document and line discounts as negative", () => {
+  const invoiceDocId = "credit_note_2026-0045";
+  const stored = {
+    type: "credit_note",
+    invoiceNumber: "2026-0045",
+    externalClientNumber: "1001",
+    discountAmount: 10,
+    authoritativeServerDocument: {
+      docType: "credit_note",
+      documentNumber: "2026-0045",
+      date: "2026-08-25",
+      amountBeforeDiscount: 100,
+      discount: 10,
+      paymentAmount: 90,
+      vatAmount: 16.2,
+      beforeRounding: 106.2,
+      finalTotal: 106.2,
+      client: {
+        id: "515555555",
+        name: "לקוח בדיקה",
+        address: "הרצל 10, תל אביב, 6100000",
+        phone: "0501234567",
+        externalClientNumber: "1001",
+      },
+    },
+  };
+  const result = generateBkmvPackage({
+    context: businessContext(),
+    logs: [{
+      id: invoiceDocId,
+      path: `users/worker-1/logs/credit_notes/files/${invoiceDocId}`,
+      data: {
+        userId: "worker-1",
+        bucket: "credit_notes",
+        invoiceDocId,
+        date: "2026-08-25",
+        issueDate: "2026-08-25",
+        timestamp: new Date("2026-08-25T10:30:00+03:00"),
+        subtotalBeforeTax: 90,
+        subtotalAfterTax: 106.2,
+        vatAmount: 16.2,
+        discountAmount: 10,
+        externalClientNumber: "1001",
+        items: [{
+          description: "שירות בדיקה",
+          quantity: 1,
+          unitPriceWithoutTax: 100,
+          discount: 10,
+          total_amount: 90,
+        }],
+      },
+    }],
+    invoicesById: {[invoiceDocId]: stored},
+    clients: [],
+    fromDate: "2026-08-01",
+    toDate: "2026-08-31",
+    exportTimestamp: new Date("2026-08-25T14:30:00+03:00"),
+    mainId: "123456789012345",
+  });
+  const c100 = result.records.find((record) => record.startsWith("C100"));
+  assert.equal(c100.slice(302, 317), "-00000000001000");
+  const d110 = result.records.find((record) => record.startsWith("D110"));
+  assert.equal(d110.slice(255, 270), "-00000000001000");
 });
 
 test("splits installment cents without changing the payment total", () => {
