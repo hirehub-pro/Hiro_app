@@ -12,7 +12,6 @@ import 'package:untitled1/pages/invoice_builder.dart';
 import 'package:untitled1/services/language_provider.dart';
 import 'package:untitled1/services/subscription_access_service.dart';
 import 'package:untitled1/search.dart';
-import 'package:untitled1/pages/edit_profile.dart';
 import 'package:untitled1/pages/saved_invoices_page.dart';
 import 'package:untitled1/pages/my_requests_page.dart';
 import 'package:untitled1/pages/my_request_details_page.dart';
@@ -2112,21 +2111,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         }
       });
 
-      final upgradedUserDoc = await _firestore
-          .collection('users')
-          .doc(user.uid)
-          .get();
-      final upgradedUserData = upgradedUserDoc.data() ?? <String, dynamic>{};
-
       await _fetchCurrentUserName();
-      if (!mounted) return;
-
-      await Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => EditProfilePage(userData: upgradedUserData),
-        ),
-      );
     } catch (e) {
       debugPrint("Upgrade error: $e");
     }

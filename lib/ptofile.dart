@@ -30,7 +30,6 @@ import 'package:untitled1/pages/add_review.dart';
 import 'package:untitled1/pages/post_details_page.dart';
 import 'package:untitled1/pages/location_manager_page.dart';
 import 'package:untitled1/pages/subscription.dart';
-import 'package:untitled1/pages/edit_profile.dart';
 import 'package:untitled1/pages/fullscreen_media_viewer.dart';
 import 'package:untitled1/pages/liked_pros_page.dart';
 import 'package:untitled1/map/map_radius_picker.dart';
@@ -2336,22 +2335,8 @@ class _ProfileState extends State<Profile>
           }
         });
 
-        final upgradedUserDoc = await _firestore
-            .collection('users')
-            .doc(user.uid)
-            .get();
-        final upgradedUserData =
-            (upgradedUserDoc.data() ?? <String, dynamic>{});
-
         if (mounted) setState(() => _isLoading = false);
         if (!mounted) return;
-
-        await Navigator.push<bool>(
-          context,
-          MaterialPageRoute(
-            builder: (context) => EditProfilePage(userData: upgradedUserData),
-          ),
-        );
 
         await _fetchUserData();
         if (!mounted) return;

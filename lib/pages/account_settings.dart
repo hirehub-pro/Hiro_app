@@ -5,7 +5,6 @@ import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:untitled1/services/language_provider.dart';
-import 'package:untitled1/pages/edit_profile.dart';
 import 'package:untitled1/pages/help_page.dart';
 import 'package:untitled1/services/phone_auth_page.dart';
 import 'package:untitled1/pages/verify_business.dart';
@@ -1102,26 +1101,6 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
                 children: [
                   CupertinoListTile(
                     leading: const Icon(
-                      CupertinoIcons.person,
-                      color: CupertinoColors.systemBlue,
-                    ),
-                    title: Text(strings['edit_profile']!),
-                    trailing: const CupertinoListTileChevron(),
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => EditProfilePage(
-                          userData: {
-                            ...widget.userData,
-                            'phone': _currentPhone,
-                            'role': _userRole,
-                          },
-                        ),
-                      ),
-                    ),
-                  ),
-                  CupertinoListTile(
-                    leading: const Icon(
                       CupertinoIcons.phone,
                       color: CupertinoColors.systemGreen,
                     ),
@@ -1219,21 +1198,6 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
           padding: const EdgeInsets.all(16),
           children: [
             _buildSection([
-              _buildTile(Icons.person_outline, strings['edit_profile']!, () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => EditProfilePage(
-                      userData: {
-                        ...widget.userData,
-                        'phone': _currentPhone,
-                        'role': _userRole,
-                      },
-                    ),
-                  ),
-                );
-              }),
-              const Divider(height: 1, indent: 50),
               _buildTile(
                 Icons.phone_android_outlined,
                 strings['change_phone']!,
