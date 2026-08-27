@@ -2910,6 +2910,8 @@ class _ProfileState extends State<Profile>
           if (_isOwnProfile) ...[
             const SizedBox(height: 32),
             if (_userRole == 'worker' &&
+                _hasActiveWorkerSubscription &&
+                _isVip &&
                 _isBusinessVerified &&
                 !_isTaxAuthorityConnected &&
                 !_isTaxAuthorityConnectionLoading) ...[
