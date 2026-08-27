@@ -6,6 +6,7 @@ const {PDFDocument} = require("pdf-lib");
 
 const {
   buildTaxInvoicePdf,
+  formatMoney,
   normalizeTaxInvoicePresentation,
   visualText,
 } = require("./tax_invoice_pdf");
@@ -91,6 +92,47 @@ test("passes logical Hebrew to Fontkit exactly once", () => {
       visualText("תאריך: 19-08-2026 | דוא״ל: client@example.com"),
       "תאריך: 19-08-2026 | דוא״ל: client@example.com",
   );
+});
+
+test("formats PDF money with thousands separators and two decimals", () => {
+  assert.equal(formatMoney(1000), "1,000.00 ₪");
+  assert.equal(formatMoney(1000000.5), "1,000,000.50 ₪");
+  assert.equal(formatMoney(-1234.567), "-1,234.57 ₪");
+});
+
+test("server generator wraps long item descriptions without failing", async () => {
+  const payload = samplePayload();
+  payload.invoices_list[0].items[0].description =
+    "שירות מקצועי ארוך במיוחד שצריך לעבור לשורה נוספת בתוך עמודת " +
+    "התיאור בלי לגלוש אל עמודות הכמות והמחירים";
+  payload.invoices_list[0].items.push({
+    description: "תיאורארוךמאודללאמרווחיםשגםהואחייבלהישארבתוךעמודתהתיאורבלבד",
+    quantity: 1000,
+    price_per_unit: 1000000,
+    discount: 0,
+    total_amount: 1000000000,
+    vat_rate: 18,
+    vat_amount: 180000000,
+  });
+  const bytes = await buildTaxInvoicePdf({
+    payload,
+    allocation: null,
+    reservation: {
+      docType: "quote",
+      documentNumber: "",
+      sequenceNumber: null,
+      invoiceDocId: "quote_wrapping_test",
+    },
+    business: {
+      name: "עסק בדיקה",
+      businessId: "123456789",
+      dealerType: "licensed",
+    },
+    presentation: normalizeTaxInvoicePresentation({}),
+    generatedAt: new Date("2026-08-18T10:00:00Z"),
+  });
+  const pdf = await PDFDocument.load(bytes);
+  assert.ok(pdf.getPageCount() >= 1);
 });
 
 test("server generator creates a readable multi-language PDF", async () => {

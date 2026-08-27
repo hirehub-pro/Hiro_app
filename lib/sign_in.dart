@@ -838,6 +838,32 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
     }
   }
 
+  String _federatedAccountNotRegisteredMessage() {
+    final locale = Provider.of<LanguageProvider>(
+      context,
+      listen: false,
+    ).locale.languageCode;
+    switch (locale) {
+      case 'he':
+        return 'לא נמצא חשבון רשום עם כתובת האימייל הזו.';
+      case 'ar':
+        return 'لم يتم العثور على حساب مسجل بعنوان البريد الإلكتروني هذا.';
+      case 'ru':
+        return 'Аккаунт с этим адресом электронной почты не зарегистрирован.';
+      case 'am':
+        return 'በዚህ የኢሜይል አድራሻ የተመዘገበ መለያ አልተገኘም።';
+      default:
+        return 'No registered account was found for this email address.';
+    }
+  }
+
+  Future<bool> _federatedAccountCanSignIn(String email) async {
+    final result = await _functions
+        .httpsCallable('federatedAccountCanSignIn')
+        .call<Map<String, dynamic>>({'email': email.trim().toLowerCase()});
+    return result.data['registered'] == true;
+  }
+
   Future<void> _handleFederatedSignIn() async {
     if (_loading || !FederatedAuthService.isSupportedPlatform) return;
 
@@ -849,6 +875,19 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
     FederatedAuthSelection? selection;
     try {
       selection = await FederatedAuthService.requestCredential();
+      final registered = await _federatedAccountCanSignIn(selection.email);
+      if (!registered) {
+        if (mounted) {
+          setState(() {
+            _loading = false;
+            _federatedLoading = false;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(_federatedAccountNotRegisteredMessage())),
+          );
+        }
+        return;
+      }
       final result = await FirebaseAuth.instance.signInWithCredential(
         selection.credential,
       );
@@ -992,8 +1031,15 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
     if (mounted) {
       setState(() {
         _loading = false;
+        _federatedLoading = false;
         _codeSent = false;
       });
+      if (method != 'phone') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(_federatedAccountNotRegisteredMessage())),
+        );
+        return;
+      }
       Navigator.push(
         context,
         MaterialPageRoute(builder: (_) => const SignUpPage()),

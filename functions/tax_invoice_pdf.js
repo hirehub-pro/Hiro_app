@@ -159,7 +159,18 @@ function visualText(value, direction = "rtl") {
 }
 
 function formatMoney(value) {
-  return `${money(value).toFixed(2)} \u20aa`;
+  return `${new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+    useGrouping: true,
+  }).format(money(value))} \u20aa`;
+}
+
+function formatVatRate(value) {
+  return new Intl.NumberFormat("en-US", {
+    maximumFractionDigits: 2,
+    useGrouping: false,
+  }).format(safeNumber(value));
 }
 
 function formatDate(value) {
@@ -209,7 +220,28 @@ function wrapLogicalText(text, font, size, maxWidth, direction = "rtl") {
   if (words.length === 0) return [];
   const lines = [];
   let line = "";
-  for (const word of words) {
+  const splitWord = (word) => {
+    const parts = [];
+    let part = "";
+    for (const character of [...word]) {
+      const candidate = `${part}${character}`;
+      if (part && font.widthOfTextAtSize(
+          visualText(candidate, direction), size,
+      ) > maxWidth) {
+        parts.push(part);
+        part = character;
+      } else {
+        part = candidate;
+      }
+    }
+    if (part) parts.push(part);
+    return parts;
+  };
+  const fittedWords = words.flatMap((word) =>
+    font.widthOfTextAtSize(visualText(word, direction), size) <= maxWidth ?
+      [word] : splitWord(word),
+  );
+  for (const word of fittedWords) {
     const candidate = line ? `${line} ${word}` : word;
     if (font.widthOfTextAtSize(visualText(candidate, direction), size) <= maxWidth) {
       line = candidate;
@@ -453,12 +485,14 @@ function addDetailCard(page, font, title, name, nameLabel, entries,
 
 function drawItemsHeader(page, font, y) {
   const x = MARGIN;
-  const widths = [250.76, 60, 100, 99.48];
+  // Coordinates run left-to-right, while the invoice table is read from the
+  // right. Keep the description widest and the quantity deliberately narrow.
+  const widths = [98.12, 98.12, 44, 270];
   page.drawRectangle({
     x, y: y - 23, width: widths.reduce((a, b) => a + b, 0),
     height: 25, color: BLUE,
   });
-  const labels = ["תיאור השירות/מוצר", "כמות", "מחיר ליח׳", "סה״כ לתשלום"];
+  const labels = ["סה״כ", "מחיר ליח׳", "כמות", "תיאור השירות/מוצר"];
   let cursor = x;
   labels.forEach((label, index) => {
     drawRight(page, font, label, cursor + widths[index] - 7, y - 16, 12, {
@@ -469,9 +503,23 @@ function drawItemsHeader(page, font, y) {
   return widths;
 }
 
-function drawItemRow(page, font, item, y, widths) {
+function itemRowLayout(font, item, widths) {
+  const descriptionWidth = widths.at(-1) - 14;
+  const descriptionLines = wrapLogicalText(
+      boundedString(item.description, 120, "פריט"),
+      font,
+      11.25,
+      descriptionWidth,
+  );
+  return {
+    descriptionLines,
+    height: Math.max(24, 12 + descriptionLines.length * 14),
+  };
+}
+
+function drawItemRow(page, font, item, y, widths, layout) {
   const x = MARGIN;
-  const rowHeight = 24;
+  const rowHeight = layout.height;
   page.drawRectangle({
     x,
     y: y - rowHeight + 5,
@@ -480,19 +528,24 @@ function drawItemRow(page, font, item, y, widths) {
     borderColor: LINE,
     borderWidth: 0.5,
   });
-  const totalIncludingVat = money(item.total_amount + item.vat_amount);
   const values = [
-    boundedString(item.description, 120, "פריט"),
-    money(item.quantity).toString(),
-    formatMoney(item.price_per_unit * (1 + Number(item.vat_rate || 0) / 100)),
-    formatMoney(totalIncludingVat),
+    formatMoney(item.total_amount),
+    formatMoney(item.price_per_unit),
+    money(item.quantity).toLocaleString("en-US"),
   ];
   let cursor = x;
   values.forEach((value, index) => {
     drawRight(page, font, value, cursor + widths[index] - 7, y - 14, 11.25, {
-      direction: index === 0 ? "rtl" : "ltr",
+      direction: "ltr",
     });
     cursor += widths[index];
+  });
+  const descriptionRight = x + widths.reduce((a, b) => a + b, 0) - 7;
+  layout.descriptionLines.forEach((line, index) => {
+    drawRight(
+        page, font, line, descriptionRight, y - 14 - index * 14, 11.25,
+        {direction: "rtl"},
+    );
   });
   return rowHeight;
 }
@@ -504,6 +557,9 @@ function drawSummary(page, font, invoice, presentation, reservation, y) {
   const rounding = presentation.roundTotalEnabled ? money(beforeRounding - Math.floor(beforeRounding)) : 0;
   const finalTotal = money(beforeRounding - rounding);
   const hasVat = invoice.items.some((item) => Number(item.vat_rate) > 0);
+  const vatRate = hasVat ? Number(invoice.items.find(
+      (item) => Number(item.vat_rate) > 0,
+  ).vat_rate) : 0;
   const negative = presentation.isNegativeReceipt === true;
   const sign = (value) => negative ? -Math.abs(value) : value;
   const rows = hasVat ? [
@@ -533,10 +589,21 @@ function drawSummary(page, font, invoice, presentation, reservation, y) {
   let rowY = y - 25;
   rows.forEach(([label, value], index) => {
     const isLast = index === rows.length - 1;
-    drawRight(page, font, label, x + width - 14, rowY,
+    const labelWidth = drawRight(page, font, label, x + width - 14, rowY,
         isLast ? 15 : 11.25, {
       color: isLast ? BLUE_DARK : TEXT,
     });
+    if (hasVat && label === "מע״מ") {
+      drawRight(
+          page,
+          font,
+          `${formatVatRate(vatRate)}%`,
+          x + width - 18 - labelWidth,
+          rowY,
+          11.25,
+          {color: TEXT, direction: "ltr"},
+      );
+    }
     drawLeft(page, font, value, x + 14, rowY,
         isLast ? 15 : 11.25, {
       color: isLast ? BLUE_DARK : TEXT,
@@ -809,9 +876,11 @@ async function buildTaxInvoicePdf({
     let widths = drawItemsHeader(page, font, y);
     y -= 26;
     for (const item of invoice.items) {
-      const continuationWidths = ensureSpace(27, true);
+      let layout = itemRowLayout(font, item, widths);
+      const continuationWidths = ensureSpace(layout.height + 3, true);
       if (continuationWidths) widths = continuationWidths;
-      y -= drawItemRow(page, font, item, y, widths);
+      if (continuationWidths) layout = itemRowLayout(font, item, widths);
+      y -= drawItemRow(page, font, item, y, widths, layout);
     }
     y -= 18;
   }

@@ -2487,11 +2487,15 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   }
 
   Future<void> _pickInvoiceDate() async {
+    final today = DateUtils.dateOnly(DateTime.now());
+    final currentInvoiceDate = DateUtils.dateOnly(_selectedInvoiceDate);
     final picked = await showDatePicker(
       context: context,
-      initialDate: _selectedInvoiceDate,
+      initialDate: currentInvoiceDate.isAfter(today)
+          ? today
+          : currentInvoiceDate,
       firstDate: DateTime(2000),
-      lastDate: DateTime(2100),
+      lastDate: today,
     );
     if (picked == null || !mounted) return;
     setState(() {
@@ -2500,18 +2504,29 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       if (!_hasCustomPaymentDueDate) {
         _selectedPaymentDueDate = _defaultPaymentDueDate();
         _paymentDueDateController.text = _formattedPaymentDueDate();
+      } else if (_selectedPaymentDueDate != null &&
+          DateUtils.dateOnly(
+            _selectedPaymentDueDate!,
+          ).isBefore(_selectedInvoiceDate)) {
+        _selectedPaymentDueDate = _selectedInvoiceDate;
+        _paymentDueDateController.text = _formattedPaymentDueDate();
       }
     });
   }
 
   Future<void> _pickPaymentDueDate() async {
-    final initialDate =
+    final earliestDueDate = DateUtils.dateOnly(_selectedInvoiceDate);
+    final preferredInitialDate =
         _selectedPaymentDueDate ??
         _selectedInvoiceDate.add(const Duration(days: 30));
+    final initialDate =
+        DateUtils.dateOnly(preferredInitialDate).isBefore(earliestDueDate)
+        ? earliestDueDate
+        : DateUtils.dateOnly(preferredInitialDate);
     final picked = await showDatePicker(
       context: context,
       initialDate: initialDate,
-      firstDate: DateTime(2000),
+      firstDate: earliestDueDate,
       lastDate: DateTime(2100),
     );
     if (picked == null || !mounted) return;

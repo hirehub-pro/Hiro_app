@@ -243,6 +243,43 @@ exports.checkSignUpIdentifiersAvailable = onCall(
     },
 );
 
+exports.federatedAccountCanSignIn = onCall(
+    {region: "me-west1"},
+    async (request) => {
+      const email = normalizeString(request.data?.email)
+          .trim()
+          .toLowerCase();
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) ||
+          email.length > 254) {
+        throw new HttpsError(
+            "invalid-argument",
+            "A valid email address is required.",
+        );
+      }
+
+      try {
+        const user = await admin.auth().getUserByEmail(email);
+        const profile = await admin
+            .firestore()
+            .collection("users")
+            .doc(user.uid)
+            .get();
+        return {registered: profile.exists};
+      } catch (error) {
+        if (error?.code === "auth/user-not-found") {
+          return {registered: false};
+        }
+        logger.error("Could not check federated account registration", {
+          code: error?.code,
+        });
+        throw new HttpsError(
+            "internal",
+            "Could not check whether the account is registered.",
+        );
+      }
+    },
+);
+
 const TAX_AUTH_SANDBOX_AUTH_URL =
   "https://openapi.taxes.gov.il/shaam/tsandbox/longtimetoken/oauth2/authorize";
 const TAX_AUTH_SANDBOX_TOKEN_URL =
