@@ -15,16 +15,40 @@
       },
       "oauth_client": [
         {
-          "client_id": "29257648718-5k3hlt1g4nob51l84abm25c1gkksgfs2.apps.googleusercontent.com",
+          "client_id": "29257648718-anlh2qommpvsvqj22fcccgh903vdf2db.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.hirehub.app",
+            "certificate_hash": "5a528181da86de7438f53b1610ed1916bbd88582"
+          }
+        },
+        {
+          "client_id": "29257648718-movvl7pkqke7r8n07ejqijmv82tec688.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.hirehub.app",
+            "certificate_hash": "68955ab245f123be8d77ace6f609a4cd29d7223c"
+          }
+        },
+        {
+          "client_id": "29257648718-sp78npjqmurrfgebai1qgniodtnlcvol.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.hirehub.app",
+            "certificate_hash": "bb4defda6c1c86721b409c8b270bea80b386a437"
+          }
+        },
+        {
+          "client_id": "29257648718-tnj5srrmuk3fl8gl2bi0joua2ko3ufgu.apps.googleusercontent.com",
           "client_type": 3
         }
       ],
       "api_key": [
         {
-          "current_key": "AIzaSyCL9zie59-f_Hiyqj_dYtaMziReezcd6fU"
+          "current_key": "AIzaSyB1CWooXT-Gxc4q1q4XmYGSE4Rixyp1EXk"
         },
         {
-          "current_key": "AIzaSyB1CWooXT-Gxc4q1q4XmYGSE4Rixyp1EXk"
+          "current_key": "AIzaSyAUpA8LRkDt6EsVCMexIZc20UrUr2FhDPw"
         }
       ],
       "services": {
@@ -35,7 +59,7 @@
               "client_type": 3
             },
             {
-              "client_id": "29257648718-qclvt36de5i6j9p20s8ljklp770suejn.apps.googleusercontent.com",
+              "client_id": "29257648718-5qsqbt1gmp6qtnrr40b030pslk75n80k.apps.googleusercontent.com",
               "client_type": 2,
               "ios_info": {
                 "bundle_id": "com.hiro.hiroapp"
@@ -47,23 +71,23 @@
     },
     {
       "client_info": {
-        "mobilesdk_app_id": "1:29257648718:android:93df85e5e5d6e621b8111f",
+        "mobilesdk_app_id": "1:29257648718:android:d2ccef8fe9dda69db8111f",
         "android_client_info": {
-          "package_name": "com.hiro.hiroapp"
+          "package_name": "com.hiro.account"
         }
       },
       "oauth_client": [
         {
-          "client_id": "29257648718-5k3hlt1g4nob51l84abm25c1gkksgfs2.apps.googleusercontent.com",
+          "client_id": "29257648718-tnj5srrmuk3fl8gl2bi0joua2ko3ufgu.apps.googleusercontent.com",
           "client_type": 3
         }
       ],
       "api_key": [
         {
-          "current_key": "AIzaSyCL9zie59-f_Hiyqj_dYtaMziReezcd6fU"
+          "current_key": "AIzaSyB1CWooXT-Gxc4q1q4XmYGSE4Rixyp1EXk"
         },
         {
-          "current_key": "AIzaSyB1CWooXT-Gxc4q1q4XmYGSE4Rixyp1EXk"
+          "current_key": "AIzaSyAUpA8LRkDt6EsVCMexIZc20UrUr2FhDPw"
         }
       ],
       "services": {
@@ -74,7 +98,7 @@
               "client_type": 3
             },
             {
-              "client_id": "29257648718-qclvt36de5i6j9p20s8ljklp770suejn.apps.googleusercontent.com",
+              "client_id": "29257648718-5qsqbt1gmp6qtnrr40b030pslk75n80k.apps.googleusercontent.com",
               "client_type": 2,
               "ios_info": {
                 "bundle_id": "com.hiro.hiroapp"

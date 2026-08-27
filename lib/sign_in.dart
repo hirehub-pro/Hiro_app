@@ -9,6 +9,7 @@ import 'package:provider/provider.dart';
 import 'package:untitled1/services/language_provider.dart';
 import 'package:untitled1/services/analytics_service.dart';
 import 'package:untitled1/services/auth_service.dart';
+import 'package:untitled1/services/federated_auth_service.dart';
 import 'package:untitled1/services/firebase_options.dart';
 import 'package:untitled1/forgot_password.dart';
 import 'package:untitled1/sign_up.dart';
@@ -159,7 +160,10 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
   int? _resendToken;
   bool _codeSent = false;
   bool _loading = false;
+  bool _federatedLoading = false;
   bool _obscurePassword = true;
+  AuthCredential? _pendingFederatedCredential;
+  String? _pendingFederatedEmail;
   final FirebaseFunctions _functions = FirebaseFunctions.instanceFor(
     region: 'me-west1',
   );
@@ -780,9 +784,148 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
     }
   }
 
+  String _federatedButtonLabel() {
+    final isApple = FederatedAuthService.usesApple;
+    final locale = Provider.of<LanguageProvider>(
+      context,
+      listen: false,
+    ).locale.languageCode;
+    switch (locale) {
+      case 'he':
+        return isApple ? 'התחברות עם Apple' : 'התחברות עם Google';
+      case 'ar':
+        return isApple
+            ? 'تسجيل الدخول باستخدام Apple'
+            : 'تسجيل الدخول باستخدام Google';
+      case 'ru':
+        return isApple ? 'Войти через Apple' : 'Войти через Google';
+      case 'am':
+        return isApple ? 'በApple ይግቡ' : 'በGoogle ይግቡ';
+      default:
+        return isApple ? 'Sign in with Apple' : 'Sign in with Google';
+    }
+  }
+
+  String _federatedSignInErrorMessage(FirebaseAuthException? error) {
+    final locale = Provider.of<LanguageProvider>(
+      context,
+      listen: false,
+    ).locale.languageCode;
+    final accountConflict =
+        error?.code == 'account-exists-with-different-credential' ||
+        error?.code == 'credential-already-in-use';
+    switch (locale) {
+      case 'he':
+        return accountConflict
+            ? 'האימייל הזה כבר מחובר בשיטת כניסה אחרת. התחברו באמצעות הטלפון והסיסמה.'
+            : 'ההתחברות נכשלה. נסו שוב.';
+      case 'ar':
+        return accountConflict
+            ? 'هذا البريد مرتبط بطريقة دخول أخرى. سجّل الدخول باستخدام الهاتف وكلمة المرور.'
+            : 'فشل تسجيل الدخول. حاول مرة أخرى.';
+      case 'ru':
+        return accountConflict
+            ? 'Этот адрес уже связан с другим способом входа. Войдите по телефону и паролю.'
+            : 'Не удалось войти. Попробуйте снова.';
+      case 'am':
+        return accountConflict
+            ? 'ይህ ኢሜይል ከሌላ የመግቢያ ዘዴ ጋር ተገናኝቷል። በስልክና በይለፍ ቃል ይግቡ።'
+            : 'መግባት አልተሳካም። እንደገና ይሞክሩ።';
+      default:
+        return accountConflict
+            ? 'This email uses another sign-in method. Sign in with your phone and password.'
+            : 'Sign-in failed. Please try again.';
+    }
+  }
+
+  Future<void> _handleFederatedSignIn() async {
+    if (_loading || !FederatedAuthService.isSupportedPlatform) return;
+
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _loading = true;
+      _federatedLoading = true;
+    });
+    FederatedAuthSelection? selection;
+    try {
+      selection = await FederatedAuthService.requestCredential();
+      final result = await FirebaseAuth.instance.signInWithCredential(
+        selection.credential,
+      );
+      await _routeAuthenticatedUser(
+        result.user,
+        method: selection.providerId == AppleAuthProvider.PROVIDER_ID
+            ? 'apple'
+            : 'google',
+        isNewAuthUser: result.additionalUserInfo?.isNewUser == true,
+      );
+    } catch (error) {
+      if (FederatedAuthService.isCancellation(error)) {
+        if (mounted) {
+          setState(() {
+            _loading = false;
+            _federatedLoading = false;
+          });
+        }
+        return;
+      }
+      debugPrint('FEDERATED SIGN IN ERROR: $error');
+      if (mounted) {
+        final isAccountConflict =
+            error is FirebaseAuthException &&
+            (error.code == 'account-exists-with-different-credential' ||
+                error.code == 'credential-already-in-use');
+        if (isAccountConflict && selection != null) {
+          _pendingFederatedCredential = selection.credential;
+          _pendingFederatedEmail = selection.email.trim().toLowerCase();
+        }
+        setState(() {
+          _loading = false;
+          _federatedLoading = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              _federatedSignInErrorMessage(
+                error is FirebaseAuthException ? error : null,
+              ),
+            ),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _linkPendingFederatedProvider(User user) async {
+    final credential = _pendingFederatedCredential;
+    final pendingEmail = _pendingFederatedEmail;
+    if (credential == null || pendingEmail == null) return;
+
+    final userEmail = (user.email ?? '').trim().toLowerCase();
+    if (userEmail != pendingEmail) {
+      _pendingFederatedCredential = null;
+      _pendingFederatedEmail = null;
+      return;
+    }
+
+    try {
+      await user.linkWithCredential(credential);
+      _pendingFederatedCredential = null;
+      _pendingFederatedEmail = null;
+    } on FirebaseAuthException catch (error) {
+      if (error.code == 'provider-already-linked') {
+        _pendingFederatedCredential = null;
+        _pendingFederatedEmail = null;
+        return;
+      }
+      rethrow;
+    }
+  }
+
   Future<void> _routeAuthenticatedUser(
     User? user, {
     required String method,
+    bool isNewAuthUser = false,
   }) async {
     if (user == null) {
       if (mounted) setState(() => _loading = false);
@@ -794,32 +937,36 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
     final userDoc = await firestore.collection('users').doc(user.uid).get();
 
     if (userDoc.exists) {
-      final email = (user.email ?? '').trim();
-      if (email.isEmpty) {
-        await AuthService().signOut();
-        throw FirebaseAuthException(
-          code: 'password-unavailable',
-          message:
-              strings['password_unavailable'] ??
-              'Password sign-in is not available for this account yet.',
-        );
-      }
+      if (method == 'phone') {
+        final email = (user.email ?? '').trim();
+        if (email.isEmpty) {
+          await AuthService().signOut();
+          throw FirebaseAuthException(
+            code: 'password-unavailable',
+            message:
+                strings['password_unavailable'] ??
+                'Password sign-in is not available for this account yet.',
+          );
+        }
 
-      try {
-        await _verifyPasswordWithoutChangingSession(
-          email: email,
-          password: _passwordController.text,
-        );
-      } on FirebaseAuthException catch (error) {
-        await AuthService().signOut();
-        throw FirebaseAuthException(
-          code: error.code,
-          message:
-              error.code == 'wrong-password' ||
-                  error.code == 'invalid-credential'
-              ? (strings['wrong_password'] ?? 'Incorrect password.')
-              : (error.message ?? error.code),
-        );
+        try {
+          await _verifyPasswordWithoutChangingSession(
+            email: email,
+            password: _passwordController.text,
+          );
+        } on FirebaseAuthException catch (error) {
+          await AuthService().signOut();
+          throw FirebaseAuthException(
+            code: error.code,
+            message:
+                error.code == 'wrong-password' ||
+                    error.code == 'invalid-credential'
+                ? (strings['wrong_password'] ?? 'Incorrect password.')
+                : (error.message ?? error.code),
+          );
+        }
+
+        await _linkPendingFederatedProvider(user);
       }
 
       await AnalyticsService.logSignInSuccess(method: method);
@@ -832,7 +979,16 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
       return;
     }
 
-    await AuthService().signOut();
+    if (isNewAuthUser) {
+      try {
+        await user.delete();
+      } catch (error) {
+        debugPrint('Could not remove incomplete federated user: $error');
+        await AuthService().signOut();
+      }
+    } else {
+      await AuthService().signOut();
+    }
     if (mounted) {
       setState(() {
         _loading = false;
@@ -1679,16 +1835,22 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
           ),
         ),
         const SizedBox(height: 8),
-        Align(
-          alignment: AlignmentDirectional.centerEnd,
-          child: TextButton(
-            onPressed: _loading ? null : _openForgotPasswordPage,
-            style: TextButton.styleFrom(
-              foregroundColor: const Color(0xFF1976D2),
-              textStyle: const TextStyle(fontWeight: FontWeight.w800),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            if (FederatedAuthService.isSupportedPlatform)
+              _buildFederatedCircleButton()
+            else
+              const SizedBox(width: 48),
+            TextButton(
+              onPressed: _loading ? null : _openForgotPasswordPage,
+              style: TextButton.styleFrom(
+                foregroundColor: const Color(0xFF1976D2),
+                textStyle: const TextStyle(fontWeight: FontWeight.w800),
+              ),
+              child: Text(strings['forgot_password'] ?? 'Forgot password?'),
             ),
-            child: Text(strings['forgot_password'] ?? 'Forgot password?'),
-          ),
+          ],
         ),
         const SizedBox(height: 24),
         _buildPrimaryButton(
@@ -1697,6 +1859,50 @@ class _SignInPageState extends State<SignInPage> with TickerProviderStateMixin {
           onPressed: _loading ? null : _sendCode,
         ),
       ],
+    );
+  }
+
+  Widget _buildFederatedCircleButton() {
+    final label = _federatedButtonLabel();
+    return Semantics(
+      button: true,
+      label: label,
+      child: Tooltip(
+        message: label,
+        child: SizedBox.square(
+          dimension: 48,
+          child: Material(
+            color: Colors.white,
+            elevation: 3,
+            shadowColor: const Color(0xFF1976D2).withValues(alpha: 0.22),
+            shape: const CircleBorder(
+              side: BorderSide(color: Color(0xFFBFD7F2)),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: _loading ? null : _handleFederatedSignIn,
+              customBorder: const CircleBorder(),
+              child: Center(
+                child: _federatedLoading
+                    ? const SizedBox.square(
+                        dimension: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : FederatedAuthService.usesApple
+                    ? const Icon(Icons.apple, size: 25, color: Colors.black)
+                    : const Text(
+                        'G',
+                        style: TextStyle(
+                          color: Color(0xFF4285F4),
+                          fontSize: 22,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 

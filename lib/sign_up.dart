@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -14,8 +13,6 @@ import 'package:provider/provider.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:google_sign_in/google_sign_in.dart';
-import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:untitled1/services/language_provider.dart';
 import 'package:untitled1/services/analytics_service.dart';
 import 'package:untitled1/services/ai_description_service.dart';
@@ -25,6 +22,7 @@ import 'package:untitled1/map/location_picker.dart';
 import 'package:untitled1/pages/privacy_policy_page.dart';
 import 'package:untitled1/pages/terms_of_service_page.dart';
 import 'package:untitled1/services/subscription_access_service.dart';
+import 'package:untitled1/services/federated_auth_service.dart';
 import 'package:untitled1/utils/profession_localization.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'main.dart';
@@ -74,7 +72,6 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
   final _altPhoneController = TextEditingController();
   final _descriptionController = TextEditingController();
   final ValueNotifier<bool> _smsVerificationLoading = ValueNotifier(false);
-  Future<void>? _googleSignInInitialization;
   final FirebaseFunctions _functions = FirebaseFunctions.instanceFor(
     region: 'me-west1',
   );
@@ -89,6 +86,7 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
 
   bool _loading = false;
   bool _isSelectingEmail = false;
+  AuthCredential? _pendingFederatedCredential;
   bool _autoCompletingFromPaidWorker = false;
   bool _professionSelectorOpen = false;
   bool _agreedToPolicy = false;
@@ -1901,10 +1899,7 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
     }
   }
 
-  bool get _usesPlatformEmailPicker =>
-      !kIsWeb &&
-      (defaultTargetPlatform == TargetPlatform.android ||
-          defaultTargetPlatform == TargetPlatform.iOS);
+  bool get _usesPlatformEmailPicker => FederatedAuthService.isSupportedPlatform;
 
   String _emailSelectionFailedMessage() {
     final localeCode = Provider.of<LanguageProvider>(
@@ -1944,23 +1939,6 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
     }
   }
 
-  String? _emailFromAppleIdentityToken(String? identityToken) {
-    if (identityToken == null || identityToken.isEmpty) return null;
-    try {
-      final parts = identityToken.split('.');
-      if (parts.length != 3) return null;
-      final payload = jsonDecode(
-        utf8.decode(base64Url.decode(base64Url.normalize(parts[1]))),
-      );
-      if (payload is! Map<String, dynamic>) return null;
-      final email = payload['email'];
-      return email is String && email.trim().isNotEmpty ? email.trim() : null;
-    } catch (error) {
-      debugPrint('Could not read email from Apple identity token: $error');
-      return null;
-    }
-  }
-
   Future<void> _selectEmailForCurrentPlatform() async {
     if (_isSelectingEmail || !_usesPlatformEmailPicker) return;
 
@@ -1968,57 +1946,24 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
     setState(() => _isSelectingEmail = true);
 
     try {
-      String? selectedEmail;
-
-      if (defaultTargetPlatform == TargetPlatform.android) {
-        final googleSignIn = GoogleSignIn.instance;
-        _googleSignInInitialization ??= googleSignIn.initialize();
-        await _googleSignInInitialization;
-        final account = await googleSignIn.authenticate();
-        selectedEmail = account.email;
-        await googleSignIn.signOut();
-      } else if (defaultTargetPlatform == TargetPlatform.iOS) {
-        final credential = await SignInWithApple.getAppleIDCredential(
-          scopes: const [AppleIDAuthorizationScopes.email],
-        );
-        selectedEmail =
-            credential.email ??
-            _emailFromAppleIdentityToken(credential.identityToken);
-        if (selectedEmail == null || selectedEmail.trim().isEmpty) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(_appleEmailUnavailableMessage())),
-            );
-          }
-          return;
-        }
-      }
-
-      if (!mounted || selectedEmail == null || selectedEmail.trim().isEmpty) {
-        return;
-      }
-      _emailController.text = selectedEmail.trim().toLowerCase();
+      final selection = await FederatedAuthService.requestCredential();
+      if (!mounted) return;
+      _pendingFederatedCredential = selection.credential;
+      _emailController.text = selection.email.trim().toLowerCase();
       _formKey.currentState?.validate();
-    } on GoogleSignInException catch (error) {
-      if (error.code != GoogleSignInExceptionCode.canceled && mounted) {
-        debugPrint('Google email selection failed: $error');
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(_emailSelectionFailedMessage())));
-      }
-    } on SignInWithAppleAuthorizationException catch (error) {
-      if (error.code != AuthorizationErrorCode.canceled && mounted) {
-        debugPrint('Apple email selection failed: $error');
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(_emailSelectionFailedMessage())));
-      }
     } catch (error) {
+      if (FederatedAuthService.isCancellation(error)) return;
       debugPrint('Platform email selection failed: $error');
       if (mounted) {
+        final message =
+            FederatedAuthService.usesApple &&
+                error is StateError &&
+                error.message.toString().contains('email')
+            ? _appleEmailUnavailableMessage()
+            : _emailSelectionFailedMessage();
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text(_emailSelectionFailedMessage())));
+        ).showSnackBar(SnackBar(content: Text(message)));
       }
     } finally {
       if (mounted) setState(() => _isSelectingEmail = false);
@@ -2410,6 +2355,29 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
     }
   }
 
+  Future<bool> _linkSelectedFederatedProviderToCurrentUser() async {
+    final credential = _pendingFederatedCredential;
+    if (credential == null) return true;
+
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return false;
+
+    try {
+      await user.linkWithCredential(credential);
+      return true;
+    } on FirebaseAuthException catch (error) {
+      if (error.code == 'provider-already-linked') return true;
+      debugPrint('Could not link federated provider during signup: $error');
+      if (mounted) {
+        setState(() => _loading = false);
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_emailSelectionFailedMessage())));
+      }
+      return false;
+    }
+  }
+
   Future<void> _discardNewPhoneAuthUser() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
@@ -2448,6 +2416,14 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
 
     final linkedPassword = await _linkEmailPasswordToCurrentUser();
     if (!linkedPassword) {
+      if (mounted) _smsVerificationLoading.value = false;
+      if (isNewPhoneUser) await _discardNewPhoneAuthUser();
+      return;
+    }
+
+    final linkedFederatedProvider =
+        await _linkSelectedFederatedProviderToCurrentUser();
+    if (!linkedFederatedProvider) {
       if (mounted) _smsVerificationLoading.value = false;
       if (isNewPhoneUser) await _discardNewPhoneAuthUser();
       return;
