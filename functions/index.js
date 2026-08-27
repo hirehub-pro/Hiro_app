@@ -191,6 +191,58 @@ exports.phoneAccountExists = onCall(
     },
 );
 
+exports.checkSignUpIdentifiersAvailable = onCall(
+    {region: "me-west1"},
+    async (request) => {
+      const email = normalizeString(request.data?.email)
+          .trim()
+          .toLowerCase();
+      const phone = normalizeString(request.data?.phone).trim();
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) ||
+          email.length > 254) {
+        throw new HttpsError(
+            "invalid-argument",
+            "A valid email address is required.",
+        );
+      }
+      if (!/^\+9725\d{8}$/.test(phone)) {
+        throw new HttpsError(
+            "invalid-argument",
+            "A valid Israeli mobile phone number is required.",
+        );
+      }
+
+      const identifierExists = async (lookup) => {
+        try {
+          await lookup();
+          return true;
+        } catch (error) {
+          if (error?.code === "auth/user-not-found") return false;
+          throw error;
+        }
+      };
+
+      try {
+        const [emailExists, phoneExists] = await Promise.all([
+          identifierExists(() => admin.auth().getUserByEmail(email)),
+          identifierExists(() => admin.auth().getUserByPhoneNumber(phone)),
+        ]);
+        return {
+          emailAvailable: !emailExists,
+          phoneAvailable: !phoneExists,
+        };
+      } catch (error) {
+        logger.error("Could not check sign-up identifier availability", {
+          code: error?.code,
+        });
+        throw new HttpsError(
+            "internal",
+            "Could not check whether the email and phone are available.",
+        );
+      }
+    },
+);
+
 const TAX_AUTH_SANDBOX_AUTH_URL =
   "https://openapi.taxes.gov.il/shaam/tsandbox/longtimetoken/oauth2/authorize";
 const TAX_AUTH_SANDBOX_TOKEN_URL =
@@ -4207,6 +4259,82 @@ exports.syncPublicWorkerProfile = onDocumentWritten(
         ...publicProfile,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
+    },
+);
+
+exports.upgradeCurrentUserToWorker = onCall(
+    {region: "me-west1"},
+    async (request) => {
+      const userId = request.auth?.uid;
+      if (!userId) {
+        throw new HttpsError("unauthenticated", "Sign in is required.");
+      }
+
+      const db = admin.firestore();
+      const userRef = db.collection("users").doc(userId);
+      const publicProfileRef = db
+          .collection(PUBLIC_WORKER_PROFILE_COLLECTION)
+          .doc(userId);
+      const statsRef = db.collection("metadata").doc("stats");
+
+      await db.runTransaction(async (transaction) => {
+        const [userSnap, publicProfileSnap] = await Promise.all([
+          transaction.get(userRef),
+          transaction.get(publicProfileRef),
+        ]);
+        if (!userSnap.exists) {
+          throw new HttpsError("not-found", "The user account was not found.");
+        }
+
+        const accountData = userSnap.data() || {};
+        const currentRole = normalizeString(accountData.role || "customer")
+            .trim()
+            .toLowerCase();
+        if (!new Set(["customer", "worker"]).has(currentRole)) {
+          throw new HttpsError(
+              "failed-precondition",
+              "This account cannot be upgraded to a worker.",
+          );
+        }
+
+        const existingPublicData = publicProfileSnap.data() || {};
+        const profileSource = {
+          ...accountData,
+          ...existingPublicData,
+          role: "worker",
+          name: normalizeString(
+              existingPublicData.name ||
+              accountData.name ||
+              request.auth.token?.name ||
+              "Worker",
+          ).trim().slice(0, 100),
+          email: normalizeString(
+              existingPublicData.email ||
+              accountData.email ||
+              request.auth.token?.email,
+          ).trim().slice(0, 254),
+        };
+        const publicProfile = buildPublicWorkerProfile(
+            userId,
+            profileSource,
+        );
+
+        transaction.set(userRef, {role: "worker"}, {merge: true});
+        transaction.set(publicProfileRef, {
+          ...publicProfile,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, {merge: true});
+
+        if (currentRole === "customer") {
+          transaction.set(statsRef, {
+            totalCustomers: admin.firestore.FieldValue.increment(-1),
+            totalWorkers: admin.firestore.FieldValue.increment(1),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          }, {merge: true});
+        }
+      });
+
+      return {role: "worker", profileCreated: true};
     },
 );
 

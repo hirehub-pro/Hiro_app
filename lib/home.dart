@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:untitled1/ptofile.dart';
 import 'package:untitled1/pages/admin_profile.dart';
@@ -45,6 +46,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   static const Color _kTextMuted = Color(0xFF6B7280);
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseFunctions _functions = FirebaseFunctions.instanceFor(
+    region: 'me-west1',
+  );
   StreamSubscription? _popupSubscription;
   late final Stream<QuerySnapshot<Map<String, dynamic>>> _announcementsStream;
   AnimationController? _backgroundController;
@@ -75,6 +79,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   DateTime? _subscriptionExpiresAt;
   bool _isVip = false;
   bool _isBusinessVerified = false;
+  bool _isUpgradingToWorker = false;
 
   bool get _isGuest {
     final user = FirebaseAuth.instance.currentUser;
@@ -1241,6 +1246,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               'יצירת חשבוניות עם מספר הקצאה והצעות מחיר מקצועיות',
           'upgrade_note': 'לאחר השדרוג נעזור לך להשלים את הפרופיל המקצועי.',
           'upgrade_confirm': 'כן, שדרג את החשבון',
+          'upgrade_loading': 'יוצר את חשבון בעל המקצוע שלך…',
+          'upgrade_success': 'חשבון בעל המקצוע נוצר. השלם עכשיו את הפרופיל.',
+          'upgrade_failed': 'לא הצלחנו לשדרג את החשבון. נסה שוב.',
           'confirm': 'אשר',
           'cancel': 'ביטול',
           'subscribe_cta_title': 'הפעלת מנוי Pro',
@@ -1512,6 +1520,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               'إنشاء فواتير مع رقم تخصيص وعروض أسعار احترافية',
           'upgrade_note': 'بعد الترقية سنساعدك على إكمال ملفك المهني.',
           'upgrade_confirm': 'نعم، قم بترقية الحساب',
+          'upgrade_loading': 'جارٍ إنشاء حساب العامل الخاص بك…',
+          'upgrade_success': 'تم إنشاء حساب العامل. أكمل ملفك الآن.',
+          'upgrade_failed': 'تعذرت ترقية الحساب. حاول مرة أخرى.',
           'confirm': 'تأكيد',
           'cancel': 'إلغاء',
           'subscribe_cta_title': 'تفعيل اشتراك Pro',
@@ -1800,6 +1811,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           'upgrade_note':
               'After upgrading, we will help you complete your professional profile.',
           'upgrade_confirm': 'Yes, upgrade my account',
+          'upgrade_loading': 'Creating your worker account…',
+          'upgrade_success':
+              'Your worker account is ready. Complete your profile now.',
+          'upgrade_failed': 'Could not upgrade your account. Please try again.',
           'confirm': 'Confirm',
           'cancel': 'Cancel',
           'subscribe_cta_title': 'Activate Pro Subscription',
@@ -2085,35 +2100,43 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
     if (confirmed != true) return;
 
+    setState(() => _isUpgradingToWorker = true);
     try {
-      final userRef = _firestore.collection('users').doc(user.uid);
-      final statsRef = _firestore.collection('metadata').doc('stats');
-
-      await _firestore.runTransaction((tx) async {
-        final userSnap = await tx.get(userRef);
-        final currentRole = (userSnap.data()?['role'] ?? 'customer')
-            .toString()
-            .toLowerCase();
-
-        tx.set(userRef, {'role': 'worker'}, SetOptions(merge: true));
-
-        final statsUpdates = <String, dynamic>{};
-        if (currentRole == 'customer') {
-          statsUpdates['totalCustomers'] = FieldValue.increment(-1);
-          statsUpdates['totalWorkers'] = FieldValue.increment(1);
-        } else if (currentRole != 'worker') {
-          statsUpdates['totalWorkers'] = FieldValue.increment(1);
-        }
-
-        if (statsUpdates.isNotEmpty) {
-          statsUpdates['updatedAt'] = FieldValue.serverTimestamp();
-          tx.set(statsRef, statsUpdates, SetOptions(merge: true));
-        }
-      });
+      await _functions.httpsCallable('upgradeCurrentUserToWorker').call();
 
       await _fetchCurrentUserName();
+      if (!mounted) return;
+      setState(() => _isUpgradingToWorker = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            strings['upgrade_success'] ??
+                'Your worker account is ready. Complete your profile now.',
+          ),
+          backgroundColor: const Color(0xFF15803D),
+        ),
+      );
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => Profile(userId: user.uid, beginWorkerSetup: true),
+        ),
+      );
+      if (mounted) await _fetchCurrentUserName();
     } catch (e) {
       debugPrint("Upgrade error: $e");
+      if (mounted) {
+        setState(() => _isUpgradingToWorker = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              strings['upgrade_failed'] ??
+                  'Could not upgrade your account. Please try again.',
+            ),
+            backgroundColor: const Color(0xFFB91C1C),
+          ),
+        );
+      }
     }
   }
 
@@ -2381,6 +2404,42 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                   ],
                 ),
               ),
+              if (_isUpgradingToWorker) ...[
+                const Positioned.fill(
+                  child: ModalBarrier(
+                    dismissible: false,
+                    color: Color(0x660F172A),
+                  ),
+                ),
+                Positioned.fill(
+                  child: Center(
+                    child: Card(
+                      margin: const EdgeInsets.symmetric(horizontal: 32),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 28,
+                          vertical: 24,
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const CircularProgressIndicator(),
+                            const SizedBox(height: 16),
+                            Text(
+                              localized['upgrade_loading'] ??
+                                  'Creating your worker account…',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
         ),

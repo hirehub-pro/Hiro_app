@@ -44,11 +44,13 @@ class Profile extends StatefulWidget {
   final String? userId;
   final String? viewedProfession;
   final String? viewedProfessionBookingMode;
+  final bool beginWorkerSetup;
   const Profile({
     super.key,
     this.userId,
     this.viewedProfession,
     this.viewedProfessionBookingMode,
+    this.beginWorkerSetup = false,
   });
 
   @override
@@ -140,6 +142,7 @@ class _ProfileState extends State<Profile>
   bool _isSavingBiography = false;
   bool _isEditingContactInformation = false;
   bool _isSavingContactInformation = false;
+  bool _didBeginWorkerSetup = false;
   List<String> _editedProfessions = [];
   List<String> _editedSpokenLanguages = [];
   double _workRadius = 15000;
@@ -646,6 +649,8 @@ class _ProfileState extends State<Profile>
           _initTabController();
         }
 
+        _beginWorkerSetupIfNeeded();
+
         // The primary profile is now ready to render. The remaining data is
         // useful, but should never delay the first meaningful paint.
         if (mounted) setState(() => _isLoading = false);
@@ -1057,6 +1062,22 @@ class _ProfileState extends State<Profile>
     });
   }
 
+  void _beginWorkerSetupIfNeeded() {
+    if (!widget.beginWorkerSetup ||
+        _didBeginWorkerSetup ||
+        !_isOwnProfile ||
+        _userRole != 'worker') {
+      return;
+    }
+
+    _didBeginWorkerSetup = true;
+    final aboutIndex = _shouldShowPublicScheduleSection ? 3 : 2;
+    if (_tabController != null && aboutIndex < _tabController!.length) {
+      _tabController!.index = aboutIndex;
+    }
+    _startEditingContactInformation();
+  }
+
   void _cancelEditingContactInformation() {
     setState(() => _isEditingContactInformation = false);
   }
@@ -1112,6 +1133,12 @@ class _ProfileState extends State<Profile>
         _spokenLanguages = List<String>.from(_editedSpokenLanguages);
         _isEditingContactInformation = false;
       });
+      if (widget.beginWorkerSetup && mounted) {
+        await Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => SubscriptionPage(email: _email)),
+        );
+      }
     } catch (error) {
       debugPrint('Failed to save contact information: $error');
       if (mounted) {

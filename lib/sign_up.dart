@@ -6,6 +6,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
@@ -69,6 +70,10 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
   final _confirmPasswordController = TextEditingController();
   final _altPhoneController = TextEditingController();
   final _descriptionController = TextEditingController();
+  final ValueNotifier<bool> _smsVerificationLoading = ValueNotifier(false);
+  final FirebaseFunctions _functions = FirebaseFunctions.instanceFor(
+    region: 'me-west1',
+  );
 
   late SignUpStep _currentStep;
   late UserType _userType;
@@ -1299,6 +1304,7 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
     _confirmPasswordController.dispose();
     _altPhoneController.dispose();
     _descriptionController.dispose();
+    _smsVerificationLoading.dispose();
     super.dispose();
   }
 
@@ -1317,6 +1323,7 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
           'profile_card_subtitle': 'כמה פרטים קצרים לפני אימות הטלפון.',
           'phone_card_title': 'אימות טלפון',
           'phone_card_subtitle': 'הכניסו את הקוד שקיבלתם ב-SMS כדי לסיים.',
+          'verifying_phone': 'מאמת את מספר הטלפון ומשלים את ההרשמה…',
           'feature_profile_title': 'פרופיל ברור',
           'feature_profile_body': 'פרטים בסיסיים שמכינים את החשבון.',
           'feature_phone_title': 'אימות מהיר',
@@ -1418,6 +1425,7 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
           'profile_card_subtitle': 'بضع تفاصيل سريعة قبل التحقق من الهاتف.',
           'phone_card_title': 'التحقق عبر الهاتف',
           'phone_card_subtitle': 'أدخل رمز SMS لإكمال إنشاء الحساب.',
+          'verifying_phone': 'جارٍ التحقق من رقم الهاتف وإكمال التسجيل…',
           'feature_profile_title': 'ملف واضح',
           'feature_profile_body': 'تفاصيل أساسية تجهز حسابك.',
           'feature_phone_title': 'تحقق سريع',
@@ -1523,6 +1531,8 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
           'phone_card_title': 'Проверка телефона',
           'phone_card_subtitle':
               'Введите SMS-код, чтобы завершить создание аккаунта.',
+          'verifying_phone':
+              'Проверяем номер телефона и завершаем регистрацию…',
           'feature_profile_title': 'Понятный профиль',
           'feature_profile_body': 'Базовые данные, подготавливающие аккаунт.',
           'feature_phone_title': 'Быстрая проверка',
@@ -1630,6 +1640,7 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
           'profile_card_subtitle': 'የስልክ ማረጋገጫ በፊት ጥቂት ፈጣን ዝርዝሮች።',
           'phone_card_title': 'የስልክ ማረጋገጫ',
           'phone_card_subtitle': 'መለያዎን ለማጠናቀቅ የSMS ኮድ ያስገቡ።',
+          'verifying_phone': 'ስልክ ቁጥሩን በማረጋገጥ ምዝገባውን በማጠናቀቅ ላይ…',
           'feature_profile_title': 'ግልጽ መገለጫ',
           'feature_profile_body': 'መለያዎን የሚያዘጋጁ መሠረታዊ ዝርዝሮች።',
           'feature_phone_title': 'ፈጣን ማረጋገጫ',
@@ -1730,6 +1741,8 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
           'phone_card_title': 'Phone Verification',
           'phone_card_subtitle':
               'Enter the SMS code to finish creating your account.',
+          'verifying_phone':
+              'Verifying your phone number and completing signup…',
           'feature_profile_title': 'Clear profile',
           'feature_profile_body': 'Basic details that prepare your account.',
           'feature_phone_title': 'Fast verification',
@@ -1864,6 +1877,51 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
     }
   }
 
+  String _emailAlreadyExistsMessage() {
+    final localeCode = Provider.of<LanguageProvider>(
+      context,
+      listen: false,
+    ).locale.languageCode;
+    switch (localeCode) {
+      case 'he':
+        return 'כתובת האימייל הזו כבר רשומה במערכת.';
+      case 'ar':
+        return 'عنوان البريد الإلكتروني هذا مسجل بالفعل في النظام.';
+      case 'ru':
+        return 'Этот адрес электронной почты уже зарегистрирован.';
+      case 'am':
+        return 'ይህ የኢሜይል አድራሻ አስቀድሞ ተመዝግቧል።';
+      default:
+        return 'This email address is already registered.';
+    }
+  }
+
+  Future<bool> _checkSignUpIdentifiersAvailable({
+    required String email,
+    required String phone,
+  }) async {
+    final result = await _functions
+        .httpsCallable('checkSignUpIdentifiersAvailable')
+        .call<Map<String, dynamic>>({'email': email, 'phone': phone});
+    final emailAvailable = result.data['emailAvailable'] == true;
+    final phoneAvailable = result.data['phoneAvailable'] == true;
+
+    if (!mounted) return false;
+    if (!emailAvailable) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_emailAlreadyExistsMessage())));
+      return false;
+    }
+    if (!phoneAvailable) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_phoneAlreadyExistsMessage())));
+      return false;
+    }
+    return true;
+  }
+
   Future<void> _handleSendCode() async {
     final strings = _getLocalizedStrings(context);
     String input = _phoneController.text.trim();
@@ -1881,12 +1939,26 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
 
     setState(() => _loading = true);
     try {
+      final identifiersAvailable = await _checkSignUpIdentifiersAvailable(
+        email: _emailController.text.trim().toLowerCase(),
+        phone: phone,
+      );
+      if (!identifiersAvailable) {
+        if (mounted) setState(() => _loading = false);
+        return;
+      }
+
       await FirebaseAuth.instance.verifyPhoneNumber(
         phoneNumber: phone,
         forceResendingToken: _resendToken,
         verificationCompleted: (PhoneAuthCredential credential) async {
-          await FirebaseAuth.instance.signInWithCredential(credential);
-          await _onPhoneVerifiedAndSignedIn();
+          if (mounted) _smsVerificationLoading.value = true;
+          final result = await FirebaseAuth.instance.signInWithCredential(
+            credential,
+          );
+          await _onPhoneVerifiedAndSignedIn(
+            isNewPhoneUser: result.additionalUserInfo?.isNewUser == true,
+          );
         },
         verificationFailed: (e) {
           if (mounted) {
@@ -1914,9 +1986,6 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
               }
             });
           }
-          AnalyticsService.logSignUpCodeRequested(
-            userType: _userType == UserType.worker ? 'worker' : 'customer',
-          );
         },
         codeAutoRetrievalTimeout: (verificationId) {
           _verificationId = verificationId;
@@ -1967,118 +2036,144 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
                   ),
                 ],
               ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 68,
-                    height: 68,
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [Color(0xFF1E88E5), Color(0xFF0D47A1)],
+              child: ValueListenableBuilder<bool>(
+                valueListenable: _smsVerificationLoading,
+                builder: (context, isVerifying, _) => Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 68,
+                      height: 68,
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [Color(0xFF1E88E5), Color(0xFF0D47A1)],
+                        ),
+                        borderRadius: BorderRadius.circular(22),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(
+                              0xFF1976D2,
+                            ).withValues(alpha: 0.25),
+                            blurRadius: 24,
+                            offset: const Offset(0, 14),
+                          ),
+                        ],
                       ),
-                      borderRadius: BorderRadius.circular(22),
-                      boxShadow: [
-                        BoxShadow(
-                          color: const Color(
-                            0xFF1976D2,
-                          ).withValues(alpha: 0.25),
-                          blurRadius: 24,
-                          offset: const Offset(0, 14),
+                      child: const Icon(
+                        Icons.sms_outlined,
+                        color: Colors.white,
+                        size: 32,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    Text(
+                      strings['phone_card_title']!,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Color(0xFF070B18),
+                        fontSize: 27,
+                        fontWeight: FontWeight.w800,
+                        height: 1.05,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      strings['phone_card_subtitle']!,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Color(0xFF6B7280),
+                        fontSize: 15,
+                        height: 1.4,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _normalizePhone(_phoneController.text.trim()),
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Color(0xFF1976D2),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    _buildStyledTextField(
+                      controller: _codeController,
+                      labelText: strings['enter_code']!,
+                      icon: Icons.lock_outline_rounded,
+                      required: true,
+                      keyboardType: TextInputType.number,
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 24),
+                    if (isVerifying) ...[
+                      const CircularProgressIndicator(
+                        color: Color(0xFF1976D2),
+                        strokeWidth: 3,
+                      ),
+                      const SizedBox(height: 14),
+                      Text(
+                        strings['verifying_phone'] ??
+                            'Verifying your phone number and completing signup…',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Color(0xFF374151),
+                          fontSize: 14,
+                          height: 1.4,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                    ],
+                    _buildPrimaryButton(
+                      label: strings['verify_code']!,
+                      icon: Icons.verified_rounded,
+                      onPressed: (_loading || isVerifying)
+                          ? null
+                          : _handleVerifyCode,
+                    ),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      alignment: WrapAlignment.center,
+                      spacing: 6,
+                      children: [
+                        TextButton(
+                          onPressed: (_loading || isVerifying)
+                              ? null
+                              : _handleSendCode,
+                          child: Text(
+                            strings['resend_code']!,
+                            style: const TextStyle(
+                              color: Color(0xFF1976D2),
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: (_loading || isVerifying)
+                              ? null
+                              : () {
+                                  setState(() {
+                                    _codeSent = false;
+                                    _verificationId = '';
+                                    _codeController.clear();
+                                  });
+                                  Navigator.of(dialogContext).pop();
+                                },
+                          child: Text(
+                            strings['edit_phone']!,
+                            style: const TextStyle(
+                              color: Color(0xFF1976D2),
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
                         ),
                       ],
                     ),
-                    child: const Icon(
-                      Icons.sms_outlined,
-                      color: Colors.white,
-                      size: 32,
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  Text(
-                    strings['phone_card_title']!,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: Color(0xFF070B18),
-                      fontSize: 27,
-                      fontWeight: FontWeight.w800,
-                      height: 1.05,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    strings['phone_card_subtitle']!,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: Color(0xFF6B7280),
-                      fontSize: 15,
-                      height: 1.4,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    _normalizePhone(_phoneController.text.trim()),
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: Color(0xFF1976D2),
-                      fontSize: 14,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  _buildStyledTextField(
-                    controller: _codeController,
-                    labelText: strings['enter_code']!,
-                    icon: Icons.lock_outline_rounded,
-                    required: true,
-                    keyboardType: TextInputType.number,
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 24),
-                  _buildPrimaryButton(
-                    label: strings['verify_code']!,
-                    icon: Icons.verified_rounded,
-                    onPressed: _loading ? null : _handleVerifyCode,
-                  ),
-                  const SizedBox(height: 10),
-                  Wrap(
-                    alignment: WrapAlignment.center,
-                    spacing: 6,
-                    children: [
-                      TextButton(
-                        onPressed: _loading ? null : _handleSendCode,
-                        child: Text(
-                          strings['resend_code']!,
-                          style: const TextStyle(
-                            color: Color(0xFF1976D2),
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ),
-                      TextButton(
-                        onPressed: _loading
-                            ? null
-                            : () {
-                                setState(() {
-                                  _codeSent = false;
-                                  _verificationId = '';
-                                  _codeController.clear();
-                                });
-                                Navigator.of(dialogContext).pop();
-                              },
-                        child: Text(
-                          strings['edit_phone']!,
-                          style: const TextStyle(
-                            color: Color(0xFF1976D2),
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -2098,15 +2193,21 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
     if (_codeController.text.trim().isEmpty) return;
 
     setState(() => _loading = true);
+    _smsVerificationLoading.value = true;
     try {
       final credential = PhoneAuthProvider.credential(
         verificationId: _verificationId,
         smsCode: _codeController.text.trim(),
       );
-      await FirebaseAuth.instance.signInWithCredential(credential);
-      await _onPhoneVerifiedAndSignedIn();
+      final result = await FirebaseAuth.instance.signInWithCredential(
+        credential,
+      );
+      await _onPhoneVerifiedAndSignedIn(
+        isNewPhoneUser: result.additionalUserInfo?.isNewUser == true,
+      );
     } catch (e) {
       if (mounted) {
+        _smsVerificationLoading.value = false;
         setState(() => _loading = false);
         ScaffoldMessenger.of(
           context,
@@ -2180,7 +2281,20 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
     }
   }
 
-  Future<void> _onPhoneVerifiedAndSignedIn() async {
+  Future<void> _discardNewPhoneAuthUser() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    try {
+      await user.delete();
+    } catch (error) {
+      debugPrint('Could not remove incomplete phone Auth user: $error');
+      await FirebaseAuth.instance.signOut();
+    }
+  }
+
+  Future<void> _onPhoneVerifiedAndSignedIn({
+    required bool isNewPhoneUser,
+  }) async {
     final phoneUser = FirebaseAuth.instance.currentUser;
     if (phoneUser == null) return;
 
@@ -2192,6 +2306,7 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
         .doc(phoneUser.uid)
         .get();
     if (existingProfile.exists && widget.pendingWorkerData == null) {
+      _smsVerificationLoading.value = false;
       await FirebaseAuth.instance.signOut();
       if (mounted) {
         setState(() => _loading = false);
@@ -2203,7 +2318,11 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
     }
 
     final linkedPassword = await _linkEmailPasswordToCurrentUser();
-    if (!linkedPassword) return;
+    if (!linkedPassword) {
+      if (mounted) _smsVerificationLoading.value = false;
+      if (isNewPhoneUser) await _discardNewPhoneAuthUser();
+      return;
+    }
 
     if (_userType == UserType.worker &&
         !SubscriptionAccessService.isEntitledSubscriptionStatus(
@@ -2214,13 +2333,17 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
       final profileCreated = await _commitUserDataToDatabase(
         navigateToHome: false,
       );
-      if (!profileCreated) return;
+      if (!profileCreated) {
+        if (mounted) _smsVerificationLoading.value = false;
+        return;
+      }
       final workerPendingData = _buildWorkerPendingDataWithPhone();
       if (mounted) {
         setState(() {
           _loading = false;
           _codeSent = false;
         });
+        _smsVerificationLoading.value = false;
         Navigator.push(
           context,
           MaterialPageRoute(
@@ -2236,7 +2359,10 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
       return;
     }
 
-    await _commitUserDataToDatabase();
+    final profileCreated = await _commitUserDataToDatabase();
+    if (!profileCreated && mounted) {
+      _smsVerificationLoading.value = false;
+    }
   }
 
   Future<void> _getCurrentLocation() async {
