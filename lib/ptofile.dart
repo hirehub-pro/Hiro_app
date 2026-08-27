@@ -7,6 +7,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -30,10 +31,13 @@ import 'package:untitled1/pages/post_details_page.dart';
 import 'package:untitled1/pages/location_manager_page.dart';
 import 'package:untitled1/pages/subscription.dart';
 import 'package:untitled1/pages/edit_profile.dart';
+import 'package:untitled1/pages/fullscreen_media_viewer.dart';
 import 'package:untitled1/pages/liked_pros_page.dart';
+import 'package:untitled1/map/map_radius_picker.dart';
 import 'package:untitled1/services/location_context_service.dart';
 import 'package:untitled1/services/subscription_access_service.dart';
 import 'package:untitled1/utils/booking_mode.dart';
+import 'package:untitled1/utils/profession_localization.dart';
 import 'package:untitled1/utils/video_cache_manager.dart';
 import 'package:untitled1/widgets/skeleton.dart';
 
@@ -124,6 +128,27 @@ class _ProfileState extends State<Profile>
   bool _isTaxAuthorityConnectionLoading = false;
   bool _isTaxAuthorityAuthorizationLoading = false;
   String? _taxAuthorityConnectionReason;
+  bool _isProfileImageUpdating = false;
+  final TextEditingController _biographyEditController =
+      TextEditingController();
+  final TextEditingController _nameEditController = TextEditingController();
+  final TextEditingController _phoneEditController = TextEditingController();
+  final TextEditingController _alternatePhoneEditController =
+      TextEditingController();
+  final TextEditingController _emailEditController = TextEditingController();
+  final TextEditingController _townEditController = TextEditingController();
+  bool _isEditingBiography = false;
+  bool _isSavingBiography = false;
+  bool _isEditingContactInformation = false;
+  bool _isSavingContactInformation = false;
+  List<String> _editedProfessions = [];
+  List<String> _editedSpokenLanguages = [];
+  double _workRadius = 15000;
+  double _editedWorkRadius = 15000;
+  double _editedSavedWorkRadius = 15000;
+  bool _editedDisableWorkRadius = false;
+  double? _editedProLat;
+  double? _editedProLng;
 
   String _distanceStr = "";
   double? _proLat;
@@ -230,7 +255,9 @@ class _ProfileState extends State<Profile>
   String _translateProfessionName(String profession, String localeCode) {
     final key = profession.trim().toLowerCase();
     final localized = _professionTranslations[key];
-    if (localized == null) return profession;
+    if (localized == null) {
+      return ProfessionLocalization.toLocalized(profession, localeCode);
+    }
 
     final translated = localized[localeCode]?.trim();
     if (translated != null && translated.isNotEmpty) {
@@ -612,6 +639,7 @@ class _ProfileState extends State<Profile>
               data['isBusinessVerified'] ?? data['isVerified'] ?? false;
           _proLat = data['lat']?.toDouble();
           _proLng = data['lng']?.toDouble();
+          _workRadius = (data['workRadius'] as num?)?.toDouble() ?? 15000;
         });
 
         if (oldRole != _userRole ||
@@ -855,6 +883,785 @@ class _ProfileState extends State<Profile>
     if (changed == true && !_isOwnProfile) {
       await _calculateDistance();
     }
+  }
+
+  void _openProfileImage() {
+    if (_profileImageUrl.isEmpty) return;
+
+    Navigator.push<void>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => FullscreenMediaViewer(urls: [_profileImageUrl]),
+      ),
+    );
+  }
+
+  Future<void> _editProfileImage() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null ||
+        user.isAnonymous ||
+        !_isOwnProfile ||
+        _isProfileImageUpdating) {
+      return;
+    }
+
+    final picked = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 70,
+    );
+    if (picked == null || !mounted) return;
+
+    setState(() => _isProfileImageUpdating = true);
+    try {
+      final storageRef = FirebaseStorage.instance.ref().child(
+        'profile_pictures/${user.uid}.jpg',
+      );
+      await storageRef.putFile(File(picked.path));
+      final downloadUrl = await storageRef.getDownloadURL();
+      final uri = Uri.parse(downloadUrl);
+      final cacheBustedUrl = uri
+          .replace(
+            queryParameters: {
+              ...uri.queryParameters,
+              'v': DateTime.now().millisecondsSinceEpoch.toString(),
+            },
+          )
+          .toString();
+      final collection = _userRole == 'worker'
+          ? 'publicWorkerProfiles'
+          : 'users';
+      await _firestore.collection(collection).doc(user.uid).set({
+        'profileImageUrl': cacheBustedUrl,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+      if (!mounted) return;
+      setState(() => _profileImageUrl = cacheBustedUrl);
+    } catch (error) {
+      debugPrint('Failed to update profile image: $error');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not update the profile image.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isProfileImageUpdating = false);
+    }
+  }
+
+  Future<void> _handleProfileImageTap(Map<String, String> strings) async {
+    if (!_isOwnProfile) {
+      _openProfileImage();
+      return;
+    }
+    if (_isProfileImageUpdating) return;
+
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_profileImageUrl.isNotEmpty)
+              ListTile(
+                leading: const Icon(Icons.open_in_full_rounded),
+                title: Text(strings['open_profile_image']!),
+                onTap: () => Navigator.pop(context, 'open'),
+              ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: Text(strings['edit_profile_image']!),
+              onTap: () => Navigator.pop(context, 'edit'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (!mounted) return;
+    if (choice == 'open') {
+      _openProfileImage();
+    } else if (choice == 'edit') {
+      await _editProfileImage();
+    }
+  }
+
+  void _startEditingBiography() {
+    _biographyEditController.text = _bio;
+    setState(() => _isEditingBiography = true);
+  }
+
+  void _cancelEditingBiography() {
+    _biographyEditController.text = _bio;
+    setState(() => _isEditingBiography = false);
+  }
+
+  Future<void> _saveBiography() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null ||
+        user.isAnonymous ||
+        !_isOwnProfile ||
+        _isSavingBiography) {
+      return;
+    }
+
+    setState(() => _isSavingBiography = true);
+    try {
+      final biography = _biographyEditController.text.trim();
+      final collection = _userRole == 'worker'
+          ? 'publicWorkerProfiles'
+          : 'users';
+      await _firestore.collection(collection).doc(user.uid).set({
+        'description': biography,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+      if (!mounted) return;
+      setState(() {
+        _bio = biography;
+        _isEditingBiography = false;
+      });
+    } catch (error) {
+      debugPrint('Failed to save biography: $error');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not save the biography.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSavingBiography = false);
+    }
+  }
+
+  void _startEditingContactInformation() {
+    _nameEditController.text = _userName;
+    _phoneEditController.text = _phoneNumber;
+    _alternatePhoneEditController.text = _altPhoneNumber;
+    _emailEditController.text = _email;
+    _townEditController.text = _town;
+    setState(() {
+      _editedProfessions = _userProfessions
+          .map((profession) {
+            return _professionTranslations[profession
+                    .trim()
+                    .toLowerCase()]?['en'] ??
+                profession;
+          })
+          .toSet()
+          .toList();
+      _editedSpokenLanguages = List<String>.from(_spokenLanguages);
+      _editedWorkRadius = _workRadius;
+      _editedSavedWorkRadius = _workRadius > 0 ? _workRadius : 15000;
+      _editedDisableWorkRadius = _workRadius <= 0;
+      _editedProLat = _proLat;
+      _editedProLng = _proLng;
+      _isEditingContactInformation = true;
+    });
+  }
+
+  void _cancelEditingContactInformation() {
+    setState(() => _isEditingContactInformation = false);
+  }
+
+  Future<void> _saveContactInformation() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null ||
+        user.isAnonymous ||
+        !_isOwnProfile ||
+        _isSavingContactInformation) {
+      return;
+    }
+
+    setState(() => _isSavingContactInformation = true);
+    try {
+      final name = _nameEditController.text.trim();
+      if (name.isEmpty) {
+        throw const FormatException('Name is required.');
+      }
+      if (_userRole == 'worker' && _editedProfessions.isEmpty) {
+        throw const FormatException('At least one profession is required.');
+      }
+      final alternatePhone = _alternatePhoneEditController.text.trim();
+      final town = _townEditController.text.trim();
+      final collection = _userRole == 'worker'
+          ? 'publicWorkerProfiles'
+          : 'users';
+      await _firestore.collection(collection).doc(user.uid).set({
+        'name': name,
+        'optionalPhone': alternatePhone,
+        'town': town,
+        if (_userRole == 'worker') 'professions': _editedProfessions,
+        if (_userRole == 'worker') 'workRadius': _editedWorkRadius,
+        if (_userRole == 'worker' && _editedProLat != null)
+          'lat': _editedProLat,
+        if (_userRole == 'worker' && _editedProLng != null)
+          'lng': _editedProLng,
+        'spokenLanguages': _editedSpokenLanguages,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+      await user.updateDisplayName(name);
+      if (!mounted) return;
+      setState(() {
+        _userName = name;
+        _altPhoneNumber = alternatePhone;
+        _town = town;
+        if (_userRole == 'worker') {
+          _userProfessions = List<String>.from(_editedProfessions);
+          _workRadius = _editedWorkRadius;
+          _proLat = _editedProLat;
+          _proLng = _editedProLng;
+        }
+        _spokenLanguages = List<String>.from(_editedSpokenLanguages);
+        _isEditingContactInformation = false;
+      });
+    } catch (error) {
+      debugPrint('Failed to save contact information: $error');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not save the contact information.'),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSavingContactInformation = false);
+    }
+  }
+
+  Future<void> _openInlineProfessionSelector(
+    Map<String, String> strings,
+  ) async {
+    final localeCode = Provider.of<LanguageProvider>(
+      context,
+      listen: false,
+    ).locale.languageCode;
+    final searchController = TextEditingController();
+    final draft = List<String>.from(_editedProfessions);
+    final professionOptions = _professionTranslations.isNotEmpty
+        ? _professionTranslations.values.toList()
+        : ProfessionLocalization.canonicalProfessions.map((profession) {
+            return <String, String>{
+              'en': profession,
+              localeCode: ProfessionLocalization.toLocalized(
+                profession,
+                localeCode,
+              ),
+            };
+          }).toList();
+
+    final result = await showModalBottomSheet<List<String>>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, setSheetState) {
+          final query = searchController.text.trim().toLowerCase();
+          final options =
+              professionOptions.where((item) {
+                if (query.isEmpty) return true;
+                return item.values.any(
+                  (value) => value.toLowerCase().contains(query),
+                );
+              }).toList()..sort((a, b) {
+                final aCanonical = a['en'] ?? '';
+                final bCanonical = b['en'] ?? '';
+                final aSelected = draft.contains(aCanonical);
+                final bSelected = draft.contains(bCanonical);
+                if (aSelected != bSelected) return aSelected ? -1 : 1;
+                final aLabel = (a[localeCode]?.trim().isNotEmpty == true)
+                    ? a[localeCode]!
+                    : aCanonical;
+                final bLabel = (b[localeCode]?.trim().isNotEmpty == true)
+                    ? b[localeCode]!
+                    : bCanonical;
+                return aLabel.toLowerCase().compareTo(bLabel.toLowerCase());
+              });
+
+          return SafeArea(
+            top: false,
+            child: Padding(
+              padding: EdgeInsets.only(
+                left: 12,
+                right: 12,
+                bottom: MediaQuery.viewInsetsOf(sheetContext).bottom + 12,
+              ),
+              child: Container(
+                height: MediaQuery.sizeOf(sheetContext).height * 0.78,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FBFF),
+                  borderRadius: BorderRadius.circular(28),
+                ),
+                child: Column(
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 4,
+                      margin: const EdgeInsets.only(top: 12, bottom: 18),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFCBD5E1),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.work_outline_rounded,
+                            color: _kPrimaryBlue,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              strings['professions_label']!,
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                          Text(
+                            '${draft.length}',
+                            style: const TextStyle(
+                              color: _kPrimaryBlue,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          TextButton(
+                            onPressed: () => Navigator.pop(sheetContext, draft),
+                            child: Text(strings['confirm']!),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                      child: TextField(
+                        controller: searchController,
+                        autofocus: true,
+                        onChanged: (_) => setSheetState(() {}),
+                        decoration: InputDecoration(
+                          hintText: strings['search_professions']!,
+                          prefixIcon: const Icon(Icons.search_rounded),
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: options.isEmpty
+                          ? Center(
+                              child: Text(strings['no_professions_found']!),
+                            )
+                          : ListView.separated(
+                              padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+                              itemCount: options.length,
+                              separatorBuilder: (_, _) =>
+                                  const SizedBox(height: 8),
+                              itemBuilder: (context, index) {
+                                final item = options[index];
+                                final canonical = item['en'] ?? '';
+                                final localized = item[localeCode]?.trim();
+                                final label = localized?.isNotEmpty == true
+                                    ? localized!
+                                    : canonical;
+                                final selected = draft.contains(canonical);
+                                return Material(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(18),
+                                  child: InkWell(
+                                    borderRadius: BorderRadius.circular(18),
+                                    onTap: () {
+                                      setSheetState(() {
+                                        if (selected) {
+                                          draft.remove(canonical);
+                                        } else {
+                                          draft.add(canonical);
+                                        }
+                                      });
+                                    },
+                                    child: AnimatedContainer(
+                                      duration: const Duration(
+                                        milliseconds: 180,
+                                      ),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 16,
+                                        vertical: 14,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(18),
+                                        color: selected
+                                            ? _kPrimaryBlue.withValues(
+                                                alpha: 0.08,
+                                              )
+                                            : Colors.white,
+                                        border: Border.all(
+                                          color: selected
+                                              ? _kPrimaryBlue
+                                              : const Color(0xFFE2E8F0),
+                                        ),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Icon(
+                                            selected
+                                                ? Icons.check_circle_rounded
+                                                : Icons.circle_outlined,
+                                            color: selected
+                                                ? _kPrimaryBlue
+                                                : const Color(0xFFCBD5E1),
+                                          ),
+                                          const SizedBox(width: 14),
+                                          Expanded(
+                                            child: Text(
+                                              label,
+                                              style: TextStyle(
+                                                fontWeight: selected
+                                                    ? FontWeight.w800
+                                                    : FontWeight.w600,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+
+    await Future<void>.delayed(const Duration(milliseconds: 350));
+    searchController.dispose();
+    if (!mounted || result == null) return;
+    setState(() => _editedProfessions = result.toSet().toList());
+  }
+
+  Widget _buildInlineWorkRadiusSelector(Map<String, String> strings) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF9FAFB),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.radar_rounded, color: _kPrimaryBlue, size: 20),
+              const SizedBox(width: 10),
+              Text(
+                strings['work_radius']!,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF374151),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            strings['work_radius_help']!,
+            style: const TextStyle(
+              fontSize: 12.5,
+              color: Color(0xFF6B7280),
+              height: 1.35,
+            ),
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            value: _editedDisableWorkRadius,
+            activeThumbColor: _kPrimaryBlue,
+            title: Text(
+              strings['disable_radius']!,
+              style: const TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            onChanged: (value) {
+              setState(() {
+                _editedDisableWorkRadius = value;
+                if (value) {
+                  if (_editedWorkRadius > 0) {
+                    _editedSavedWorkRadius = _editedWorkRadius;
+                  }
+                  _editedWorkRadius = 0;
+                } else {
+                  _editedWorkRadius = _editedSavedWorkRadius > 0
+                      ? _editedSavedWorkRadius
+                      : 15000;
+                }
+              });
+            },
+          ),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  strings['radius_val']!.replaceFirst(
+                    '{val}',
+                    (_editedWorkRadius / 1000).toStringAsFixed(1),
+                  ),
+                  style: const TextStyle(
+                    color: _kPrimaryBlue,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              TextButton.icon(
+                onPressed: _editedDisableWorkRadius
+                    ? null
+                    : () async {
+                        final result = await Navigator.push<dynamic>(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => MapRadiusPicker(
+                              initialCenter:
+                                  _editedProLat != null && _editedProLng != null
+                                  ? LatLng(_editedProLat!, _editedProLng!)
+                                  : null,
+                              initialRadius: _editedWorkRadius,
+                            ),
+                          ),
+                        );
+                        if (!mounted || result is! Map) return;
+                        final center = result['center'];
+                        final radius = result['radius'];
+                        if (center is! LatLng || radius is! num) return;
+                        setState(() {
+                          _editedProLat = center.latitude;
+                          _editedProLng = center.longitude;
+                          _editedWorkRadius = radius.toDouble();
+                          if (_editedWorkRadius > 0) {
+                            _editedSavedWorkRadius = _editedWorkRadius;
+                          }
+                        });
+                      },
+                icon: const Icon(Icons.edit_location_alt_rounded, size: 18),
+                label: Text(strings['select_radius']!),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildContactInformationEditor(Map<String, String> strings) {
+    final localeCode = Provider.of<LanguageProvider>(
+      context,
+      listen: false,
+    ).locale.languageCode;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.9),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.white),
+      ),
+      child: Column(
+        children: [
+          TextField(
+            controller: _nameEditController,
+            textCapitalization: TextCapitalization.words,
+            decoration: InputDecoration(
+              labelText: strings['name_label']!,
+              prefixIcon: const Icon(Icons.person_outline_rounded),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _phoneEditController,
+            enabled: false,
+            keyboardType: TextInputType.phone,
+            decoration: InputDecoration(
+              labelText: strings['call']!,
+              prefixIcon: const Icon(Icons.phone_rounded),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _alternatePhoneEditController,
+            keyboardType: TextInputType.phone,
+            decoration: InputDecoration(
+              labelText: strings['secondary']!,
+              prefixIcon: const Icon(Icons.phone_iphone_rounded),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _emailEditController,
+            enabled: false,
+            keyboardType: TextInputType.emailAddress,
+            decoration: InputDecoration(
+              labelText: strings['email']!,
+              prefixIcon: const Icon(Icons.email_rounded),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _townEditController,
+            textCapitalization: TextCapitalization.words,
+            decoration: InputDecoration(
+              labelText: strings['town']!,
+              prefixIcon: const Icon(Icons.location_city_rounded),
+            ),
+          ),
+          if (_userRole == 'worker') ...[
+            const SizedBox(height: 16),
+            InkWell(
+              borderRadius: BorderRadius.circular(18),
+              onTap: () => _openInlineProfessionSelector(strings),
+              child: Ink(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(
+                    color: _editedProfessions.isEmpty
+                        ? const Color(0xFFE2E8F0)
+                        : _kPrimaryBlue.withValues(alpha: 0.45),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.work_outline_rounded,
+                      color: _kPrimaryBlue,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        strings['professions_label']!,
+                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        '${_editedProfessions.length}',
+                        style: const TextStyle(
+                          color: _kPrimaryBlue,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    const Icon(Icons.keyboard_arrow_down_rounded),
+                  ],
+                ),
+              ),
+            ),
+            if (_editedProfessions.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: _editedProfessions.map((profession) {
+                    return InputChip(
+                      label: Text(
+                        _translateProfessionName(profession, localeCode),
+                      ),
+                      onDeleted: () {
+                        setState(() => _editedProfessions.remove(profession));
+                      },
+                    );
+                  }).toList(),
+                ),
+              ),
+            ],
+            const SizedBox(height: 16),
+            _buildInlineWorkRadiusSelector(strings),
+          ],
+          const SizedBox(height: 16),
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: Text(
+              strings['spoken_languages']!,
+              style: const TextStyle(
+                color: _kTextMain,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: _spokenLanguageOptions.map((language) {
+                final selected = _editedSpokenLanguages.contains(language);
+                return FilterChip(
+                  selected: selected,
+                  label: Text(_spokenLanguageLabel(language, localeCode)),
+                  avatar: selected
+                      ? const Icon(Icons.check_rounded, size: 17)
+                      : null,
+                  onSelected: (value) {
+                    setState(() {
+                      if (value) {
+                        _editedSpokenLanguages.add(language);
+                      } else {
+                        _editedSpokenLanguages.remove(language);
+                      }
+                    });
+                  },
+                );
+              }).toList(),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              TextButton(
+                onPressed: _isSavingContactInformation
+                    ? null
+                    : _cancelEditingContactInformation,
+                child: Text(strings['cancel']!),
+              ),
+              const SizedBox(width: 8),
+              FilledButton.icon(
+                onPressed: _isSavingContactInformation
+                    ? null
+                    : _saveContactInformation,
+                icon: _isSavingContactInformation
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.check_rounded),
+                label: Text(strings['confirm']!),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
   Future<List<Map<String, dynamic>>> _fetchSubcollection(
@@ -1955,215 +2762,224 @@ class _ProfileState extends State<Profile>
                               StretchMode.zoomBackground,
                               StretchMode.blurBackground,
                             ],
-                            background: Stack(
-                              fit: StackFit.expand,
-                              children: [
-                                Hero(
-                                  tag:
-                                      widget.userId ??
-                                      (FirebaseAuth.instance.currentUser?.uid ??
-                                          'profile'),
-                                  child: _profileImageUrl.isNotEmpty
-                                      ? CachedNetworkImage(
-                                          imageUrl: _profileImageUrl,
-                                          fit: BoxFit.cover,
-                                          placeholder: (context, url) =>
-                                              Container(
-                                                color: const Color(0xFFEAF5FF),
-                                              ),
-                                          errorWidget: (context, url, error) =>
-                                              const Icon(Icons.error),
-                                        )
-                                      : Container(
-                                          color: const Color(0xFFEAF5FF),
-                                          child: const Icon(
-                                            Icons.person,
-                                            size: 100,
-                                            color: Color(0xFF9CA3AF),
-                                          ),
-                                        ),
-                                ),
-                                Container(
-                                  decoration: BoxDecoration(
-                                    gradient: LinearGradient(
-                                      begin: Alignment.topCenter,
-                                      end: Alignment.bottomCenter,
-                                      colors: [
-                                        Colors.transparent,
-                                        Colors.black.withValues(alpha: 0.2),
-                                        Colors.black.withValues(alpha: 0.8),
-                                      ],
+                            background: GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: () => _handleProfileImageTap(strings),
+                              child: Stack(
+                                fit: StackFit.expand,
+                                children: [
+                                  if (_profileImageUrl.isNotEmpty)
+                                    CachedNetworkImage(
+                                      imageUrl: _profileImageUrl,
+                                      fit: BoxFit.cover,
+                                      placeholder: (context, url) => Container(
+                                        color: const Color(0xFFEAF5FF),
+                                      ),
+                                      errorWidget: (context, url, error) =>
+                                          const Icon(Icons.error),
+                                    )
+                                  else
+                                    Container(
+                                      color: const Color(0xFFEAF5FF),
+                                      child: const Icon(
+                                        Icons.person,
+                                        size: 100,
+                                        color: Color(0xFF9CA3AF),
+                                      ),
+                                    ),
+                                  Container(
+                                    decoration: BoxDecoration(
+                                      gradient: LinearGradient(
+                                        begin: Alignment.topCenter,
+                                        end: Alignment.bottomCenter,
+                                        colors: [
+                                          Colors.transparent,
+                                          Colors.black.withValues(alpha: 0.2),
+                                          Colors.black.withValues(alpha: 0.8),
+                                        ],
+                                      ),
                                     ),
                                   ),
-                                ),
-                                Positioned(
-                                  bottom: 60,
-                                  left: 24,
-                                  right: 24,
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          Flexible(
-                                            child: Text(
-                                              _userName,
-                                              style: const TextStyle(
-                                                color: Colors.white,
-                                                fontSize: 30,
-                                                fontWeight: FontWeight.bold,
-                                                letterSpacing: -0.5,
-                                              ),
-                                            ),
-                                          ),
-                                          if (_userRole == 'worker')
-                                            const Padding(
-                                              padding: EdgeInsets.symmetric(
-                                                horizontal: 8,
-                                              ),
-                                              child: Icon(
-                                                Icons.verified,
-                                                color: Color(0xFF60A5FA),
-                                                size: 24,
-                                              ),
-                                            ),
-                                        ],
+                                  if (_isProfileImageUpdating)
+                                    const Center(
+                                      child: CircularProgressIndicator(
+                                        color: Colors.white,
                                       ),
-                                      const SizedBox(height: 6),
-                                      if (_userProfessions.isNotEmpty) ...[
-                                        Builder(
-                                          builder: (context) {
-                                            final professionsText =
-                                                _localizedProfessionList(
-                                                  localeCode,
-                                                ).join(' • ');
-                                            final shouldCollapse =
-                                                _shouldCollapseProfessions(
-                                                  professionsText,
-                                                );
-
-                                            return Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                Text(
-                                                  professionsText,
-                                                  maxLines:
-                                                      shouldCollapse &&
-                                                          !_areProfessionsExpanded
-                                                      ? 2
-                                                      : null,
-                                                  overflow:
-                                                      shouldCollapse &&
-                                                          !_areProfessionsExpanded
-                                                      ? TextOverflow.ellipsis
-                                                      : TextOverflow.visible,
-                                                  style: TextStyle(
-                                                    color: Colors.white
-                                                        .withValues(alpha: 0.9),
-                                                    fontSize: 16,
-                                                    fontWeight: FontWeight.w400,
-                                                  ),
-                                                ),
-                                                if (shouldCollapse)
-                                                  GestureDetector(
-                                                    onTap: () {
-                                                      setState(() {
-                                                        _areProfessionsExpanded =
-                                                            !_areProfessionsExpanded;
-                                                      });
-                                                    },
-                                                    child: Padding(
-                                                      padding:
-                                                          const EdgeInsets.only(
-                                                            top: 6,
-                                                          ),
-                                                      child: Text(
-                                                        _areProfessionsExpanded
-                                                            ? 'Show less'
-                                                            : 'Show more',
-                                                        style: const TextStyle(
-                                                          color: Color(
-                                                            0xFF93C5FD,
-                                                          ),
-                                                          fontSize: 14,
-                                                          fontWeight:
-                                                              FontWeight.w600,
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ),
-                                              ],
-                                            );
-                                          },
-                                        ),
-                                      ],
-                                      const SizedBox(height: 16),
-                                      Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.spaceBetween,
-                                        children: [
-                                          _buildStatItem(
-                                            _projects.length.toString(),
-                                            strings['projects']!,
-                                          ),
-                                          _buildStatItem(
-                                            _publicReviewCount.toString(),
-                                            strings['reviews']!,
-                                          ),
-                                          _buildStatItem(
-                                            _viewsCount.toString(),
-                                            strings['views']!,
-                                          ),
-                                          if (_publicReviewCount > 0)
-                                            _buildStatItem(
-                                              _calculateAverageRating()
-                                                  .toStringAsFixed(1),
-                                              strings['rating']!,
-                                            ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 16),
-                                      SingleChildScrollView(
-                                        scrollDirection: Axis.horizontal,
-                                        child: Row(
+                                    ),
+                                  Positioned(
+                                    bottom: 60,
+                                    left: 24,
+                                    right: 24,
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
                                           children: [
-                                            if (_isIdVerified)
-                                              _buildHeaderBadge(
-                                                Icons.assignment_ind,
-                                                strings['verified_id']!,
-                                                Colors.greenAccent,
+                                            Flexible(
+                                              child: Text(
+                                                _userName,
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 30,
+                                                  fontWeight: FontWeight.bold,
+                                                  letterSpacing: -0.5,
+                                                ),
                                               ),
-                                            if (_isBusinessVerified)
-                                              _buildHeaderBadge(
-                                                Icons.business_center,
-                                                strings['verified_biz']!,
-                                                Colors.orangeAccent,
+                                            ),
+                                            if (_userRole == 'worker')
+                                              const Padding(
+                                                padding: EdgeInsets.symmetric(
+                                                  horizontal: 8,
+                                                ),
+                                                child: Icon(
+                                                  Icons.verified,
+                                                  color: Color(0xFF60A5FA),
+                                                  size: 24,
+                                                ),
                                               ),
                                           ],
                                         ),
-                                      ),
-                                    ],
+                                        const SizedBox(height: 6),
+                                        if (_userProfessions.isNotEmpty) ...[
+                                          Builder(
+                                            builder: (context) {
+                                              final professionsText =
+                                                  _localizedProfessionList(
+                                                    localeCode,
+                                                  ).join(' • ');
+                                              final shouldCollapse =
+                                                  _shouldCollapseProfessions(
+                                                    professionsText,
+                                                  );
+
+                                              return Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(
+                                                    professionsText,
+                                                    maxLines:
+                                                        shouldCollapse &&
+                                                            !_areProfessionsExpanded
+                                                        ? 2
+                                                        : null,
+                                                    overflow:
+                                                        shouldCollapse &&
+                                                            !_areProfessionsExpanded
+                                                        ? TextOverflow.ellipsis
+                                                        : TextOverflow.visible,
+                                                    style: TextStyle(
+                                                      color: Colors.white
+                                                          .withValues(
+                                                            alpha: 0.9,
+                                                          ),
+                                                      fontSize: 16,
+                                                      fontWeight:
+                                                          FontWeight.w400,
+                                                    ),
+                                                  ),
+                                                  if (shouldCollapse)
+                                                    GestureDetector(
+                                                      onTap: () {
+                                                        setState(() {
+                                                          _areProfessionsExpanded =
+                                                              !_areProfessionsExpanded;
+                                                        });
+                                                      },
+                                                      child: Padding(
+                                                        padding:
+                                                            const EdgeInsets.only(
+                                                              top: 6,
+                                                            ),
+                                                        child: Text(
+                                                          _areProfessionsExpanded
+                                                              ? 'Show less'
+                                                              : 'Show more',
+                                                          style:
+                                                              const TextStyle(
+                                                                color: Color(
+                                                                  0xFF93C5FD,
+                                                                ),
+                                                                fontSize: 14,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w600,
+                                                              ),
+                                                        ),
+                                                      ),
+                                                    ),
+                                                ],
+                                              );
+                                            },
+                                          ),
+                                        ],
+                                        const SizedBox(height: 16),
+                                        Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.spaceBetween,
+                                          children: [
+                                            _buildStatItem(
+                                              _projects.length.toString(),
+                                              strings['projects']!,
+                                            ),
+                                            _buildStatItem(
+                                              _publicReviewCount.toString(),
+                                              strings['reviews']!,
+                                            ),
+                                            _buildStatItem(
+                                              _viewsCount.toString(),
+                                              strings['views']!,
+                                            ),
+                                            if (_publicReviewCount > 0)
+                                              _buildStatItem(
+                                                _calculateAverageRating()
+                                                    .toStringAsFixed(1),
+                                                strings['rating']!,
+                                              ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 16),
+                                        SingleChildScrollView(
+                                          scrollDirection: Axis.horizontal,
+                                          child: Row(
+                                            children: [
+                                              if (_isIdVerified)
+                                                _buildHeaderBadge(
+                                                  Icons.assignment_ind,
+                                                  strings['verified_id']!,
+                                                  Colors.greenAccent,
+                                                ),
+                                              if (_isBusinessVerified)
+                                                _buildHeaderBadge(
+                                                  Icons.business_center,
+                                                  strings['verified_biz']!,
+                                                  Colors.orangeAccent,
+                                                ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
-                                ),
-                                Positioned(
-                                  bottom: -1,
-                                  left: 0,
-                                  right: 0,
-                                  child: Container(
-                                    height: 30,
-                                    decoration: BoxDecoration(
-                                      color: Colors.white.withValues(
-                                        alpha: 0.96,
-                                      ),
-                                      borderRadius: BorderRadius.vertical(
-                                        top: Radius.circular(30),
+                                  Positioned(
+                                    bottom: -1,
+                                    left: 0,
+                                    right: 0,
+                                    child: Container(
+                                      height: 30,
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withValues(
+                                          alpha: 0.96,
+                                        ),
+                                        borderRadius: BorderRadius.vertical(
+                                          top: Radius.circular(30),
+                                        ),
                                       ),
                                     ),
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
                           ),
                         ),
@@ -2861,8 +3677,18 @@ class _ProfileState extends State<Profile>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (hasBio) ...[
-            _buildSectionTitle(strings['bio_title']!),
+          if (hasBio || _isOwnProfile) ...[
+            Row(
+              children: [
+                Expanded(child: _buildSectionTitle(strings['bio_title']!)),
+                if (_isOwnProfile && !_isEditingBiography)
+                  IconButton(
+                    onPressed: _startEditingBiography,
+                    tooltip: strings['edit_profile']!,
+                    icon: const Icon(Icons.edit_rounded),
+                  ),
+              ],
+            ),
             const SizedBox(height: 12),
             Container(
               padding: const EdgeInsets.all(16),
@@ -2870,21 +3696,81 @@ class _ProfileState extends State<Profile>
                 color: Colors.grey[50],
                 borderRadius: BorderRadius.circular(20),
               ),
-              child: Text(
-                _bio,
-                style: TextStyle(
-                  fontSize: 15,
-                  height: 1.6,
-                  color: Colors.grey[800],
-                ),
-              ),
+              child: _isEditingBiography
+                  ? Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        TextField(
+                          controller: _biographyEditController,
+                          minLines: 4,
+                          maxLines: 8,
+                          textCapitalization: TextCapitalization.sentences,
+                          decoration: InputDecoration(
+                            hintText: strings['bio']!,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            TextButton(
+                              onPressed: _isSavingBiography
+                                  ? null
+                                  : _cancelEditingBiography,
+                              child: Text(strings['cancel']!),
+                            ),
+                            const SizedBox(width: 8),
+                            FilledButton.icon(
+                              onPressed: _isSavingBiography
+                                  ? null
+                                  : _saveBiography,
+                              icon: _isSavingBiography
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : const Icon(Icons.check_rounded),
+                              label: Text(strings['confirm']!),
+                            ),
+                          ],
+                        ),
+                      ],
+                    )
+                  : Text(
+                      hasBio ? _bio : strings['bio']!,
+                      style: TextStyle(
+                        fontSize: 15,
+                        height: 1.6,
+                        color: hasBio ? Colors.grey[800] : Colors.grey[500],
+                      ),
+                    ),
             ),
           ],
-          if (infoRows.isNotEmpty) ...[
-            if (hasBio) const SizedBox(height: 32),
-            _buildSectionTitle(strings['contact_info']!),
+          if (infoRows.isNotEmpty || _isOwnProfile) ...[
+            if (hasBio || _isOwnProfile) const SizedBox(height: 32),
+            Row(
+              children: [
+                Expanded(child: _buildSectionTitle(strings['contact_info']!)),
+                if (_isOwnProfile && !_isEditingContactInformation)
+                  IconButton(
+                    onPressed: _startEditingContactInformation,
+                    tooltip: strings['edit_profile']!,
+                    icon: const Icon(Icons.edit_rounded),
+                  ),
+              ],
+            ),
             const SizedBox(height: 16),
-            _buildInfoCard(infoRows),
+            if (_isEditingContactInformation)
+              _buildContactInformationEditor(strings)
+            else if (infoRows.isNotEmpty)
+              _buildInfoCard(infoRows),
           ],
           if (hasSocialLinks || _isOwnProfile) ...[
             const SizedBox(height: 32),
@@ -4324,6 +5210,12 @@ class _ProfileState extends State<Profile>
     _authSubscription?.cancel();
     _backgroundController?.dispose();
     _aboutScrollController.dispose();
+    _biographyEditController.dispose();
+    _nameEditController.dispose();
+    _phoneEditController.dispose();
+    _alternatePhoneEditController.dispose();
+    _emailEditController.dispose();
+    _townEditController.dispose();
     super.dispose();
   }
 
@@ -4338,6 +5230,17 @@ class _ProfileState extends State<Profile>
           'title': 'פרופיל',
           'user_name': _userName.isNotEmpty ? _userName : 'שם משתמש',
           'edit_profile': 'ערוך פרופיל',
+          'name_label': 'שם',
+          'professions_label': 'בחר מקצועות',
+          'search_professions': 'חפש מקצועות...',
+          'no_professions_found': 'לא נמצאו מקצועות תואמים',
+          'work_radius': 'רדיוס עבודה',
+          'work_radius_help': 'מגדיר עד לאיזה מרחק השירות שלך מגיע.',
+          'disable_radius': 'לא מגיע ללקוח (הלקוח מגיע אליי)',
+          'radius_val': 'רדיוס: {val} ק״מ',
+          'select_radius': 'בחר רדיוס על המפה',
+          'open_profile_image': 'פתח תמונת פרופיל',
+          'edit_profile_image': 'שנה תמונת פרופיל',
           'projects': 'פרויקטים',
           'reviews': 'ביקורות',
           'schedule': 'לו"ז',
@@ -4460,6 +5363,17 @@ class _ProfileState extends State<Profile>
           'title': 'الملف الشخصي',
           'user_name': _userName.isNotEmpty ? _userName : 'اسم المستخدم',
           'edit_profile': 'تعديل الملف الشخصي',
+          'name_label': 'الاسم',
+          'professions_label': 'اختر المهن',
+          'search_professions': 'ابحث عن مهنة...',
+          'no_professions_found': 'لم يتم العثور على مهن مطابقة',
+          'work_radius': 'نطاق العمل',
+          'work_radius_help': 'يحدد إلى أي مسافة تصل خدمتك.',
+          'disable_radius': 'لا أصل إلى العميل (العميل يأتي إليّ)',
+          'radius_val': 'النطاق: {val} كم',
+          'select_radius': 'اختر النطاق على الخريطة',
+          'open_profile_image': 'فتح صورة الملف الشخصي',
+          'edit_profile_image': 'تغيير صورة الملف الشخصي',
           'projects': 'مشاريع',
           'reviews': 'تقييمات',
           'schedule': 'الجدول',
@@ -4576,6 +5490,17 @@ class _ProfileState extends State<Profile>
           'title': 'መገለጫ',
           'user_name': _userName.isNotEmpty ? _userName : 'የተጠቃሚ ስም',
           'edit_profile': 'መገለጫ አርትዕ',
+          'name_label': 'ስም',
+          'professions_label': 'ሙያዎችን ይምረጡ',
+          'search_professions': 'ሙያ ይፈልጉ...',
+          'no_professions_found': 'ተመሳሳይ ሙያዎች አልተገኙም',
+          'work_radius': 'የስራ ክልል',
+          'work_radius_help': 'አገልግሎትዎ እስከ ምን ርቀት እንደሚደርስ ይወስናል።',
+          'disable_radius': 'ወደ ደንበኛ አልመጣም (ደንበኛው ወደ እኔ ይመጣል)',
+          'radius_val': 'ክልል: {val} ኪሜ',
+          'select_radius': 'በካርታ ላይ ክልል ይምረጡ',
+          'open_profile_image': 'የመገለጫ ምስል ክፈት',
+          'edit_profile_image': 'የመገለጫ ምስል ቀይር',
           'projects': 'ፕሮጀክቶች',
           'reviews': 'ግምገማዎች',
           'schedule': 'መርሃ ግብር',
@@ -4688,6 +5613,17 @@ class _ProfileState extends State<Profile>
           'title': 'Профиль',
           'user_name': _userName.isNotEmpty ? _userName : 'Имя пользователя',
           'edit_profile': 'Редактировать профиль',
+          'name_label': 'Имя',
+          'professions_label': 'Выберите профессии',
+          'search_professions': 'Поиск профессий...',
+          'no_professions_found': 'Подходящие профессии не найдены',
+          'work_radius': 'Радиус работы',
+          'work_radius_help': 'Определяет расстояние выезда к клиентам.',
+          'disable_radius': 'Я не выезжаю к клиенту (клиент приезжает ко мне)',
+          'radius_val': 'Радиус: {val} км',
+          'select_radius': 'Выбрать радиус на карте',
+          'open_profile_image': 'Открыть фото профиля',
+          'edit_profile_image': 'Изменить фото профиля',
           'projects': 'Проекты',
           'reviews': 'Отзывы',
           'schedule': 'Расписание',
@@ -4801,6 +5737,17 @@ class _ProfileState extends State<Profile>
           'title': 'Profile',
           'user_name': _userName.isNotEmpty ? _userName : 'User Name',
           'edit_profile': 'Edit Profile',
+          'name_label': 'Name',
+          'professions_label': 'Select professions',
+          'search_professions': 'Search professions...',
+          'no_professions_found': 'No matching professions',
+          'work_radius': 'Work radius',
+          'work_radius_help': 'Defines how far your service reaches.',
+          'disable_radius': 'I do not travel to customers',
+          'radius_val': 'Radius: {val} km',
+          'select_radius': 'Select radius on map',
+          'open_profile_image': 'Open profile image',
+          'edit_profile_image': 'Change profile image',
           'projects': 'Projects',
           'reviews': 'Reviews',
           'schedule': 'Schedule',

@@ -407,11 +407,7 @@ class _ZoomableImageViewerState extends State<ZoomableImageViewer>
                       ),
                     ),
                   ),
-                  _ViewerHintOverlay(
-                    dragProgress: dragProgress,
-                    showDismissHint: widget.enableSwipeDismiss && !_isZoomed,
-                    isZoomed: _isZoomed,
-                  ),
+                  _ViewerHintOverlay(isZoomed: _isZoomed),
                 ],
               ),
             ),
@@ -480,22 +476,13 @@ class _ImageErrorPlaceholder extends StatelessWidget {
 }
 
 class _ViewerHintOverlay extends StatelessWidget {
-  final double dragProgress;
-  final bool showDismissHint;
   final bool isZoomed;
 
-  const _ViewerHintOverlay({
-    required this.dragProgress,
-    required this.showDismissHint,
-    required this.isZoomed,
-  });
+  const _ViewerHintOverlay({required this.isZoomed});
 
   @override
   Widget build(BuildContext context) {
     final topOpacity = isZoomed ? 0.12 : 0.18;
-    final hintOpacity = showDismissHint
-        ? (1 - dragProgress).clamp(0.0, 1.0).toDouble()
-        : 0.0;
     return IgnorePointer(
       child: Stack(
         fit: StackFit.expand,
@@ -516,36 +503,6 @@ class _ViewerHintOverlay extends StatelessWidget {
               ),
             ),
           ),
-          if (hintOpacity > 0)
-            Align(
-              alignment: Alignment.bottomCenter,
-              child: Padding(
-                padding: const EdgeInsets.only(bottom: 28),
-                child: AnimatedOpacity(
-                  duration: const Duration(milliseconds: 120),
-                  opacity: hintOpacity,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.34),
-                      borderRadius: BorderRadius.circular(100),
-                    ),
-                    child: const Text(
-                      'Swipe down to close · Double tap to zoom',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        height: 1.2,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
         ],
       ),
     );

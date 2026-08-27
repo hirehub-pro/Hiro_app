@@ -70,6 +70,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   String _workerPhone = '';
   String _workerEmail = '';
   String _userRole = "customer";
+  bool _isUserRoleLoaded = false;
   String _subscriptionStatus = "inactive";
   DateTime? _subscriptionDate;
   DateTime? _subscriptionExpiresAt;
@@ -940,6 +941,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 .toString();
             _workerEmail = (data['email'] ?? user.email ?? '').toString();
             _userRole = accountData['role'] ?? 'customer';
+            _isUserRoleLoaded = true;
             _subscriptionStatus =
                 accountData['subscriptionStatus']?.toString().toLowerCase() ??
                 'inactive';
@@ -2362,7 +2364,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 _buildCategories(context, localized, theme),
-                                if (_userRole == 'customer' && !_isGuest) ...[
+                                if (_isUserRoleLoaded &&
+                                    _userRole == 'customer' &&
+                                    !_isGuest) ...[
                                   const SizedBox(height: 12),
                                   _buildCustomerProButton(localized),
                                 ],
