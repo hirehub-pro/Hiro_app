@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -13,6 +14,8 @@ import 'package:provider/provider.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:untitled1/services/language_provider.dart';
 import 'package:untitled1/services/analytics_service.dart';
 import 'package:untitled1/services/ai_description_service.dart';
@@ -71,6 +74,7 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
   final _altPhoneController = TextEditingController();
   final _descriptionController = TextEditingController();
   final ValueNotifier<bool> _smsVerificationLoading = ValueNotifier(false);
+  Future<void>? _googleSignInInitialization;
   final FirebaseFunctions _functions = FirebaseFunctions.instanceFor(
     region: 'me-west1',
   );
@@ -84,6 +88,7 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
   List<Map<String, dynamic>> _professionItems = [];
 
   bool _loading = false;
+  bool _isSelectingEmail = false;
   bool _autoCompletingFromPaidWorker = false;
   bool _professionSelectorOpen = false;
   bool _agreedToPolicy = false;
@@ -1896,6 +1901,130 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
     }
   }
 
+  bool get _usesPlatformEmailPicker =>
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.android ||
+          defaultTargetPlatform == TargetPlatform.iOS);
+
+  String _emailSelectionFailedMessage() {
+    final localeCode = Provider.of<LanguageProvider>(
+      context,
+      listen: false,
+    ).locale.languageCode;
+    switch (localeCode) {
+      case 'he':
+        return 'לא הצלחנו לבחור את כתובת האימייל. נסו שוב.';
+      case 'ar':
+        return 'تعذر اختيار عنوان البريد الإلكتروني. حاول مرة أخرى.';
+      case 'ru':
+        return 'Не удалось выбрать адрес электронной почты. Попробуйте снова.';
+      case 'am':
+        return 'የኢሜይል አድራሻውን መምረጥ አልተቻለም። እንደገና ይሞክሩ።';
+      default:
+        return 'Could not select the email address. Please try again.';
+    }
+  }
+
+  String _appleEmailUnavailableMessage() {
+    final localeCode = Provider.of<LanguageProvider>(
+      context,
+      listen: false,
+    ).locale.languageCode;
+    switch (localeCode) {
+      case 'he':
+        return 'Apple לא החזירה כתובת אימייל. בטלו את הרשאת האפליקציה בהגדרות Apple ונסו שוב.';
+      case 'ar':
+        return 'لم تُرجع Apple عنوان بريد إلكتروني. ألغِ إذن التطبيق من إعدادات Apple ثم حاول مرة أخرى.';
+      case 'ru':
+        return 'Apple не вернула адрес электронной почты. Отзовите доступ приложения в настройках Apple и попробуйте снова.';
+      case 'am':
+        return 'Apple የኢሜይል አድራሻ አልመለሰም። በApple ቅንብሮች ውስጥ የመተግበሪያውን ፈቃድ ሰርዘው እንደገና ይሞክሩ።';
+      default:
+        return 'Apple did not return an email address. Revoke the app permission in Apple settings, then try again.';
+    }
+  }
+
+  String? _emailFromAppleIdentityToken(String? identityToken) {
+    if (identityToken == null || identityToken.isEmpty) return null;
+    try {
+      final parts = identityToken.split('.');
+      if (parts.length != 3) return null;
+      final payload = jsonDecode(
+        utf8.decode(base64Url.decode(base64Url.normalize(parts[1]))),
+      );
+      if (payload is! Map<String, dynamic>) return null;
+      final email = payload['email'];
+      return email is String && email.trim().isNotEmpty ? email.trim() : null;
+    } catch (error) {
+      debugPrint('Could not read email from Apple identity token: $error');
+      return null;
+    }
+  }
+
+  Future<void> _selectEmailForCurrentPlatform() async {
+    if (_isSelectingEmail || !_usesPlatformEmailPicker) return;
+
+    FocusScope.of(context).unfocus();
+    setState(() => _isSelectingEmail = true);
+
+    try {
+      String? selectedEmail;
+
+      if (defaultTargetPlatform == TargetPlatform.android) {
+        final googleSignIn = GoogleSignIn.instance;
+        _googleSignInInitialization ??= googleSignIn.initialize();
+        await _googleSignInInitialization;
+        final account = await googleSignIn.authenticate();
+        selectedEmail = account.email;
+        await googleSignIn.signOut();
+      } else if (defaultTargetPlatform == TargetPlatform.iOS) {
+        final credential = await SignInWithApple.getAppleIDCredential(
+          scopes: const [AppleIDAuthorizationScopes.email],
+        );
+        selectedEmail =
+            credential.email ??
+            _emailFromAppleIdentityToken(credential.identityToken);
+        if (selectedEmail == null || selectedEmail.trim().isEmpty) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(_appleEmailUnavailableMessage())),
+            );
+          }
+          return;
+        }
+      }
+
+      if (!mounted || selectedEmail == null || selectedEmail.trim().isEmpty) {
+        return;
+      }
+      _emailController.text = selectedEmail.trim().toLowerCase();
+      _formKey.currentState?.validate();
+    } on GoogleSignInException catch (error) {
+      if (error.code != GoogleSignInExceptionCode.canceled && mounted) {
+        debugPrint('Google email selection failed: $error');
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_emailSelectionFailedMessage())));
+      }
+    } on SignInWithAppleAuthorizationException catch (error) {
+      if (error.code != AuthorizationErrorCode.canceled && mounted) {
+        debugPrint('Apple email selection failed: $error');
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_emailSelectionFailedMessage())));
+      }
+    } catch (error) {
+      debugPrint('Platform email selection failed: $error');
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_emailSelectionFailedMessage())));
+      }
+    } finally {
+      if (mounted) setState(() => _isSelectingEmail = false);
+    }
+  }
+
   Future<bool> _checkSignUpIdentifiersAvailable({
     required String email,
     required String phone,
@@ -3134,6 +3263,30 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
               icon: Icons.email_outlined,
               required: true,
               keyboardType: TextInputType.emailAddress,
+              readOnly: _usesPlatformEmailPicker,
+              onTap: _usesPlatformEmailPicker
+                  ? _selectEmailForCurrentPlatform
+                  : null,
+              suffixIcon: _usesPlatformEmailPicker
+                  ? _isSelectingEmail
+                        ? const Padding(
+                            padding: EdgeInsets.all(14),
+                            child: SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          )
+                        : IconButton(
+                            onPressed: _selectEmailForCurrentPlatform,
+                            icon: Icon(
+                              defaultTargetPlatform == TargetPlatform.iOS
+                                  ? Icons.apple
+                                  : Icons.account_circle_outlined,
+                              color: const Color(0xFF1976D2),
+                            ),
+                          )
+                  : null,
               validator: (value) {
                 final email = value?.trim() ?? '';
                 if (email.isEmpty) return strings['req'];
