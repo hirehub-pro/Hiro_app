@@ -1167,6 +1167,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   bool _hasCustomPaymentDueDate = false;
   String _selectedPriceTaxMode = 'after_tax';
   bool _hasDiscount = false;
+  String _selectedDiscountType = 'amount';
   bool _roundTotalEnabled = true;
 
   bool get _isCreditNote => _selectedDocType == 'credit_note';
@@ -1332,11 +1333,53 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       _discountController.text.trim().replaceAll(',', '.'),
     );
     if (parsed == null || parsed <= 0) return 0.0;
-    final maxDiscount = _itemsSubtotalBeforeTax;
-    return parsed > maxDiscount ? maxDiscount : parsed;
+    final grossDocumentTotal = _itemsTotalBeforeDiscount;
+    final grossDiscount = _selectedDiscountType == 'percentage'
+        ? grossDocumentTotal * parsed / 100
+        : parsed;
+    final limitedGrossDiscount = grossDiscount > grossDocumentTotal
+        ? grossDocumentTotal
+        : grossDiscount;
+    final discountBeforeTax = _usesVat
+        ? limitedGrossDiscount / (1 + _vatRate)
+        : limitedGrossDiscount;
+    final subtotalBeforeTax = _itemsSubtotalBeforeTax;
+    return discountBeforeTax > subtotalBeforeTax
+        ? subtotalBeforeTax
+        : discountBeforeTax;
   }
 
   double get _discountAmount => _manualDiscountAmount;
+
+  double get _maximumDiscountInput =>
+      _selectedDiscountType == 'percentage' ? 100 : _itemsTotalBeforeDiscount;
+
+  TextInputFormatter _discountInputFormatter() {
+    return TextInputFormatter.withFunction((oldValue, newValue) {
+      final input = newValue.text.trim();
+      if (input.isEmpty) return newValue;
+      if (!RegExp(r'^\d*(?:[.,]\d{0,2})?$').hasMatch(input)) {
+        return oldValue;
+      }
+      final parsed = double.tryParse(input.replaceAll(',', '.'));
+      if (parsed == null || parsed > _maximumDiscountInput) {
+        return oldValue;
+      }
+      return newValue;
+    });
+  }
+
+  void _selectDiscountType(String value) {
+    final parsed = double.tryParse(
+      _discountController.text.trim().replaceAll(',', '.'),
+    );
+    setState(() {
+      _selectedDiscountType = value;
+      if (parsed != null && parsed > _maximumDiscountInput) {
+        _discountController.clear();
+      }
+    });
+  }
 
   double get _subtotalAmount {
     if (_selectedDocType == 'receipt') {
@@ -1353,8 +1396,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   double get _roundingAmount {
     if (_selectedDocType == 'receipt') return 0.0;
     if (!_roundTotalEnabled) return 0.0;
-    final roundedTotal = _totalBeforeRoundingAmount.floorToDouble();
-    final reductionNeeded = _totalBeforeRoundingAmount - roundedTotal;
+    final totalInAgorot = (_totalBeforeRoundingAmount * 100).round() / 100;
+    final roundedTotal = totalInAgorot.floorToDouble();
+    final reductionNeeded = totalInAgorot - roundedTotal;
     return reductionNeeded <= 0 ? 0.0 : reductionNeeded;
   }
 
@@ -2787,30 +2831,16 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   }
 
   List<Map<String, dynamic>> _taxAuthorityItemsPayload() {
-    final totalBeforeDiscount = _itemsSubtotalBeforeTax;
-    final discountAmount = _discountAmount;
-    var remainingDiscount = discountAmount;
-
     return _items.asMap().entries.map((entry) {
       final index = entry.key;
       final item = entry.value;
-      final isLastItem = index == _items.length - 1;
-      final lineBeforeDiscount = _itemTotalBeforeTax(item);
-      final proportionalDiscount = discountAmount > 0 && totalBeforeDiscount > 0
-          ? discountAmount * (lineBeforeDiscount / totalBeforeDiscount)
-          : 0.0;
-      final lineDiscount = discountAmount > 0
-          ? (isLastItem ? remainingDiscount : proportionalDiscount)
-          : 0.0;
-      remainingDiscount -= lineDiscount;
-      final totalAmount = lineBeforeDiscount - lineDiscount;
+      final totalAmount = _itemTotalBeforeTax(item);
 
       return {
         'index': index + 1,
         'description': item.description,
         'quantity': item.quantity,
         'price_per_unit': _unitPriceBeforeTax(item),
-        'discount': lineDiscount,
         'total_amount': totalAmount,
         'vat_rate': _vatRate * 100,
         'vat_amount': totalAmount * _vatRate,
@@ -3792,8 +3822,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'price_after_tax': 'כולל מע"מ',
           'has_discount': 'האם יש הנחה?',
           'discount_amount': 'סכום הנחה',
+          'discount_type': 'סוג',
           'discount_invalid':
-              'אם יש הנחה יש למלא סכום הנחה תקין שקטן או שווה לסכום הפריטים.',
+              'יש להזין אחוז הנחה בין 0 ל-100 או סכום הנחה שאינו גדול מהסכום הכולל המקורי של המסמך.',
           'discount': 'הנחה',
           'round_total': 'עיגול סכום',
           'rounding_amount': 'סכום לעיגול',
@@ -3947,8 +3978,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'price_after_tax': 'شامل الضريبة',
           'has_discount': 'هل يوجد خصم؟',
           'discount_amount': 'مبلغ الخصم',
+          'discount_type': 'النوع',
           'discount_invalid':
-              'عند تفعيل الخصم، أدخل مبلغًا صحيحًا يساوي أو يقل عن إجمالي العناصر.',
+              'أدخل نسبة خصم بين 0 و100 أو مبلغًا لا يتجاوز الإجمالي الأصلي للمستند.',
           'discount': 'الخصم',
           'round_total': 'تقريب المبلغ',
           'rounding_amount': 'مبلغ التقريب',
@@ -4091,8 +4123,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'price_after_tax': 'С налогом',
           'has_discount': 'Применить скидку?',
           'discount_amount': 'Сумма скидки',
+          'discount_type': 'Тип',
           'discount_invalid':
-              'Если скидка включена, введите корректную сумму, не превышающую общую сумму позиций.',
+              'Введите скидку от 0 до 100% или сумму не больше первоначальной общей суммы документа.',
           'discount': 'Скидка',
           'round_total': 'Округлить сумму',
           'rounding_amount': 'Сумма округления',
@@ -4232,7 +4265,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'price_after_tax': 'ግብር ጨምሮ',
           'has_discount': 'ቅናሽ አለ?',
           'discount_amount': 'የቅናሽ መጠን',
-          'discount_invalid': 'ቅናሽ ከተመረጠ ከጠቅላላ ዕቃዎች መጠን ያልበለጠ ትክክለኛ መጠን ያስገቡ።',
+          'discount_type': 'ዓይነት',
+          'discount_invalid':
+              'ከ0 እስከ 100% የሆነ ቅናሽ ወይም ከሰነዱ የመጀመሪያ ጠቅላላ ድምር ያልበለጠ መጠን ያስገቡ።',
           'discount': 'ቅናሽ',
           'round_total': 'ጠቅላላ ድምሩን አዙር',
           'rounding_amount': 'የማዞሪያ መጠን',
@@ -4373,8 +4408,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'price_after_tax': 'After Tax',
           'has_discount': 'Apply Discount?',
           'discount_amount': 'Discount Amount',
+          'discount_type': 'Type',
           'discount_invalid':
-              'When discount is enabled, enter a valid amount less than or equal to items total.',
+              'Enter a discount from 0 to 100%, or an amount no greater than the original document total.',
           'discount': 'Discount',
           'round_total': 'Round Total',
           'rounding_amount': 'Rounding Amount',
@@ -4547,8 +4583,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'price_after_tax': 'After Tax',
       'has_discount': 'Apply Discount?',
       'discount_amount': 'Discount Amount',
+      'discount_type': 'Type',
       'discount_invalid':
-          'When discount is enabled, enter a valid amount less than or equal to items total.',
+          'Enter a discount from 0 to 100%, or an amount no greater than the original document total.',
       'discount': 'Discount',
       'round_total': 'Round Total',
       'rounding_amount': 'Rounding Amount',
@@ -4676,6 +4713,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     _itemPriceController.clear();
     _discountController.clear();
     _hasDiscount = false;
+    _selectedDiscountType = 'amount';
     _selectedPriceTaxMode = 'after_tax';
   }
 
@@ -5440,7 +5478,13 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     final parsed = double.tryParse(
       _discountController.text.trim().replaceAll(',', '.'),
     );
-    if (parsed == null || parsed <= 0 || parsed > _itemsTotalBeforeDiscount) {
+    final isValid =
+        parsed != null &&
+        parsed > 0 &&
+        (_selectedDiscountType == 'percentage'
+            ? parsed <= 100
+            : parsed <= _itemsTotalBeforeDiscount);
+    if (!isValid) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(strings['discount_invalid']!)));
@@ -6977,33 +7021,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                   ),
                                   const SizedBox(height: 12),
                                 ],
-                                SwitchListTile.adaptive(
-                                  contentPadding: EdgeInsets.zero,
-                                  title: Text(strings['has_discount']!),
-                                  value: _hasDiscount,
-                                  onChanged: (value) {
-                                    setState(() {
-                                      _hasDiscount = value;
-                                      if (!value) {
-                                        _discountController.clear();
-                                      }
-                                    });
-                                  },
-                                ),
-                                if (_hasDiscount) ...[
-                                  const SizedBox(height: 8),
-                                  _buildTextField(
-                                    _discountController,
-                                    strings['discount_amount']!,
-                                    Icons.discount_outlined,
-                                    required: true,
-                                    keyboardType:
-                                        const TextInputType.numberWithOptions(
-                                          decimal: true,
-                                        ),
-                                    onChanged: (_) => setState(() {}),
-                                  ),
-                                ],
                                 const SizedBox(height: 16),
                                 SizedBox(
                                   width: double.infinity,
@@ -7219,29 +7236,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                       ),
                                     ],
                                   ),
-                                  if (_discountAmount > 0) ...[
-                                    const SizedBox(height: 10),
-                                    Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Text(
-                                          strings['discount']!,
-                                          style: const TextStyle(
-                                            color: Colors.white70,
-                                            fontSize: 14,
-                                          ),
-                                        ),
-                                        Text(
-                                          "-${_discountAmount.toStringAsFixed(2)} ₪",
-                                          style: const TextStyle(
-                                            color: Colors.white70,
-                                            fontSize: 14,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ],
                                   if (_roundingAmount > 0) ...[
                                     const SizedBox(height: 10),
                                     Row(
@@ -7289,6 +7283,95 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                         ),
                                       ),
                                     ),
+                                    SwitchListTile.adaptive(
+                                      contentPadding: EdgeInsets.zero,
+                                      value: _hasDiscount,
+                                      onChanged: (value) {
+                                        setState(() {
+                                          _hasDiscount = value;
+                                          if (!value) {
+                                            _discountController.clear();
+                                          }
+                                        });
+                                      },
+                                      secondary: const Icon(
+                                        Icons.discount_outlined,
+                                        color: Colors.white,
+                                      ),
+                                      activeThumbColor: Colors.white,
+                                      activeTrackColor: Colors.white54,
+                                      title: Text(
+                                        strings['has_discount']!,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                    if (_hasDiscount) ...[
+                                      const SizedBox(height: 8),
+                                      Row(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Expanded(
+                                            child: _buildTextField(
+                                              _discountController,
+                                              strings['discount_amount']!,
+                                              Icons.discount_outlined,
+                                              required: true,
+                                              keyboardType:
+                                                  const TextInputType.numberWithOptions(
+                                                    decimal: true,
+                                                  ),
+                                              inputFormatters: [
+                                                _discountInputFormatter(),
+                                              ],
+                                              onChanged: (_) => setState(() {}),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 10),
+                                          SizedBox(
+                                            width: 96,
+                                            child: DropdownButtonFormField<String>(
+                                              initialValue:
+                                                  _selectedDiscountType,
+                                              isExpanded: true,
+                                              dropdownColor: Colors.white,
+                                              decoration: InputDecoration(
+                                                labelText:
+                                                    strings['discount_type']!,
+                                                filled: true,
+                                                fillColor: Colors.white,
+                                                contentPadding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 12,
+                                                      vertical: 16,
+                                                    ),
+                                                border: OutlineInputBorder(
+                                                  borderRadius:
+                                                      BorderRadius.circular(12),
+                                                ),
+                                              ),
+                                              items: const [
+                                                DropdownMenuItem(
+                                                  value: 'percentage',
+                                                  child: Text('%'),
+                                                ),
+                                                DropdownMenuItem(
+                                                  value: 'amount',
+                                                  child: Text('₪'),
+                                                ),
+                                              ],
+                                              onChanged: (value) {
+                                                if (value == null) return;
+                                                _selectDiscountType(value);
+                                              },
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
                                   ],
                                   const SizedBox(height: 20),
                                   Row(

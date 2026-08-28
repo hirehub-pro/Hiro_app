@@ -46,10 +46,9 @@ function validPayload() {
       items: [{
         quantity: 2,
         price_per_unit: 105,
-        discount: 10,
-        total_amount: 200,
+        total_amount: 210,
         vat_rate: 18,
-        vat_amount: 36,
+        vat_amount: 37.8,
       }],
     }],
   };
@@ -93,6 +92,16 @@ test("rejects client totals that do not match the line items", () => {
     invoiceDocId: "invoice_2026-0042",
     currentYear: 2026,
   }), /server-calculated/i);
+});
+
+test("rejects item-level discounts", () => {
+  const payload = validPayload();
+  payload.invoices_list[0].items[0].discount = 10;
+  assert.throws(() => validateTaxInvoiceAllocation({
+    payload,
+    invoiceDocId: "invoice_2026-0042",
+    currentYear: 2026,
+  }), /document level only/i);
 });
 
 test("payload hashes are stable across object key order and change with data", () => {

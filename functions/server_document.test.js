@@ -52,6 +52,8 @@ test("calculates invoice totals on the server and ignores client totals", () => 
   assert.equal(document.vatAmount, 34.2);
   assert.equal(document.finalTotal, 224.2);
   assert.equal(document.items[0].price_per_unit, 100);
+  assert.equal(document.items[0].total_amount, 200);
+  assert.equal("discount" in document.items[0], false);
 });
 
 test("requires invoice-receipt payments to equal the calculated total", () => {

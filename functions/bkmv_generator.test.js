@@ -484,7 +484,7 @@ test("writes cancellation receipt C100 and D120 amounts as negative", () => {
   assert.equal(payments[0].slice(103, 118), "-00000000011800");
 });
 
-test("writes credit-note document and line discounts as negative", () => {
+test("writes credit-note discount only at document level", () => {
   const invoiceDocId = "credit_note_2026-0045";
   const stored = {
     type: "credit_note",
@@ -546,7 +546,7 @@ test("writes credit-note document and line discounts as negative", () => {
   const c100 = result.records.find((record) => record.startsWith("C100"));
   assert.equal(c100.slice(302, 317), "-00000000001000");
   const d110 = result.records.find((record) => record.startsWith("D110"));
-  assert.equal(d110.slice(255, 270), "-00000000001000");
+  assert.equal(d110.slice(255, 270), "+00000000000000");
 });
 
 test("splits installment cents without changing the payment total", () => {

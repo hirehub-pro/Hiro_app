@@ -450,18 +450,12 @@ function extractItems(logData, invoiceData, subtotal, vatAmount) {
           const quantity = finiteNumber(item.quantity, 1);
           const unitPrice = finiteNumber(item.unitPriceWithoutTax ??
             item.price_per_unit ?? item.unitPrice ?? item.price);
-          const rawDiscountAmount = finiteNumber(item.discount);
-          const discountAmount = rawDiscountAmount === 0 ?
-            0 : -Math.abs(rawDiscountAmount);
-          const storedTotal = item.total_amount ?? item.totalAmount;
           return {
             description: String(item.description || "Item"),
             quantity,
             unitPrice,
-            discountAmount,
-            lineTotal: storedTotal == null ?
-              money((quantity * unitPrice) + discountAmount) :
-              finiteNumber(storedTotal),
+            discountAmount: 0,
+            lineTotal: money(quantity * unitPrice),
           };
         }).filter((item) => item.quantity > 0);
     if (items.length) return items;
@@ -777,8 +771,7 @@ function generateBkmvPackage({context, logs, invoicesById = {}, clients = [],
     if (!documentType) continue;
 
     const canonicalBeforeDiscount = invoiceData.amountBeforeDiscount;
-    const rawDiscountAmount = finiteNumber(logData.discountAmount ??
-      storedInvoice.discountAmount ?? invoiceData.discount);
+    const rawDiscountAmount = finiteNumber(logData.discountAmount);
     const discountAmount = rawDiscountAmount === 0 ?
       0 : -Math.abs(rawDiscountAmount);
     const beforeTaxAmount = finiteNumber(logData.subtotalBeforeTax ??

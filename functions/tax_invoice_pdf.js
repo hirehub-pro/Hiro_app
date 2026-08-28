@@ -562,11 +562,19 @@ function drawSummary(page, font, invoice, presentation, reservation, y) {
   ).vat_rate) : 0;
   const negative = presentation.isNegativeReceipt === true;
   const sign = (value) => negative ? -Math.abs(value) : value;
-  const rows = hasVat ? [
-    ["סה״כ לפני מע״מ", formatMoney(sign(invoice.payment_amount))],
-    ["מע״מ", formatMoney(sign(invoice.vat_amount))],
-  ] : [];
-  if (invoice.discount > 0) rows.push(["הנחה", `-${formatMoney(invoice.discount)}`]);
+  const rows = hasVat ? [[
+    "סה״כ לפני מע״מ",
+    formatMoney(sign(invoice.amount_before_discount)),
+  ]] : invoice.discount > 0 ? [[
+    "סה״כ לפני הנחה",
+    formatMoney(sign(invoice.amount_before_discount)),
+  ]] : [];
+  if (invoice.discount > 0) {
+    rows.push(["הנחה", `-${formatMoney(invoice.discount)}`]);
+  }
+  if (hasVat) {
+    rows.push(["מע״מ", formatMoney(sign(invoice.vat_amount))]);
+  }
   if (rounding > 0) {
     rows.push([
       "סכום לעיגול",

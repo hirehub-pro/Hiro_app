@@ -173,22 +173,15 @@ function normalizeDocumentLogo(data) {
   };
 }
 
-function calculatedItems(items, discount, usesVat, vatRate) {
-  const gross = items.reduce((total, item) => total + item.grossBeforeTax, 0);
-  let remainingDiscount = discount;
-  return items.map((item, index) => {
-    const proportional = gross > 0 ? discount * item.grossBeforeTax / gross : 0;
-    const lineDiscount = index === items.length - 1 ?
-      remainingDiscount : proportional;
-    remainingDiscount -= lineDiscount;
-    const totalBeforeTax = money(item.grossBeforeTax - lineDiscount);
+function calculatedItems(items, usesVat, vatRate) {
+  return items.map((item) => {
+    const totalBeforeTax = money(item.grossBeforeTax);
     const vatAmount = usesVat ? money(totalBeforeTax * vatRate) : 0;
     return {
       index: item.index,
       description: item.description,
       quantity: money(item.quantity),
       price_per_unit: money(item.unitBeforeTax),
-      discount: money(lineDiscount),
       total_amount: totalBeforeTax,
       vat_rate: usesVat ? money(vatRate * 100) : 0,
       vat_amount: vatAmount,
@@ -261,15 +254,9 @@ function normalizeServerDocumentRequest(raw, {dealerType, vatPercent}) {
       throw new Error("The discount is outside the document total.");
     }
     discount = rawDiscount;
-    items = calculatedItems(normalizedItems, discount, usesVat, vatRate);
-    paymentAmount = money(items.reduce(
-        (total, item) => total + item.total_amount,
-        0,
-    ));
-    vatAmount = money(items.reduce(
-        (total, item) => total + item.vat_amount,
-        0,
-    ));
+    items = calculatedItems(normalizedItems, usesVat, vatRate);
+    paymentAmount = money(amountBeforeDiscount - discount);
+    vatAmount = usesVat ? money(paymentAmount * vatRate) : 0;
   }
   const beforeRounding = money(paymentAmount + vatAmount);
   const roundingAmount = data.roundTotalEnabled === true && docType !== "receipt" ?

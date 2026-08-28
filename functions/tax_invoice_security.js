@@ -99,9 +99,8 @@ function validateTaxInvoiceAllocation({payload, invoiceDocId, currentYear}) {
   }
 
   let amountBeforeDiscount = 0;
-  let discount = 0;
-  let paymentAmount = 0;
-  let vatAmount = 0;
+  let grossVatAmount = 0;
+  const vatRates = new Set();
   items.forEach((item, index) => {
     const quantity = Number(item.quantity);
     const unitPrice = Number(item.price_per_unit);
@@ -115,25 +114,42 @@ function validateTaxInvoiceAllocation({payload, invoiceDocId, currentYear}) {
         vatRate < 0 || vatRate > 100) {
       throw new Error(`Line item ${index + 1} contains invalid amounts.`);
     }
+    if (lineDiscount !== 0) {
+      throw new Error("Discounts must be stored at document level only.");
+    }
 
     const lineBeforeDiscount = money(quantity * unitPrice);
-    const expectedLineTotal = money(lineBeforeDiscount - lineDiscount);
-    const expectedLineVat = money(expectedLineTotal * vatRate / 100);
-    if (expectedLineTotal < 0 || !closeMoney(lineTotal, expectedLineTotal) ||
+    const expectedLineVat = money(lineBeforeDiscount * vatRate / 100);
+    if (!closeMoney(lineTotal, lineBeforeDiscount) ||
         !closeMoney(lineVat, expectedLineVat)) {
-      throw new Error(`Line item ${index + 1} totals do not match its quantity, price, discount, and VAT rate.`);
+      throw new Error(`Line item ${index + 1} totals do not match its quantity, price, and VAT rate.`);
     }
     amountBeforeDiscount += lineBeforeDiscount;
-    discount += lineDiscount;
-    paymentAmount += expectedLineTotal;
-    vatAmount += expectedLineVat;
+    grossVatAmount += expectedLineVat;
+    vatRates.add(money(vatRate).toFixed(2));
   });
 
+  const discount = money(Number(invoice.discount || 0));
+  const normalizedBeforeDiscount = money(amountBeforeDiscount);
+  if (!Number.isFinite(discount) || discount < 0 ||
+      discount > normalizedBeforeDiscount) {
+    throw new Error("The document discount is invalid.");
+  }
+  if (discount > 0 && vatRates.size > 1) {
+    throw new Error(
+        "A document discount requires one VAT rate across all line items.",
+    );
+  }
+  const paymentAmount = money(normalizedBeforeDiscount - discount);
+  const documentVatRate = vatRates.size === 1 ? Number([...vatRates][0]) : 0;
+  const vatAmount = discount > 0 ?
+    money(paymentAmount * documentVatRate / 100) : money(grossVatAmount);
+
   const calculated = {
-    amountBeforeDiscount: money(amountBeforeDiscount),
-    discount: money(discount),
-    paymentAmount: money(paymentAmount),
-    vatAmount: money(vatAmount),
+    amountBeforeDiscount: normalizedBeforeDiscount,
+    discount,
+    paymentAmount,
+    vatAmount,
   };
   const includingVat = money(calculated.paymentAmount + calculated.vatAmount);
   if (!closeMoney(invoice.amount_before_discount, calculated.amountBeforeDiscount, 0.05) ||
