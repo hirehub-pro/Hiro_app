@@ -249,6 +249,27 @@ test("separates C100 production date from a backdated document date", () => {
   assert.equal(c100.slice(400, 408), "20260825");
 });
 
+test("uses each stored item VAT rate instead of the current system rate", () => {
+  const fixture = invoiceReceiptFixture();
+  const stored = fixture.invoicesById[fixture.logs[0].data.invoiceDocId];
+  stored.authoritativeServerDocument.items[0].vat_rate = 17;
+  stored.authoritativeServerDocument.items[0].vat_amount = 17;
+
+  const result = generateBkmvPackage({
+    context: businessContext(), // Current system rate is 18%.
+    logs: fixture.logs, // Log items intentionally have no VAT-rate field.
+    invoicesById: fixture.invoicesById,
+    clients: [],
+    fromDate: "2026-08-01",
+    toDate: "2026-08-31",
+    exportTimestamp: new Date("2026-08-25T14:30:00+03:00"),
+    mainId: "123456789012345",
+  });
+
+  const detail = result.records.find((record) => record.startsWith("D110"));
+  assert.equal(detail.slice(285, 289), "1700");
+});
+
 test("writes calculated customer ledger totals to B110 fields 1414-1416", () => {
   const fixture = invoiceReceiptFixture();
   const result = generateBkmvPackage({

@@ -442,20 +442,29 @@ function creditBaseDocumentType(invoiceData) {
   return fallback ? mapDocumentType(fallback.docType || fallback.type) : null;
 }
 
-function extractItems(logData, invoiceData, subtotal, vatAmount) {
-  const rawItems = logData.items || invoiceData.items;
+function extractItems(logData, invoiceData, subtotal, vatAmount,
+    defaultVatRate) {
+  const rawItems = invoiceData.items || logData.items;
   if (Array.isArray(rawItems)) {
     const items = rawItems.filter((item) => item && typeof item === "object")
         .map((item) => {
           const quantity = finiteNumber(item.quantity, 1);
           const unitPrice = finiteNumber(item.unitPriceWithoutTax ??
             item.price_per_unit ?? item.unitPrice ?? item.price);
+          const storedVatRate = Number(item.vat_rate ?? item.vatRate);
+          const storedVatAmount = Number(item.vat_amount ?? item.taxPaid);
+          const lineBeforeTax = quantity * unitPrice;
+          const derivedVatRate = Number.isFinite(storedVatAmount) &&
+            lineBeforeTax !== 0 ?
+            money(Math.abs(storedVatAmount / lineBeforeTax) * 100) : null;
           return {
             description: String(item.description || "Item"),
             quantity,
             unitPrice,
             discountAmount: 0,
             lineTotal: money(quantity * unitPrice),
+            vatRate: Number.isFinite(storedVatRate) ? storedVatRate :
+              derivedVatRate ?? (vatAmount !== 0 ? defaultVatRate : 0),
           };
         }).filter((item) => item.quantity > 0);
     if (items.length) return items;
@@ -468,6 +477,7 @@ function extractItems(logData, invoiceData, subtotal, vatAmount) {
     unitPrice: fallbackSubtotal,
     discountAmount: 0,
     lineTotal: fallbackSubtotal,
+    vatRate: vatAmount !== 0 ? defaultVatRate : 0,
   }];
 }
 
@@ -875,7 +885,8 @@ function generateBkmvPackage({context, logs, invoicesById = {}, clients = [],
 
     if (["invoices", "invoice_tax_receipt", "transaction_account",
       "credit_notes"].includes(bucket)) {
-      const items = extractItems(logData, storedInvoice, itemSubtotal, vatAmount);
+      const items = extractItems(logData, invoiceData, itemSubtotal, vatAmount,
+          context.vatPercent);
       for (const [index, item] of items.entries()) {
         addRecord("D110", buildD110({
           recordNumber,
@@ -891,7 +902,7 @@ function generateBkmvPackage({context, logs, invoicesById = {}, clients = [],
           unitPrice: item.unitPrice,
           discountAmount: item.discountAmount,
           lineTotal: item.lineTotal,
-          vatRate: vatAmount !== 0 ? context.vatPercent : 0,
+          vatRate: item.vatRate,
           documentDate,
           linkId,
           branchNumber: context.branchNumber || "",

@@ -1322,28 +1322,16 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         return runningTotal + _itemTotalBeforeTax(item);
       });
 
-  double get _itemsTotalBeforeDiscount =>
-      _items.fold<double>(0, (runningTotal, item) {
-        return runningTotal + _itemTotalAfterTax(item);
-      });
-
   double get _manualDiscountAmount {
     if (!_hasDiscount) return 0.0;
     final parsed = double.tryParse(
       _discountController.text.trim().replaceAll(',', '.'),
     );
     if (parsed == null || parsed <= 0) return 0.0;
-    final grossDocumentTotal = _itemsTotalBeforeDiscount;
-    final grossDiscount = _selectedDiscountType == 'percentage'
-        ? grossDocumentTotal * parsed / 100
-        : parsed;
-    final limitedGrossDiscount = grossDiscount > grossDocumentTotal
-        ? grossDocumentTotal
-        : grossDiscount;
-    final discountBeforeTax = _usesVat
-        ? limitedGrossDiscount / (1 + _vatRate)
-        : limitedGrossDiscount;
     final subtotalBeforeTax = _itemsSubtotalBeforeTax;
+    final discountBeforeTax = _selectedDiscountType == 'percentage'
+        ? subtotalBeforeTax * parsed / 100
+        : parsed;
     return discountBeforeTax > subtotalBeforeTax
         ? subtotalBeforeTax
         : discountBeforeTax;
@@ -1352,7 +1340,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   double get _discountAmount => _manualDiscountAmount;
 
   double get _maximumDiscountInput =>
-      _selectedDiscountType == 'percentage' ? 100 : _itemsTotalBeforeDiscount;
+      _selectedDiscountType == 'percentage' ? 100 : _itemsSubtotalBeforeTax;
 
   TextInputFormatter _discountInputFormatter() {
     return TextInputFormatter.withFunction((oldValue, newValue) {
@@ -3824,7 +3812,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'discount_amount': 'סכום הנחה',
           'discount_type': 'סוג',
           'discount_invalid':
-              'יש להזין אחוז הנחה בין 0 ל-100 או סכום הנחה שאינו גדול מהסכום הכולל המקורי של המסמך.',
+              'יש להזין אחוז הנחה בין 0 ל-100 או סכום הנחה שאינו גדול מסכום הפריטים לפני מע״מ.',
           'discount': 'הנחה',
           'round_total': 'עיגול סכום',
           'rounding_amount': 'סכום לעיגול',
@@ -3980,7 +3968,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'discount_amount': 'مبلغ الخصم',
           'discount_type': 'النوع',
           'discount_invalid':
-              'أدخل نسبة خصم بين 0 و100 أو مبلغًا لا يتجاوز الإجمالي الأصلي للمستند.',
+              'أدخل نسبة خصم بين 0 و100 أو مبلغًا لا يتجاوز إجمالي العناصر قبل الضريبة.',
           'discount': 'الخصم',
           'round_total': 'تقريب المبلغ',
           'rounding_amount': 'مبلغ التقريب',
@@ -4125,7 +4113,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'discount_amount': 'Сумма скидки',
           'discount_type': 'Тип',
           'discount_invalid':
-              'Введите скидку от 0 до 100% или сумму не больше первоначальной общей суммы документа.',
+              'Введите скидку от 0 до 100% или сумму не больше стоимости позиций до налога.',
           'discount': 'Скидка',
           'round_total': 'Округлить сумму',
           'rounding_amount': 'Сумма округления',
@@ -4267,7 +4255,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'discount_amount': 'የቅናሽ መጠን',
           'discount_type': 'ዓይነት',
           'discount_invalid':
-              'ከ0 እስከ 100% የሆነ ቅናሽ ወይም ከሰነዱ የመጀመሪያ ጠቅላላ ድምር ያልበለጠ መጠን ያስገቡ።',
+              'ከ0 እስከ 100% የሆነ ቅናሽ ወይም ከግብር በፊት ካለው የዕቃዎች ድምር ያልበለጠ መጠን ያስገቡ።',
           'discount': 'ቅናሽ',
           'round_total': 'ጠቅላላ ድምሩን አዙር',
           'rounding_amount': 'የማዞሪያ መጠን',
@@ -4410,7 +4398,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'discount_amount': 'Discount Amount',
           'discount_type': 'Type',
           'discount_invalid':
-              'Enter a discount from 0 to 100%, or an amount no greater than the original document total.',
+              'Enter a discount from 0 to 100%, or an amount no greater than the items subtotal before tax.',
           'discount': 'Discount',
           'round_total': 'Round Total',
           'rounding_amount': 'Rounding Amount',
@@ -4585,7 +4573,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'discount_amount': 'Discount Amount',
       'discount_type': 'Type',
       'discount_invalid':
-          'Enter a discount from 0 to 100%, or an amount no greater than the original document total.',
+          'Enter a discount from 0 to 100%, or an amount no greater than the items subtotal before tax.',
       'discount': 'Discount',
       'round_total': 'Round Total',
       'rounding_amount': 'Rounding Amount',
@@ -5483,7 +5471,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         parsed > 0 &&
         (_selectedDiscountType == 'percentage'
             ? parsed <= 100
-            : parsed <= _itemsTotalBeforeDiscount);
+            : parsed <= _itemsSubtotalBeforeTax);
     if (!isValid) {
       ScaffoldMessenger.of(
         context,
