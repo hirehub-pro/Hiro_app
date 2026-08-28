@@ -1151,6 +1151,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   String _selectedCreditDeliveryMethod = 'email_confirmation';
 
   final List<InvoiceItem> _items = [];
+  final GlobalKey _serviceItemsSectionKey = GlobalKey();
+  int? _editingItemIndex;
   bool _isPreparing = false;
   bool _hasSavedDocument = false;
   late final String _serverDocumentOperationId = FirebaseFirestore.instance
@@ -3821,6 +3823,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'entered_price_before_tax': 'לפני מע"מ',
           'entered_price_after_tax': 'כולל מע"מ',
           'add_item': 'הוסף פריט',
+          'update_item': 'עדכן פריט',
           'total': 'סה"כ לתשלום',
           'generate': 'תצוגה מקדימה / הדפסה',
           'empty_items': 'נא להוסיף לפחות פריט אחד',
@@ -3977,6 +3980,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'entered_price_before_tax': 'قبل الضريبة',
           'entered_price_after_tax': 'شامل الضريبة',
           'add_item': 'إضافة عنصر',
+          'update_item': 'تحديث العنصر',
           'total': 'الإجمالي المستحق',
           'generate': 'معاينة / طباعة',
           'empty_items': 'يرجى إضافة عنصر واحد على الأقل',
@@ -4122,6 +4126,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'entered_price_before_tax': 'До налога',
           'entered_price_after_tax': 'С налогом',
           'add_item': 'Добавить позицию',
+          'update_item': 'Обновить позицию',
           'total': 'Итого к оплате',
           'generate': 'Предпросмотр / Печать',
           'empty_items': 'Добавьте хотя бы одну позицию',
@@ -4264,6 +4269,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'entered_price_before_tax': 'ከግብር በፊት',
           'entered_price_after_tax': 'ግብር ጨምሮ',
           'add_item': 'እቃ ጨምር',
+          'update_item': 'እቃውን አዘምን',
           'total': 'ጠቅላላ ክፍያ',
           'generate': 'ቅድመ እይታ / አትም',
           'empty_items': 'ቢያንስ አንድ እቃ ያክሉ',
@@ -4407,6 +4413,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'entered_price_before_tax': 'Before Tax',
           'entered_price_after_tax': 'After Tax',
           'add_item': 'Add Item',
+          'update_item': 'Update Item',
           'total': 'Grand Total',
           'generate': 'Preview / Print PDF',
           'empty_items': 'Please add at least one item',
@@ -4582,6 +4589,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'entered_price_before_tax': 'Before Tax',
       'entered_price_after_tax': 'After Tax',
       'add_item': 'Add Item',
+      'update_item': 'Update Item',
       'notes': 'Notes / Payment Terms',
       'total': 'Grand Total',
       'generate': 'Preview / Print PDF',
@@ -4681,21 +4689,64 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         price: price,
         isPriceBeforeTax: _selectedPriceTaxMode == 'before_tax',
       );
-      _items.add(newItem);
+      final editingIndex = _editingItemIndex;
+      if (editingIndex != null && editingIndex < _items.length) {
+        _items[editingIndex] = newItem;
+      } else {
+        _items.add(newItem);
+      }
+      _editingItemIndex = null;
       _itemDescController.clear();
       _itemPriceController.clear();
       _itemQtyController.text = "1";
     });
   }
 
+  void _editItem(int index) {
+    if (index < 0 || index >= _items.length) return;
+    final item = _items[index];
+    setState(() {
+      _editingItemIndex = index;
+      _itemDescController.text = item.description;
+      _itemQtyController.text = item.quantity.toString();
+      _itemPriceController.text = item.price.toStringAsFixed(2);
+      _selectedPriceTaxMode = item.isPriceBeforeTax
+          ? 'before_tax'
+          : 'after_tax';
+    });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      final sectionContext = _serviceItemsSectionKey.currentContext;
+      if (sectionContext != null) {
+        await Scrollable.ensureVisible(
+          sectionContext,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+          alignment: 0.05,
+        );
+      }
+    });
+  }
+
   void _removeItem(int index) {
     setState(() {
       _items.removeAt(index);
+      final editingIndex = _editingItemIndex;
+      if (editingIndex == index) {
+        _editingItemIndex = null;
+        _itemDescController.clear();
+        _itemPriceController.clear();
+        _itemQtyController.text = '1';
+      } else if (editingIndex != null && editingIndex > index) {
+        _editingItemIndex = editingIndex - 1;
+      }
     });
   }
 
   void _clearServiceItems() {
     _items.clear();
+    _editingItemIndex = null;
     _itemDescController.clear();
     _itemQtyController.text = '1';
     _itemPriceController.clear();
@@ -6944,91 +6995,107 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
 
                           if (_selectedDocType != 'receipt') ...[
                             const SizedBox(height: 20),
-                            _buildSectionCard(
-                              title: strings['items']!,
-                              icon: Icons.list_alt_rounded,
-                              children: [
-                                _buildTextField(
-                                  _itemDescController,
-                                  strings['desc']!,
-                                  Icons.description_outlined,
-                                  required: true,
-                                ),
-                                const SizedBox(height: 12),
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: _buildTextField(
-                                        _itemQtyController,
-                                        strings['qty']!,
-                                        Icons.numbers_rounded,
-                                        keyboardType: TextInputType.number,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: _buildTextField(
-                                        _itemPriceController,
-                                        strings['price']!,
-                                        Icons.sell_outlined,
-                                        required: true,
-                                        keyboardType: TextInputType.number,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 12),
-                                if (_isLicensedDealerType) ...[
-                                  DropdownButtonFormField<String>(
-                                    isExpanded: true,
-                                    initialValue: _selectedPriceTaxMode,
-                                    decoration: _inputStyle(
-                                      strings['price_tax_mode']!,
-                                      Icons.percent_rounded,
-                                    ),
-                                    items: [
-                                      DropdownMenuItem(
-                                        value: 'after_tax',
-                                        child: Text(
-                                          strings['price_after_tax']!,
+                            KeyedSubtree(
+                              key: _serviceItemsSectionKey,
+                              child: _buildSectionCard(
+                                title: strings['items']!,
+                                icon: Icons.list_alt_rounded,
+                                children: [
+                                  _buildTextField(
+                                    _itemDescController,
+                                    strings['desc']!,
+                                    Icons.description_outlined,
+                                    required: true,
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: _buildTextField(
+                                          _itemQtyController,
+                                          strings['qty']!,
+                                          Icons.numbers_rounded,
+                                          keyboardType: TextInputType.number,
                                         ),
                                       ),
-                                      DropdownMenuItem(
-                                        value: 'before_tax',
-                                        child: Text(
-                                          strings['price_before_tax']!,
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: _buildTextField(
+                                          _itemPriceController,
+                                          strings['price']!,
+                                          Icons.sell_outlined,
+                                          required: true,
+                                          keyboardType: TextInputType.number,
                                         ),
                                       ),
                                     ],
-                                    onChanged: (value) {
-                                      if (value == null) return;
-                                      setState(
-                                        () => _selectedPriceTaxMode = value,
-                                      );
-                                    },
                                   ),
                                   const SizedBox(height: 12),
-                                ],
-                                const SizedBox(height: 16),
-                                SizedBox(
-                                  width: double.infinity,
-                                  child: ElevatedButton.icon(
-                                    onPressed: _addItem,
-                                    icon: const Icon(Icons.add_rounded),
-                                    label: Text(strings['add_item']!),
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: const Color(
-                                        0xFF1976D2,
-                                      ).withValues(alpha: 0.1),
-                                      foregroundColor: const Color(0xFF1976D2),
-                                      elevation: 0,
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(12),
+                                  if (_isLicensedDealerType) ...[
+                                    DropdownButtonFormField<String>(
+                                      key: ValueKey(_selectedPriceTaxMode),
+                                      isExpanded: true,
+                                      initialValue: _selectedPriceTaxMode,
+                                      decoration: _inputStyle(
+                                        strings['price_tax_mode']!,
+                                        Icons.percent_rounded,
+                                      ),
+                                      items: [
+                                        DropdownMenuItem(
+                                          value: 'after_tax',
+                                          child: Text(
+                                            strings['price_after_tax']!,
+                                          ),
+                                        ),
+                                        DropdownMenuItem(
+                                          value: 'before_tax',
+                                          child: Text(
+                                            strings['price_before_tax']!,
+                                          ),
+                                        ),
+                                      ],
+                                      onChanged: (value) {
+                                        if (value == null) return;
+                                        setState(
+                                          () => _selectedPriceTaxMode = value,
+                                        );
+                                      },
+                                    ),
+                                    const SizedBox(height: 12),
+                                  ],
+                                  const SizedBox(height: 16),
+                                  SizedBox(
+                                    width: double.infinity,
+                                    child: ElevatedButton.icon(
+                                      onPressed: _addItem,
+                                      icon: Icon(
+                                        _editingItemIndex == null
+                                            ? Icons.add_rounded
+                                            : Icons.check_rounded,
+                                      ),
+                                      label: Text(
+                                        strings[_editingItemIndex == null
+                                            ? 'add_item'
+                                            : 'update_item']!,
+                                      ),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: const Color(
+                                          0xFF1976D2,
+                                        ).withValues(alpha: 0.1),
+                                        foregroundColor: const Color(
+                                          0xFF1976D2,
+                                        ),
+                                        elevation: 0,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                        ),
                                       ),
                                     ),
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
                           ],
 
@@ -7114,6 +7181,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                     ],
                                   ),
                                   child: ListTile(
+                                    onTap: () => _editItem(index),
                                     contentPadding: const EdgeInsets.symmetric(
                                       horizontal: 16,
                                       vertical: 4,
@@ -9381,8 +9449,92 @@ class _InvoicePreviewPageState extends State<InvoicePreviewPage>
     return text;
   }
 
+  Future<bool> _confirmFinalSave() async {
+    final languageCode = Provider.of<LanguageProvider>(
+      context,
+      listen: false,
+    ).locale.languageCode;
+
+    final (title, message, reviewLabel, saveLabel) = switch (languageCode) {
+      'he' => (
+        'לשמור את המסמך?',
+        'יש לוודא שכל הפרטים במסמך נכונים. לאחר יצירת המסמך הוא יהיה סופי ולא ניתן יהיה לערוך אותו.',
+        'חזרה לבדיקה',
+        'שמור מסמך',
+      ),
+      'ar' => (
+        'هل تريد حفظ المستند؟',
+        'تأكد من صحة جميع التفاصيل. بعد إنشاء المستند سيصبح نهائيًا ولن تتمكن من تعديله.',
+        'العودة للمراجعة',
+        'حفظ المستند',
+      ),
+      'ru' => (
+        'Сохранить документ?',
+        'Убедитесь, что все данные верны. После создания документ станет окончательным, и его нельзя будет изменить.',
+        'Вернуться к проверке',
+        'Сохранить документ',
+      ),
+      'am' => (
+        'ሰነዱን ያስቀምጡ?',
+        'ሁሉም ዝርዝሮች ትክክል መሆናቸውን ያረጋግጡ። ሰነዱ ከተፈጠረ በኋላ የመጨረሻ ይሆናል እና ማስተካከል አይቻልም።',
+        'ወደ ማረጋገጫ ተመለስ',
+        'ሰነድ አስቀምጥ',
+      ),
+      _ => (
+        'Save this document?',
+        'Make sure every detail is correct. Once this document is created, it will be final and you will not be able to edit it.',
+        'Review Again',
+        'Save Document',
+      ),
+    };
+
+    final isRtl = languageCode == 'he' || languageCode == 'ar';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => Directionality(
+        textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
+        child: AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(22),
+          ),
+          icon: const Icon(
+            Icons.warning_amber_rounded,
+            color: Color(0xFFF59E0B),
+            size: 42,
+          ),
+          title: Text(title, textAlign: TextAlign.center),
+          content: Text(
+            message,
+            textAlign: TextAlign.center,
+            style: const TextStyle(height: 1.5),
+          ),
+          actionsAlignment: MainAxisAlignment.center,
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: Text(reviewLabel),
+            ),
+            FilledButton.icon(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              icon: const Icon(Icons.check_rounded),
+              label: Text(saveLabel),
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFF1976D2),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    return confirmed ?? false;
+  }
+
   Future<void> _handleSave() async {
     if (_isSaving || _isSaved) return;
+
+    final confirmed = await _confirmFinalSave();
+    if (!confirmed || !mounted) return;
 
     setState(() => _isSaving = true);
     try {
@@ -9467,7 +9619,7 @@ class _InvoicePreviewPageState extends State<InvoicePreviewPage>
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton.icon(
-                    onPressed: _isSaved ? null : _handleSave,
+                    onPressed: _isSaved || _isSaving ? null : _handleSave,
                     icon: const Icon(Icons.save_alt_rounded),
                     label: Text(
                       _isSaved

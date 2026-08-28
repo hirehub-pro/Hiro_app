@@ -6,13 +6,12 @@ const {
   mapAuthorityUploadFiles,
   maximumUploadBytes,
   normalizeUniformExportId,
-  normalizeSandboxPdfPaths,
   normalizeUniformSubmissionInput,
   safeSignedUploadHeaders,
   uniformSubmissionFromExport,
+  uniformUploadEntries,
   uniformOverallStatus,
   validateUniformFileContents,
-  validateSandboxPdf,
 } = require("./uniform_tax_authority");
 
 test("resolves Tax Authority files from a server-owned export", () => {
@@ -31,8 +30,6 @@ test("resolves Tax Authority files from a server-owned export", () => {
       paths: {
         ini: `${root}/authority/INI.TXT`,
         bkmv: `${root}/authority/BKMVDATA.TXT`,
-        printedSummary: `${root}/summary.pdf`,
-        annex4: `${root}/annex.pdf`,
       },
     },
   }), {
@@ -41,7 +38,6 @@ test("resolves Tax Authority files from a server-owned export", () => {
     toDate: "2026-01-31",
     iniPath: `${root}/authority/INI.TXT`,
     bkmvPath: `${root}/authority/BKMVDATA.TXT`,
-    sandboxPdfPaths: [`${root}/summary.pdf`, `${root}/annex.pdf`],
   });
 });
 
@@ -69,8 +65,6 @@ test("rejects cross-user or client-selected server export artifacts", () => {
       paths: {
         ini: "users/u2/uniform_exports/run/INI.TXT",
         bkmv: "users/u2/uniform_exports/run/BKMVDATA.TXT",
-        printedSummary: "users/u2/uniform_exports/run/summary.pdf",
-        annex4: "users/u2/uniform_exports/run/annex.pdf",
       },
     },
   }), /invalid artifact path/);
@@ -111,10 +105,28 @@ test("rejects cross-user paths and invalid dates", () => {
   }, "u1"));
 });
 
-test("maps upload targets by the Tax Authority file names", () => {
-  const ini = {fileName: "INI_N2026.pdf", signUrl: "https://storage.googleapis.com/ini", fileUniqueId: "ini.txt"};
-  const bkmv = {fileName: "FROMBKM_BKMVDATA.pdf", signUrl: "https://storage.googleapis.com/bkmv", fileUniqueId: "bkmv.txt"};
-  assert.deepEqual(mapAuthorityUploadFiles([bkmv, ini]), {ini, bkmv});
+test("maps upload targets in the Tax Authority documented order", () => {
+  const ini = {fileName: "first", signUrl: "https://storage.googleapis.com/ini", fileUniqueId: "ini.txt"};
+  const bkmv = {fileName: "second", signUrl: "https://storage.googleapis.com/bkmv", fileUniqueId: "bkmv.txt"};
+  assert.deepEqual(mapAuthorityUploadFiles([ini, bkmv]), {ini, bkmv});
+});
+
+test("uploads the actual uniform TXT bytes instead of PDF reports", () => {
+  const ini = {fileName: "first"};
+  const bkmv = {fileName: "second"};
+  const iniBytes = Buffer.from("A000 uniform data", "latin1");
+  const bkmvBytes = Buffer.from("A100\r\nZ900\r\n", "latin1");
+  const entries = uniformUploadEntries({
+    targets: {ini, bkmv},
+    iniBytes,
+    bkmvBytes,
+    iniPath: "exports/INI.TXT",
+    bkmvPath: "exports/BKMVDATA.TXT",
+  });
+  assert.equal(entries[0].bytes, iniBytes);
+  assert.equal(entries[1].bytes, bkmvBytes);
+  assert.equal(entries.some((entry) =>
+    entry.bytes.subarray(0, 5).toString("ascii") === "%PDF-"), false);
 });
 
 test("allows only documented signed-upload headers", () => {
@@ -188,18 +200,4 @@ test("validates the business, period, and main ID inside uniform files", () => {
     fromDate: "2026-01-01",
     toDate: "2026-01-31",
   }));
-});
-
-test("accepts only two small owned PDFs for the sandbox transport", () => {
-  assert.deepEqual(normalizeSandboxPdfPaths({
-    sandboxFilePaths: [
-      "users/u1/uniform_exports/run/summary.pdf",
-      "users/u1/uniform_exports/run/annex.pdf",
-    ],
-  }, "u1"), [
-    "users/u1/uniform_exports/run/summary.pdf",
-    "users/u1/uniform_exports/run/annex.pdf",
-  ]);
-  assert.doesNotThrow(() => validateSandboxPdf(Buffer.from("%PDF-test")));
-  assert.throws(() => validateSandboxPdf(Buffer.from("plain text")));
 });

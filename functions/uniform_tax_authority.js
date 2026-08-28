@@ -30,8 +30,6 @@ function uniformSubmissionFromExport({data, userId, exportId}) {
   const requiredPaths = {
     iniPath: String(paths.ini || "").trim(),
     bkmvPath: String(paths.bkmv || "").trim(),
-    printedSummaryPath: String(paths.printedSummary || "").trim(),
-    annex4Path: String(paths.annex4 || "").trim(),
   };
   if (Object.values(requiredPaths).some((value) =>
     !value.startsWith(allowedPrefix))) {
@@ -39,9 +37,7 @@ function uniformSubmissionFromExport({data, userId, exportId}) {
   }
   if (requiredPaths.iniPath.split("/").pop().toUpperCase() !== "INI.TXT" ||
       requiredPaths.bkmvPath.split("/").pop().toUpperCase() !==
-        "BKMVDATA.TXT" ||
-      !requiredPaths.printedSummaryPath.toLowerCase().endsWith(".pdf") ||
-      !requiredPaths.annex4Path.toLowerCase().endsWith(".pdf")) {
+        "BKMVDATA.TXT") {
     throw new Error("The export contains invalid Tax Authority artifacts.");
   }
   return {
@@ -50,10 +46,6 @@ function uniformSubmissionFromExport({data, userId, exportId}) {
     toDate,
     iniPath: requiredPaths.iniPath,
     bkmvPath: requiredPaths.bkmvPath,
-    sandboxPdfPaths: [
-      requiredPaths.printedSummaryPath,
-      requiredPaths.annex4Path,
-    ],
   };
 }
 
@@ -88,18 +80,6 @@ function normalizeUniformSubmissionInput(data, userId) {
   return {fromDate, toDate, iniPath, bkmvPath};
 }
 
-function normalizeSandboxPdfPaths(data, userId) {
-  const rawPaths = Array.isArray(data?.sandboxFilePaths) ?
-    data.sandboxFilePaths : [];
-  const allowedPrefix = `users/${userId}/${UNIFORM_EXPORT_PREFIX}/`;
-  const paths = rawPaths.map((value) => String(value || "").trim());
-  if (paths.length !== 2 || paths.some((value) =>
-    !value.startsWith(allowedPrefix) || !value.toLowerCase().endsWith(".pdf"))) {
-    throw new Error("Two user-owned sandbox PDF files are required.");
-  }
-  return paths;
-}
-
 function mapAuthorityUploadFiles(files) {
   if (!Array.isArray(files) || files.length !== 2) {
     throw new Error("The Tax Authority did not return two upload targets.");
@@ -121,15 +101,24 @@ function mapAuthorityUploadFiles(files) {
     return file;
   });
 
-  const ini = normalized.find((file) => file.fileName.toUpperCase().includes("INI"));
-  const bkmv = normalized.find((file) =>
-    file.fileName.toUpperCase().includes("BKM"));
-  const resolvedIni = ini || normalized[0];
-  const resolvedBkmv = bkmv || normalized.find((file) => file !== resolvedIni);
-  if (!resolvedBkmv || resolvedIni === resolvedBkmv) {
-    throw new Error("The Tax Authority returned duplicate upload targets.");
+  // The Tax Authority contract defines the first target as INI and the second
+  // as BKM. The returned file names are server-generated and need not contain
+  // those labels.
+  return {ini: normalized[0], bkmv: normalized[1]};
+}
+
+function uniformUploadEntries({targets, iniBytes, bkmvBytes, iniPath,
+  bkmvPath}) {
+  if (!targets?.ini || !targets?.bkmv || !iniBytes?.length ||
+      !bkmvBytes?.length) {
+    throw new Error(
+        "Two non-empty uniform TXT files and upload targets are required.",
+    );
   }
-  return {ini: resolvedIni, bkmv: resolvedBkmv};
+  return [
+    {kind: "ini", target: targets.ini, bytes: iniBytes, path: iniPath},
+    {kind: "bkmv", target: targets.bkmv, bytes: bkmvBytes, path: bkmvPath},
+  ];
 }
 
 function safeSignedUploadHeaders(headers) {
@@ -203,14 +192,6 @@ function validateUniformFileContents({
   }
 }
 
-function validateSandboxPdf(bytes) {
-  const buffer = Buffer.from(bytes);
-  if (!buffer.length || buffer.length > 1024 * 1024 ||
-      buffer.subarray(0, 5).toString("ascii") !== "%PDF-") {
-    throw new Error("Sandbox test files must be PDFs no larger than 1 MB.");
-  }
-}
-
 function validIsoDate(value) {
   if (!DATE_PATTERN.test(value)) return false;
   const [year, month, day] = value.split("-").map(Number);
@@ -223,11 +204,10 @@ module.exports = {
   mapAuthorityUploadFiles,
   maximumUploadBytes,
   normalizeUniformExportId,
-  normalizeSandboxPdfPaths,
   normalizeUniformSubmissionInput,
   safeSignedUploadHeaders,
   uniformSubmissionFromExport,
+  uniformUploadEntries,
   uniformOverallStatus,
   validateUniformFileContents,
-  validateSandboxPdf,
 };

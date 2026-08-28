@@ -71,12 +71,11 @@ const {
   mapAuthorityUploadFiles,
   maximumUploadBytes,
   normalizeUniformExportId,
-  normalizeSandboxPdfPaths,
   normalizeUniformSubmissionInput,
   safeSignedUploadHeaders,
   uniformSubmissionFromExport,
+  uniformUploadEntries,
   uniformOverallStatus,
-  validateSandboxPdf,
   validateUniformFileContents,
 } = require("./uniform_tax_authority");
 const {
@@ -3956,7 +3955,6 @@ exports.submitUniformFilesToTaxAuthority = onCall(
       }
 
       let input;
-      let sandboxPdfPaths;
       let exportId = null;
       let exportRef = null;
       try {
@@ -3979,10 +3977,8 @@ exports.submitUniformFilesToTaxAuthority = onCall(
             iniPath: resolved.iniPath,
             bkmvPath: resolved.bkmvPath,
           };
-          sandboxPdfPaths = resolved.sandboxPdfPaths;
         } else {
           input = normalizeUniformSubmissionInput(request.data, userId);
-          sandboxPdfPaths = normalizeSandboxPdfPaths(request.data, userId);
         }
       } catch (error) {
         if (error instanceof HttpsError) throw error;
@@ -3995,31 +3991,20 @@ exports.submitUniformFilesToTaxAuthority = onCall(
       const bucket = admin.storage().bucket();
       const iniFile = bucket.file(input.iniPath);
       const bkmvFile = bucket.file(input.bkmvPath);
-      const sandboxIniFile = bucket.file(sandboxPdfPaths[0]);
-      const sandboxBkmvFile = bucket.file(sandboxPdfPaths[1]);
-      const [iniExists, bkmvExists, sandboxIniExists, sandboxBkmvExists] =
-        await Promise.all([
+      const [iniExists, bkmvExists] = await Promise.all([
         iniFile.exists(),
         bkmvFile.exists(),
-        sandboxIniFile.exists(),
-        sandboxBkmvFile.exists(),
-        ]);
-      if (!iniExists[0] || !bkmvExists[0] ||
-          !sandboxIniExists[0] || !sandboxBkmvExists[0]) {
+      ]);
+      if (!iniExists[0] || !bkmvExists[0]) {
         throw new HttpsError("not-found", "A uniform export file was not found.");
       }
 
-      const [iniDownload, bkmvDownload, sandboxIniDownload,
-        sandboxBkmvDownload] = await Promise.all([
+      const [iniDownload, bkmvDownload] = await Promise.all([
         iniFile.download(),
         bkmvFile.download(),
-        sandboxIniFile.download(),
-        sandboxBkmvFile.download(),
-        ]);
+      ]);
       const iniBytes = iniDownload[0];
       const bkmvBytes = bkmvDownload[0];
-      const sandboxIniBytes = sandboxIniDownload[0];
-      const sandboxBkmvBytes = sandboxBkmvDownload[0];
       if (!iniBytes.length || !bkmvBytes.length) {
         throw new HttpsError("invalid-argument", "Uniform export files are empty.");
       }
@@ -4034,13 +4019,6 @@ exports.submitUniformFilesToTaxAuthority = onCall(
       } catch (error) {
         throw new HttpsError("failed-precondition", error.message);
       }
-      try {
-        validateSandboxPdf(sandboxIniBytes);
-        validateSandboxPdf(sandboxBkmvBytes);
-      } catch (error) {
-        throw new HttpsError("failed-precondition", error.message);
-      }
-
       const linksPayload = await callTaxAuthorityUniformJson({
         accessToken,
         url: TAX_AUTH_SANDBOX_UNIFORM_LINKS_URL,
@@ -4082,20 +4060,13 @@ exports.submitUniformFilesToTaxAuthority = onCall(
       } catch (error) {
         throw new HttpsError("failed-precondition", error.message);
       }
-      const uploads = [
-        {
-          kind: "ini",
-          target: targets.ini,
-          bytes: sandboxIniBytes,
-          path: input.iniPath,
-        },
-        {
-          kind: "bkmv",
-          target: targets.bkmv,
-          bytes: sandboxBkmvBytes,
-          path: input.bkmvPath,
-        },
-      ];
+      const uploads = uniformUploadEntries({
+        targets,
+        iniBytes,
+        bkmvBytes,
+        iniPath: input.iniPath,
+        bkmvPath: input.bkmvPath,
+      });
       const submissionRef = admin.firestore()
           .collection("users").doc(userId)
           .collection("uniformTaxSubmissions").doc();
