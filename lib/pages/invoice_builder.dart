@@ -245,6 +245,31 @@ class _FinalDocumentDownloadException implements Exception {
       : 'The finalized document could not be downloaded.';
 }
 
+enum _ServerDocumentReconciliationState {
+  notFound,
+  processing,
+  finalized,
+  retryableFailure,
+  needsReview,
+}
+
+class _ServerDocumentReconciliationResult {
+  const _ServerDocumentReconciliationResult(this.state, {this.pdfBytes});
+
+  final _ServerDocumentReconciliationState state;
+  final Uint8List? pdfBytes;
+}
+
+bool _isAmbiguousServerResponseError(Object error) {
+  if (error is! FirebaseFunctionsException) return false;
+  return error.code == 'unavailable' ||
+      error.code == 'deadline-exceeded' ||
+      error.code == 'unknown' ||
+      error.code == 'cancelled' ||
+      error.code == 'aborted' ||
+      error.code == 'internal';
+}
+
 class _LinkedDocumentsDialog extends StatefulWidget {
   const _LinkedDocumentsDialog({
     required this.strings,
@@ -1181,6 +1206,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   int? _editingItemIndex;
   bool _isPreparing = false;
   bool _hasSavedDocument = false;
+  bool _hasPendingDocumentSave = false;
   late final String _serverDocumentOperationId = FirebaseFirestore.instance
       .collection('_document_operations')
       .doc()
@@ -1223,11 +1249,27 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       _subtotalAmount > _allocationNumberMinAmountBeforeVat;
 
   bool get _returnsHomeAfterSave =>
-      _hasSavedDocument && !widget.returnDraftOnSend;
+      (_hasSavedDocument || _hasPendingDocumentSave) &&
+      !widget.returnDraftOnSend;
+
+  String get _currentServerInvoiceDocId {
+    if (_requiresSequentialDocumentNumber) {
+      return _invoiceDocIdFor(_selectedDocType, _invoiceNumber);
+    }
+    return '${_selectedDocType}_$_serverDocumentOperationId';
+  }
 
   void _markDocumentSaved() {
-    if (!mounted || _hasSavedDocument) return;
-    setState(() => _hasSavedDocument = true);
+    if (!mounted) return;
+    setState(() {
+      _hasSavedDocument = true;
+      _hasPendingDocumentSave = false;
+    });
+  }
+
+  void _setDocumentSavePending(bool pending) {
+    if (!mounted || _hasPendingDocumentSave == pending) return;
+    setState(() => _hasPendingDocumentSave = pending);
   }
 
   void _handleBuilderBack() {
@@ -2977,6 +3019,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         'draftId': draftId,
       });
     } on FirebaseFunctionsException catch (e) {
+      if (_isAmbiguousServerResponseError(e)) rethrow;
       if (e.code == 'failed-precondition' &&
           e.message?.contains('OAuth authorization') == true) {
         throw StateError(strings['tax_authority_not_connected']!);
@@ -3685,6 +3728,95 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       );
     }
     return _ServerDocumentResult(document: document);
+  }
+
+  Future<_ServerDocumentReconciliationResult> _reconcileServerDocument(
+    Future<Uint8List?> Function(_ServerDocumentResult result) onFinalized,
+  ) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      throw StateError('You must be signed in to check the document status.');
+    }
+
+    final invoiceDocId = _currentServerInvoiceDocId;
+    final snapshot = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .collection('invoices')
+        .doc(invoiceDocId)
+        .get(const GetOptions(source: Source.server));
+    if (!snapshot.exists) {
+      return const _ServerDocumentReconciliationResult(
+        _ServerDocumentReconciliationState.notFound,
+      );
+    }
+
+    final document = snapshot.data() ?? const <String, dynamic>{};
+    final status = document['documentStatus']?.toString().trim().toLowerCase();
+    final serverStatus = document['serverDocument'] is Map
+        ? (document['serverDocument'] as Map)['status']
+              ?.toString()
+              .trim()
+              .toLowerCase()
+        : null;
+    if (status == 'finalized' || serverStatus == 'finalized') {
+      final result = _ServerDocumentResult(
+        document: {
+          ...document,
+          'invoiceDocId': invoiceDocId,
+          'documentNumber':
+              document['invoiceNumber']?.toString() ?? _invoiceNumber,
+        },
+      );
+      final pdfBytes = await onFinalized(result);
+      return _ServerDocumentReconciliationResult(
+        _ServerDocumentReconciliationState.finalized,
+        pdfBytes: pdfBytes,
+      );
+    }
+
+    if (status == 'allocation_approved' ||
+        status == 'continued_without_allocation') {
+      final resumed = await _finalizeContinuedTaxInvoice(invoiceDocId);
+      final pdfBytes = await onFinalized(resumed);
+      return _ServerDocumentReconciliationResult(
+        _ServerDocumentReconciliationState.finalized,
+        pdfBytes: pdfBytes,
+      );
+    }
+
+    if (status == 'decision_required') {
+      final allocationRequest = document['taxAuthorityAllocationRequest'];
+      final errors = allocationRequest is Map
+          ? allocationRequest['authorityErrors']
+          : null;
+      final resumed = await _resolveTaxAuthorityDecision(
+        draftId: invoiceDocId,
+        errors: errors,
+      );
+      final pdfBytes = await onFinalized(resumed);
+      return _ServerDocumentReconciliationResult(
+        _ServerDocumentReconciliationState.finalized,
+        pdfBytes: pdfBytes,
+      );
+    }
+
+    if (status == 'needs_reconciliation' ||
+        serverStatus == 'needs_reconciliation') {
+      return const _ServerDocumentReconciliationResult(
+        _ServerDocumentReconciliationState.needsReview,
+      );
+    }
+    if (status == 'generation_failed' ||
+        status == 'allocation_failed' ||
+        serverStatus == 'failed') {
+      return const _ServerDocumentReconciliationResult(
+        _ServerDocumentReconciliationState.retryableFailure,
+      );
+    }
+    return const _ServerDocumentReconciliationResult(
+      _ServerDocumentReconciliationState.processing,
+    );
   }
 
   Future<_ServerDocumentResult> _finalizeDocumentOnServer({
@@ -6004,7 +6136,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       final action = await Navigator.push<String>(
         context,
         MaterialPageRoute(
-          builder: (_) => InvoicePreviewPage(
+          builder: (_) => _InvoicePreviewPage(
             pdfBytes: pdfBytes,
             fileName: _previewFileName(),
             requireTaxAuthorityConnectionPrompt:
@@ -6014,6 +6146,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
             onReturnAfterSave: widget.returnDraftOnSend
                 ? null
                 : _handleBuilderBack,
+            onPendingSaveChanged: _setDocumentSavePending,
+            onCheckSaveStatus: () => _reconcileServerDocument(saveServerResult),
             onSave: () async {
               final serverResult = await _finalizeDocumentOnServer();
               return saveServerResult(serverResult);
@@ -9225,42 +9359,49 @@ enum _TaxAuthorityConnectionChoice {
   connect,
 }
 
-class InvoicePreviewPage extends StatefulWidget {
+class _InvoicePreviewPage extends StatefulWidget {
   final Uint8List pdfBytes;
   final String fileName;
   final Future<Uint8List?> Function() onSave;
   final Future<Uint8List?> Function()? onSaveWithoutAllocation;
   final Future<Uint8List> Function()? onRetryDownload;
+  final Future<_ServerDocumentReconciliationResult> Function()?
+  onCheckSaveStatus;
   final bool requireTaxAuthorityConnectionPrompt;
   final Future<bool> Function()? isTaxAuthorityConnected;
   final Future<void> Function()? onConnectTaxAuthority;
   final Future<void> Function()? onSendForSignature;
   final Future<void> Function()? onSend;
   final VoidCallback? onReturnAfterSave;
+  final ValueChanged<bool>? onPendingSaveChanged;
 
-  const InvoicePreviewPage({
-    super.key,
+  const _InvoicePreviewPage({
     required this.pdfBytes,
     required this.fileName,
     required this.onSave,
     this.onSaveWithoutAllocation,
     this.onRetryDownload,
+    this.onCheckSaveStatus,
     this.requireTaxAuthorityConnectionPrompt = false,
     this.isTaxAuthorityConnected,
     this.onConnectTaxAuthority,
     this.onSendForSignature,
     this.onSend,
     this.onReturnAfterSave,
+    this.onPendingSaveChanged,
   });
 
   @override
-  State<InvoicePreviewPage> createState() => _InvoicePreviewPageState();
+  State<_InvoicePreviewPage> createState() => _InvoicePreviewPageState();
 }
 
-class _InvoicePreviewPageState extends State<InvoicePreviewPage>
+class _InvoicePreviewPageState extends State<_InvoicePreviewPage>
     with WidgetsBindingObserver {
   bool _isSaved = false;
   bool _isSaving = false;
+  bool _isCheckingSaveStatus = false;
+  bool _saveOutcomeUnknown = false;
+  bool _saveDocumentReserved = false;
   bool _isSending = false;
   bool _isSendingForSignature = false;
   bool _waitingForTaxAuthorityReturn = false;
@@ -9357,7 +9498,10 @@ class _InvoicePreviewPageState extends State<InvoicePreviewPage>
   }
 
   void _handleBack() {
-    if ((_isSaved || _isFinalizedButDownloadFailed) &&
+    if ((_isSaved ||
+            _isFinalizedButDownloadFailed ||
+            _saveOutcomeUnknown ||
+            _saveDocumentReserved) &&
         widget.onReturnAfterSave != null) {
       widget.onReturnAfterSave!();
       return;
@@ -9581,6 +9725,126 @@ class _InvoicePreviewPageState extends State<InvoicePreviewPage>
       }
     }
     return choice;
+  }
+
+  String _localizedStatusMessage(Map<String, String> messages) {
+    final languageCode = Provider.of<LanguageProvider>(
+      context,
+      listen: false,
+    ).locale.languageCode;
+    return messages[languageCode] ?? messages['en']!;
+  }
+
+  bool _isUnknownSaveOutcome(Object error) {
+    return _isAmbiguousServerResponseError(error);
+  }
+
+  String _unknownSaveOutcomeMessage() => _localizedStatusMessage(const {
+    'en':
+        'The save request may already have reached the server. Do not create another document. Reconnect and tap Check status; if completed, it will appear in Saved Documents with the same number.',
+    'he':
+        'ייתכן שבקשת השמירה כבר הגיעה לשרת. אין ליצור מסמך נוסף. יש להתחבר מחדש וללחוץ על בדיקת מצב; אם ההפקה הושלמה, המסמך יופיע במסמכים השמורים עם אותו מספר.',
+    'ar':
+        'ربما وصل طلب الحفظ إلى الخادم بالفعل. لا تنشئ مستندًا آخر. أعد الاتصال واضغط على التحقق من الحالة؛ إذا اكتمل، فسيظهر في المستندات المحفوظة بالرقم نفسه.',
+    'ru':
+        'Запрос на сохранение мог уже поступить на сервер. Не создавайте другой документ. Восстановите подключение и нажмите «Проверить статус»; готовый документ появится в сохранённых с тем же номером.',
+    'am':
+        'የማስቀመጥ ጥያቄው አስቀድሞ ወደ አገልጋዩ ደርሶ ሊሆን ይችላል። ሌላ ሰነድ አይፍጠሩ። እንደገና ተገናኝተው ሁኔታን ያረጋግጡ፤ ከተጠናቀቀ በተመሳሳይ ቁጥር በተቀመጡ ሰነዶች ውስጥ ይታያል።',
+  });
+
+  Future<void> _handleCheckSaveStatus() async {
+    if (_isCheckingSaveStatus || widget.onCheckSaveStatus == null) return;
+    setState(() {
+      _isCheckingSaveStatus = true;
+      _saveError = null;
+    });
+    try {
+      final result = await widget.onCheckSaveStatus!.call();
+      if (!mounted) return;
+      switch (result.state) {
+        case _ServerDocumentReconciliationState.finalized:
+          setState(() {
+            if (result.pdfBytes != null) _pdfBytes = result.pdfBytes!;
+            _isSaved = true;
+            _saveOutcomeUnknown = false;
+            _saveError = null;
+          });
+          widget.onPendingSaveChanged?.call(false);
+          break;
+        case _ServerDocumentReconciliationState.processing:
+          setState(() {
+            _saveOutcomeUnknown = true;
+            _saveDocumentReserved = true;
+            _saveError = _localizedStatusMessage(const {
+              'en':
+                  'The server received this document and is still generating it. Do not create another one. Wait a moment, then check its status again.',
+              'he':
+                  'השרת קיבל את המסמך ועדיין מפיק אותו. אין ליצור מסמך נוסף. יש להמתין מעט ולבדוק שוב את המצב.',
+            });
+          });
+          break;
+        case _ServerDocumentReconciliationState.notFound:
+          setState(() {
+            _saveOutcomeUnknown = false;
+            _saveDocumentReserved = false;
+            _saveError = _localizedStatusMessage(const {
+              'en':
+                  'No document was reserved on the server. You can safely retry this same save request.',
+              'he':
+                  'לא נשמר מסמך בשרת. אפשר לנסות שוב בבטחה עם אותה בקשת שמירה.',
+            });
+          });
+          widget.onPendingSaveChanged?.call(false);
+          break;
+        case _ServerDocumentReconciliationState.retryableFailure:
+          setState(() {
+            _saveOutcomeUnknown = false;
+            _saveDocumentReserved = true;
+            _saveError = _localizedStatusMessage(const {
+              'en':
+                  'The server reserved this document, but generation failed. Retry will continue the same document and keep its number.',
+              'he':
+                  'השרת שמר את המסמך, אך ההפקה נכשלה. ניסיון חוזר ימשיך את אותו מסמך וישמור על המספר שלו.',
+            });
+          });
+          break;
+        case _ServerDocumentReconciliationState.needsReview:
+          setState(() {
+            _saveOutcomeUnknown = false;
+            _saveDocumentReserved = true;
+            _saveRequiresReview = true;
+            _saveError = _localizedStatusMessage(const {
+              'en':
+                  'This document needs review. Its number is reserved; do not create a replacement document.',
+              'he': 'המסמך דורש בדיקה. המספר שלו שמור ואין ליצור מסמך חלופי.',
+            });
+          });
+          break;
+      }
+    } on _FinalDocumentDownloadException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _saveOutcomeUnknown = false;
+        _saveDocumentReserved = false;
+        _isFinalizedButDownloadFailed = true;
+        _finalPdfMissing = error.missingConfirmed;
+        _saveError = error.toString();
+      });
+      widget.onPendingSaveChanged?.call(false);
+    } catch (error, stackTrace) {
+      dev.log(
+        'Unable to reconcile the document save status',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (!mounted) return;
+      setState(() {
+        _saveOutcomeUnknown = true;
+        _saveError = _unknownSaveOutcomeMessage();
+      });
+    } finally {
+      if (mounted) setState(() => _isCheckingSaveStatus = false);
+    }
   }
 
   String _friendlySaveError(Object error) {
@@ -9938,6 +10202,8 @@ class _InvoicePreviewPageState extends State<InvoicePreviewPage>
       _isSaving = true;
       _saveError = null;
       _saveRequiresReview = false;
+      _saveOutcomeUnknown = false;
+      _saveDocumentReserved = false;
     });
     try {
       if (widget.requireTaxAuthorityConnectionPrompt) {
@@ -10002,6 +10268,15 @@ class _InvoicePreviewPageState extends State<InvoicePreviewPage>
         );
         return;
       }
+      if (_isUnknownSaveOutcome(e) && widget.onCheckSaveStatus != null) {
+        setState(() {
+          _saveOutcomeUnknown = true;
+          _saveError = _unknownSaveOutcomeMessage();
+        });
+        widget.onPendingSaveChanged?.call(true);
+        unawaited(_handleCheckSaveStatus());
+        return;
+      }
       final message = _friendlySaveError(e);
       final details = e is FirebaseFunctionsException ? e.details : null;
       final requiresReview =
@@ -10060,11 +10335,17 @@ class _InvoicePreviewPageState extends State<InvoicePreviewPage>
       textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
       child: PopScope(
         canPop:
-            !((_isSaved || _isFinalizedButDownloadFailed) &&
+            !((_isSaved ||
+                    _isFinalizedButDownloadFailed ||
+                    _saveOutcomeUnknown ||
+                    _saveDocumentReserved) &&
                 widget.onReturnAfterSave != null),
         onPopInvokedWithResult: (didPop, result) {
           if (!didPop &&
-              (_isSaved || _isFinalizedButDownloadFailed) &&
+              (_isSaved ||
+                  _isFinalizedButDownloadFailed ||
+                  _saveOutcomeUnknown ||
+                  _saveDocumentReserved) &&
               widget.onReturnAfterSave != null) {
             widget.onReturnAfterSave!();
           }
@@ -10097,16 +10378,26 @@ class _InvoicePreviewPageState extends State<InvoicePreviewPage>
                     width: double.infinity,
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFFEF2F2),
+                      color: _saveOutcomeUnknown
+                          ? const Color(0xFFEFF6FF)
+                          : const Color(0xFFFEF2F2),
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: const Color(0xFFFECACA)),
+                      border: Border.all(
+                        color: _saveOutcomeUnknown
+                            ? const Color(0xFFBFDBFE)
+                            : const Color(0xFFFECACA),
+                      ),
                     ),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Icon(
-                          Icons.error_outline_rounded,
-                          color: Color(0xFFB91C1C),
+                        Icon(
+                          _saveOutcomeUnknown
+                              ? Icons.info_outline_rounded
+                              : Icons.error_outline_rounded,
+                          color: _saveOutcomeUnknown
+                              ? const Color(0xFF1D4ED8)
+                              : const Color(0xFFB91C1C),
                         ),
                         const SizedBox(width: 8),
                         Expanded(
@@ -10126,8 +10417,10 @@ class _InvoicePreviewPageState extends State<InvoicePreviewPage>
                                       : _saveRequiresReview
                                       ? 'Generation failed repeatedly. The number is reserved and the document was sent for review. Do not create a replacement document.'
                                       : _saveError!),
-                            style: const TextStyle(
-                              color: Color(0xFF991B1B),
+                            style: TextStyle(
+                              color: _saveOutcomeUnknown
+                                  ? const Color(0xFF1E40AF)
+                                  : const Color(0xFF991B1B),
                               fontWeight: FontWeight.w700,
                             ),
                           ),
@@ -10143,16 +10436,21 @@ class _InvoicePreviewPageState extends State<InvoicePreviewPage>
                     onPressed:
                         _isSaved ||
                             _isSaving ||
+                            _isCheckingSaveStatus ||
                             _isDownloadingFinalPdf ||
                             _saveRequiresReview ||
                             _finalPdfMissing
                         ? null
+                        : _saveOutcomeUnknown
+                        ? _handleCheckSaveStatus
                         : _isFinalizedButDownloadFailed
                         ? _handleRetryDownload
                         : _handleSave,
                     icon: Icon(
                       _isFinalizedButDownloadFailed
                           ? Icons.download_rounded
+                          : _saveOutcomeUnknown
+                          ? Icons.sync_rounded
                           : Icons.save_alt_rounded,
                     ),
                     label: Text(
@@ -10162,12 +10460,16 @@ class _InvoicePreviewPageState extends State<InvoicePreviewPage>
                           ? (isRtl ? 'נדרשת בדיקה' : 'Review required')
                           : _isDownloadingFinalPdf
                           ? (isRtl ? 'מוריד...' : 'Downloading...')
+                          : _isCheckingSaveStatus
+                          ? (isRtl ? 'בודק מצב...' : 'Checking status...')
                           : _isFinalizedButDownloadFailed
                           ? (isRtl ? 'נסה להוריד שוב' : 'Retry download')
                           : _saveRequiresReview
                           ? (isRtl ? 'הועבר לבדיקה' : 'Under review')
                           : _isSaving
                           ? (isRtl ? 'שומר...' : 'Saving...')
+                          : _saveOutcomeUnknown
+                          ? (isRtl ? 'בדיקת מצב' : 'Check status')
                           : _saveError != null
                           ? (isRtl ? 'נסה שוב' : 'Retry')
                           : (isRtl ? 'שמור' : 'Save'),
