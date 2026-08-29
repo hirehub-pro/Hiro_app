@@ -113,7 +113,7 @@ function normalizeTaxInvoicePresentation(value) {
     })(),
     externalClientNumber: boundedString(data.externalClientNumber, 40),
     savedClientId: boundedOptionalString(data.savedClientId, 180),
-    priceTaxModeDefault: ["before_tax", "after_tax"].includes(
+    priceTaxModeDefault: ["before_tax", "after_tax", "vat_exempt"].includes(
         boundedString(data.priceTaxModeDefault, 20),
     ) ? data.priceTaxModeDefault : "before_tax",
     roundTotalEnabled: data.roundTotalEnabled === true,
@@ -171,6 +171,14 @@ function formatVatRate(value) {
     maximumFractionDigits: 2,
     useGrouping: false,
   }).format(safeNumber(value));
+}
+
+function taxableSubtotalBeforeTax(invoice) {
+  const items = Array.isArray(invoice?.items) ? invoice.items : [];
+  return money(items.reduce((total, item) => {
+    return Number(item.vat_rate) > 0 ?
+      total + safeNumber(item.total_amount) : total;
+  }, 0));
 }
 
 function formatDate(value) {
@@ -557,18 +565,27 @@ function drawSummary(page, font, invoice, presentation, reservation, y) {
   const rounding = presentation.roundTotalEnabled ? money(beforeRounding - Math.floor(beforeRounding)) : 0;
   const finalTotal = money(beforeRounding - rounding);
   const hasVat = invoice.items.some((item) => Number(item.vat_rate) > 0);
+  const hasVatExempt = invoice.items.some(
+      (item) => item.priceTaxMode === "vat_exempt",
+  );
   const vatRate = hasVat ? Number(invoice.items.find(
       (item) => Number(item.vat_rate) > 0,
   ).vat_rate) : 0;
   const negative = presentation.isNegativeReceipt === true;
   const sign = (value) => negative ? -Math.abs(value) : value;
-  const rows = hasVat ? [[
+  const rows = hasVat || hasVatExempt ? [[
     "סה״כ לפני מע״מ",
     formatMoney(sign(invoice.amount_before_discount)),
   ]] : invoice.discount > 0 ? [[
     "סה״כ לפני הנחה",
     formatMoney(sign(invoice.amount_before_discount)),
   ]] : [];
+  if (hasVatExempt) {
+    rows.push([
+      "סה״כ חייב במע״מ",
+      formatMoney(sign(taxableSubtotalBeforeTax(invoice))),
+    ]);
+  }
   if (invoice.discount > 0) {
     rows.push(["הנחה", `-${formatMoney(invoice.discount)}`]);
   }
@@ -980,6 +997,7 @@ module.exports = {
   buildTaxInvoicePdf,
   formatMoney,
   normalizeTaxInvoicePresentation,
+  taxableSubtotalBeforeTax,
   validateTaxInvoicePresentation,
   visualText,
 };

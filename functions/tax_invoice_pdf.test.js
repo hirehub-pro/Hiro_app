@@ -8,6 +8,7 @@ const {
   buildTaxInvoicePdf,
   formatMoney,
   normalizeTaxInvoicePresentation,
+  taxableSubtotalBeforeTax,
   visualText,
 } = require("./tax_invoice_pdf");
 
@@ -50,10 +51,12 @@ test("presentation normalization keeps only bounded supported fields", () => {
     roundTotalEnabled: true,
     paymentMethods: [{method: "credit", amount: "236", secret: "drop-me"}],
     ignored: "drop-me",
+    priceTaxModeDefault: "vat_exempt",
   });
   assert.equal(presentation.clientEmail, "client@example.com");
   assert.equal(presentation.paymentDueDate, null);
   assert.equal(presentation.roundTotalEnabled, true);
+  assert.equal(presentation.priceTaxModeDefault, "vat_exempt");
   assert.deepEqual(Object.keys(presentation).sort(), [
     "clientAddress",
     "clientEmail",
@@ -97,6 +100,30 @@ test("formats PDF money with thousands separators and two decimals", () => {
   assert.equal(formatMoney(1000), "1,000.00 ₪");
   assert.equal(formatMoney(1000000.5), "1,000,000.50 ₪");
   assert.equal(formatMoney(-1234.567), "-1,234.57 ₪");
+});
+
+test("calculates the subtotal subject to VAT when exempt items exist", () => {
+  const invoice = {
+    amount_before_discount: 4000,
+    items: [
+      {
+        total_amount: 1000,
+        vat_rate: 18,
+        priceTaxMode: "before_tax",
+      },
+      {
+        total_amount: 1000,
+        vat_rate: 18,
+        priceTaxMode: "after_tax",
+      },
+      {
+        total_amount: 2000,
+        vat_rate: 0,
+        priceTaxMode: "vat_exempt",
+      },
+    ],
+  };
+  assert.equal(taxableSubtotalBeforeTax(invoice), 2000);
 });
 
 test("server generator wraps long item descriptions without failing", async () => {

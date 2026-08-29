@@ -113,8 +113,9 @@ function normalizeItems(value, usesVat, vatRate) {
     const description = string(data.description, 120);
     const quantity = finite(data.quantity, `Item ${index + 1} quantity`);
     const price = finite(data.price, `Item ${index + 1} price`);
-    const priceTaxMode = data.priceTaxMode === "before_tax" ?
-      "before_tax" : "after_tax";
+    const priceTaxMode = ["before_tax", "after_tax", "vat_exempt"].includes(
+        data.priceTaxMode,
+    ) ? data.priceTaxMode : "after_tax";
     if (!description || quantity <= 0 || price < 0) {
       throw new Error(`Item ${index + 1} is invalid.`);
     }
@@ -176,14 +177,16 @@ function normalizeDocumentLogo(data) {
 function calculatedItems(items, usesVat, vatRate) {
   return items.map((item) => {
     const totalBeforeTax = money(item.grossBeforeTax);
-    const vatAmount = usesVat ? money(totalBeforeTax * vatRate) : 0;
+    const itemVatRate = usesVat && item.priceTaxMode !== "vat_exempt" ?
+      vatRate : 0;
+    const vatAmount = money(totalBeforeTax * itemVatRate);
     return {
       index: item.index,
       description: item.description,
       quantity: money(item.quantity),
       price_per_unit: money(item.unitBeforeTax),
       total_amount: totalBeforeTax,
-      vat_rate: usesVat ? money(vatRate * 100) : 0,
+      vat_rate: money(itemVatRate * 100),
       vat_amount: vatAmount,
       originalPrice: money(item.price),
       priceTaxMode: item.priceTaxMode,
@@ -256,7 +259,15 @@ function normalizeServerDocumentRequest(raw, {dealerType, vatPercent}) {
     discount = rawDiscount;
     items = calculatedItems(normalizedItems, usesVat, vatRate);
     paymentAmount = money(amountBeforeDiscount - discount);
-    vatAmount = usesVat ? money(paymentAmount * vatRate) : 0;
+    const itemVatRates = new Set(items.map((item) => item.vat_rate));
+    if (discount > 0 && itemVatRates.size > 1) {
+      throw new Error(
+          "A document discount cannot be applied to items with different VAT rates.",
+      );
+    }
+    vatAmount = discount > 0 ?
+      money(paymentAmount * Number([...itemVatRates][0] || 0) / 100) :
+      money(items.reduce((total, item) => total + item.vat_amount, 0));
   }
   const beforeRounding = money(paymentAmount + vatAmount);
   const roundingAmount = data.roundTotalEnabled === true && docType !== "receipt" ?
@@ -326,8 +337,9 @@ function normalizeServerDocumentRequest(raw, {dealerType, vatPercent}) {
     finalTotal,
     notes: string(data.notes, 4000),
     roundTotalEnabled: data.roundTotalEnabled === true,
-    priceTaxModeDefault: data.priceTaxModeDefault === "before_tax" ?
-      "before_tax" : "after_tax",
+    priceTaxModeDefault: ["before_tax", "after_tax", "vat_exempt"].includes(
+        data.priceTaxModeDefault,
+    ) ? data.priceTaxModeDefault : "after_tax",
     paymentMethods,
     linkedDocuments,
     linkedDocumentIds: linkedDocuments.map((entry) => entry.invoiceDocId),

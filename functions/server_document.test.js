@@ -56,6 +56,58 @@ test("calculates invoice totals on the server and ignores client totals", () => 
   assert.equal("discount" in document.items[0], false);
 });
 
+test("keeps VAT-exempt items at a zero VAT rate", () => {
+  const document = normalize(base({
+    items: [{
+      description: "VAT-exempt service",
+      quantity: 2,
+      price: 118,
+      priceTaxMode: "vat_exempt",
+    }],
+  }));
+  assert.equal(document.amountBeforeDiscount, 236);
+  assert.equal(document.paymentAmount, 226);
+  assert.equal(document.vatAmount, 0);
+  assert.equal(document.finalTotal, 226);
+  assert.equal(document.items[0].price_per_unit, 118);
+  assert.equal(document.items[0].vat_rate, 0);
+  assert.equal(document.items[0].vat_amount, 0);
+  assert.equal(document.items[0].priceTaxMode, "vat_exempt");
+});
+
+test("calculates taxable and VAT-exempt items independently", () => {
+  const document = normalize(base({
+    discountAmount: 0,
+    items: [
+      {
+        description: "Taxable service",
+        quantity: 1,
+        price: 118,
+        priceTaxMode: "after_tax",
+      },
+      {
+        description: "VAT-exempt service",
+        quantity: 1,
+        price: 50,
+        priceTaxMode: "vat_exempt",
+      },
+    ],
+  }));
+  assert.equal(document.amountBeforeDiscount, 150);
+  assert.equal(document.vatAmount, 18);
+  assert.equal(document.finalTotal, 168);
+  assert.deepEqual(document.items.map((item) => item.vat_rate), [18, 0]);
+
+  assert.throws(() => normalize(base({
+    items: document.items.map((item) => ({
+      description: item.description,
+      quantity: item.quantity,
+      price: item.originalPrice,
+      priceTaxMode: item.priceTaxMode,
+    })),
+  })), /different VAT rates/);
+});
+
 test("requires invoice-receipt payments to equal the calculated total", () => {
   assert.throws(() => normalize(base({
     docType: "invoice_receipt",

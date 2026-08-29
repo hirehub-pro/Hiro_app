@@ -777,13 +777,16 @@ class InvoiceItem {
   final String description;
   final int quantity;
   final double price;
-  final bool isPriceBeforeTax;
+  final String priceTaxMode;
   InvoiceItem({
     required this.description,
     this.quantity = 1,
     required this.price,
-    this.isPriceBeforeTax = false,
+    this.priceTaxMode = 'after_tax',
   });
+
+  bool get isPriceBeforeTax => priceTaxMode == 'before_tax';
+  bool get isVatExempt => priceTaxMode == 'vat_exempt';
 }
 
 class _PaymentMethodEntry {
@@ -1076,6 +1079,14 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     }
   }
 
+  String _normalizePriceTaxMode(String? raw) {
+    return switch (raw) {
+      'before_tax' => 'before_tax',
+      'vat_exempt' => 'vat_exempt',
+      _ => 'after_tax',
+    };
+  }
+
   String _counterDocIdForType(String docType) =>
       docType == 'transaction_account'
       ? 'document_counter_transaction_account'
@@ -1304,12 +1315,12 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   }
 
   double _unitPriceAfterTax(InvoiceItem item) {
-    if (!_usesVat) return item.price;
+    if (!_usesVat || item.isVatExempt) return item.price;
     return item.isPriceBeforeTax ? item.price * (1 + _vatRate) : item.price;
   }
 
   double _unitPriceBeforeTax(InvoiceItem item) {
-    if (!_usesVat) return item.price;
+    if (!_usesVat || item.isVatExempt) return item.price;
     return item.isPriceBeforeTax ? item.price : item.price / (1 + _vatRate);
   }
 
@@ -1379,7 +1390,21 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     return subtotal < 0 ? 0 : subtotal;
   }
 
-  double get _vatAmount => _usesVat ? _subtotalAmount * _vatRate : 0.0;
+  bool get _hasTaxableItems => _items.any((item) => !item.isVatExempt);
+
+  bool get _hasMixedVatRates =>
+      _usesVat && _hasTaxableItems && _items.any((item) => item.isVatExempt);
+
+  double get _vatAmount {
+    if (!_usesVat || !_hasTaxableItems) return 0.0;
+    if (_discountAmount > 0) return _subtotalAmount * _vatRate;
+    return _items
+        .where((item) => !item.isVatExempt)
+        .fold<double>(
+          0,
+          (total, item) => total + _itemTotalBeforeTax(item) * _vatRate,
+        );
+  }
 
   double get _totalBeforeRoundingAmount => _subtotalAmount + _vatAmount;
 
@@ -2491,8 +2516,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       final rawPrice = firstItem['price'];
       final price = (rawPrice as num?)?.toDouble();
       final quantity = (firstItem['quantity'] as num?)?.toInt() ?? 1;
-      final priceTaxMode = (firstItem['priceTaxMode'] ?? 'after_tax')
-          .toString();
+      final priceTaxMode = _normalizePriceTaxMode(
+        firstItem['priceTaxMode']?.toString(),
+      );
 
       if (description.isNotEmpty && (price == null || price <= 0)) {
         _itemDescController.text = description;
@@ -2509,12 +2535,14 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           final description = (item['description'] ?? '').toString();
           final quantity = (item['quantity'] as num?)?.toInt() ?? 1;
           final price = (item['price'] as num?)?.toDouble() ?? 0.0;
-          final priceTaxMode = (item['priceTaxMode'] ?? 'after_tax').toString();
+          final priceTaxMode = _normalizePriceTaxMode(
+            item['priceTaxMode']?.toString(),
+          );
           return InvoiceItem(
             description: description,
             quantity: quantity < 1 ? 1 : quantity,
             price: price,
-            isPriceBeforeTax: priceTaxMode == 'before_tax',
+            priceTaxMode: priceTaxMode,
           );
         }),
       );
@@ -2832,8 +2860,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         'quantity': item.quantity,
         'price_per_unit': _unitPriceBeforeTax(item),
         'total_amount': totalAmount,
-        'vat_rate': _vatRate * 100,
-        'vat_amount': totalAmount * _vatRate,
+        'vat_rate': item.isVatExempt ? 0 : _vatRate * 100,
+        'vat_amount': item.isVatExempt ? 0 : totalAmount * _vatRate,
       };
     }).toList();
   }
@@ -3580,9 +3608,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
               'description': item.description,
               'quantity': item.quantity,
               'price': item.price,
-              'priceTaxMode': item.isPriceBeforeTax
-                  ? 'before_tax'
-                  : 'after_tax',
+              'priceTaxMode': item.priceTaxMode,
             },
           )
           .toList(growable: false),
@@ -3810,6 +3836,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'price_tax_mode': 'מחיר כולל/לפני מע"מ',
           'price_before_tax': 'לפני מע"מ',
           'price_after_tax': 'כולל מע"מ',
+          'price_vat_exempt': 'פטור ממע״מ',
           'has_discount': 'האם יש הנחה?',
           'discount_amount': 'סכום הנחה',
           'discount_type': 'סוג',
@@ -3822,6 +3849,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'round_total_already': 'הסכום כבר מעוגל',
           'entered_price_before_tax': 'לפני מע"מ',
           'entered_price_after_tax': 'כולל מע"מ',
+          'entered_price_vat_exempt': 'פטור ממע״מ',
+          'discount_mixed_vat_invalid':
+              'לא ניתן להחיל הנחה כללית על פריטים עם שיעורי מע״מ שונים.',
           'add_item': 'הוסף פריט',
           'update_item': 'עדכן פריט',
           'total': 'סה"כ לתשלום',
@@ -3967,6 +3997,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'price_tax_mode': 'حالة السعر الضريبية',
           'price_before_tax': 'قبل الضريبة',
           'price_after_tax': 'شامل الضريبة',
+          'price_vat_exempt': 'معفى من ضريبة القيمة المضافة',
           'has_discount': 'هل يوجد خصم؟',
           'discount_amount': 'مبلغ الخصم',
           'discount_type': 'النوع',
@@ -3979,6 +4010,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'round_total_already': 'المبلغ مقرب بالفعل',
           'entered_price_before_tax': 'قبل الضريبة',
           'entered_price_after_tax': 'شامل الضريبة',
+          'entered_price_vat_exempt': 'معفى من ضريبة القيمة المضافة',
+          'discount_mixed_vat_invalid':
+              'لا يمكن تطبيق خصم عام على عناصر ذات معدلات ضريبية مختلفة.',
           'add_item': 'إضافة عنصر',
           'update_item': 'تحديث العنصر',
           'total': 'الإجمالي المستحق',
@@ -4113,6 +4147,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'price_tax_mode': 'Режим цены по налогу',
           'price_before_tax': 'До налога',
           'price_after_tax': 'С налогом',
+          'price_vat_exempt': 'Освобождено от НДС',
           'has_discount': 'Применить скидку?',
           'discount_amount': 'Сумма скидки',
           'discount_type': 'Тип',
@@ -4125,6 +4160,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'round_total_already': 'Сумма уже округлена',
           'entered_price_before_tax': 'До налога',
           'entered_price_after_tax': 'С налогом',
+          'entered_price_vat_exempt': 'Освобождено от НДС',
+          'discount_mixed_vat_invalid':
+              'Общую скидку нельзя применить к позициям с разными ставками НДС.',
           'add_item': 'Добавить позицию',
           'update_item': 'Обновить позицию',
           'total': 'Итого к оплате',
@@ -4256,6 +4294,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'price_tax_mode': 'የዋጋ ግብር ሁኔታ',
           'price_before_tax': 'ከግብር በፊት',
           'price_after_tax': 'ግብር ጨምሮ',
+          'price_vat_exempt': 'ከቫት ነፃ',
           'has_discount': 'ቅናሽ አለ?',
           'discount_amount': 'የቅናሽ መጠን',
           'discount_type': 'ዓይነት',
@@ -4268,6 +4307,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'round_total_already': 'መጠኑ አስቀድሞ ዙር ነው',
           'entered_price_before_tax': 'ከግብር በፊት',
           'entered_price_after_tax': 'ግብር ጨምሮ',
+          'entered_price_vat_exempt': 'ከቫት ነፃ',
+          'discount_mixed_vat_invalid':
+              'በተለያዩ የቫት መጠኖች ላይ አጠቃላይ ቅናሽ ማድረግ አይቻልም።',
           'add_item': 'እቃ ጨምር',
           'update_item': 'እቃውን አዘምን',
           'total': 'ጠቅላላ ክፍያ',
@@ -4400,6 +4442,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'price_tax_mode': 'Price Tax Mode',
           'price_before_tax': 'Before Tax',
           'price_after_tax': 'After Tax',
+          'price_vat_exempt': 'VAT Exempt',
           'has_discount': 'Apply Discount?',
           'discount_amount': 'Discount Amount',
           'discount_type': 'Type',
@@ -4412,6 +4455,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'round_total_already': 'The amount is already rounded',
           'entered_price_before_tax': 'Before Tax',
           'entered_price_after_tax': 'After Tax',
+          'entered_price_vat_exempt': 'VAT Exempt',
+          'discount_mixed_vat_invalid':
+              'A document discount cannot be applied to items with different VAT rates.',
           'add_item': 'Add Item',
           'update_item': 'Update Item',
           'total': 'Grand Total',
@@ -4576,6 +4622,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'price_tax_mode': 'Price Tax Mode',
       'price_before_tax': 'Before Tax',
       'price_after_tax': 'After Tax',
+      'price_vat_exempt': 'VAT Exempt',
       'has_discount': 'Apply Discount?',
       'discount_amount': 'Discount Amount',
       'discount_type': 'Type',
@@ -4588,6 +4635,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'round_total_already': 'The amount is already rounded',
       'entered_price_before_tax': 'Before Tax',
       'entered_price_after_tax': 'After Tax',
+      'entered_price_vat_exempt': 'VAT Exempt',
+      'discount_mixed_vat_invalid':
+          'A document discount cannot be applied to items with different VAT rates.',
       'add_item': 'Add Item',
       'update_item': 'Update Item',
       'notes': 'Notes / Payment Terms',
@@ -4687,7 +4737,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         description: _itemDescController.text,
         quantity: qty,
         price: price,
-        isPriceBeforeTax: _selectedPriceTaxMode == 'before_tax',
+        priceTaxMode: _selectedPriceTaxMode,
       );
       final editingIndex = _editingItemIndex;
       if (editingIndex != null && editingIndex < _items.length) {
@@ -4710,9 +4760,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       _itemDescController.text = item.description;
       _itemQtyController.text = item.quantity.toString();
       _itemPriceController.text = item.price.toStringAsFixed(2);
-      _selectedPriceTaxMode = item.isPriceBeforeTax
-          ? 'before_tax'
-          : 'after_tax';
+      _selectedPriceTaxMode = item.priceTaxMode;
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -5514,6 +5562,12 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     if (!_hasDiscount) return true;
 
     final strings = _getLocalizedStrings(context, listen: false);
+    if (_hasMixedVatRates) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(strings['discount_mixed_vat_invalid']!)),
+      );
+      return false;
+    }
     final parsed = double.tryParse(
       _discountController.text.trim().replaceAll(',', '.'),
     );
@@ -7053,6 +7107,12 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                             strings['price_before_tax']!,
                                           ),
                                         ),
+                                        DropdownMenuItem(
+                                          value: 'vat_exempt',
+                                          child: Text(
+                                            strings['price_vat_exempt']!,
+                                          ),
+                                        ),
                                       ],
                                       onChanged: (value) {
                                         if (value == null) return;
@@ -7165,6 +7225,14 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                               itemCount: _items.length,
                               itemBuilder: (context, index) {
                                 final item = _items[index];
+                                final taxModeLabel =
+                                    switch (item.priceTaxMode) {
+                                      'before_tax' =>
+                                        strings['entered_price_before_tax']!,
+                                      'vat_exempt' =>
+                                        strings['entered_price_vat_exempt']!,
+                                      _ => strings['entered_price_after_tax']!,
+                                    };
                                 return Container(
                                   margin: const EdgeInsets.only(bottom: 8),
                                   decoration: BoxDecoration(
@@ -7194,7 +7262,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                       ),
                                     ),
                                     subtitle: Text(
-                                      "${item.quantity} x ${item.price.toStringAsFixed(2)} ₪${_isLicensedDealerType ? ' (${item.isPriceBeforeTax ? strings['entered_price_before_tax']! : strings['entered_price_after_tax']!})' : ''}",
+                                      "${item.quantity} x ${item.price.toStringAsFixed(2)} ₪${_isLicensedDealerType ? ' ($taxModeLabel)' : ''}",
                                     ),
                                     trailing: Row(
                                       mainAxisSize: MainAxisSize.min,
@@ -9494,36 +9562,109 @@ class _InvoicePreviewPageState extends State<InvoicePreviewPage>
       barrierDismissible: false,
       builder: (dialogContext) => Directionality(
         textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
-        child: AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(22),
-          ),
-          icon: const Icon(
-            Icons.warning_amber_rounded,
-            color: Color(0xFFF59E0B),
-            size: 42,
-          ),
-          title: Text(title, textAlign: TextAlign.center),
-          content: Text(
-            message,
-            textAlign: TextAlign.center,
-            style: const TextStyle(height: 1.5),
-          ),
-          actionsAlignment: MainAxisAlignment.center,
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: Text(reviewLabel),
-            ),
-            FilledButton.icon(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              icon: const Icon(Icons.check_rounded),
-              label: Text(saveLabel),
-              style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFF1976D2),
+        child: Dialog(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(24, 28, 24, 22),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(28),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.16),
+                    blurRadius: 32,
+                    offset: const Offset(0, 14),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 68,
+                    height: 68,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEAF4FF),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: const Color(0xFFBFDBFE)),
+                    ),
+                    child: const Icon(
+                      Icons.visibility_outlined,
+                      color: Color(0xFF1976D2),
+                      size: 34,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    title,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Color(0xFF0F172A),
+                      fontSize: 23,
+                      fontWeight: FontWeight.w800,
+                      height: 1.2,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    message,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Color(0xFF475569),
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                      height: 1.5,
+                    ),
+                  ),
+                  const SizedBox(height: 26),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: () => Navigator.of(dialogContext).pop(true),
+                      icon: const Icon(Icons.check_rounded, size: 21),
+                      label: Text(saveLabel),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFF1976D2),
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size.fromHeight(52),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(15),
+                        ),
+                        textStyle: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.of(dialogContext).pop(false),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF1976D2),
+                        minimumSize: const Size.fromHeight(50),
+                        side: const BorderSide(color: Color(0xFFBFDBFE)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(15),
+                        ),
+                        textStyle: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      child: Text(reviewLabel),
+                    ),
+                  ),
+                ],
               ),
             ),
-          ],
+          ),
         ),
       ),
     );
