@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:rxdart/rxdart.dart';
 import 'package:untitled1/pages/my_requests_page.dart';
 import 'package:untitled1/pages/request_details.dart';
+import 'package:untitled1/pages/saved_invoices_page.dart';
 import 'package:untitled1/services/language_provider.dart';
 
 class NotificationsPage extends StatefulWidget {
@@ -705,6 +706,10 @@ class _NotificationsPageState extends State<NotificationsPage> {
         data['type'] == 'request_accepted' ||
         data['type'] == 'request_declined' ||
         data['type'] == 'quote_response';
+    final isDocumentGenerationFailure =
+        data['type'] == 'document_created' ||
+        data['type'] == 'document_generation_failed' ||
+        data['type'] == 'document_download_missing';
     final isBroadcast = data['isBroadcast'] == true;
     final normalizedStatus = _normalizeRequestStatus(data['status']);
     final canOpenRequest = isActionableRequest || isRequestEdit;
@@ -725,7 +730,24 @@ class _NotificationsPageState extends State<NotificationsPage> {
       color: Colors.transparent,
       child: InkWell(
         borderRadius: BorderRadius.circular(20),
-        onTap: () {
+        onTap: () async {
+          if (isDocumentGenerationFailure) {
+            final userId = FirebaseAuth.instance.currentUser?.uid;
+            if (userId != null && data['isBroadcast'] != true) {
+              await FirebaseFirestore.instance
+                  .collection('users')
+                  .doc(userId)
+                  .collection('notifications')
+                  .doc(docId)
+                  .update({'isRead': true});
+            }
+            if (!context.mounted) return;
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const SavedInvoicesPage()),
+            );
+            return;
+          }
           if (canOpenRequest) {
             Navigator.push(
               context,

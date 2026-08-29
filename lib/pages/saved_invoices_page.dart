@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart' as firebase_storage;
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart' as intl;
@@ -35,6 +36,7 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
   DateTimeRange? _selectedDateRange;
   _InvoiceScope _selectedScope = _InvoiceScope.createdByMe;
   final Set<String> _generatingSigningLinks = <String>{};
+  final Set<String> _retryingDocuments = <String>{};
   final Set<String> _expandedCreateActions = <String>{};
 
   String _paymentStatusLabel(String? status, bool isRtl) {
@@ -244,6 +246,8 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
 
   String _documentWorkflowLabel(String status, bool isRtl) {
     switch (status) {
+      case 'generation_failed':
+        return isRtl ? 'הפקת המסמך נכשלה' : 'Generation failed';
       case 'reserved':
         return isRtl ? 'המספר נשמר' : 'Number reserved';
       case 'allocating':
@@ -279,6 +283,7 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
       case 'finalized':
         return const Color(0xFF15803D);
       case 'allocation_failed':
+      case 'generation_failed':
       case 'needs_reconciliation':
       case 'allocation_cancelled':
       case 'reverse_charge_rejected':
@@ -291,6 +296,71 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
         return const Color(0xFFD97706);
       default:
         return const Color(0xFFD97706);
+    }
+  }
+
+  bool _canRetryDocumentGeneration(Map<String, dynamic> data) {
+    if (data['serverDocument'] is! Map) return false;
+    final status = (data['documentStatus'] ?? '').toString().trim();
+    if (status == 'generation_failed') return true;
+    if (status != 'processing') return false;
+    final serverDocument = Map<String, dynamic>.from(
+      data['serverDocument'] as Map,
+    );
+    final startedAt = serverDocument['startedAt'];
+    if (startedAt is! Timestamp) return true;
+    return DateTime.now().difference(startedAt.toDate()) >=
+        const Duration(minutes: 5);
+  }
+
+  Future<void> _retryDocumentGeneration(String invoiceDocId, bool isRtl) async {
+    if (_retryingDocuments.contains(invoiceDocId)) return;
+    setState(() => _retryingDocuments.add(invoiceDocId));
+    try {
+      final callable = FirebaseFunctions.instanceFor(
+        region: 'me-west1',
+      ).httpsCallable('createServerDocument');
+      final result = await callable.call<Map<String, dynamic>>({
+        'retryInvoiceDocId': invoiceDocId,
+      });
+      final document = result.data['document'];
+      if (result.data['finalized'] != true || document is! Map) {
+        throw StateError('The recovered document was not finalized.');
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            isRtl
+                ? 'המסמך הופק בהצלחה עם המספר המקורי.'
+                : 'The document was generated with its original number.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      final details = error is FirebaseFunctionsException
+          ? error.details
+          : null;
+      final requiresReview =
+          details is Map && details['needsReconciliation'] == true;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            requiresReview && isRtl
+                ? 'המסמך הועבר לבדיקה. המספר נשמר ואין ליצור מסמך חדש במקומו.'
+                : requiresReview
+                ? 'The document was sent for review. Its number remains reserved; do not create a replacement.'
+                : isRtl
+                ? 'הניסיון החוזר נכשל. המספר עדיין שמור ואפשר לנסות שוב מאוחר יותר.'
+                : 'Retry failed. The number remains reserved; try again later.',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _retryingDocuments.remove(invoiceDocId));
+      }
     }
   }
 
@@ -1479,15 +1549,39 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                             final fileName = (data['fileName'] ?? '$name.pdf')
                                 .toString();
                             final url = (data['url'] ?? '').toString();
+                            final storagePath = (data['storagePath'] ?? '')
+                                .toString();
                             final hasTaxWorkflow =
                                 data['taxAuthorityAllocationRequest'] is Map;
+                            final hasServerWorkflow =
+                                data['serverDocument'] is Map;
+                            final documentRecovery = data['documentRecovery'];
+                            final hasMissingFinalPdf =
+                                documentRecovery is Map &&
+                                documentRecovery['status'] ==
+                                    'needs_reconciliation' &&
+                                documentRecovery['reason'] ==
+                                    'missing_final_pdf';
                             final documentStatus =
                                 (data['documentStatus'] ?? '')
                                     .toString()
                                     .trim();
                             final isFinalizedTaxDocument =
-                                !hasTaxWorkflow ||
-                                documentStatus == 'finalized';
+                                ((!hasTaxWorkflow && !hasServerWorkflow) ||
+                                    documentStatus == 'finalized') &&
+                                !hasMissingFinalPdf;
+                            final displayedDocumentStatus = hasMissingFinalPdf
+                                ? 'needs_reconciliation'
+                                : documentStatus;
+                            final canRetryGeneration =
+                                !isReceivedScope &&
+                                _canRetryDocumentGeneration(data);
+                            final requiresGenerationReview =
+                                !isReceivedScope &&
+                                hasServerWorkflow &&
+                                documentStatus == 'needs_reconciliation';
+                            final isRetryingGeneration = _retryingDocuments
+                                .contains(invoiceDoc.id);
                             final createdAt = data['createdAt'] as Timestamp?;
                             final amount = (data['amount'] as num?)?.toDouble();
                             final canCreateCreditNote =
@@ -1501,25 +1595,32 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                 docType == 'invoice';
                             final canCancelReceipt =
                                 !isReceivedScope &&
+                                isFinalizedTaxDocument &&
                                 docType == 'receipt' &&
                                 data['isCancellationDocument'] != true &&
                                 (data['cancellationStatus'] ?? '') !=
                                     'cancelled';
                             final isProformaInvoice =
                                 !isReceivedScope &&
+                                isFinalizedTaxDocument &&
                                 docType == 'transaction_account';
                             final canCreateTaxDocuments =
                                 isProformaInvoice && _canCreateTaxDocuments;
                             final isWorkOrder =
-                                !isReceivedScope && docType == 'work_order';
+                                !isReceivedScope &&
+                                isFinalizedTaxDocument &&
+                                docType == 'work_order';
                             final canCreateTaxDocumentsFromWorkOrder =
                                 isWorkOrder && _canCreateTaxDocuments;
                             final isQuote =
-                                !isReceivedScope && docType == 'quote';
+                                !isReceivedScope &&
+                                isFinalizedTaxDocument &&
+                                docType == 'quote';
                             final canCreateTaxDocumentsFromQuote =
                                 isQuote && _canCreateTaxDocuments;
                             final canBeSigned =
                                 !isReceivedScope &&
+                                isFinalizedTaxDocument &&
                                 (docType == 'quote' || docType == 'work_order');
                             final hasCreateDocumentActions =
                                 canCreateCreditNote ||
@@ -1570,7 +1671,9 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                             return InkWell(
                               borderRadius: BorderRadius.circular(22),
                               onTap: () {
-                                if (!isFinalizedTaxDocument || url.isEmpty) {
+                                if (!isFinalizedTaxDocument ||
+                                    hasMissingFinalPdf ||
+                                    url.isEmpty) {
                                   return;
                                 }
                                 Navigator.push(
@@ -1579,6 +1682,9 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                     builder: (_) => SavedInvoicePreviewPage(
                                       name: fileName,
                                       url: url,
+                                      invoiceDocId: invoiceDoc.id,
+                                      canReportMissing: !isReceivedScope,
+                                      storagePath: storagePath,
                                     ),
                                   ),
                                 );
@@ -1688,7 +1794,8 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                                         ),
                                                       ),
                                                     ),
-                                                  if (hasTaxWorkflow)
+                                                  if (hasTaxWorkflow ||
+                                                      hasServerWorkflow)
                                                     Container(
                                                       padding:
                                                           const EdgeInsets.symmetric(
@@ -1698,7 +1805,7 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                                       decoration: BoxDecoration(
                                                         color:
                                                             _documentWorkflowColor(
-                                                              documentStatus,
+                                                              displayedDocumentStatus,
                                                             ).withValues(
                                                               alpha: 0.12,
                                                             ),
@@ -1709,7 +1816,7 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                                       ),
                                                       child: Text(
                                                         _documentWorkflowLabel(
-                                                          documentStatus,
+                                                          displayedDocumentStatus,
                                                           isRtl,
                                                         ),
                                                         style: TextStyle(
@@ -1863,6 +1970,97 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                         ],
                                       ],
                                     ),
+                                    if (requiresGenerationReview) ...[
+                                      const SizedBox(height: 12),
+                                      Container(
+                                        width: double.infinity,
+                                        padding: const EdgeInsets.all(12),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFFFF7ED),
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                          border: Border.all(
+                                            color: const Color(0xFFFED7AA),
+                                          ),
+                                        ),
+                                        child: Text(
+                                          isRtl
+                                              ? 'הפקת המסמך נכשלה מספר פעמים. המספר נשמר והמסמך הועבר לבדיקה. אין ליצור מסמך חדש במקומו.'
+                                              : 'Generation failed repeatedly. The number is reserved and the document was sent for review. Do not create a replacement document.',
+                                          style: const TextStyle(
+                                            color: Color(0xFF9A3412),
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                    if (hasMissingFinalPdf) ...[
+                                      const SizedBox(height: 12),
+                                      Container(
+                                        width: double.infinity,
+                                        padding: const EdgeInsets.all(12),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFFEF2F2),
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                          border: Border.all(
+                                            color: const Color(0xFFFECACA),
+                                          ),
+                                        ),
+                                        child: Text(
+                                          isRtl
+                                              ? 'המסמך הושלם, אך קובץ ה-PDF חסר. המספר נשמר והמסמך הועבר לבדיקה.'
+                                              : 'The document was finalized, but its PDF is missing. Its number remains reserved and it was sent for review.',
+                                          style: const TextStyle(
+                                            color: Color(0xFF991B1B),
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                    if (canRetryGeneration) ...[
+                                      const SizedBox(height: 12),
+                                      SizedBox(
+                                        width: double.infinity,
+                                        child: ElevatedButton.icon(
+                                          onPressed: isRetryingGeneration
+                                              ? null
+                                              : () => _retryDocumentGeneration(
+                                                  invoiceDoc.id,
+                                                  isRtl,
+                                                ),
+                                          icon: isRetryingGeneration
+                                              ? const SizedBox.square(
+                                                  dimension: 18,
+                                                  child:
+                                                      CircularProgressIndicator(
+                                                        strokeWidth: 2,
+                                                        color: Colors.white,
+                                                      ),
+                                                )
+                                              : const Icon(
+                                                  Icons.refresh_rounded,
+                                                ),
+                                          label: Text(
+                                            isRetryingGeneration
+                                                ? (isRtl
+                                                      ? 'מנסה שוב...'
+                                                      : 'Retrying...')
+                                                : (isRtl
+                                                      ? 'נסה שוב להפיק את המסמך'
+                                                      : 'Retry document generation'),
+                                          ),
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: const Color(
+                                              0xFFB91C1C,
+                                            ),
+                                            foregroundColor: Colors.white,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                     if (hasCreateDocumentActions) ...[
                                       const SizedBox(height: 6),
                                       Center(
@@ -2677,11 +2875,17 @@ class _ReceiptPaymentDraft {
 class SavedInvoicePreviewPage extends StatefulWidget {
   final String name;
   final String url;
+  final String invoiceDocId;
+  final bool canReportMissing;
+  final String storagePath;
 
   const SavedInvoicePreviewPage({
     super.key,
     required this.name,
     required this.url,
+    required this.invoiceDocId,
+    required this.canReportMissing,
+    required this.storagePath,
   });
 
   @override
@@ -2690,7 +2894,8 @@ class SavedInvoicePreviewPage extends StatefulWidget {
 }
 
 class _SavedInvoicePreviewPageState extends State<SavedInvoicePreviewPage> {
-  late final Future<Uint8List> _bytesFuture;
+  late Future<Uint8List> _bytesFuture;
+  bool _missingConfirmed = false;
 
   @override
   void initState() {
@@ -2699,11 +2904,67 @@ class _SavedInvoicePreviewPageState extends State<SavedInvoicePreviewPage> {
   }
 
   Future<Uint8List> _fetchBytes() async {
-    final response = await http.get(Uri.parse(widget.url));
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw Exception('Failed to load PDF');
+    Object? lastError;
+    var receivedNotFound = false;
+    for (var attempt = 0; attempt < 3; attempt++) {
+      if (attempt == 1) {
+        await Future<void>.delayed(const Duration(seconds: 1));
+      } else if (attempt == 2) {
+        await Future<void>.delayed(const Duration(seconds: 3));
+      }
+      try {
+        if (widget.canReportMissing && widget.storagePath.isNotEmpty) {
+          final bytes = await firebase_storage.FirebaseStorage.instance
+              .ref()
+              .child(widget.storagePath)
+              .getData(25 * 1024 * 1024);
+          if (bytes == null ||
+              bytes.length < 4 ||
+              String.fromCharCodes(bytes.take(4)) != '%PDF') {
+            throw Exception('The downloaded PDF is invalid.');
+          }
+          return bytes;
+        }
+        final response = await http.get(Uri.parse(widget.url));
+        receivedNotFound = receivedNotFound || response.statusCode == 404;
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          throw Exception('Failed to load PDF (${response.statusCode})');
+        }
+        if (response.bodyBytes.length < 4 ||
+            String.fromCharCodes(response.bodyBytes.take(4)) != '%PDF') {
+          throw Exception('The downloaded PDF is invalid.');
+        }
+        return response.bodyBytes;
+      } catch (error) {
+        if (error is FirebaseException && error.code == 'object-not-found') {
+          receivedNotFound = true;
+        }
+        lastError = error;
+      }
     }
-    return response.bodyBytes;
+
+    if (receivedNotFound && widget.canReportMissing) {
+      try {
+        final callable = FirebaseFunctions.instanceFor(
+          region: 'me-west1',
+        ).httpsCallable('reportMissingFinalDocumentPdf');
+        final result = await callable.call<Map<String, dynamic>>({
+          'invoiceDocId': widget.invoiceDocId,
+        });
+        _missingConfirmed = result.data['missing'] == true;
+      } catch (_) {
+        _missingConfirmed = false;
+      }
+    }
+    throw lastError ?? Exception('Failed to load PDF');
+  }
+
+  void _retryDownload() {
+    if (_missingConfirmed) return;
+    setState(() {
+      _missingConfirmed = false;
+      _bytesFuture = _fetchBytes();
+    });
   }
 
   @override
@@ -2728,8 +2989,39 @@ class _SavedInvoicePreviewPageState extends State<SavedInvoicePreviewPage> {
             }
             if (!snapshot.hasData) {
               return Center(
-                child: Text(
-                  isRtl ? 'נכשלה טעינת הקובץ' : 'Failed to load file',
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.cloud_off_outlined,
+                        size: 44,
+                        color: Color(0xFFB91C1C),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        _missingConfirmed
+                            ? (isRtl
+                                  ? 'קובץ ה-PDF חסר והמסמך הועבר לבדיקה.'
+                                  : 'The PDF is missing and the document was sent for review.')
+                            : (isRtl
+                                  ? 'לא הצלחנו לטעון את הקובץ.'
+                                  : 'Failed to load the file.'),
+                        textAlign: TextAlign.center,
+                      ),
+                      if (!_missingConfirmed) ...[
+                        const SizedBox(height: 16),
+                        ElevatedButton.icon(
+                          onPressed: _retryDownload,
+                          icon: const Icon(Icons.refresh_rounded),
+                          label: Text(
+                            isRtl ? 'נסה להוריד שוב' : 'Retry download',
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
                 ),
               );
             }

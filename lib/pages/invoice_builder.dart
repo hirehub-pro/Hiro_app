@@ -230,6 +230,21 @@ class _ServerDocumentResult {
   }
 }
 
+class _FinalDocumentDownloadException implements Exception {
+  const _FinalDocumentDownloadException({
+    required this.missingConfirmed,
+    required this.cause,
+  });
+
+  final bool missingConfirmed;
+  final Object cause;
+
+  @override
+  String toString() => missingConfirmed
+      ? 'The finalized PDF is missing from storage.'
+      : 'The finalized document could not be downloaded.';
+}
+
 class _LinkedDocumentsDialog extends StatefulWidget {
   const _LinkedDocumentsDialog({
     required this.strings,
@@ -5878,6 +5893,60 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     return true;
   }
 
+  bool _isStorageObjectMissing(Object error) {
+    return error is FirebaseException && error.code == 'object-not-found';
+  }
+
+  Future<bool> _confirmFinalPdfMissing(InvoiceBuilderDraftResult saved) async {
+    try {
+      final callable = _functions.httpsCallable(
+        'reportMissingFinalDocumentPdf',
+      );
+      final result = await callable.call<Map<String, dynamic>>({
+        'invoiceDocId': saved.invoiceDocId,
+      });
+      return result.data['missing'] == true;
+    } catch (error) {
+      dev.log('Unable to verify missing finalized PDF: $error');
+      return false;
+    }
+  }
+
+  Future<Uint8List> _downloadFinalPdfWithRetry(
+    InvoiceBuilderDraftResult saved,
+  ) async {
+    Object? lastError;
+    for (var attempt = 0; attempt < 3; attempt++) {
+      if (attempt == 1) {
+        await Future<void>.delayed(const Duration(seconds: 1));
+      } else if (attempt == 2) {
+        await Future<void>.delayed(const Duration(seconds: 3));
+      }
+      try {
+        final bytes = await firebase_storage.FirebaseStorage.instance
+            .ref()
+            .child(saved.storagePath)
+            .getData(25 * 1024 * 1024);
+        if (bytes == null ||
+            bytes.length < 4 ||
+            String.fromCharCodes(bytes.take(4)) != '%PDF') {
+          throw StateError('The downloaded final PDF is invalid.');
+        }
+        return bytes;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    final cause = lastError ?? StateError('The final PDF download failed.');
+    final missingConfirmed =
+        _isStorageObjectMissing(cause) && await _confirmFinalPdfMissing(saved);
+    throw _FinalDocumentDownloadException(
+      missingConfirmed: missingConfirmed,
+      cause: cause,
+    );
+  }
+
   Future<void> _openPreviewPage() async {
     if (_items.isEmpty && _selectedDocType != 'receipt') {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -5925,18 +5994,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         if (savedDraftResult == null) {
           throw StateError('The server did not return a final document.');
         }
-        final finalPdfBytes = await firebase_storage.FirebaseStorage.instance
-            .ref()
-            .child(savedDraftResult!.storagePath)
-            .getData(25 * 1024 * 1024);
-        if (finalPdfBytes == null || finalPdfBytes.length < 4) {
-          throw StateError(
-            'The final server document could not be downloaded.',
-          );
-        }
         _markDocumentSaved();
         _showInvoiceEmailDeliveryToast(savedDraftResult!);
-        return finalPdfBytes;
+        return _downloadFinalPdfWithRetry(savedDraftResult!);
       }
 
       final builderRoute = ModalRoute.of(context);
@@ -5961,6 +6021,13 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
             onSaveWithoutAllocation: () async {
               final serverResult = await _createServerDocument();
               return saveServerResult(serverResult);
+            },
+            onRetryDownload: () async {
+              final saved = savedDraftResult;
+              if (saved == null) {
+                throw StateError('The finalized document is unavailable.');
+              }
+              return _downloadFinalPdfWithRetry(saved);
             },
             onSendForSignature: _isQuoteLike
                 ? () async {
@@ -9163,6 +9230,7 @@ class InvoicePreviewPage extends StatefulWidget {
   final String fileName;
   final Future<Uint8List?> Function() onSave;
   final Future<Uint8List?> Function()? onSaveWithoutAllocation;
+  final Future<Uint8List> Function()? onRetryDownload;
   final bool requireTaxAuthorityConnectionPrompt;
   final Future<bool> Function()? isTaxAuthorityConnected;
   final Future<void> Function()? onConnectTaxAuthority;
@@ -9176,6 +9244,7 @@ class InvoicePreviewPage extends StatefulWidget {
     required this.fileName,
     required this.onSave,
     this.onSaveWithoutAllocation,
+    this.onRetryDownload,
     this.requireTaxAuthorityConnectionPrompt = false,
     this.isTaxAuthorityConnected,
     this.onConnectTaxAuthority,
@@ -9195,6 +9264,11 @@ class _InvoicePreviewPageState extends State<InvoicePreviewPage>
   bool _isSending = false;
   bool _isSendingForSignature = false;
   bool _waitingForTaxAuthorityReturn = false;
+  String? _saveError;
+  bool _saveRequiresReview = false;
+  bool _isFinalizedButDownloadFailed = false;
+  bool _isDownloadingFinalPdf = false;
+  bool _finalPdfMissing = false;
   late Uint8List _pdfBytes;
 
   @override
@@ -9283,7 +9357,8 @@ class _InvoicePreviewPageState extends State<InvoicePreviewPage>
   }
 
   void _handleBack() {
-    if (_isSaved && widget.onReturnAfterSave != null) {
+    if ((_isSaved || _isFinalizedButDownloadFailed) &&
+        widget.onReturnAfterSave != null) {
       widget.onReturnAfterSave!();
       return;
     }
@@ -9509,12 +9584,194 @@ class _InvoicePreviewPageState extends State<InvoicePreviewPage>
   }
 
   String _friendlySaveError(Object error) {
+    final languageCode = Provider.of<LanguageProvider>(
+      context,
+      listen: false,
+    ).locale.languageCode;
+
+    String localized(Map<String, String> messages) {
+      return messages[languageCode] ?? messages['en']!;
+    }
+
+    if (error is FirebaseFunctionsException) {
+      return switch (error.code) {
+        'unavailable' => localized(const {
+          'en':
+              'The document service is temporarily unavailable. Check your internet connection and try again. If a number was already reserved, Retry will keep the same number.',
+          'he':
+              'שירות הפקת המסמכים אינו זמין כרגע. יש לבדוק את החיבור לאינטרנט ולנסות שוב. אם כבר נשמר מספר למסמך, ניסיון חוזר ישמור על אותו מספר.',
+          'ar':
+              'خدمة إنشاء المستندات غير متاحة مؤقتًا. تحقق من اتصال الإنترنت وحاول مرة أخرى. إذا تم حجز رقم بالفعل، فستحافظ إعادة المحاولة على الرقم نفسه.',
+          'ru':
+              'Сервис создания документов временно недоступен. Проверьте подключение к интернету и повторите попытку. Если номер уже зарезервирован, он не изменится.',
+          'am':
+              'የሰነድ ማዘጋጃ አገልግሎቱ ለጊዜው አይገኝም። የበይነመረብ ግንኙነትዎን ይፈትሹና እንደገና ይሞክሩ። ቁጥር ከተያዘ፣ እንደገና ሲሞክሩ ተመሳሳይ ቁጥር ይጠበቃል።',
+        }),
+        'deadline-exceeded' => localized(const {
+          'en':
+              'Document generation took too long. Wait a moment and try again; the same reserved number will be used.',
+          'he':
+              'הפקת המסמך נמשכה זמן רב מדי. יש להמתין מעט ולנסות שוב; ייעשה שימוש באותו מספר שנשמר.',
+          'ar':
+              'استغرق إنشاء المستند وقتًا طويلًا. انتظر قليلًا وحاول مرة أخرى؛ سيتم استخدام الرقم المحجوز نفسه.',
+          'ru':
+              'Создание документа заняло слишком много времени. Немного подождите и повторите попытку; будет использован тот же зарезервированный номер.',
+          'am':
+              'ሰነዱን ማዘጋጀት ብዙ ጊዜ ወስዷል። ትንሽ ጠብቀው እንደገና ይሞክሩ፤ የተያዘው ተመሳሳይ ቁጥር ይጠቀማል።',
+        }),
+        'aborted' => localized(const {
+          'en':
+              'This document is already being generated. Wait a moment before trying again.',
+          'he': 'המסמך כבר נמצא בתהליך הפקה. יש להמתין מעט לפני ניסיון נוסף.',
+          'ar':
+              'يتم إنشاء هذا المستند بالفعل. انتظر قليلًا قبل المحاولة مرة أخرى.',
+          'ru':
+              'Этот документ уже создаётся. Немного подождите перед повторной попыткой.',
+          'am': 'ይህ ሰነድ አሁን እየተዘጋጀ ነው። እንደገና ከመሞከርዎ በፊት ትንሽ ይጠብቁ።',
+        }),
+        'unauthenticated' => localized(const {
+          'en': 'Your session has expired. Sign in again and retry.',
+          'he': 'פג תוקף ההתחברות. יש להתחבר מחדש ולנסות שוב.',
+          'ar':
+              'انتهت صلاحية جلسة الدخول. سجّل الدخول مرة أخرى ثم أعد المحاولة.',
+          'ru': 'Срок сеанса истёк. Войдите снова и повторите попытку.',
+          'am': 'የመግቢያ ጊዜዎ አልፏል። እንደገና ይግቡና ይሞክሩ።',
+        }),
+        'permission-denied' => localized(const {
+          'en':
+              'You do not have permission to save this document. Please contact support.',
+          'he': 'אין הרשאה לשמור את המסמך. יש לפנות לתמיכה.',
+          'ar': 'ليس لديك إذن لحفظ هذا المستند. يرجى التواصل مع الدعم.',
+          'ru':
+              'У вас нет разрешения на сохранение этого документа. Обратитесь в службу поддержки.',
+          'am': 'ይህን ሰነድ ለማስቀመጥ ፈቃድ የለዎትም። እባክዎ ድጋፍን ያነጋግሩ።',
+        }),
+        'resource-exhausted' => localized(const {
+          'en':
+              'The document is too large to generate. Reduce large images or attachments and try again.',
+          'he':
+              'המסמך גדול מדי להפקה. יש להקטין תמונות או קבצים גדולים ולנסות שוב.',
+          'ar':
+              'حجم المستند كبير جدًا. قلّل حجم الصور أو المرفقات الكبيرة وحاول مرة أخرى.',
+          'ru':
+              'Документ слишком большой. Уменьшите размер крупных изображений или вложений и повторите попытку.',
+          'am':
+              'ሰነዱ ለማዘጋጀት በጣም ትልቅ ነው። ትልልቅ ምስሎችን ወይም አባሪዎችን ያሳንሱና እንደገና ይሞክሩ።',
+        }),
+        'failed-precondition' => localized(const {
+          'en':
+              'The document cannot be completed automatically. Review its status in Saved Invoices before creating another document.',
+          'he':
+              'לא ניתן להשלים את המסמך באופן אוטומטי. יש לבדוק את מצבו במסמכים השמורים לפני יצירת מסמך נוסף.',
+          'ar':
+              'لا يمكن إكمال المستند تلقائيًا. تحقق من حالته في المستندات المحفوظة قبل إنشاء مستند آخر.',
+          'ru':
+              'Документ нельзя завершить автоматически. Проверьте его состояние в сохранённых документах перед созданием нового.',
+          'am':
+              'ሰነዱን በራስ-ሰር ማጠናቀቅ አልተቻለም። ሌላ ሰነድ ከመፍጠርዎ በፊት በተቀመጡ ሰነዶች ውስጥ ሁኔታውን ይፈትሹ።',
+        }),
+        _ => localized(const {
+          'en':
+              'The document could not be saved. Please try again. If the problem continues, check Saved Invoices before creating another document.',
+          'he':
+              'לא ניתן היה לשמור את המסמך. יש לנסות שוב. אם הבעיה נמשכת, יש לבדוק את המסמכים השמורים לפני יצירת מסמך נוסף.',
+          'ar':
+              'تعذر حفظ المستند. حاول مرة أخرى. إذا استمرت المشكلة، فتحقق من المستندات المحفوظة قبل إنشاء مستند آخر.',
+          'ru':
+              'Не удалось сохранить документ. Повторите попытку. Если проблема сохраняется, проверьте сохранённые документы перед созданием нового.',
+          'am':
+              'ሰነዱን ማስቀመጥ አልተቻለም። እንደገና ይሞክሩ። ችግሩ ከቀጠለ፣ ሌላ ሰነድ ከመፍጠርዎ በፊት የተቀመጡ ሰነዶችን ይፈትሹ።',
+        }),
+      };
+    }
+
+    if (error is FirebaseException) {
+      return localized(const {
+        'en':
+            'A connection error occurred while saving the document. Check your internet connection and try again.',
+        'he':
+            'אירעה שגיאת חיבור בזמן שמירת המסמך. יש לבדוק את החיבור לאינטרנט ולנסות שוב.',
+        'ar':
+            'حدث خطأ في الاتصال أثناء حفظ المستند. تحقق من اتصال الإنترنت وحاول مرة أخرى.',
+        'ru':
+            'При сохранении документа произошла ошибка подключения. Проверьте интернет и повторите попытку.',
+        'am':
+            'ሰነዱን ሲያስቀምጡ የግንኙነት ስህተት ተፈጥሯል። የበይነመረብ ግንኙነትዎን ይፈትሹና እንደገና ይሞክሩ።',
+      });
+    }
+
     final text = error.toString();
     const badStatePrefix = 'Bad state: ';
     if (text.startsWith(badStatePrefix)) {
       return text.substring(badStatePrefix.length);
     }
-    return text;
+    return localized(const {
+      'en':
+          'The document could not be saved. Please try again. If the problem continues, check Saved Invoices.',
+      'he':
+          'לא ניתן היה לשמור את המסמך. יש לנסות שוב. אם הבעיה נמשכת, יש לבדוק את המסמכים השמורים.',
+      'ar':
+          'تعذر حفظ المستند. حاول مرة أخرى. إذا استمرت المشكلة، فتحقق من المستندات المحفوظة.',
+      'ru':
+          'Не удалось сохранить документ. Повторите попытку. Если проблема сохраняется, проверьте сохранённые документы.',
+      'am': 'ሰነዱን ማስቀመጥ አልተቻለም። እንደገና ይሞክሩ። ችግሩ ከቀጠለ፣ የተቀመጡ ሰነዶችን ይፈትሹ።',
+    });
+  }
+
+  Widget _buildPdfPreviewError(BuildContext context, Object error) {
+    final languageCode = Provider.of<LanguageProvider>(
+      context,
+      listen: false,
+    ).locale.languageCode;
+    const titleByLanguage = {
+      'en': 'The document preview could not be displayed.',
+      'he': 'לא ניתן להציג את התצוגה המקדימה של המסמך.',
+      'ar': 'تعذر عرض معاينة المستند.',
+      'ru': 'Не удалось отобразить предварительный просмотр документа.',
+      'am': 'የሰነዱን ቅድመ እይታ ማሳየት አልተቻለም።',
+    };
+    const instructionByLanguage = {
+      'en': 'Go back and try opening the preview again.',
+      'he': 'יש לחזור למסך הקודם ולנסות לפתוח את התצוגה שוב.',
+      'ar': 'ارجع إلى الشاشة السابقة وحاول فتح المعاينة مرة أخرى.',
+      'ru':
+          'Вернитесь на предыдущий экран и попробуйте снова открыть предварительный просмотр.',
+      'am': 'ወደ ቀድሞው ገጽ ተመልሰው ቅድመ እይታውን እንደገና ለመክፈት ይሞክሩ።',
+    };
+    return ColoredBox(
+      color: const Color(0xFFF8FAFC),
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.picture_as_pdf_outlined,
+                color: Color(0xFFB91C1C),
+                size: 52,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                titleByLanguage[languageCode] ?? titleByLanguage['en']!,
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF1E293B),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                instructionByLanguage[languageCode] ??
+                    instructionByLanguage['en']!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Color(0xFF64748B)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Future<bool> _confirmFinalSave() async {
@@ -9677,7 +9934,11 @@ class _InvoicePreviewPageState extends State<InvoicePreviewPage>
     final confirmed = await _confirmFinalSave();
     if (!confirmed || !mounted) return;
 
-    setState(() => _isSaving = true);
+    setState(() {
+      _isSaving = true;
+      _saveError = null;
+      _saveRequiresReview = false;
+    });
     try {
       if (widget.requireTaxAuthorityConnectionPrompt) {
         final connected = await widget.isTaxAuthorityConnected?.call() ?? true;
@@ -9708,15 +9969,84 @@ class _InvoicePreviewPageState extends State<InvoicePreviewPage>
         }
         _isSaved = true;
       });
-    } catch (e) {
+    } catch (e, stackTrace) {
+      dev.log(
+        'Unable to save the final document',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (!mounted) return;
+      if (e is _FinalDocumentDownloadException) {
+        final languageCode = Provider.of<LanguageProvider>(
+          context,
+          listen: false,
+        ).locale.languageCode;
+        final isRtl = languageCode == 'he' || languageCode == 'ar';
+        setState(() {
+          _isFinalizedButDownloadFailed = true;
+          _finalPdfMissing = e.missingConfirmed;
+          _saveError = e.toString();
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              e.missingConfirmed
+                  ? (isRtl
+                        ? 'המסמך נשמר, אך קובץ ה-PDF חסר ונדרשת בדיקה.'
+                        : 'The finalized PDF is missing and requires review.')
+                  : (isRtl
+                        ? 'המסמך נשמר, אך לא הצלחנו להוריד את קובץ ה-PDF.'
+                        : 'The document was saved, but its PDF could not be downloaded.'),
+            ),
+          ),
+        );
+        return;
+      }
+      final message = _friendlySaveError(e);
+      final details = e is FirebaseFunctionsException ? e.details : null;
+      final requiresReview =
+          details is Map && details['needsReconciliation'] == true;
+      setState(() {
+        _saveError = message;
+        _saveRequiresReview = requiresReview;
+      });
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text(_friendlySaveError(e))));
+      ).showSnackBar(SnackBar(content: Text(message)));
     } finally {
       if (mounted) {
         setState(() => _isSaving = false);
       }
+    }
+  }
+
+  Future<void> _handleRetryDownload() async {
+    if (_isDownloadingFinalPdf ||
+        _finalPdfMissing ||
+        widget.onRetryDownload == null) {
+      return;
+    }
+    setState(() {
+      _isDownloadingFinalPdf = true;
+      _saveError = null;
+    });
+    try {
+      final bytes = await widget.onRetryDownload!.call();
+      if (!mounted) return;
+      setState(() {
+        _pdfBytes = bytes;
+        _isSaved = true;
+        _isFinalizedButDownloadFailed = false;
+        _finalPdfMissing = false;
+      });
+    } on _FinalDocumentDownloadException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _saveError = error.toString();
+        _finalPdfMissing = error.missingConfirmed;
+      });
+    } finally {
+      if (mounted) setState(() => _isDownloadingFinalPdf = false);
     }
   }
 
@@ -9729,9 +10059,13 @@ class _InvoicePreviewPageState extends State<InvoicePreviewPage>
     return Directionality(
       textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
       child: PopScope(
-        canPop: !(_isSaved && widget.onReturnAfterSave != null),
+        canPop:
+            !((_isSaved || _isFinalizedButDownloadFailed) &&
+                widget.onReturnAfterSave != null),
         onPopInvokedWithResult: (didPop, result) {
-          if (!didPop && _isSaved && widget.onReturnAfterSave != null) {
+          if (!didPop &&
+              (_isSaved || _isFinalizedButDownloadFailed) &&
+              widget.onReturnAfterSave != null) {
             widget.onReturnAfterSave!();
           }
         },
@@ -9751,23 +10085,92 @@ class _InvoicePreviewPageState extends State<InvoicePreviewPage>
             useActions: false,
             initialPageFormat: pdf.PdfPageFormat.a4,
             build: (_) async => _pdfBytes,
+            onError: _buildPdfPreviewError,
           ),
           bottomNavigationBar: SafeArea(
             minimum: const EdgeInsets.fromLTRB(16, 8, 16, 16),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                if (_saveError != null) ...[
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFEF2F2),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFFECACA)),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(
+                          Icons.error_outline_rounded,
+                          color: Color(0xFFB91C1C),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            isRtl
+                                ? (_finalPdfMissing
+                                      ? 'המסמך נשמר, אך קובץ ה-PDF חסר ונדרשת בדיקה. מספר המסמך נשמר ואין ליצור מסמך חדש במקומו.'
+                                      : _isFinalizedButDownloadFailed
+                                      ? 'המסמך נשמר בהצלחה, אך לא הצלחנו לטעון את קובץ ה-PDF. אפשר לנסות להוריד אותו שוב.'
+                                      : _saveRequiresReview
+                                      ? 'הפקת המסמך נכשלה מספר פעמים. המספר נשמר והמסמך הועבר לבדיקה. אין ליצור מסמך חדש במקומו.'
+                                      : _saveError!)
+                                : (_finalPdfMissing
+                                      ? 'The document was saved, but its PDF is missing and requires review. Do not create a replacement document.'
+                                      : _isFinalizedButDownloadFailed
+                                      ? 'The document was saved, but its PDF could not be loaded. You can retry the download.'
+                                      : _saveRequiresReview
+                                      ? 'Generation failed repeatedly. The number is reserved and the document was sent for review. Do not create a replacement document.'
+                                      : _saveError!),
+                            style: const TextStyle(
+                              color: Color(0xFF991B1B),
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                ],
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton.icon(
-                    onPressed: _isSaved || _isSaving ? null : _handleSave,
-                    icon: const Icon(Icons.save_alt_rounded),
+                    onPressed:
+                        _isSaved ||
+                            _isSaving ||
+                            _isDownloadingFinalPdf ||
+                            _saveRequiresReview ||
+                            _finalPdfMissing
+                        ? null
+                        : _isFinalizedButDownloadFailed
+                        ? _handleRetryDownload
+                        : _handleSave,
+                    icon: Icon(
+                      _isFinalizedButDownloadFailed
+                          ? Icons.download_rounded
+                          : Icons.save_alt_rounded,
+                    ),
                     label: Text(
                       _isSaved
                           ? (isRtl ? 'נשמר' : 'Saved')
-                          : (_isSaving
-                                ? (isRtl ? 'שומר...' : 'Saving...')
-                                : (isRtl ? 'שמור' : 'Save')),
+                          : _finalPdfMissing
+                          ? (isRtl ? 'נדרשת בדיקה' : 'Review required')
+                          : _isDownloadingFinalPdf
+                          ? (isRtl ? 'מוריד...' : 'Downloading...')
+                          : _isFinalizedButDownloadFailed
+                          ? (isRtl ? 'נסה להוריד שוב' : 'Retry download')
+                          : _saveRequiresReview
+                          ? (isRtl ? 'הועבר לבדיקה' : 'Under review')
+                          : _isSaving
+                          ? (isRtl ? 'שומר...' : 'Saving...')
+                          : _saveError != null
+                          ? (isRtl ? 'נסה שוב' : 'Retry')
+                          : (isRtl ? 'שמור' : 'Save'),
                     ),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: const Color(0xFF1976D2),

@@ -3369,8 +3369,17 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                         type == 'request_declined' ||
                         type == 'quote_response') &&
                     data['isRead'] == false;
+                final isUnreadDocumentFailure =
+                    (type == 'document_created' ||
+                        type == 'document_generation_failed' ||
+                        type == 'document_generation_escalated' ||
+                        type == 'document_download_missing' ||
+                        type == 'document_download_missing_escalated') &&
+                    data['isRead'] == false;
                 final isPendingRequest = status == 'pending';
-                return isUnreadResponse || isPendingRequest;
+                return isUnreadResponse ||
+                    isUnreadDocumentFailure ||
+                    isPendingRequest;
               }).length;
               return Stack(
                 alignment: Alignment.center,

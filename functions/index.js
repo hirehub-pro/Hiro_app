@@ -102,6 +102,7 @@ const SUBSCRIPTION_NOTIFICATION_RETENTION_DAYS = 30;
 const SUBSCRIPTION_VERIFICATION_RETENTION_HOURS = 36;
 const DEVICE_TOKEN_RETENTION_DAYS = 90;
 const TAX_AUTH_OAUTH_CODE_RETENTION_HOURS = 2;
+const SERVER_DOCUMENT_MAX_ATTEMPTS = 3;
 const FIREBASE_AUTH_API_KEY = "AIzaSyBL55dWOh2eIBDooZ0EwzXegyAMEiWMuNE";
 
 exports.phoneAccountExists = onCall(
@@ -1026,6 +1027,64 @@ async function optionalStorageBytes(storagePath) {
   }
 }
 
+function serverDocumentLogoStoragePath(userId, document) {
+  const safeInvoiceId = document.invoiceDocId.replace(/[^A-Za-z0-9_-]/g, "_");
+  return `document-assets/${userId}/server_document_${safeInvoiceId}_` +
+    `${document.documentLogoHash}`;
+}
+
+async function persistServerDocumentLogo(userId, document) {
+  if (document.documentLogoMode !== "inline") return;
+  const logoBytes = document.documentLogoBytes;
+  if (!logoBytes || !document.documentLogoHash) {
+    throw new HttpsError(
+        "invalid-argument",
+        "The selected document logo is unavailable.",
+    );
+  }
+  const storagePath = serverDocumentLogoStoragePath(userId, document);
+  await admin.storage().bucket().file(storagePath).save(logoBytes, {
+    resumable: false,
+    validation: "crc32c",
+    metadata: {
+      contentType: "application/octet-stream",
+      cacheControl: "private, max-age=0, no-transform",
+      metadata: {
+        ownerUid: userId,
+        invoiceDocId: document.invoiceDocId,
+        generatedBy: "server-document-recovery",
+      },
+    },
+  });
+  document.documentLogoStoragePath = storagePath;
+}
+
+async function restoreServerDocumentLogo(document) {
+  if (document.documentLogoMode !== "inline") return;
+  const storagePath = normalizeString(
+      document.documentLogoStoragePath,
+  ).trim();
+  if (!storagePath) {
+    throw new HttpsError(
+        "failed-precondition",
+        "The original document logo is unavailable for recovery.",
+    );
+  }
+  const logoBytes = await optionalStorageBytes(storagePath);
+  const logoHash = logoBytes ?
+    crypto.createHash("sha256").update(logoBytes).digest("hex") : "";
+  if (!logoBytes || logoHash !== document.documentLogoHash) {
+    throw new HttpsError(
+        "failed-precondition",
+        "The original document logo failed integrity verification.",
+    );
+  }
+  Object.defineProperty(document, "documentLogoBytes", {
+    value: logoBytes,
+    enumerable: false,
+  });
+}
+
 async function serverDocumentContext(userId) {
   const db = admin.firestore();
   const userRef = db.collection("users").doc(userId);
@@ -1130,6 +1189,140 @@ function serverDocumentBucket(docType) {
   }[docType] || null;
 }
 
+function serverDocumentFailureNotification({document, terminal, stage}) {
+  const documentNumber = normalizeString(document.documentNumber).trim();
+  if (terminal) {
+    return {
+      title: "המסמך הועבר לבדיקה",
+      body: documentNumber ?
+        `הפקת מסמך מספר ${documentNumber} נכשלה לאחר ` +
+          `${SERVER_DOCUMENT_MAX_ATTEMPTS} ניסיונות. המספר נשמר ואין ליצור ` +
+          "מסמך חדש במקומו." :
+        `הפקת המסמך נכשלה לאחר ${SERVER_DOCUMENT_MAX_ATTEMPTS} ניסיונות. ` +
+          "המסמך הועבר לבדיקה.",
+    };
+  }
+  const storageFailure = stage === "storage_upload" ||
+    stage === "storage_metadata";
+  return {
+    title: storageFailure ?
+      "שמירת קובץ המסמך נכשלה" : "הפקת המסמך נכשלה",
+    body: documentNumber ?
+      `לא הצלחנו ${storageFailure ? "לשמור" : "להפיק"} את מסמך מספר ` +
+        `${documentNumber}. המספר נשמר וניתן לנסות שוב.` :
+      "לא הצלחנו להפיק את המסמך. ניתן לנסות שוב מהמסמכים השמורים.",
+  };
+}
+
+async function notifyAdminsOfServerDocumentFailure({
+  db,
+  userId,
+  document,
+  stage,
+  error,
+}) {
+  const admins = await db.collection("users")
+      .where("role", "==", "admin")
+      .limit(50)
+      .get();
+  if (admins.empty) {
+    logger.error("No administrators available for document escalation", {
+      userId,
+      invoiceDocId: document.invoiceDocId,
+    });
+    return;
+  }
+  const batch = db.batch();
+  for (const adminSnapshot of admins.docs) {
+    batch.set(adminSnapshot.ref.collection("notifications").doc(), {
+      type: "document_generation_escalated",
+      title: "מסמך דורש בדיקה",
+      body: `הפקת מסמך ${document.documentNumber || document.invoiceDocId} ` +
+        `נכשלה ${SERVER_DOCUMENT_MAX_ATTEMPTS} פעמים.`,
+      status: "needs_reconciliation",
+      affectedUserId: userId,
+      invoiceDocId: document.invoiceDocId,
+      documentNumber: document.documentNumber || null,
+      failureStage: stage,
+      error: normalizeString(error?.message).slice(0, 500),
+      isRead: false,
+      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  }
+  await batch.commit();
+}
+
+async function recordServerDocumentGenerationFailure({
+  db,
+  userRef,
+  invoiceRef,
+  document,
+  error,
+  stage,
+}) {
+  const notificationRef = userRef.collection("notifications").doc();
+  const result = await db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(invoiceRef);
+    const data = snapshot.data() || {};
+    if (data.documentStatus === "finalized") {
+      return {ignored: true, terminal: false, attempts: 0};
+    }
+    const attempts = Math.max(1, Number(data.serverDocument?.attempts) || 1);
+    const terminal = attempts >= SERVER_DOCUMENT_MAX_ATTEMPTS;
+    const status = terminal ? "needs_reconciliation" : "generation_failed";
+    const notification = serverDocumentFailureNotification({
+      document,
+      terminal,
+      stage,
+    });
+    const failedAt = admin.firestore.FieldValue.serverTimestamp();
+    transaction.update(invoiceRef, {
+      documentStatus: status,
+      "serverDocument.status": terminal ? "needs_reconciliation" : "failed",
+      "serverDocument.lastError":
+        normalizeString(error?.message).slice(0, 500),
+      "serverDocument.lastFailureStage": stage,
+      "serverDocument.retryAllowed": !terminal,
+      "serverDocument.failedAt": failedAt,
+      ...(terminal ? {
+        "serverDocument.reviewRequiredAt": failedAt,
+      } : {}),
+    });
+    transaction.set(notificationRef, {
+      type: "document_generation_failed",
+      title: notification.title,
+      body: notification.body,
+      status,
+      invoiceDocId: document.invoiceDocId,
+      documentNumber: document.documentNumber || null,
+      failureStage: stage,
+      attempts,
+      maxAttempts: SERVER_DOCUMENT_MAX_ATTEMPTS,
+      isRead: false,
+      timestamp: failedAt,
+    });
+    return {ignored: false, terminal, attempts};
+  });
+  if (result.terminal) {
+    try {
+      await notifyAdminsOfServerDocumentFailure({
+        db,
+        userId: userRef.id,
+        document,
+        stage,
+        error,
+      });
+    } catch (adminNotificationError) {
+      logger.error("Unable to notify administrators of document failure", {
+        userId: userRef.id,
+        invoiceDocId: document.invoiceDocId,
+        error: adminNotificationError,
+      });
+    }
+  }
+  return result;
+}
+
 function createClientLedgerPosting(transaction, userRef, posting) {
   if (!posting) return;
   const postingRef = userRef.collection("clients").doc(posting.clientId)
@@ -1150,6 +1343,45 @@ function serverDocumentDisplayType(docType) {
     credit_note: "Credit Note",
     receipt: "Receipt",
   }[docType] || "Document";
+}
+
+function serverDocumentHebrewDisplayType(docType) {
+  return {
+    quote: "הצעת מחיר",
+    work_order: "הזמנת עבודה",
+    transaction_account: "חשבון עסקה",
+    invoice: "חשבונית מס",
+    invoice_receipt: "חשבונית מס / קבלה",
+    credit_note: "חשבונית מס זיכוי",
+    receipt: "קבלה",
+  }[docType] || "מסמך";
+}
+
+function writeServerDocumentCreatedNotification(transaction, userRef, {
+  docType,
+  invoiceDocId,
+  documentNumber,
+}) {
+  const displayType = serverDocumentHebrewDisplayType(docType);
+  const normalizedNumber = normalizeString(documentNumber).trim();
+  const description = normalizedNumber ?
+    `מסמך מסוג ${displayType}, מספר ${normalizedNumber}, נוצר בהצלחה ` +
+      "ונשמר בעמוד המסמכים השמורים." :
+    `מסמך מסוג ${displayType} נוצר בהצלחה ונשמר בעמוד המסמכים השמורים.`;
+  const notificationRef = userRef.collection("notifications")
+      .doc(`document_created_${invoiceDocId}`);
+  transaction.set(notificationRef, {
+    type: "document_created",
+    title: "המסמך נוצר ונשמר",
+    body: description,
+    message: description,
+    status: "finalized",
+    docType,
+    invoiceDocId,
+    documentNumber: normalizedNumber || null,
+    isRead: false,
+    timestamp: admin.firestore.FieldValue.serverTimestamp(),
+  });
 }
 
 function serverDocumentResponse(data, document) {
@@ -1410,19 +1642,60 @@ exports.createServerDocument = onCall(
       if (!userId) {
         throw new HttpsError("unauthenticated", "Authentication required.");
       }
-      const context = await serverDocumentContext(userId);
-      let document;
-      try {
-        document = normalizeServerDocumentRequest(request.data, {
-          dealerType: context.dealerType,
-          vatPercent: context.vatPercent,
-        });
-      } catch (error) {
-        throw new HttpsError("invalid-argument", error.message);
-      }
-
       const db = admin.firestore();
       const userRef = db.collection("users").doc(userId);
+      const context = await serverDocumentContext(userId);
+      let document;
+      const retryInvoiceDocId = normalizeString(
+          request.data?.retryInvoiceDocId,
+      ).trim();
+      if (retryInvoiceDocId) {
+        if (!/^[A-Za-z0-9_-]{12,180}$/.test(retryInvoiceDocId)) {
+          throw new HttpsError(
+              "invalid-argument",
+              "A valid invoice document ID is required for recovery.",
+          );
+        }
+        const retrySnapshot = await userRef.collection("invoices")
+            .doc(retryInvoiceDocId).get();
+        if (!retrySnapshot.exists) {
+          throw new HttpsError("not-found", "The reserved document was not found.");
+        }
+        const retryData = retrySnapshot.data() || {};
+        const retryStatus = normalizeString(retryData.documentStatus).trim();
+        if (!new Set([
+          "generation_failed",
+          "processing",
+          "finalized",
+        ]).has(retryStatus)) {
+          throw new HttpsError(
+              "failed-precondition",
+              "This document is not eligible for PDF recovery.",
+          );
+        }
+        document = retryData.authoritativeServerDocument;
+        if (!document || typeof document !== "object" ||
+            document.invoiceDocId !== retryInvoiceDocId ||
+            !document.payloadHash ||
+            retryData.serverDocument?.payloadHash !== document.payloadHash) {
+          throw new HttpsError(
+              "failed-precondition",
+              "The reserved document failed integrity verification.",
+          );
+        }
+        await restoreServerDocumentLogo(document);
+      } else {
+        try {
+          document = normalizeServerDocumentRequest(request.data, {
+            dealerType: context.dealerType,
+            vatPercent: context.vatPercent,
+          });
+        } catch (error) {
+          throw new HttpsError("invalid-argument", error.message);
+        }
+        await persistServerDocumentLogo(userId, document);
+      }
+
       const invoiceRef = userRef.collection("invoices")
           .doc(document.invoiceDocId);
       const counterRef = document.sequential ? userRef.collection("counters")
@@ -1506,6 +1779,7 @@ exports.createServerDocument = onCall(
         };
       }
 
+      let generationStage = "pdf_generation";
       try {
         const pdfBytes = await generateServerDocumentPdf(
             document,
@@ -1529,6 +1803,7 @@ exports.createServerDocument = onCall(
           // Missing deterministic output is expected on the first attempt.
         }
         token = token || crypto.randomUUID();
+        generationStage = "storage_upload";
         await file.save(pdfBytes, {
           resumable: false,
           validation: "crc32c",
@@ -1544,6 +1819,7 @@ exports.createServerDocument = onCall(
             },
           },
         });
+        generationStage = "storage_metadata";
         const [metadata] = await file.getMetadata();
         const downloadUrl = taxInvoiceDownloadUrl(
             admin.storage().bucket().name,
@@ -1569,6 +1845,7 @@ exports.createServerDocument = onCall(
         const sourceId = document.isNegativeReceipt ?
           document.cancellationSourceDocumentId : document.sourceInvoiceDocId;
         const sourceRef = sourceId ? userRef.collection("invoices").doc(sourceId) : null;
+        generationStage = "firestore_finalization";
         await db.runTransaction(async (transaction) => {
           const latestSnap = await transaction.get(invoiceRef);
           const logBucketSnap = logBucketRef ?
@@ -1589,6 +1866,11 @@ exports.createServerDocument = onCall(
             );
           }
           transaction.set(invoiceRef, stored, {merge: true});
+          writeServerDocumentCreatedNotification(transaction, userRef, {
+            docType: document.docType,
+            invoiceDocId: document.invoiceDocId,
+            documentNumber: document.documentNumber,
+          });
           createClientLedgerPosting(transaction, userRef, ledgerPosting);
           if (logBucketRef) {
             const logCounter = Number(logBucketSnap?.data()?.value || 0) + 1;
@@ -1659,16 +1941,281 @@ exports.createServerDocument = onCall(
           document: serverDocumentResponse(stored, document),
         };
       } catch (error) {
-        await invoiceRef.update({
-          documentStatus: "generation_failed",
-          "serverDocument.status": "failed",
-          "serverDocument.lastError":
-            normalizeString(error?.message).slice(0, 500),
-          "serverDocument.failedAt":
-            admin.firestore.FieldValue.serverTimestamp(),
-        });
+        let failureResult = null;
+        try {
+          failureResult = await recordServerDocumentGenerationFailure({
+            db,
+            userRef,
+            invoiceRef,
+            document,
+            error,
+            stage: generationStage,
+          });
+        } catch (recoveryError) {
+          logger.error("Unable to persist document generation failure", {
+            userId,
+            invoiceDocId: document.invoiceDocId,
+            error: recoveryError,
+          });
+        }
+        if (failureResult?.terminal) {
+          throw new HttpsError(
+              "failed-precondition",
+              "The document requires review after repeated generation failures.",
+              {needsReconciliation: true},
+          );
+        }
         throw error;
       }
+    },
+);
+
+async function notifyAdminsOfMissingFinalPdf({
+  db,
+  userId,
+  invoiceDocId,
+  documentNumber,
+}) {
+  const admins = await db.collection("users")
+      .where("role", "==", "admin")
+      .limit(50)
+      .get();
+  if (admins.empty) {
+    logger.error("No administrators available for missing PDF escalation", {
+      userId,
+      invoiceDocId,
+    });
+    return;
+  }
+  const batch = db.batch();
+  for (const adminSnapshot of admins.docs) {
+    batch.set(adminSnapshot.ref.collection("notifications").doc(), {
+      type: "document_download_missing_escalated",
+      title: "קובץ PDF של מסמך חסר",
+      body: `קובץ ה-PDF של מסמך ${documentNumber || invoiceDocId} חסר ` +
+        "לאחר שהמסמך הושלם.",
+      status: "needs_reconciliation",
+      affectedUserId: userId,
+      invoiceDocId,
+      documentNumber: documentNumber || null,
+      isRead: false,
+      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  }
+  await batch.commit();
+}
+
+exports.reportMissingFinalDocumentPdf = onCall(
+    {
+      region: "me-west1",
+      timeoutSeconds: 60,
+    },
+    async (request) => {
+      const userId = request.auth?.uid;
+      if (!userId) {
+        throw new HttpsError("unauthenticated", "Authentication required.");
+      }
+      const invoiceDocId = normalizeString(
+          request.data?.invoiceDocId,
+      ).trim();
+      if (!/^[A-Za-z0-9_-]{12,180}$/.test(invoiceDocId)) {
+        throw new HttpsError(
+            "invalid-argument",
+            "A valid invoice document ID is required.",
+        );
+      }
+
+      const db = admin.firestore();
+      const userRef = db.collection("users").doc(userId);
+      const invoiceRef = userRef.collection("invoices").doc(invoiceDocId);
+      const snapshot = await invoiceRef.get();
+      if (!snapshot.exists) {
+        throw new HttpsError("not-found", "The finalized document was not found.");
+      }
+      const invoice = snapshot.data() || {};
+      if (invoice.documentStatus !== "finalized") {
+        throw new HttpsError(
+            "failed-precondition",
+            "Only a finalized document can report a missing PDF.",
+        );
+      }
+      const storagePath = assertOwnedInvoicePdfPath(
+          invoice.storagePath,
+          userId,
+      );
+      let exists;
+      try {
+        [exists] = await admin.storage().bucket().file(storagePath).exists();
+      } catch (error) {
+        logger.error("Unable to verify finalized PDF availability", {
+          userId,
+          invoiceDocId,
+          error,
+        });
+        throw new HttpsError(
+            "unavailable",
+            "The document file could not be checked right now.",
+        );
+      }
+      if (exists) return {missing: false};
+
+      const notificationRef = userRef.collection("notifications").doc();
+      const result = await db.runTransaction(async (transaction) => {
+        const latestSnapshot = await transaction.get(invoiceRef);
+        const latest = latestSnapshot.data() || {};
+        if (latest.documentStatus !== "finalized" ||
+            latest.storagePath !== storagePath) {
+          throw new HttpsError(
+              "failed-precondition",
+              "The finalized document changed while checking its PDF.",
+          );
+        }
+        if (latest.documentRecovery?.status === "needs_reconciliation" &&
+            latest.documentRecovery?.reason === "missing_final_pdf") {
+          return {newlyReported: false};
+        }
+        const reportedAt = admin.firestore.FieldValue.serverTimestamp();
+        const documentNumber = normalizeString(latest.invoiceNumber).trim();
+        transaction.update(invoiceRef, {
+          needsReconciliation: true,
+          "documentRecovery.status": "needs_reconciliation",
+          "documentRecovery.reason": "missing_final_pdf",
+          "documentRecovery.reportedAt": reportedAt,
+          "finalPdf.status": "missing",
+          "finalPdf.missingDetectedAt": reportedAt,
+        });
+        transaction.set(notificationRef, {
+          type: "document_download_missing",
+          title: "קובץ המסמך חסר",
+          body: documentNumber ?
+            `מסמך מספר ${documentNumber} נשמר, אך קובץ ה-PDF שלו חסר. ` +
+              "המספר נשמר והמסמך הועבר לבדיקה." :
+            "המסמך נשמר, אך קובץ ה-PDF שלו חסר והוא הועבר לבדיקה.",
+          status: "needs_reconciliation",
+          invoiceDocId,
+          documentNumber: documentNumber || null,
+          isRead: false,
+          timestamp: reportedAt,
+        });
+        return {newlyReported: true, documentNumber};
+      });
+
+      if (result.newlyReported) {
+        try {
+          await notifyAdminsOfMissingFinalPdf({
+            db,
+            userId,
+            invoiceDocId,
+            documentNumber: result.documentNumber,
+          });
+        } catch (error) {
+          logger.error("Unable to notify administrators of missing PDF", {
+            userId,
+            invoiceDocId,
+            error,
+          });
+        }
+      }
+      return {missing: true, needsReconciliation: true};
+    },
+);
+
+exports.markStaleServerDocumentsFailed = onSchedule(
+    {
+      schedule: "every 5 minutes",
+      region: "me-west1",
+      timeoutSeconds: 120,
+    },
+    async () => {
+      const db = admin.firestore();
+      const cutoff = admin.firestore.Timestamp.fromMillis(
+          Date.now() - 5 * 60 * 1000,
+      );
+      const snapshot = await db.collectionGroup("invoices")
+          .where("documentStatus", "==", "processing")
+          .limit(200)
+          .get();
+      const staleDocuments = snapshot.docs.filter((documentSnapshot) => {
+        const data = documentSnapshot.data() || {};
+        const workflow = data.serverDocument;
+        return workflow && workflow.status === "processing" &&
+          workflow.startedAt instanceof admin.firestore.Timestamp &&
+          workflow.startedAt.toMillis() <= cutoff.toMillis();
+      });
+      if (staleDocuments.length === 0) return;
+
+      const batch = db.batch();
+      const terminalEscalations = [];
+      for (const documentSnapshot of staleDocuments) {
+        const data = documentSnapshot.data() || {};
+        const userRef = documentSnapshot.ref.parent.parent;
+        if (!userRef || userRef.parent.id !== "users") continue;
+        const authoritative = data.authoritativeServerDocument || {};
+        const documentNumber = normalizeString(
+            data.invoiceNumber || authoritative.documentNumber,
+        ).trim();
+        const attempts = Math.max(
+            1,
+            Number(data.serverDocument?.attempts) || 1,
+        );
+        const terminal = attempts >= SERVER_DOCUMENT_MAX_ATTEMPTS;
+        const status = terminal ?
+          "needs_reconciliation" : "generation_failed";
+        const document = {
+          invoiceDocId: documentSnapshot.id,
+          documentNumber,
+        };
+        const notification = serverDocumentFailureNotification({
+          document,
+          terminal,
+          stage: "function_timeout",
+        });
+        const failedAt = admin.firestore.FieldValue.serverTimestamp();
+        batch.update(documentSnapshot.ref, {
+          documentStatus: status,
+          "serverDocument.status": terminal ? "needs_reconciliation" : "failed",
+          "serverDocument.lastError":
+            "Document generation stopped before completion.",
+          "serverDocument.lastFailureStage": "function_timeout",
+          "serverDocument.retryAllowed": !terminal,
+          "serverDocument.failedAt": failedAt,
+          ...(terminal ? {
+            "serverDocument.reviewRequiredAt": failedAt,
+          } : {}),
+        });
+        batch.set(userRef.collection("notifications").doc(), {
+          type: "document_generation_failed",
+          title: notification.title,
+          body: notification.body,
+          status,
+          invoiceDocId: documentSnapshot.id,
+          documentNumber: documentNumber || null,
+          failureStage: "function_timeout",
+          attempts,
+          maxAttempts: SERVER_DOCUMENT_MAX_ATTEMPTS,
+          isRead: false,
+          timestamp: failedAt,
+        });
+        if (terminal) {
+          terminalEscalations.push({
+            userId: userRef.id,
+            document,
+          });
+        }
+      }
+      await batch.commit();
+      await Promise.allSettled(terminalEscalations.map((escalation) =>
+        notifyAdminsOfServerDocumentFailure({
+          db,
+          userId: escalation.userId,
+          document: escalation.document,
+          stage: "function_timeout",
+          error: new Error("Document generation stopped before completion."),
+        }),
+      ));
+      logger.warn("Marked stale server documents as failed", {
+        count: staleDocuments.length,
+      });
     },
 );
 
@@ -3213,6 +3760,11 @@ async function createAutomaticCancellationCreditNote({
         automaticallyCreated: true,
         cancellationSourceDocumentId: sourceInvoiceRef.id,
       }, {merge: true});
+      writeServerDocumentCreatedNotification(transaction, userRef, {
+        docType: document.docType,
+        invoiceDocId: document.invoiceDocId,
+        documentNumber: document.documentNumber,
+      });
       createClientLedgerPosting(transaction, userRef, ledgerPosting);
       transaction.set(logBucketRef, {
         value: logCounter,
@@ -3606,6 +4158,11 @@ async function finalizeAllocatedTaxInvoice({
     }
     const logCounter = Number(logBucketSnap.data()?.value || 0) + 1;
     transaction.set(invoiceRef, fields.invoice, {merge: true});
+    writeServerDocumentCreatedNotification(transaction, userRef, {
+      docType: reservation.docType,
+      invoiceDocId: reservation.invoiceDocId,
+      documentNumber: reservation.documentNumber,
+    });
     createClientLedgerPosting(transaction, userRef, ledgerPosting);
     transaction.set(logBucketRef, {
       value: logCounter,
@@ -4992,6 +5549,11 @@ exports.sendNotificationPush = onDocumentCreated(
       const supportedTypes = new Set([
         "chat_message",
         "document_signed",
+        "document_created",
+        "document_generation_failed",
+        "document_generation_escalated",
+        "document_download_missing",
+        "document_download_missing_escalated",
         "work_request",
         "quote_request",
         "request_edited",
@@ -5040,6 +5602,9 @@ exports.sendNotificationPush = onDocumentCreated(
           senderName: String(senderName),
           requestDate: String(requestDate),
           requestStatus: String(requestStatus),
+          invoiceDocId: String(payload.invoiceDocId || ""),
+          documentNumber: String(payload.documentNumber || ""),
+          docType: String(payload.docType || ""),
         },
         android: {
           priority: "high",
@@ -8606,6 +9171,16 @@ function datesEqual(left, right) {
 
 function defaultTitleForType(type) {
   switch (type) {
+    case "document_created":
+      return "המסמך נוצר ונשמר";
+    case "document_generation_failed":
+      return "הפקת המסמך נכשלה";
+    case "document_generation_escalated":
+      return "מסמך דורש בדיקה";
+    case "document_download_missing":
+      return "קובץ המסמך חסר";
+    case "document_download_missing_escalated":
+      return "קובץ PDF של מסמך חסר";
     case "document_signed":
       return "המסמך נחתם";
     case "work_request":
@@ -8628,6 +9203,16 @@ function defaultTitleForType(type) {
 
 function defaultBodyForType(type) {
   switch (type) {
+    case "document_created":
+      return "המסמך נוצר בהצלחה ונשמר בעמוד המסמכים השמורים.";
+    case "document_generation_failed":
+      return "המספר נשמר. ניתן לנסות שוב מהמסמכים השמורים.";
+    case "document_generation_escalated":
+      return "הפקת מסמך נכשלה מספר פעמים ונדרשת בדיקה.";
+    case "document_download_missing":
+      return "המסמך נשמר, אך קובץ ה-PDF חסר והוא הועבר לבדיקה.";
+    case "document_download_missing_escalated":
+      return "קובץ PDF חסר לאחר שהמסמך הושלם ונדרשת בדיקה.";
     case "document_signed":
       return "הלקוח חתם על המסמך";
     case "work_request":
@@ -8650,6 +9235,16 @@ function defaultBodyForType(type) {
 
 function dataTypeForNotification(type) {
   switch (type) {
+    case "document_created":
+      return "document_created";
+    case "document_generation_failed":
+      return "document_generation_failed";
+    case "document_generation_escalated":
+      return "document_generation_escalated";
+    case "document_download_missing":
+      return "document_download_missing";
+    case "document_download_missing_escalated":
+      return "document_download_missing_escalated";
     case "document_signed":
       return "chat";
     case "work_request":

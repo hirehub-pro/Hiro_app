@@ -16,6 +16,7 @@ import 'package:untitled1/ptofile.dart';
 import 'package:untitled1/pages/admin_profile.dart';
 import 'package:untitled1/pages/inbox_page.dart';
 import 'package:untitled1/pages/chat_page.dart';
+import 'package:untitled1/pages/saved_invoices_page.dart';
 import 'package:untitled1/services/analytics_service.dart';
 import 'package:untitled1/services/app_navigation_service.dart';
 import 'package:untitled1/services/notification_service.dart';
@@ -206,7 +207,13 @@ class _MyAppState extends State<MyApp> {
       return;
     }
 
-    if (data['type'] == 'chat' && data['senderId'] != null) {
+    if (data['type'] == 'document_created' ||
+        data['type'] == 'document_generation_failed' ||
+        data['type'] == 'document_download_missing') {
+      navigator.push(
+        MaterialPageRoute(builder: (_) => const SavedInvoicesPage()),
+      );
+    } else if (data['type'] == 'chat' && data['senderId'] != null) {
       navigator.push(
         MaterialPageRoute(
           builder: (context) => ChatPage(
@@ -596,7 +603,14 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   void _handleDeepLink(Map<String, dynamic> data) {
-    if (data['type'] == 'chat' && data['senderId'] != null) {
+    if (data['type'] == 'document_created' ||
+        data['type'] == 'document_generation_failed' ||
+        data['type'] == 'document_download_missing') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const SavedInvoicesPage()),
+      );
+    } else if (data['type'] == 'chat' && data['senderId'] != null) {
       Navigator.push(
         context,
         MaterialPageRoute(

@@ -14,6 +14,11 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {}
 class NotificationService {
   static const Set<String> _pushBackedNotificationTypes = {
     'chat_message',
+    'document_created',
+    'document_generation_failed',
+    'document_generation_escalated',
+    'document_download_missing',
+    'document_download_missing_escalated',
     'work_request',
     'quote_request',
     'request_edited',
