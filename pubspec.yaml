@@ -60,6 +60,7 @@ dependencies:
   flutter_facebook_auth: ^7.1.7
   sign_in_with_apple: ^8.1.0
   xml: ^6.6.1
+  internet_connection_checker_plus: ^3.1.1
 
 
 dev_dependencies:

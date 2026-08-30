@@ -331,6 +331,7 @@ service cloud.firestore {
         'paymentStatus', 'paidAmount', 'allocationNumber',
         'taxAuthorityAllocationNumber', 'taxAuthorityAllocation',
         'taxAuthorityAllocationRequest', 'taxAuthorityDecision',
+        'taxAuthorityDecisionHistory',
         'authoritativeTaxInvoice',
         'taxInvoicePresentation', 'documentStatus', 'finalizedAt', 'finalPdf',
         'authoritativeServerDocument', 'serverDocument', 'signatureStatus',
@@ -378,7 +379,8 @@ service cloud.firestore {
       return [
         'allocationNumber', 'taxAuthorityAllocationNumber',
         'taxAuthorityAllocation', 'taxAuthorityAllocationRequest',
-        'taxAuthorityDecision', 'authoritativeTaxInvoice',
+        'taxAuthorityDecision', 'taxAuthorityDecisionHistory',
+        'authoritativeTaxInvoice',
         'taxInvoicePresentation', 'documentStatus',
         'authoritativeServerDocument', 'serverDocument', 'finalizedAt',
         'finalPdf',

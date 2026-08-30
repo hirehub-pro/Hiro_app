@@ -209,7 +209,8 @@ class _MyAppState extends State<MyApp> {
 
     if (data['type'] == 'document_created' ||
         data['type'] == 'document_generation_failed' ||
-        data['type'] == 'document_download_missing') {
+        data['type'] == 'document_download_missing' ||
+        data['type'] == 'tax_authority_hearing_reminder') {
       navigator.push(
         MaterialPageRoute(builder: (_) => const SavedInvoicesPage()),
       );
@@ -605,7 +606,8 @@ class _MyHomePageState extends State<MyHomePage> {
   void _handleDeepLink(Map<String, dynamic> data) {
     if (data['type'] == 'document_created' ||
         data['type'] == 'document_generation_failed' ||
-        data['type'] == 'document_download_missing') {
+        data['type'] == 'document_download_missing' ||
+        data['type'] == 'tax_authority_hearing_reminder') {
       Navigator.push(
         context,
         MaterialPageRoute(builder: (_) => const SavedInvoicesPage()),

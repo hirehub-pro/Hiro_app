@@ -15,6 +15,7 @@ class NotificationService {
   static const Set<String> _pushBackedNotificationTypes = {
     'chat_message',
     'document_created',
+    'tax_authority_hearing_reminder',
     'document_generation_failed',
     'document_generation_escalated',
     'document_download_missing',

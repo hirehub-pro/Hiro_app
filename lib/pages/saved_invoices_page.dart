@@ -364,6 +364,294 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
     }
   }
 
+  Future<void> _retryTaxAuthorityAllocation(
+    String invoiceDocId,
+    bool isRtl,
+  ) async {
+    if (_retryingDocuments.contains(invoiceDocId)) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(
+          isRtl ? 'לבקש מספר הקצאה שוב?' : 'Request allocation again?',
+        ),
+        content: Text(
+          isRtl
+              ? 'הבקשה תישלח עם פרטי החשבונית השמורים, ללא שינוי במספר החשבונית או בפרטי העסקה. יש לבצע פעולה זו רק לאחר שהשימוע ברשות המסים הסתיים.'
+              : 'The request will use the saved invoice details without changing its number or transaction details. Only do this after the Tax Authority hearing has finished.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(isRtl ? 'ביטול' : 'Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(isRtl ? 'בקש שוב' : 'Request again'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _retryingDocuments.add(invoiceDocId));
+    try {
+      final result = await FirebaseFunctions.instanceFor(region: 'me-west1')
+          .httpsCallable('requestTaxInvoiceAllocation')
+          .call<Map<String, dynamic>>({'draftId': invoiceDocId});
+      if (!mounted) return;
+      if (result.data['decisionRequired'] == true) {
+        await _showTaxAuthorityDecision(
+          invoiceDocId: invoiceDocId,
+          isRtl: isRtl,
+          errors: result.data['errors'],
+        );
+        return;
+      }
+      final approved = result.data['approved'] == true;
+      final document = result.data['document'];
+      if (!approved || document is! Map) {
+        throw StateError(
+          'The Tax Authority did not return an allocation number.',
+        );
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            isRtl
+                ? 'מספר ההקצאה התקבל והחשבונית הופקה.'
+                : 'The allocation number was received and the invoice was generated.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      final message = error is FirebaseFunctionsException
+          ? error.message
+          : error.toString().replaceFirst('Bad state: ', '');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            isRtl
+                ? 'לא ניתן היה לבקש מספר הקצאה מחדש: ${message ?? ''}'
+                : 'Could not request an allocation number again: ${message ?? ''}',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _retryingDocuments.remove(invoiceDocId));
+    }
+  }
+
+  Future<void> _showTaxAuthorityDecision({
+    required String invoiceDocId,
+    required bool isRtl,
+    required dynamic errors,
+  }) async {
+    final errorText = errors is List
+        ? errors
+              .map(
+                (error) =>
+                    error is Map ? (error['message'] ?? error['code']) : error,
+              )
+              .whereType<Object>()
+              .join('\n')
+        : '';
+    final decision = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(22),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                isRtl
+                    ? 'לא התקבל מספר הקצאה'
+                    : 'No allocation number was issued',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                isRtl
+                    ? 'רשות המסים עיכבה את החשבונית. בחרו כיצד להמשיך.'
+                    : 'The Tax Authority held this invoice. Choose how you want to continue.',
+                textAlign: TextAlign.center,
+              ),
+              if (errorText.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Text(
+                  errorText,
+                  style: const TextStyle(color: Color(0xFF92400E)),
+                ),
+              ],
+              const SizedBox(height: 16),
+              FilledButton(
+                onPressed: () =>
+                    Navigator.pop(sheetContext, 'further_objection'),
+                child: Text(isRtl ? 'בקשת שימוע' : 'Request a hearing'),
+              ),
+              OutlinedButton(
+                onPressed: () => Navigator.pop(sheetContext, 'continue'),
+                child: Text(
+                  isRtl
+                      ? 'המשך ללא מספר הקצאה'
+                      : 'Continue without an allocation number',
+                ),
+              ),
+              OutlinedButton(
+                onPressed: () => Navigator.pop(sheetContext, 'reverse_charge'),
+                child: Text(
+                  isRtl
+                      ? 'היפוך חיוב – הלקוח מדווח את המע״מ'
+                      : 'Reverse charge — customer reports VAT',
+                ),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(sheetContext, 'cancel'),
+                child: Text(
+                  isRtl
+                      ? 'ביטול והפקת חשבונית מס זיכוי'
+                      : 'Cancel and create a Tax Invoice Credit',
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (decision == null || !mounted) return;
+
+    Map<String, dynamic>? reverseChargeEvidence;
+    if (decision == 'reverse_charge') {
+      reverseChargeEvidence = await _collectReverseChargeEvidence(isRtl);
+      if (reverseChargeEvidence == null || !mounted) return;
+    }
+    try {
+      final result = await FirebaseFunctions.instanceFor(region: 'me-west1')
+          .httpsCallable('submitTaxInvoiceDecision')
+          .call<Map<String, dynamic>>({
+            'draftId': invoiceDocId,
+            'decision': decision,
+            ...?(reverseChargeEvidence == null
+                ? null
+                : {'reverseChargeEvidence': reverseChargeEvidence}),
+          });
+      if (!mounted || result.data['accepted'] != true) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            decision == 'further_objection'
+                ? (isRtl
+                      ? 'בקשת השימוע נרשמה. החשבונית ממתינה לבדיקה.'
+                      : 'The hearing request was recorded. The invoice is awaiting review.')
+                : (isRtl
+                      ? 'הבחירה נשלחה לרשות המסים.'
+                      : 'Your decision was sent to the Tax Authority.'),
+          ),
+        ),
+      );
+    } on FirebaseFunctionsException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            error.message ?? (isRtl ? 'הפעולה נכשלה.' : 'The action failed.'),
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<Map<String, dynamic>?> _collectReverseChargeEvidence(
+    bool isRtl,
+  ) async {
+    var dealerVerified = false;
+    var customerConsented = false;
+    String? consentMethod;
+    return showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (_, setDialogState) => AlertDialog(
+          title: Text(isRtl ? 'אישור היפוך חיוב' : 'Confirm reverse charge'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                value: dealerVerified,
+                onChanged: (value) =>
+                    setDialogState(() => dealerVerified = value == true),
+                title: Text(
+                  isRtl
+                      ? 'אישרתי שהלקוח עוסק מורשה פעיל.'
+                      : 'I confirmed the customer is an active licensed dealer.',
+                ),
+              ),
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                value: customerConsented,
+                onChanged: (value) =>
+                    setDialogState(() => customerConsented = value == true),
+                title: Text(
+                  isRtl
+                      ? 'אישרתי שהלקוח הסכים להיפוך החיוב.'
+                      : 'I confirmed the customer agreed to reverse charge.',
+                ),
+              ),
+              DropdownButtonFormField<String>(
+                initialValue: consentMethod,
+                decoration: InputDecoration(
+                  labelText: isRtl ? 'אופן קבלת ההסכמה' : 'Consent method',
+                ),
+                items:
+                    const [
+                          'email',
+                          'signed_document',
+                          'whatsapp',
+                          'phone',
+                          'other',
+                        ]
+                        .map(
+                          (value) => DropdownMenuItem(
+                            value: value,
+                            child: Text(value),
+                          ),
+                        )
+                        .toList(),
+                onChanged: (value) =>
+                    setDialogState(() => consentMethod = value),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: Text(isRtl ? 'ביטול' : 'Cancel'),
+            ),
+            FilledButton(
+              onPressed:
+                  dealerVerified && customerConsented && consentMethod != null
+                  ? () => Navigator.pop(dialogContext, {
+                      'dealerVerificationConfirmed': true,
+                      'customerConsentConfirmed': true,
+                      'consentMethod': consentMethod,
+                    })
+                  : null,
+              child: Text(isRtl ? 'המשך' : 'Continue'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _generateSigningLink(String invoiceDocId, bool isRtl) async {
     if (_generatingSigningLinks.contains(invoiceDocId)) return;
 
@@ -1576,6 +1864,12 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                             final canRetryGeneration =
                                 !isReceivedScope &&
                                 _canRetryDocumentGeneration(data);
+                            final canRetryTaxAuthorityAllocation =
+                                !isReceivedScope &&
+                                documentStatus == 'hearing_requested';
+                            final canChooseTaxAuthorityDecision =
+                                !isReceivedScope &&
+                                documentStatus == 'decision_required';
                             final requiresGenerationReview =
                                 !isReceivedScope &&
                                 hasServerWorkflow &&
@@ -2055,6 +2349,80 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                           style: ElevatedButton.styleFrom(
                                             backgroundColor: const Color(
                                               0xFFB91C1C,
+                                            ),
+                                            foregroundColor: Colors.white,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                    if (canRetryTaxAuthorityAllocation) ...[
+                                      const SizedBox(height: 12),
+                                      SizedBox(
+                                        width: double.infinity,
+                                        child: ElevatedButton.icon(
+                                          onPressed: isRetryingGeneration
+                                              ? null
+                                              : () =>
+                                                    _retryTaxAuthorityAllocation(
+                                                      invoiceDoc.id,
+                                                      isRtl,
+                                                    ),
+                                          icon: isRetryingGeneration
+                                              ? const SizedBox.square(
+                                                  dimension: 18,
+                                                  child:
+                                                      CircularProgressIndicator(
+                                                        strokeWidth: 2,
+                                                        color: Colors.white,
+                                                      ),
+                                                )
+                                              : const Icon(
+                                                  Icons.refresh_rounded,
+                                                ),
+                                          label: Text(
+                                            isRetryingGeneration
+                                                ? (isRtl
+                                                      ? 'מבקש מספר הקצאה...'
+                                                      : 'Requesting allocation...')
+                                                : (isRtl
+                                                      ? 'בקש מספר הקצאה שוב'
+                                                      : 'Request allocation number again'),
+                                          ),
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: const Color(
+                                              0xFF1976D2,
+                                            ),
+                                            foregroundColor: Colors.white,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                    if (canChooseTaxAuthorityDecision) ...[
+                                      const SizedBox(height: 12),
+                                      SizedBox(
+                                        width: double.infinity,
+                                        child: ElevatedButton.icon(
+                                          onPressed: () => _showTaxAuthorityDecision(
+                                            invoiceDocId: invoiceDoc.id,
+                                            isRtl: isRtl,
+                                            errors:
+                                                data['taxAuthorityAllocationRequest']
+                                                    is Map
+                                                ? (data['taxAuthorityAllocationRequest']
+                                                      as Map)['authorityErrors']
+                                                : null,
+                                          ),
+                                          icon: const Icon(
+                                            Icons.pending_actions_rounded,
+                                          ),
+                                          label: Text(
+                                            isRtl
+                                                ? 'בחרו תגובה לרשות המסים'
+                                                : 'Choose Tax Authority response',
+                                          ),
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: const Color(
+                                              0xFFD97706,
                                             ),
                                             foregroundColor: Colors.white,
                                           ),

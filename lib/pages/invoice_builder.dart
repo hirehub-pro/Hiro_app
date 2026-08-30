@@ -25,6 +25,7 @@ import 'package:untitled1/services/app_navigation_service.dart';
 import 'package:untitled1/services/profile_document_service.dart';
 import 'package:untitled1/pages/chat_page.dart';
 import 'package:xml/xml.dart';
+import 'package:internet_connection_checker_plus/internet_connection_checker_plus.dart';
 
 class _BankBranch {
   const _BankBranch({required this.name, required this.code});
@@ -9401,6 +9402,8 @@ class _InvoicePreviewPageState extends State<_InvoicePreviewPage>
   bool _isSaving = false;
   bool _isCheckingSaveStatus = false;
   bool _saveOutcomeUnknown = false;
+  bool _saveStartedWithInternet = false;
+  bool _saveCanSafelyRetry = false;
   bool _saveDocumentReserved = false;
   bool _isSending = false;
   bool _isSendingForSignature = false;
@@ -9741,9 +9744,9 @@ class _InvoicePreviewPageState extends State<_InvoicePreviewPage>
 
   String _unknownSaveOutcomeMessage() => _localizedStatusMessage(const {
     'en':
-        'The save request may already have reached the server. Do not create another document. Reconnect and tap Check status; if completed, it will appear in Saved Documents with the same number.',
+        'We lost your internet connection while saving. Your document may still have been saved. Reconnect, then tap Check status before trying again.',
     'he':
-        'ייתכן שבקשת השמירה כבר הגיעה לשרת. אין ליצור מסמך נוסף. יש להתחבר מחדש וללחוץ על בדיקת מצב; אם ההפקה הושלמה, המסמך יופיע במסמכים השמורים עם אותו מספר.',
+        'החיבור לאינטרנט נותק בזמן שמירת המסמך. ייתכן שהמסמך כבר נשמר. יש להתחבר מחדש וללחוץ על בדיקת מצב לפני ניסיון נוסף.',
     'ar':
         'ربما وصل طلب الحفظ إلى الخادم بالفعل. لا تنشئ مستندًا آخر. أعد الاتصال واضغط على التحقق من الحالة؛ إذا اكتمل، فسيظهر في المستندات المحفوظة بالرقم نفسه.',
     'ru':
@@ -9751,6 +9754,19 @@ class _InvoicePreviewPageState extends State<_InvoicePreviewPage>
     'am':
         'የማስቀመጥ ጥያቄው አስቀድሞ ወደ አገልጋዩ ደርሶ ሊሆን ይችላል። ሌላ ሰነድ አይፍጠሩ። እንደገና ተገናኝተው ሁኔታን ያረጋግጡ፤ ከተጠናቀቀ በተመሳሳይ ቁጥር በተቀመጡ ሰነዶች ውስጥ ይታያል።',
   });
+
+  String _noInternetConnectionMessage() => _localizedStatusMessage(const {
+    'en': 'No internet connection. Reconnect and try saving again.',
+    'he': 'אין חיבור לאינטרנט. יש להתחבר מחדש ולנסות לשמור שוב.',
+    'ar': 'لا يوجد اتصال بالإنترنت. أعد الاتصال ثم حاول الحفظ مرة أخرى.',
+    'ru':
+        'Нет подключения к интернету. Подключитесь и попробуйте сохранить снова.',
+    'am': 'የበይነመረብ ግንኙነት የለም። እንደገና ተገናኝተው ለማስቀመጥ ይሞክሩ።',
+  });
+
+  Future<bool> _hasInternetConnection() async {
+    return InternetConnection().hasInternetAccess;
+  }
 
   Future<void> _handleCheckSaveStatus() async {
     if (_isCheckingSaveStatus || widget.onCheckSaveStatus == null) return;
@@ -9767,6 +9783,7 @@ class _InvoicePreviewPageState extends State<_InvoicePreviewPage>
             if (result.pdfBytes != null) _pdfBytes = result.pdfBytes!;
             _isSaved = true;
             _saveOutcomeUnknown = false;
+            _saveCanSafelyRetry = false;
             _saveError = null;
           });
           widget.onPendingSaveChanged?.call(false);
@@ -9774,6 +9791,7 @@ class _InvoicePreviewPageState extends State<_InvoicePreviewPage>
         case _ServerDocumentReconciliationState.processing:
           setState(() {
             _saveOutcomeUnknown = true;
+            _saveCanSafelyRetry = false;
             _saveDocumentReserved = true;
             _saveError = _localizedStatusMessage(const {
               'en':
@@ -9787,11 +9805,10 @@ class _InvoicePreviewPageState extends State<_InvoicePreviewPage>
           setState(() {
             _saveOutcomeUnknown = false;
             _saveDocumentReserved = false;
+            _saveCanSafelyRetry = true;
             _saveError = _localizedStatusMessage(const {
-              'en':
-                  'No document was reserved on the server. You can safely retry this same save request.',
-              'he':
-                  'לא נשמר מסמך בשרת. אפשר לנסות שוב בבטחה עם אותה בקשת שמירה.',
+              'en': 'Nothing was saved yet. You can try again safely.',
+              'he': 'עדיין לא נשמר מסמך. אפשר לנסות שוב בבטחה.',
             });
           });
           widget.onPendingSaveChanged?.call(false);
@@ -9799,6 +9816,7 @@ class _InvoicePreviewPageState extends State<_InvoicePreviewPage>
         case _ServerDocumentReconciliationState.retryableFailure:
           setState(() {
             _saveOutcomeUnknown = false;
+            _saveCanSafelyRetry = false;
             _saveDocumentReserved = true;
             _saveError = _localizedStatusMessage(const {
               'en':
@@ -9811,6 +9829,7 @@ class _InvoicePreviewPageState extends State<_InvoicePreviewPage>
         case _ServerDocumentReconciliationState.needsReview:
           setState(() {
             _saveOutcomeUnknown = false;
+            _saveCanSafelyRetry = false;
             _saveDocumentReserved = true;
             _saveRequiresReview = true;
             _saveError = _localizedStatusMessage(const {
@@ -9825,6 +9844,7 @@ class _InvoicePreviewPageState extends State<_InvoicePreviewPage>
       if (!mounted) return;
       setState(() {
         _saveOutcomeUnknown = false;
+        _saveCanSafelyRetry = false;
         _saveDocumentReserved = false;
         _isFinalizedButDownloadFailed = true;
         _finalPdfMissing = error.missingConfirmed;
@@ -9840,6 +9860,7 @@ class _InvoicePreviewPageState extends State<_InvoicePreviewPage>
       if (!mounted) return;
       setState(() {
         _saveOutcomeUnknown = true;
+        _saveCanSafelyRetry = false;
         _saveError = _unknownSaveOutcomeMessage();
       });
     } finally {
@@ -10204,6 +10225,8 @@ class _InvoicePreviewPageState extends State<_InvoicePreviewPage>
       _saveRequiresReview = false;
       _saveOutcomeUnknown = false;
       _saveDocumentReserved = false;
+      _saveCanSafelyRetry = false;
+      _saveStartedWithInternet = false;
     });
     try {
       if (widget.requireTaxAuthorityConnectionPrompt) {
@@ -10225,6 +10248,18 @@ class _InvoicePreviewPageState extends State<_InvoicePreviewPage>
       if (saveWithoutAllocation && widget.onSaveWithoutAllocation == null) {
         throw StateError('Saving without an allocation number is unavailable.');
       }
+
+      final hasInternetConnection = await _hasInternetConnection();
+      if (!mounted) return;
+      if (!hasInternetConnection) {
+        final message = _noInternetConnectionMessage();
+        setState(() => _saveError = message);
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(message)));
+        return;
+      }
+      _saveStartedWithInternet = true;
       final savedPdfBytes = saveWithoutAllocation
           ? await widget.onSaveWithoutAllocation!.call()
           : await widget.onSave();
@@ -10268,13 +10303,15 @@ class _InvoicePreviewPageState extends State<_InvoicePreviewPage>
         );
         return;
       }
-      if (_isUnknownSaveOutcome(e) && widget.onCheckSaveStatus != null) {
+      if (_saveStartedWithInternet &&
+          _isUnknownSaveOutcome(e) &&
+          widget.onCheckSaveStatus != null) {
         setState(() {
           _saveOutcomeUnknown = true;
+          _saveCanSafelyRetry = false;
           _saveError = _unknownSaveOutcomeMessage();
         });
         widget.onPendingSaveChanged?.call(true);
-        unawaited(_handleCheckSaveStatus());
         return;
       }
       final message = _friendlySaveError(e);
@@ -10283,6 +10320,7 @@ class _InvoicePreviewPageState extends State<_InvoicePreviewPage>
           details is Map && details['needsReconciliation'] == true;
       setState(() {
         _saveError = message;
+        _saveCanSafelyRetry = false;
         _saveRequiresReview = requiresReview;
       });
       ScaffoldMessenger.of(
@@ -10330,6 +10368,7 @@ class _InvoicePreviewPageState extends State<_InvoicePreviewPage>
     final isRtl =
         Provider.of<LanguageProvider>(context).locale.languageCode == 'he' ||
         Provider.of<LanguageProvider>(context).locale.languageCode == 'ar';
+    final isSuccessfulRetryNotice = _saveCanSafelyRetry;
 
     return Directionality(
       textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
@@ -10378,12 +10417,16 @@ class _InvoicePreviewPageState extends State<_InvoicePreviewPage>
                     width: double.infinity,
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: _saveOutcomeUnknown
+                      color: isSuccessfulRetryNotice
+                          ? const Color(0xFFF0FDF4)
+                          : _saveOutcomeUnknown
                           ? const Color(0xFFEFF6FF)
                           : const Color(0xFFFEF2F2),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
-                        color: _saveOutcomeUnknown
+                        color: isSuccessfulRetryNotice
+                            ? const Color(0xFFBBF7D0)
+                            : _saveOutcomeUnknown
                             ? const Color(0xFFBFDBFE)
                             : const Color(0xFFFECACA),
                       ),
@@ -10392,10 +10435,14 @@ class _InvoicePreviewPageState extends State<_InvoicePreviewPage>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Icon(
-                          _saveOutcomeUnknown
+                          isSuccessfulRetryNotice
+                              ? Icons.check_circle_outline_rounded
+                              : _saveOutcomeUnknown
                               ? Icons.info_outline_rounded
                               : Icons.error_outline_rounded,
-                          color: _saveOutcomeUnknown
+                          color: isSuccessfulRetryNotice
+                              ? const Color(0xFF15803D)
+                              : _saveOutcomeUnknown
                               ? const Color(0xFF1D4ED8)
                               : const Color(0xFFB91C1C),
                         ),
@@ -10418,7 +10465,9 @@ class _InvoicePreviewPageState extends State<_InvoicePreviewPage>
                                       ? 'Generation failed repeatedly. The number is reserved and the document was sent for review. Do not create a replacement document.'
                                       : _saveError!),
                             style: TextStyle(
-                              color: _saveOutcomeUnknown
+                              color: isSuccessfulRetryNotice
+                                  ? const Color(0xFF166534)
+                                  : _saveOutcomeUnknown
                                   ? const Color(0xFF1E40AF)
                                   : const Color(0xFF991B1B),
                               fontWeight: FontWeight.w700,

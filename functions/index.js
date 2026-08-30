@@ -2219,6 +2219,68 @@ exports.markStaleServerDocumentsFailed = onSchedule(
     },
 );
 
+// A held invoice keeps the tax invoice unissued. Remind the owner once a day
+// until they choose a next Tax Authority action from Saved Documents.
+exports.remindPendingTaxAuthorityHearings = onSchedule(
+    {
+      schedule: "0 9 * * *",
+      timeZone: "Asia/Jerusalem",
+      region: "me-west1",
+      timeoutSeconds: 120,
+    },
+    async () => {
+      const db = admin.firestore();
+      const reminderDate = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Jerusalem",
+      }).format(new Date());
+      const snapshot = await db.collectionGroup("invoices")
+          .where("documentStatus", "in", [
+            "decision_required",
+            "hearing_requested",
+          ])
+          .limit(500)
+          .get();
+      let reminderCount = 0;
+
+      for (const invoiceSnapshot of snapshot.docs) {
+        const invoice = invoiceSnapshot.data() || {};
+        const userRef = invoiceSnapshot.ref.parent.parent;
+        if (!userRef || userRef.parent.id !== "users") continue;
+        const request = invoice.taxAuthorityAllocationRequest || {};
+        if (request.lastHearingReminderDate === reminderDate) continue;
+
+        const documentNumber = normalizeString(invoice.invoiceNumber).trim();
+        const reminderAt = admin.firestore.FieldValue.serverTimestamp();
+        const batch = db.batch();
+        batch.update(invoiceSnapshot.ref, {
+          "taxAuthorityAllocationRequest.lastHearingReminderDate": reminderDate,
+          "taxAuthorityAllocationRequest.lastHearingReminderAt": reminderAt,
+          "taxAuthorityAllocationRequest.hearingReminderCount":
+            admin.firestore.FieldValue.increment(1),
+        });
+        batch.set(userRef.collection("notifications").doc(), {
+          type: "tax_authority_hearing_reminder",
+          title: "Tax Authority invoice needs your response",
+          body: documentNumber ?
+            `Invoice #${documentNumber} is still awaiting your response in Saved Documents.` :
+            "An invoice is still awaiting your response in Saved Documents.",
+          status: normalizeString(invoice.documentStatus).trim(),
+          invoiceDocId: invoiceSnapshot.id,
+          documentNumber: documentNumber || null,
+          docType: normalizeString(invoice.docType).trim() || null,
+          isRead: false,
+          timestamp: reminderAt,
+        });
+        await batch.commit();
+        reminderCount += 1;
+      }
+      logger.info("Sent pending Tax Authority hearing reminders", {
+        reminderCount,
+        reminderDate,
+      });
+    },
+);
+
 exports.createTaxInvoiceDraft = onCall(
     {
       region: "me-west1",
@@ -2541,18 +2603,34 @@ exports.requestTaxInvoiceAllocation = onCall(
               "An allocation request for this document is already in progress.",
           );
         }
-        if (!["reserved", "failed"].includes(allocationRequest.status)) {
+        const isHearingRetry = allocationRequest.status === "hearing_requested" &&
+          draft.documentStatus === "hearing_requested";
+        if (!["reserved", "failed"].includes(allocationRequest.status) &&
+            !isHearingRetry) {
           throw new HttpsError(
               "failed-precondition",
               "This draft cannot request an allocation in its current state.",
           );
         }
+        const retryAudit = isHearingRetry ? {
+          "taxAuthorityAllocationRequest.hearingRetryCount":
+            admin.firestore.FieldValue.increment(1),
+          "taxAuthorityAllocationRequest.lastHearingRetryAt": now,
+          "taxAuthorityDecisionHistory": admin.firestore.FieldValue.arrayUnion({
+            ...draft.taxAuthorityDecision,
+            archivedAt: now,
+            archiveReason: "allocation_retry_after_hearing",
+          }),
+          // A new material refusal must be allowed to collect a new choice.
+          taxAuthorityDecision: admin.firestore.FieldValue.delete(),
+        } : {};
         transaction.update(invoiceRef, {
           documentStatus: "allocating",
           "taxAuthorityAllocationRequest.status": "allocating",
           "taxAuthorityAllocationRequest.lastAttemptAt": now,
           "taxAuthorityAllocationRequest.attempts":
             admin.firestore.FieldValue.increment(1),
+          ...retryAudit,
         });
         return {
           cached: false,
@@ -5554,6 +5632,7 @@ exports.sendNotificationPush = onDocumentCreated(
         "document_generation_escalated",
         "document_download_missing",
         "document_download_missing_escalated",
+        "tax_authority_hearing_reminder",
         "work_request",
         "quote_request",
         "request_edited",
@@ -9213,6 +9292,8 @@ function defaultBodyForType(type) {
       return "המסמך נשמר, אך קובץ ה-PDF חסר והוא הועבר לבדיקה.";
     case "document_download_missing_escalated":
       return "קובץ PDF חסר לאחר שהמסמך הושלם ונדרשת בדיקה.";
+    case "tax_authority_hearing_reminder":
+      return "חשבונית ממתינה לתגובה שלך במסמכים השמורים.";
     case "document_signed":
       return "הלקוח חתם על המסמך";
     case "work_request":
@@ -9245,6 +9326,8 @@ function dataTypeForNotification(type) {
       return "document_download_missing";
     case "document_download_missing_escalated":
       return "document_download_missing_escalated";
+    case "tax_authority_hearing_reminder":
+      return "tax_authority_hearing_reminder";
     case "document_signed":
       return "chat";
     case "work_request":
