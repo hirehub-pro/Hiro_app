@@ -344,6 +344,10 @@ function drawInlineLabelValue(page, font, label, value, xRight, y, size,
   });
 }
 
+function footerGeneratedAtText(generatedAt, previewOnly) {
+  return previewOnly ? null : generatedAt;
+}
+
 function drawFooter(page, font, pageNumber, pageCount, generatedAt,
     reservation, appIcon, previewOnly) {
   page.drawLine({
@@ -387,18 +391,21 @@ function drawFooter(page, font, pageNumber, pageCount, generatedAt,
       page, font, documentTitle(reservation.docType), footerX, 36, 8.25,
       {color: MUTED},
   );
-  footerX += 4;
-  footerX += drawLeft(page, font, "|", footerX, 36, 8.25, {
-    color: MUTED,
-    direction: "ltr",
-  });
-  footerX += 4;
-  footerX += drawLeft(page, font, generatedAt, footerX, 36, 8.25, {
-    color: MUTED,
-    direction: "ltr",
-  });
-  footerX += 4;
-  drawLeft(page, font, "הופק ב", footerX, 36, 8.25, {color: MUTED});
+  const footerGeneratedAt = footerGeneratedAtText(generatedAt, previewOnly);
+  if (footerGeneratedAt) {
+    footerX += 4;
+    footerX += drawLeft(page, font, "|", footerX, 36, 8.25, {
+      color: MUTED,
+      direction: "ltr",
+    });
+    footerX += 4;
+    footerX += drawLeft(page, font, footerGeneratedAt, footerX, 36, 8.25, {
+      color: MUTED,
+      direction: "ltr",
+    });
+    footerX += 4;
+    drawLeft(page, font, "הופק ב", footerX, 36, 8.25, {color: MUTED});
+  }
   drawLeft(page, font, `${pageNumber} / ${pageCount}`, MARGIN, 17, 9.75, {
     color: MUTED_LIGHT,
   });
@@ -995,6 +1002,7 @@ async function buildTaxInvoicePdf({
 
 module.exports = {
   buildTaxInvoicePdf,
+  footerGeneratedAtText,
   formatMoney,
   normalizeTaxInvoicePresentation,
   taxableSubtotalBeforeTax,

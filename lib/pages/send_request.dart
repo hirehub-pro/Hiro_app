@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
+import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:image_picker/image_picker.dart';
@@ -15,6 +16,7 @@ import 'package:untitled1/services/language_provider.dart';
 import 'package:untitled1/services/notification_service.dart';
 import 'package:untitled1/services/profile_document_service.dart';
 import 'package:untitled1/utils/booking_mode.dart';
+import 'package:untitled1/utils/profession_localization.dart';
 
 class SendRequestPage extends StatefulWidget {
   final String workerId;
@@ -166,6 +168,33 @@ class _SendRequestPageState extends State<SendRequestPage> {
       _selectedLocation = picked;
       _locationSelectionMode = 'map';
     });
+  }
+
+  Future<String?> _reverseGeocodeCity(LatLng location) async {
+    try {
+      final placemarks = await placemarkFromCoordinates(
+        location.latitude,
+        location.longitude,
+      );
+      if (placemarks.isEmpty) return null;
+
+      final placemark = placemarks.first;
+      final candidates = [
+        placemark.locality,
+        placemark.subLocality,
+        placemark.subAdministrativeArea,
+        placemark.administrativeArea,
+      ];
+
+      for (final candidate in candidates) {
+        final city = candidate?.trim();
+        if (city != null && city.isNotEmpty) return city;
+      }
+    } catch (error) {
+      debugPrint('Failed to resolve job location name: $error');
+    }
+
+    return null;
   }
 
   Future<void> _fetchProviderLocation() async {
@@ -612,6 +641,17 @@ class _SendRequestPageState extends State<SendRequestPage> {
     return '$day/$month/$year';
   }
 
+  String _localizedProfession(Map<String, String> strings) {
+    final profession = widget.professionName?.trim() ?? '';
+    if (profession.isEmpty) return strings['profession_fallback']!;
+
+    final localeCode = Provider.of<LanguageProvider>(
+      context,
+      listen: false,
+    ).locale.languageCode;
+    return ProfessionLocalization.toLocalized(profession, localeCode);
+  }
+
   void _applyDescriptionTemplate(String template) {
     setState(() {
       _descriptionController.text = template;
@@ -718,9 +758,7 @@ class _SendRequestPageState extends State<SendRequestPage> {
                           children: [
                             _buildAiInfoChip(
                               icon: Icons.work_outline_rounded,
-                              label:
-                                  widget.professionName ??
-                                  strings['profession_fallback']!,
+                              label: _localizedProfession(strings),
                             ),
                           ],
                         ),
@@ -886,8 +924,7 @@ class _SendRequestPageState extends State<SendRequestPage> {
                                             AiJobRequestDescriptionRequest(
                                               localeCode: localeCode,
                                               professionName:
-                                                  widget.professionName ??
-                                                  strings['profession_fallback']!,
+                                                  _localizedProfession(strings),
                                               mainNeed: mainNeed,
                                               problemOrPlace: problemOrPlace,
                                               sizeOrUrgency: sizeOrUrgency,
@@ -992,6 +1029,13 @@ class _SendRequestPageState extends State<SendRequestPage> {
       }
       final userName = userData['name'] ?? 'Client';
       final userTown = userData['town'];
+      final selectedJobLocationName =
+          !widget.isQuoteRequest &&
+              !_customerTravels &&
+              !_onlineOnly &&
+              _selectedLocation != null
+          ? await _reverseGeocodeCity(_selectedLocation!)
+          : null;
 
       final workerDoc = await FirebaseFirestore.instance
           .collection('publicWorkerProfiles')
@@ -1031,7 +1075,7 @@ class _SendRequestPageState extends State<SendRequestPage> {
           ? (workerLocationName.isEmpty
                 ? widget.workerName
                 : workerLocationName)
-          : userTown?.toString().trim();
+          : selectedJobLocationName ?? userTown?.toString().trim();
       final serviceLocationType = _onlineOnly
           ? bookingModeOnline
           : _customerTravels
@@ -1386,19 +1430,11 @@ class _SendRequestPageState extends State<SendRequestPage> {
                   Icons.calendar_today_rounded,
                   _formatSelectedDate(),
                 ),
-              _buildHeroChip(
-                Icons.schedule_send_rounded,
-                widget.isQuoteRequest
-                    ? strings['quote_request']!
-                    : widget.isExtraHours
-                    ? strings['extra_hours']!
-                    : strings['regular_request']!,
-              ),
               if (widget.professionName != null &&
                   widget.professionName!.trim().isNotEmpty)
                 _buildHeroChip(
                   Icons.work_outline_rounded,
-                  widget.professionName!.trim(),
+                  _localizedProfession(strings),
                 ),
             ],
           ),
@@ -1529,7 +1565,7 @@ class _SendRequestPageState extends State<SendRequestPage> {
               _buildInfoTile(
                 icon: Icons.work_outline_rounded,
                 label: strings['profession']!,
-                value: widget.professionName!.trim(),
+                value: _localizedProfession(strings),
               ),
           ],
         ),

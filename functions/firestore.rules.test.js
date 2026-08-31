@@ -456,11 +456,26 @@ test("blocks cross-user invoices and protected allocation fields", {
   await assertFails(updateDoc(ref, {
     taxAuthorityDecision: {decision: "continue", status: "accepted"},
   }));
+  await assertFails(updateDoc(ref, {
+    fallbackPreview: {
+      status: "available",
+      previewOnly: true,
+      storagePath: `invoices/${uid}/server_document_fake_preview.pdf`,
+    },
+  }));
 
   const fakeId = "invoice_2026-0002";
   await assertFails(setDoc(doc(owner, `users/${uid}/invoices/${fakeId}`), {
     ...validInvoice(fakeId, 2),
     taxAuthorityAllocationRequest: {status: "approved"},
+  }));
+  await assertFails(setDoc(doc(owner, `users/${uid}/invoices/fake_preview`), {
+    ...validInvoice("fake_preview", 4),
+    fallbackPreview: {
+      status: "available",
+      previewOnly: true,
+      storagePath: `invoices/${uid}/server_document_fake_preview.pdf`,
+    },
   }));
   await assertFails(setDoc(doc(owner, `users/${uid}/invoices/quote_fake`), {
     type: "quote",

@@ -13,6 +13,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:untitled1/pages/invoice_builder.dart';
 import 'package:untitled1/services/language_provider.dart';
 import 'package:untitled1/services/profile_document_service.dart';
+import 'package:untitled1/utils/tax_authority_error_localizer.dart';
 
 class SavedInvoicesPage extends StatefulWidget {
   const SavedInvoicesPage({super.key, this.initialSearchQuery = ''});
@@ -559,12 +560,16 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
       );
     } on FirebaseFunctionsException catch (error) {
       if (!mounted) return;
+      final languageCode = Provider.of<LanguageProvider>(
+        context,
+        listen: false,
+      ).locale.languageCode;
+      final message =
+          localizedTaxAuthorityConnectionError(error, languageCode) ??
+          error.message ??
+          taxAuthorityActionFailedMessage(languageCode);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            error.message ?? (isRtl ? 'הפעולה נכשלה.' : 'The action failed.'),
-          ),
-        ),
+        SnackBar(content: Text(message), duration: const Duration(seconds: 10)),
       );
     }
   }
@@ -1854,10 +1859,41 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                 (data['documentStatus'] ?? '')
                                     .toString()
                                     .trim();
+                            final fallbackPreview = data['fallbackPreview'];
+                            final fallbackPreviewUrl = fallbackPreview is Map
+                                ? (fallbackPreview['url'] ?? '').toString()
+                                : '';
+                            final fallbackPreviewStoragePath =
+                                fallbackPreview is Map
+                                ? (fallbackPreview['storagePath'] ?? '')
+                                      .toString()
+                                : '';
+                            final fallbackPreviewFileName =
+                                fallbackPreview is Map
+                                ? (fallbackPreview['fileName'] ?? fileName)
+                                      .toString()
+                                : fileName;
+                            final hasFallbackPreview =
+                                fallbackPreview is Map &&
+                                fallbackPreview['status'] == 'available' &&
+                                fallbackPreview['previewOnly'] == true &&
+                                fallbackPreviewUrl.isNotEmpty &&
+                                fallbackPreviewStoragePath.isNotEmpty;
                             final isFinalizedTaxDocument =
                                 ((!hasTaxWorkflow && !hasServerWorkflow) ||
                                     documentStatus == 'finalized') &&
                                 !hasMissingFinalPdf;
+                            final opensFallbackPreview =
+                                hasFallbackPreview && !isFinalizedTaxDocument;
+                            final openingUrl = opensFallbackPreview
+                                ? fallbackPreviewUrl
+                                : url;
+                            final openingStoragePath = opensFallbackPreview
+                                ? fallbackPreviewStoragePath
+                                : storagePath;
+                            final openingFileName = opensFallbackPreview
+                                ? fallbackPreviewFileName
+                                : fileName;
                             final displayedDocumentStatus = hasMissingFinalPdf
                                 ? 'needs_reconciliation'
                                 : documentStatus;
@@ -1965,20 +2001,25 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                             return InkWell(
                               borderRadius: BorderRadius.circular(22),
                               onTap: () {
-                                if (!isFinalizedTaxDocument ||
-                                    hasMissingFinalPdf ||
-                                    url.isEmpty) {
+                                if ((!isFinalizedTaxDocument &&
+                                        !hasFallbackPreview) ||
+                                    (isFinalizedTaxDocument &&
+                                        hasMissingFinalPdf) ||
+                                    openingUrl.isEmpty) {
                                   return;
                                 }
                                 Navigator.push(
                                   context,
                                   MaterialPageRoute(
                                     builder: (_) => SavedInvoicePreviewPage(
-                                      name: fileName,
-                                      url: url,
+                                      name: openingFileName,
+                                      url: openingUrl,
                                       invoiceDocId: invoiceDoc.id,
-                                      canReportMissing: !isReceivedScope,
-                                      storagePath: storagePath,
+                                      canReportMissing:
+                                          !isReceivedScope &&
+                                          isFinalizedTaxDocument,
+                                      storagePath: openingStoragePath,
+                                      previewOnly: opensFallbackPreview,
                                     ),
                                   ),
                                 );
@@ -2284,6 +2325,32 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                               : 'Generation failed repeatedly. The number is reserved and the document was sent for review. Do not create a replacement document.',
                                           style: const TextStyle(
                                             color: Color(0xFF9A3412),
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                    if (hasFallbackPreview &&
+                                        !isFinalizedTaxDocument) ...[
+                                      const SizedBox(height: 12),
+                                      Container(
+                                        width: double.infinity,
+                                        padding: const EdgeInsets.all(12),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFEFF6FF),
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                          border: Border.all(
+                                            color: const Color(0xFFBFDBFE),
+                                          ),
+                                        ),
+                                        child: Text(
+                                          isRtl
+                                              ? 'נשמרה גרסת תצוגה מקדימה. אפשר לפתוח אותה כעת; הפקה מוצלחת תחליף אותה במסמך הסופי.'
+                                              : 'A preview version was saved. You can open it now; successful generation will replace it with the final document.',
+                                          style: const TextStyle(
+                                            color: Color(0xFF1D4ED8),
                                             fontWeight: FontWeight.w700,
                                           ),
                                         ),
@@ -3246,6 +3313,7 @@ class SavedInvoicePreviewPage extends StatefulWidget {
   final String invoiceDocId;
   final bool canReportMissing;
   final String storagePath;
+  final bool previewOnly;
 
   const SavedInvoicePreviewPage({
     super.key,
@@ -3254,6 +3322,7 @@ class SavedInvoicePreviewPage extends StatefulWidget {
     required this.invoiceDocId,
     required this.canReportMissing,
     required this.storagePath,
+    this.previewOnly = false,
   });
 
   @override
@@ -3264,10 +3333,12 @@ class SavedInvoicePreviewPage extends StatefulWidget {
 class _SavedInvoicePreviewPageState extends State<SavedInvoicePreviewPage> {
   late Future<Uint8List> _bytesFuture;
   bool _missingConfirmed = false;
+  late bool _showingFallbackPreview;
 
   @override
   void initState() {
     super.initState();
+    _showingFallbackPreview = widget.previewOnly;
     _bytesFuture = _fetchBytes();
   }
 
@@ -3320,6 +3391,34 @@ class _SavedInvoicePreviewPageState extends State<SavedInvoicePreviewPage> {
           'invoiceDocId': widget.invoiceDocId,
         });
         _missingConfirmed = result.data['missing'] == true;
+        if (result.data['previewAvailable'] == true) {
+          final user = FirebaseAuth.instance.currentUser;
+          if (user != null) {
+            final invoiceSnapshot = await FirebaseFirestore.instance
+                .collection('users')
+                .doc(user.uid)
+                .collection('invoices')
+                .doc(widget.invoiceDocId)
+                .get(const GetOptions(source: Source.server));
+            final fallbackPreview = invoiceSnapshot.data()?['fallbackPreview'];
+            final previewPath = fallbackPreview is Map
+                ? fallbackPreview['storagePath']?.toString().trim()
+                : null;
+            if (previewPath != null && previewPath.isNotEmpty) {
+              final bytes = await firebase_storage.FirebaseStorage.instance
+                  .ref()
+                  .child(previewPath)
+                  .getData(25 * 1024 * 1024);
+              if (bytes != null &&
+                  bytes.length >= 4 &&
+                  String.fromCharCodes(bytes.take(4)) == '%PDF') {
+                _missingConfirmed = false;
+                _showingFallbackPreview = true;
+                return bytes;
+              }
+            }
+          }
+        }
       } catch (_) {
         _missingConfirmed = false;
       }
@@ -3345,7 +3444,13 @@ class _SavedInvoicePreviewPageState extends State<SavedInvoicePreviewPage> {
       textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
       child: Scaffold(
         appBar: AppBar(
-          title: Text(widget.name),
+          title: Text(
+            _showingFallbackPreview
+                ? (isRtl
+                      ? 'תצוגה מקדימה • ${widget.name}'
+                      : 'Preview • ${widget.name}')
+                : widget.name,
+          ),
           backgroundColor: Colors.white,
           foregroundColor: const Color(0xFF1976D2),
         ),

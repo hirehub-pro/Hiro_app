@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
+import 'package:intl/intl.dart' as intl;
 import 'package:untitled1/services/language_provider.dart';
 import 'package:untitled1/services/map_app_launcher.dart';
 import 'package:untitled1/services/notification_service.dart';
@@ -134,6 +135,7 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
           'client': 'לקוח:',
           'location': 'מיקום:',
           'date': 'תאריך:',
+          'request_sent_at': 'הבקשה נשלחה:',
           'requested_hours': 'שעות מבוקשות:',
           'job_description': 'תיאור העבודה:',
           'images': 'תמונות מצורפות:',
@@ -178,6 +180,7 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
           'client': 'العميل:',
           'location': 'الموقع:',
           'date': 'التاريخ:',
+          'request_sent_at': 'تاريخ إرسال الطلب:',
           'requested_hours': 'الساعات المطلوبة:',
           'job_description': 'وصف العمل:',
           'images': 'الصور المرفقة:',
@@ -222,6 +225,7 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
           'client': 'ደንበኛ:',
           'location': 'አካባቢ:',
           'date': 'ቀን:',
+          'request_sent_at': 'ጥያቄው የተላከበት ጊዜ:',
           'requested_hours': 'የተጠየቁ ሰዓቶች:',
           'job_description': 'የስራ መግለጫ:',
           'images': 'የተያያዙ ምስሎች:',
@@ -266,6 +270,7 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
           'client': 'Клиент:',
           'location': 'Локация:',
           'date': 'Дата:',
+          'request_sent_at': 'Запрос отправлен:',
           'requested_hours': 'Запрошенные часы:',
           'job_description': 'Описание работы:',
           'images': 'Прикрепленные изображения:',
@@ -314,6 +319,7 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
           'client': 'Client:',
           'location': 'Location:',
           'date': 'Date:',
+          'request_sent_at': 'Request sent:',
           'requested_hours': 'Requested Hours:',
           'job_description': 'Job Description:',
           'images': 'Attached Images:',
@@ -915,15 +921,10 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildStatusHero(
-                    strings,
-                    data,
-                    normalizedStatus,
-                    statusColor,
-                  ),
+                  _buildStatusHero(strings, normalizedStatus, statusColor),
                   const SizedBox(height: 12),
                   _buildInfoCard(strings, data),
-                  if (_hasMap(data) || data['fromId'] != null) ...[
+                  if ((data['fromId'] ?? '').toString().isNotEmpty) ...[
                     const SizedBox(height: 12),
                     _buildQuickActions(strings, data),
                   ],
@@ -964,6 +965,24 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
   bool _hasMap(Map<String, dynamic> data) =>
       data['latitude'] != null && data['longitude'] != null;
 
+  String _formatRequestSentAt(Map<String, dynamic> data) {
+    final rawTimestamp = data['timestamp'] ?? data['createdAt'];
+    DateTime? sentAt;
+
+    if (rawTimestamp is Timestamp) {
+      sentAt = rawTimestamp.toDate();
+    } else if (rawTimestamp is DateTime) {
+      sentAt = rawTimestamp;
+    } else if (rawTimestamp is int) {
+      sentAt = DateTime.fromMillisecondsSinceEpoch(rawTimestamp);
+    } else if (rawTimestamp is String) {
+      sentAt = DateTime.tryParse(rawTimestamp);
+    }
+
+    if (sentAt == null) return '';
+    return intl.DateFormat('dd/MM/yyyy • HH:mm').format(sentAt.toLocal());
+  }
+
   Color _statusColor(String status) {
     switch (status) {
       case 'accepted':
@@ -1003,7 +1022,6 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
 
   Widget _buildStatusHero(
     Map<String, String> strings,
-    Map<String, dynamic> data,
     String status,
     Color statusColor,
   ) {
@@ -1025,48 +1043,18 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
           ),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          Row(
-            children: [
-              Container(
-                width: 46,
-                height: 46,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.18),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Icon(_statusIcon(status), color: Colors.white, size: 24),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      strings['client']!,
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.78),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      (data['fromName'] ?? strings['unknown']!).toString(),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 19,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+          Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.18),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(_statusIcon(status), color: Colors.white, size: 24),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(width: 12),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
             decoration: BoxDecoration(
@@ -1100,35 +1088,73 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
     Map<String, dynamic> data,
   ) {
     final imageUrls = _extractImageUrls(data['images']);
+    final requestSentAt = _formatRequestSentAt(data);
+    final requestDate = data['date']?.toString().trim() ?? '';
+    final requestedFrom = data['requestedFrom']?.toString().trim() ?? '';
+    final requestedTo = data['requestedTo']?.toString().trim() ?? '';
+    final hasRequestedHours =
+        requestedFrom.isNotEmpty && requestedTo.isNotEmpty;
+    final hasSchedule = requestDate.isNotEmpty || hasRequestedHours;
 
     return Column(
       children: [
         _sectionCard(
           children: [
             _buildInfoRow(
-              Icons.location_on_outlined,
-              strings['location']!,
-              (data['fromLocation'] ?? strings['not_specified']!).toString(),
+              Icons.person_outline_rounded,
+              strings['client']!,
+              (data['fromName'] ?? strings['unknown']!).toString(),
             ),
             _buildInfoRow(
-              Icons.calendar_month_outlined,
-              strings['date']!,
-              (data['date'] ?? strings['not_specified']!).toString(),
-              showDivider: data['requestedFrom'] != null,
+              Icons.location_on_outlined,
+              strings['location']!,
+              (data['locationName'] ??
+                      data['fromLocation'] ??
+                      strings['not_specified']!)
+                  .toString(),
+              onTap: _hasMap(data) ? _openMap : null,
             ),
-            if (data['requestedFrom'] != null)
-              _buildInfoRow(
-                Icons.schedule_outlined,
-                strings['requested_hours']!,
-                "${data['requestedFrom']} - ${data['requestedTo']}",
-                showDivider: false,
-              ),
+            _buildInfoRow(
+              Icons.outgoing_mail,
+              strings['request_sent_at']!,
+              requestSentAt.isEmpty ? strings['not_specified']! : requestSentAt,
+              showDivider: false,
+            ),
           ],
         ),
         const SizedBox(height: 12),
         _sectionCard(
           title: strings['job_description']!,
           children: [
+            if (hasSchedule) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEFF6FF),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Column(
+                  children: [
+                    if (requestDate.isNotEmpty)
+                      _buildScheduleLine(
+                        Icons.calendar_month_outlined,
+                        strings['date']!,
+                        requestDate,
+                      ),
+                    if (requestDate.isNotEmpty && hasRequestedHours)
+                      const SizedBox(height: 8),
+                    if (hasRequestedHours)
+                      _buildScheduleLine(
+                        Icons.schedule_outlined,
+                        strings['requested_hours']!,
+                        '$requestedFrom - $requestedTo',
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
             Text(
               (data['jobDescription'] ?? strings['no_description']!).toString(),
               style: const TextStyle(
@@ -1146,6 +1172,26 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
             children: [_buildImagesSection(imageUrls)],
           ),
         ],
+      ],
+    );
+  }
+
+  Widget _buildScheduleLine(IconData icon, String label, String value) {
+    return Row(
+      children: [
+        Icon(icon, size: 19, color: const Color(0xFF1976D2)),
+        const SizedBox(width: 9),
+        Expanded(
+          child: Text(
+            '$label $value',
+            style: const TextStyle(
+              color: Color(0xFF1E3A8A),
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              height: 1.3,
+            ),
+          ),
+        ),
       ],
     );
   }
@@ -1253,49 +1299,67 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
     String label,
     String value, {
     bool showDivider = true,
+    VoidCallback? onTap,
   }) {
     return Column(
       children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          child: Row(
-            children: [
-              Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFEFF6FF),
-                  borderRadius: BorderRadius.circular(11),
-                ),
-                child: Icon(icon, size: 19, color: const Color(0xFF1976D2)),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      label,
-                      style: const TextStyle(
-                        color: Color(0xFF64748B),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(12),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              child: Row(
+                children: [
+                  Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEFF6FF),
+                      borderRadius: BorderRadius.circular(11),
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      value,
-                      style: const TextStyle(
-                        color: Color(0xFF0F172A),
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        height: 1.25,
-                      ),
+                    child: Icon(icon, size: 19, color: const Color(0xFF1976D2)),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          label,
+                          style: const TextStyle(
+                            color: Color(0xFF64748B),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          value,
+                          style: TextStyle(
+                            color: onTap == null
+                                ? const Color(0xFF0F172A)
+                                : const Color(0xFF1976D2),
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            height: 1.25,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (onTap != null) ...[
+                    const SizedBox(width: 8),
+                    const Icon(
+                      Icons.map_outlined,
+                      size: 20,
+                      color: Color(0xFF1976D2),
                     ),
                   ],
-                ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
         if (showDivider)
@@ -1396,20 +1460,6 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
     final clientId = data['fromId']?.toString();
     final clientName = (data['fromName'] ?? '').toString();
     final buttons = <Widget>[
-      if (_hasMap(data))
-        OutlinedButton.icon(
-          onPressed: _openMap,
-          icon: const Icon(Icons.map_outlined, size: 20),
-          label: Text(strings['view_map']!),
-          style: OutlinedButton.styleFrom(
-            minimumSize: const Size.fromHeight(50),
-            foregroundColor: const Color(0xFF0F172A),
-            side: const BorderSide(color: Color(0xFFCBD5E1)),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
-            ),
-          ),
-        ),
       if (clientId != null && clientId.isNotEmpty)
         FilledButton.tonalIcon(
           onPressed: () => Navigator.push(

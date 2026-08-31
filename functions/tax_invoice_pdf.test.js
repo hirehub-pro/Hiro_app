@@ -6,11 +6,18 @@ const {PDFDocument} = require("pdf-lib");
 
 const {
   buildTaxInvoicePdf,
+  footerGeneratedAtText,
   formatMoney,
   normalizeTaxInvoicePresentation,
   taxableSubtotalBeforeTax,
   visualText,
 } = require("./tax_invoice_pdf");
+
+test("hides the creation date in preview footers only", () => {
+  const generatedAt = "13:00 18-08-2026";
+  assert.equal(footerGeneratedAtText(generatedAt, true), null);
+  assert.equal(footerGeneratedAtText(generatedAt, false), generatedAt);
+});
 
 function samplePayload() {
   return {

@@ -1498,7 +1498,182 @@ function serverDocumentStoredFields({
       generation,
       generatedBy: "server",
     },
+    fallbackPreview: admin.firestore.FieldValue.delete(),
   };
+}
+
+function serverDocumentFallbackPreviewFields({
+  document,
+  business,
+  fileName,
+  storagePath,
+  downloadUrl,
+  size,
+  generation,
+}) {
+  const finalizedFields = serverDocumentStoredFields({
+    document,
+    business,
+    fileName,
+    storagePath,
+    downloadUrl,
+    size,
+    generation,
+  });
+  const displayFields = {...finalizedFields};
+  delete displayFields.serverDocument;
+  delete displayFields.documentStatus;
+  delete displayFields.finalizedAt;
+  delete displayFields.finalPdf;
+  delete displayFields.fallbackPreview;
+  return {
+    ...displayFields,
+    fallbackPreview: {
+      status: "available",
+      previewOnly: true,
+      fileName,
+      url: downloadUrl,
+      storagePath,
+      size,
+      contentType: "application/pdf",
+      generation,
+      generatedBy: "server-preview-fallback",
+      generatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    },
+  };
+}
+
+async function saveFallbackPreviewPdf({
+  userId,
+  invoiceDocId,
+  fileName,
+  storagePath,
+  pdfBytes,
+}) {
+  const file = admin.storage().bucket().file(storagePath);
+  let token = null;
+  try {
+    const [existingMetadata] = await file.getMetadata();
+    token = normalizeString(
+        existingMetadata.metadata?.firebaseStorageDownloadTokens,
+    ).split(",")[0].trim();
+  } catch (error) {
+    // A missing deterministic object is expected before the first upload.
+  }
+  token = token || crypto.randomUUID();
+  await file.save(pdfBytes, {
+    resumable: false,
+    validation: "crc32c",
+    metadata: {
+      contentType: "application/pdf",
+      cacheControl: "private, max-age=0, no-transform",
+      contentDisposition: `attachment; filename="${fileName}"`,
+      metadata: {
+        firebaseStorageDownloadTokens: token,
+        invoiceDocId,
+        ownerUid: userId,
+        generatedBy: "server-preview-fallback",
+        previewOnly: "true",
+      },
+    },
+  });
+  const [metadata] = await file.getMetadata();
+  return {
+    downloadUrl: taxInvoiceDownloadUrl(
+        admin.storage().bucket().name,
+        storagePath,
+        token,
+    ),
+    size: Number(metadata.size),
+    generation: normalizeString(metadata.generation),
+  };
+}
+
+async function removeFallbackPreview(storagePath) {
+  await admin.storage().bucket().file(storagePath)
+      .delete({ignoreNotFound: true})
+      .catch((error) => {
+        logger.warn("Unable to remove replaced fallback preview", {
+          storagePath,
+          error,
+        });
+      });
+}
+
+async function hasAvailableFallbackPreview(data, userId) {
+  const preview = data?.fallbackPreview;
+  const storagePath = normalizeString(preview?.storagePath).trim();
+  if (preview?.status !== "available" || preview?.previewOnly !== true ||
+      !storagePath.startsWith(`invoices/${userId}/`) ||
+      !storagePath.endsWith("_preview.pdf")) {
+    return false;
+  }
+  try {
+    const [exists] = await admin.storage().bucket().file(storagePath).exists();
+    return exists;
+  } catch (error) {
+    return false;
+  }
+}
+
+async function persistServerDocumentFallbackPreview({
+  userId,
+  invoiceRef,
+  document,
+  context,
+  allowFinalizedMissing = false,
+}) {
+  const currentSnap = await invoiceRef.get();
+  const current = currentSnap.data() || {};
+  if (!currentSnap.exists ||
+      (current.documentStatus === "finalized" &&
+        !allowFinalizedMissing)) {
+    return false;
+  }
+  if (await hasAvailableFallbackPreview(current, userId)) return true;
+  if (document.documentLogoMode === "inline" &&
+      !document.documentLogoBytes) {
+    await restoreServerDocumentLogo(document);
+  }
+  const pdfBytes = await generateServerDocumentPdf(document, context, true);
+  if (pdfBytes.length < 1 || pdfBytes.length > 25 * 1024 * 1024) {
+    throw new Error("The generated fallback preview PDF has an invalid size.");
+  }
+  const safeId = document.invoiceDocId.replace(/[^A-Za-z0-9_-]/g, "_");
+  const fileName = `server_document_${safeId}_preview.pdf`;
+  const storagePath = `invoices/${userId}/${fileName}`;
+  const artifact = await saveFallbackPreviewPdf({
+    userId,
+    invoiceDocId: document.invoiceDocId,
+    fileName,
+    storagePath,
+    pdfBytes,
+  });
+  const previewFields = serverDocumentFallbackPreviewFields({
+    document,
+    business: context.business,
+    fileName,
+    storagePath,
+    downloadUrl: artifact.downloadUrl,
+    size: artifact.size,
+    generation: artifact.generation,
+  });
+  return admin.firestore().runTransaction(async (transaction) => {
+    const latestSnap = await transaction.get(invoiceRef);
+    if (!latestSnap.exists ||
+        (latestSnap.data()?.documentStatus === "finalized" &&
+          !allowFinalizedMissing)) {
+      return false;
+    }
+    const storedPreviewFields = {...previewFields};
+    if (allowFinalizedMissing) {
+      delete storedPreviewFields.fileName;
+      delete storedPreviewFields.url;
+      delete storedPreviewFields.storagePath;
+    }
+    transaction.set(invoiceRef, storedPreviewFields, {merge: true});
+    return true;
+  });
 }
 
 function serverDocumentLogFields({userId, document, business, stored, bucket}) {
@@ -1935,6 +2110,9 @@ exports.createServerDocument = onCall(
             });
           }
         });
+        await removeFallbackPreview(
+            `invoices/${userId}/server_document_${safeId}_preview.pdf`,
+        );
         return {
           finalized: true,
           cached: false,
@@ -1956,6 +2134,21 @@ exports.createServerDocument = onCall(
             userId,
             invoiceDocId: document.invoiceDocId,
             error: recoveryError,
+          });
+        }
+        try {
+          await persistServerDocumentFallbackPreview({
+            userId,
+            invoiceRef,
+            document,
+            context,
+          });
+        } catch (previewError) {
+          logger.error("Unable to persist fallback document preview", {
+            userId,
+            invoiceDocId: document.invoiceDocId,
+            originalError: error,
+            error: previewError,
           });
         }
         if (failureResult?.terminal) {
@@ -2008,7 +2201,8 @@ async function notifyAdminsOfMissingFinalPdf({
 exports.reportMissingFinalDocumentPdf = onCall(
     {
       region: "me-west1",
-      timeoutSeconds: 60,
+      timeoutSeconds: 120,
+      memory: "512MiB",
     },
     async (request) => {
       const userId = request.auth?.uid;
@@ -2116,7 +2310,44 @@ exports.reportMissingFinalDocumentPdf = onCall(
           });
         }
       }
-      return {missing: true, needsReconciliation: true};
+      let previewAvailable = false;
+      try {
+        if (invoice.authoritativeServerDocument) {
+          const context = await serverDocumentContext(userId);
+          previewAvailable = await persistServerDocumentFallbackPreview({
+            userId,
+            invoiceRef,
+            document: invoice.authoritativeServerDocument,
+            context,
+            allowFinalizedMissing: true,
+          });
+        } else if (invoice.authoritativeTaxInvoice) {
+          previewAvailable = await persistTaxInvoiceFallbackPreview({
+            userId,
+            invoiceRef,
+            payload: invoice.authoritativeTaxInvoice,
+            allocation: invoice.taxAuthorityAllocation || null,
+            reservation: {
+              docType: invoice.docType,
+              documentNumber: invoice.invoiceNumber,
+              sequenceNumber: invoice.sequenceNumber,
+              invoiceDocId,
+            },
+            allowFinalizedMissing: true,
+          });
+        }
+      } catch (previewError) {
+        logger.error("Unable to replace missing PDF with fallback preview", {
+          userId,
+          invoiceDocId,
+          error: previewError,
+        });
+      }
+      return {
+        missing: true,
+        needsReconciliation: true,
+        previewAvailable,
+      };
     },
 );
 
@@ -2124,7 +2355,8 @@ exports.markStaleServerDocumentsFailed = onSchedule(
     {
       schedule: "every 5 minutes",
       region: "me-west1",
-      timeoutSeconds: 120,
+      timeoutSeconds: 540,
+      memory: "1GiB",
     },
     async () => {
       const db = admin.firestore();
@@ -2146,6 +2378,7 @@ exports.markStaleServerDocumentsFailed = onSchedule(
 
       const batch = db.batch();
       const terminalEscalations = [];
+      const previewRecoveries = [];
       for (const documentSnapshot of staleDocuments) {
         const data = documentSnapshot.data() || {};
         const userRef = documentSnapshot.ref.parent.parent;
@@ -2202,8 +2435,38 @@ exports.markStaleServerDocumentsFailed = onSchedule(
             document,
           });
         }
+        if (authoritative.invoiceDocId === documentSnapshot.id &&
+            authoritative.payloadHash &&
+            data.serverDocument?.payloadHash === authoritative.payloadHash) {
+          previewRecoveries.push({
+            userId: userRef.id,
+            invoiceRef: documentSnapshot.ref,
+            document: authoritative,
+          });
+        }
       }
       await batch.commit();
+      const contextPromises = new Map();
+      let recoveredPreviews = 0;
+      for (let index = 0; index < previewRecoveries.length; index += 10) {
+        const results = await Promise.allSettled(
+            previewRecoveries.slice(index, index + 10).map(async (recovery) => {
+              let contextPromise = contextPromises.get(recovery.userId);
+              if (!contextPromise) {
+                contextPromise = serverDocumentContext(recovery.userId);
+                contextPromises.set(recovery.userId, contextPromise);
+              }
+              const context = await contextPromise;
+              return persistServerDocumentFallbackPreview({
+                ...recovery,
+                context,
+              });
+            }),
+        );
+        recoveredPreviews += results.filter(
+            (result) => result.status === "fulfilled" && result.value === true,
+        ).length;
+      }
       await Promise.allSettled(terminalEscalations.map((escalation) =>
         notifyAdminsOfServerDocumentFailure({
           db,
@@ -2215,6 +2478,7 @@ exports.markStaleServerDocumentsFailed = onSchedule(
       ));
       logger.warn("Marked stale server documents as failed", {
         count: staleDocuments.length,
+        recoveredPreviews,
       });
     },
 );
@@ -3881,6 +4145,9 @@ async function createAutomaticCancellationCreditNote({
           admin.firestore.FieldValue.serverTimestamp(),
       });
     });
+    await removeFallbackPreview(
+        `invoices/${userId}/server_document_${safeId}_preview.pdf`,
+    );
     return serverDocumentResponse(stored, document);
   } catch (error) {
     await Promise.all([
@@ -3898,6 +4165,21 @@ async function createAutomaticCancellationCreditNote({
           admin.firestore.FieldValue.serverTimestamp(),
       }, {merge: true}),
     ]);
+    try {
+      await persistServerDocumentFallbackPreview({
+        userId,
+        invoiceRef: creditRef,
+        document,
+        context,
+      });
+    } catch (previewError) {
+      logger.error("Unable to persist automatic document fallback preview", {
+        userId,
+        invoiceDocId: document.invoiceDocId,
+        originalError: error,
+        error: previewError,
+      });
+    }
     throw error;
   }
 }
@@ -4017,6 +4299,7 @@ function taxInvoiceStorageFields({
         generation,
         generatedBy: "server",
       },
+      fallbackPreview: admin.firestore.FieldValue.delete(),
     },
     log: {
       userId: null,
@@ -4082,7 +4365,160 @@ function taxInvoiceStorageFields({
   };
 }
 
-async function finalizeAllocatedTaxInvoice({
+async function taxInvoiceRenderingContext({
+  userId,
+  invoice,
+  payload,
+  reservation,
+}) {
+  const storedPresentation = invoice.taxInvoicePresentation || {};
+  const presentation = normalizeTaxInvoicePresentation(storedPresentation);
+  const business = await taxInvoiceBusinessProfile(userId, payload.vat_number);
+  if (presentation.documentLogoMode === "none") {
+    business.logoBytes = null;
+  } else if (presentation.documentLogoMode === "inline") {
+    const expectedPath = `document-assets/${userId}/` +
+      `${reservation.invoiceDocId}_${presentation.documentLogoHash}`;
+    if (storedPresentation.documentLogoStoragePath !== expectedPath) {
+      throw new HttpsError(
+          "failed-precondition",
+          "The document logo reference failed integrity verification.",
+      );
+    }
+    const documentLogoBytes = await optionalStorageBytes(expectedPath);
+    const documentLogoHash = documentLogoBytes ?
+      crypto.createHash("sha256").update(documentLogoBytes).digest("hex") : "";
+    if (!documentLogoBytes ||
+        documentLogoHash !== presentation.documentLogoHash) {
+      throw new HttpsError(
+          "failed-precondition",
+          "The selected document logo is no longer available.",
+      );
+    }
+    business.logoBytes = documentLogoBytes;
+  }
+  return {storedPresentation, presentation, business};
+}
+
+async function persistTaxInvoiceFallbackPreview({
+  userId,
+  invoiceRef,
+  payload,
+  allocation,
+  reservation,
+  workflowStatus = "finalized",
+  allowFinalizedMissing = false,
+}) {
+  const currentSnap = await invoiceRef.get();
+  const current = currentSnap.data() || {};
+  if (!currentSnap.exists ||
+      (current.documentStatus === "finalized" && !allowFinalizedMissing)) {
+    return false;
+  }
+  if (await hasAvailableFallbackPreview(current, userId)) return true;
+  const {presentation, business} = await taxInvoiceRenderingContext({
+    userId,
+    invoice: current,
+    payload,
+    reservation,
+  });
+  const pdfBytes = await buildTaxInvoicePdf({
+    payload,
+    allocation,
+    reservation,
+    presentation,
+    business,
+    previewOnly: true,
+  });
+  if (pdfBytes.length < 1 || pdfBytes.length > 25 * 1024 * 1024) {
+    throw new Error(
+        "The generated fallback invoice preview has an invalid size.",
+    );
+  }
+  const fileName = `tax_invoice_${reservation.documentNumber}_preview.pdf`;
+  const storagePath = `invoices/${userId}/${fileName}`;
+  const artifact = await saveFallbackPreviewPdf({
+    userId,
+    invoiceDocId: reservation.invoiceDocId,
+    fileName,
+    storagePath,
+    pdfBytes,
+  });
+  const fields = taxInvoiceStorageFields({
+    payload,
+    allocation,
+    reservation,
+    presentation,
+    business,
+    fileName,
+    storagePath,
+    downloadUrl: artifact.downloadUrl,
+    size: artifact.size,
+    generation: artifact.generation,
+    workflowStatus,
+  });
+  const displayFields = {...fields.invoice};
+  delete displayFields.documentStatus;
+  delete displayFields.taxAuthorityAllocationRequest;
+  delete displayFields.finalizedAt;
+  delete displayFields.finalPdf;
+  delete displayFields.fallbackPreview;
+  delete displayFields.taxAuthorityAllocation;
+  delete displayFields.allocationNumber;
+  delete displayFields.taxAuthorityAllocationNumber;
+  delete displayFields.allocationCancelled;
+  delete displayFields.continuedWithoutAllocation;
+  return admin.firestore().runTransaction(async (transaction) => {
+    const latestSnap = await transaction.get(invoiceRef);
+    if (!latestSnap.exists ||
+        (latestSnap.data()?.documentStatus === "finalized" &&
+          !allowFinalizedMissing)) {
+      return false;
+    }
+    const storedDisplayFields = {...displayFields};
+    if (allowFinalizedMissing) {
+      delete storedDisplayFields.fileName;
+      delete storedDisplayFields.url;
+      delete storedDisplayFields.storagePath;
+    }
+    transaction.set(invoiceRef, {
+      ...storedDisplayFields,
+      fallbackPreview: {
+        status: "available",
+        previewOnly: true,
+        fileName,
+        url: artifact.downloadUrl,
+        storagePath,
+        size: artifact.size,
+        contentType: "application/pdf",
+        generation: artifact.generation,
+        generatedBy: "server-preview-fallback",
+        generatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      },
+    }, {merge: true});
+    return true;
+  });
+}
+
+async function finalizeAllocatedTaxInvoice(options) {
+  try {
+    return await finalizeAllocatedTaxInvoiceAttempt(options);
+  } catch (error) {
+    try {
+      await persistTaxInvoiceFallbackPreview(options);
+    } catch (previewError) {
+      logger.error("Unable to persist Tax Invoice fallback preview", {
+        userId: options.userId,
+        invoiceDocId: options.reservation?.invoiceDocId,
+        originalError: error,
+        error: previewError,
+      });
+    }
+    throw error;
+  }
+}
+
+async function finalizeAllocatedTaxInvoiceAttempt({
   userId,
   invoiceRef,
   payload,
@@ -4114,31 +4550,13 @@ async function finalizeAllocatedTaxInvoice({
     );
   }
 
-  const storedPresentation = current.taxInvoicePresentation || {};
-  const presentation = normalizeTaxInvoicePresentation(storedPresentation);
-  const business = await taxInvoiceBusinessProfile(userId, payload.vat_number);
-  if (presentation.documentLogoMode === "none") {
-    business.logoBytes = null;
-  } else if (presentation.documentLogoMode === "inline") {
-    const expectedPath = `document-assets/${userId}/` +
-      `${reservation.invoiceDocId}_${presentation.documentLogoHash}`;
-    if (storedPresentation.documentLogoStoragePath !== expectedPath) {
-      throw new HttpsError(
-          "failed-precondition",
-          "The document logo reference failed integrity verification.",
-      );
-    }
-    const documentLogoBytes = await optionalStorageBytes(expectedPath);
-    const documentLogoHash = documentLogoBytes ?
-      crypto.createHash("sha256").update(documentLogoBytes).digest("hex") : "";
-    if (!documentLogoBytes || documentLogoHash !== presentation.documentLogoHash) {
-      throw new HttpsError(
-          "failed-precondition",
-          "The selected document logo is no longer available.",
-      );
-    }
-    business.logoBytes = documentLogoBytes;
-  }
+  const {storedPresentation, presentation, business} =
+    await taxInvoiceRenderingContext({
+      userId,
+      invoice: current,
+      payload,
+      reservation,
+    });
   const pdfBytes = await buildTaxInvoicePdf({
     payload,
     allocation,
@@ -4261,6 +4679,11 @@ async function finalizeAllocatedTaxInvoice({
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     }, {merge: true});
   });
+
+  await removeFallbackPreview(
+      `invoices/${userId}/tax_invoice_` +
+        `${reservation.documentNumber}_preview.pdf`,
+  );
 
   if (presentation.documentLogoMode === "inline") {
     await admin.storage().bucket()
@@ -8197,6 +8620,7 @@ async function getTaxAuthorityTokenData(userId, businessId) {
     throw new HttpsError(
         "failed-precondition",
         "Reconnect the Tax Authority account for your verified business ID.",
+        {reason: "tax-authority-business-id-mismatch"},
     );
   }
 

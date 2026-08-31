@@ -11,6 +11,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:untitled1/services/language_provider.dart';
 import 'package:untitled1/utils/israeli_id_validator.dart';
+import 'package:untitled1/utils/tax_authority_error_localizer.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -2942,6 +2943,10 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   }
 
   Future<_ServerDocumentResult> _requestTaxAuthorityAllocation() async {
+    final languageCode = Provider.of<LanguageProvider>(
+      context,
+      listen: false,
+    ).locale.languageCode;
     final strings = _withRequiredDefaults(
       _getLocalizedStrings(context, listen: false),
     );
@@ -3021,6 +3026,13 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       });
     } on FirebaseFunctionsException catch (e) {
       if (_isAmbiguousServerResponseError(e)) rethrow;
+      final connectionMessage = localizedTaxAuthorityConnectionError(
+        e,
+        languageCode,
+      );
+      if (connectionMessage != null) {
+        throw StateError(connectionMessage);
+      }
       if (e.code == 'failed-precondition' &&
           e.message?.contains('OAuth authorization') == true) {
         throw StateError(strings['tax_authority_not_connected']!);
@@ -9879,6 +9891,11 @@ class _InvoicePreviewPageState extends State<_InvoicePreviewPage>
     }
 
     if (error is FirebaseFunctionsException) {
+      final connectionMessage = localizedTaxAuthorityConnectionError(
+        error,
+        languageCode,
+      );
+      if (connectionMessage != null) return connectionMessage;
       return switch (error.code) {
         'unavailable' => localized(const {
           'en':

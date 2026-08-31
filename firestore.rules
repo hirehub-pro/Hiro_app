@@ -334,6 +334,7 @@ service cloud.firestore {
         'taxAuthorityDecisionHistory',
         'authoritativeTaxInvoice',
         'taxInvoicePresentation', 'documentStatus', 'finalizedAt', 'finalPdf',
+        'fallbackPreview',
         'authoritativeServerDocument', 'serverDocument', 'signatureStatus',
         'signingRequestId', 'signingRequestedAt', 'signingUrl', 'signedAt',
         'signerName', 'invoiceEmailStatus', 'invoiceEmailAttemptedAt',
@@ -370,6 +371,7 @@ service cloud.firestore {
       optionalList(data, 'linkedDocumentIds', 100) &&
       optionalList(data, 'paymentMethods', 100) &&
       optionalMap(data, 'creditNoteLegal', 40) &&
+      optionalMap(data, 'fallbackPreview', 20) &&
       optionalBool(data, 'hasDiscount') &&
       optionalBool(data, 'roundTotalEnabled') &&
       optionalBool(data, 'isCancellationDocument');
@@ -383,7 +385,7 @@ service cloud.firestore {
         'authoritativeTaxInvoice',
         'taxInvoicePresentation', 'documentStatus',
         'authoritativeServerDocument', 'serverDocument', 'finalizedAt',
-        'finalPdf',
+        'finalPdf', 'fallbackPreview',
         'signatureStatus', 'signingRequestId', 'signingRequestedAt',
         'signingUrl', 'signedAt', 'signerName', 'invoiceEmailStatus',
         'invoiceEmailAttemptedAt', 'invoiceEmailSentAt', 'invoiceEmailId',
