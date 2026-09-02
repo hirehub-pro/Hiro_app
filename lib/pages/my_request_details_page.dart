@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:untitled1/pages/chat_page.dart';
 import 'package:untitled1/services/language_provider.dart';
 import 'package:untitled1/services/map_app_launcher.dart';
@@ -93,6 +94,8 @@ class _MyRequestDetailsPageState extends State<MyRequestDetailsPage> {
           'request_type': 'סוג בקשה',
           'worker_name': 'שם בעל המקצוע',
           'profession_name': 'מקצוע',
+          'attached_quote': 'הצעת מחיר מצורפת',
+          'open_quote': 'פתיחת הצעת המחיר',
           'work_request': 'בקשת עבודה',
           'quote_request': 'בקשה לתן הצעת מחיר',
           'date': 'תאריך',
@@ -142,6 +145,8 @@ class _MyRequestDetailsPageState extends State<MyRequestDetailsPage> {
           'request_type': 'نوع الطلب',
           'worker_name': 'اسم المحترف',
           'profession_name': 'المهنة',
+          'attached_quote': 'عرض السعر المرفق',
+          'open_quote': 'فتح عرض السعر',
           'work_request': 'طلب عمل',
           'quote_request': 'طلب عرض سعر',
           'date': 'التاريخ',
@@ -191,6 +196,8 @@ class _MyRequestDetailsPageState extends State<MyRequestDetailsPage> {
           'request_type': 'የጥያቄ አይነት',
           'worker_name': 'የባለሙያ ስም',
           'profession_name': 'ሙያ',
+          'attached_quote': 'የተያያዘ የዋጋ ቅናሽ',
+          'open_quote': 'የዋጋ ቅናሹን ክፈት',
           'work_request': 'የስራ ጥያቄ',
           'quote_request': 'የዋጋ ቅናሽ ጥያቄ',
           'date': 'ቀን',
@@ -240,6 +247,8 @@ class _MyRequestDetailsPageState extends State<MyRequestDetailsPage> {
           'request_type': 'Тип запроса',
           'worker_name': 'Имя специалиста',
           'profession_name': 'Профессия',
+          'attached_quote': 'Прикреплённое предложение',
+          'open_quote': 'Открыть предложение',
           'work_request': 'Рабочий запрос',
           'quote_request': 'Запрос предложения',
           'date': 'Дата',
@@ -289,6 +298,8 @@ class _MyRequestDetailsPageState extends State<MyRequestDetailsPage> {
           'request_type': 'Request Type',
           'worker_name': 'Worker Name',
           'profession_name': 'Profession',
+          'attached_quote': 'Attached Quote',
+          'open_quote': 'Open Quote',
           'work_request': 'Work Request',
           'quote_request': 'Quote Request',
           'date': 'Date',
@@ -821,6 +832,9 @@ class _MyRequestDetailsPageState extends State<MyRequestDetailsPage> {
             final description = (data['jobDescription'] ?? '')
                 .toString()
                 .trim();
+            final quoteUrl = data['quoteUrl']?.toString().trim() ?? '';
+            final quoteNumber = data['quoteDocumentNumber']?.toString().trim();
+            final quotePrice = data['quotePrice']?.toString().trim();
             final imageUrls = _extractImageUrls(data);
             final workerName =
                 (data['toName'] ??
@@ -1053,6 +1067,40 @@ class _MyRequestDetailsPageState extends State<MyRequestDetailsPage> {
                     ),
                   ],
                 ),
+                if (quoteUrl.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  _sectionCard(
+                    title: strings['attached_quote']!,
+                    children: [
+                      if (quoteNumber?.isNotEmpty == true ||
+                          quotePrice?.isNotEmpty == true) ...[
+                        Text(
+                          [
+                            if (quoteNumber?.isNotEmpty == true)
+                              '#$quoteNumber',
+                            if (quotePrice?.isNotEmpty == true) quotePrice!,
+                          ].join(' • '),
+                          style: const TextStyle(
+                            color: Color(0xFF334155),
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                      ],
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: () => launchUrl(
+                            Uri.parse(quoteUrl),
+                            mode: LaunchMode.externalApplication,
+                          ),
+                          icon: const Icon(Icons.picture_as_pdf_outlined),
+                          label: Text(strings['open_quote']!),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
                 if (imageUrls.isNotEmpty) ...[
                   const SizedBox(height: 12),
                   _sectionCard(

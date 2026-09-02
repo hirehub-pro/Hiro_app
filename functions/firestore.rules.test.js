@@ -839,6 +839,9 @@ test("allows a customer to create a validated work request for its worker", {
     type: "work_request",
     fromId: customer,
     fromName: "Customer",
+    fromPhone: "+972501234567",
+    fromEmail: "customer@example.com",
+    fromAddress: "10 Main Street, Tel Aviv",
     jobDescription: "Install a light fixture",
     images: [],
     timestamp: serverTimestamp(),
@@ -859,6 +862,76 @@ test("allows a customer to create a validated work request for its worker", {
   await assertSucceeds(batch.commit());
   await assertSucceeds(getDoc(
       doc(workerDb, `users/${worker}/RequestToMe/${incomingId}`),
+  ));
+});
+
+test("allows only the assigned worker to attach a validated quote document", {
+  skip: !emulatorAvailable,
+}, async () => {
+  const customer = "quote-customer-id-00001";
+  const worker = "quote-worker-id-0000001";
+  const attacker = "quote-attacker-id-00001";
+  const requestId = "quote-request-document-1";
+  const incomingId = "quote-incoming-document-1";
+  const notificationId = "quote-worker-notification-1";
+  const requestData = {
+    requestId,
+    workerId: worker,
+    workerName: "Worker",
+    workerNotificationId: notificationId,
+    workerRequestToMeId: incomingId,
+    type: "quote_request",
+    fromId: customer,
+    fromName: "Customer",
+    jobDescription: "Repair a leaking shower",
+    images: [],
+    timestamp: new Date(),
+    status: "pending",
+    title: "Quote Request",
+    body: "A customer requested a quote.",
+  };
+  await seed(`users/${customer}/requests/${requestId}`, requestData);
+  await seed(`users/${worker}/RequestToMe/${incomingId}`, requestData);
+  await seed(`users/${worker}/notifications/${notificationId}`, requestData);
+
+  const workerDb = testEnv.authenticatedContext(worker).firestore();
+  const quoteAttachment = {
+    status: "accepted",
+    quotePrice: "850",
+    quoteUrl: "https://example.com/quotes/quote-1.pdf",
+    quoteFileName: "quote-1.pdf",
+    quoteDocType: "quote",
+    quoteInvoiceDocId: "quote-invoice-document-1",
+    quoteDocumentNumber: "Q-1001",
+    quoteSentAt: serverTimestamp(),
+  };
+  const batch = writeBatch(workerDb);
+  batch.update(
+      doc(workerDb, `users/${customer}/requests/${requestId}`),
+      {...quoteAttachment, updatedAt: serverTimestamp()},
+  );
+  batch.update(
+      doc(workerDb, `users/${worker}/RequestToMe/${incomingId}`),
+      {...quoteAttachment, updatedAt: serverTimestamp()},
+  );
+  batch.update(
+      doc(workerDb, `users/${worker}/notifications/${notificationId}`),
+      quoteAttachment,
+  );
+  await assertSucceeds(batch.commit());
+
+  const attackerDb = testEnv.authenticatedContext(attacker).firestore();
+  await assertFails(updateDoc(
+      doc(attackerDb, `users/${customer}/requests/${requestId}`),
+      {quotePrice: "1"},
+  ));
+  await assertFails(updateDoc(
+      doc(workerDb, `users/${customer}/requests/${requestId}`),
+      {quoteUrl: "http://not-secure.example/quote.pdf"},
+  ));
+  await assertFails(updateDoc(
+      doc(workerDb, `users/${customer}/requests/${requestId}`),
+      {quoteDocType: "invoice"},
   ));
 });
 

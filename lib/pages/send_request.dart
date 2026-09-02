@@ -1029,6 +1029,20 @@ class _SendRequestPageState extends State<SendRequestPage> {
       }
       final userName = userData['name'] ?? 'Client';
       final userTown = userData['town'];
+      final userPhone =
+          (userData['phone'] ??
+                  userData['phoneNumber'] ??
+                  userData['mobileNumber'] ??
+                  '')
+              .toString()
+              .trim();
+      final userEmail = (userData['email'] ?? user.email ?? '')
+          .toString()
+          .trim();
+      final userAddress =
+          (userData['address'] ?? userData['location'] ?? userTown ?? '')
+              .toString()
+              .trim();
       final selectedJobLocationName =
           !widget.isQuoteRequest &&
               !_customerTravels &&
@@ -1130,6 +1144,9 @@ class _SendRequestPageState extends State<SendRequestPage> {
         'fromName': userName,
         if (userTown != null && userTown.toString().trim().isNotEmpty)
           'fromLocation': userTown.toString().trim(),
+        if (userPhone.isNotEmpty) 'fromPhone': userPhone,
+        if (userEmail.isNotEmpty) 'fromEmail': userEmail,
+        if (userAddress.isNotEmpty) 'fromAddress': userAddress,
         if (professionLabel != null && professionLabel.isNotEmpty)
           'profession': professionLabel,
         'jobDescription': _descriptionController.text.trim(),

@@ -25,6 +25,7 @@ import 'package:untitled1/services/client_service.dart';
 import 'package:untitled1/services/app_navigation_service.dart';
 import 'package:untitled1/services/profile_document_service.dart';
 import 'package:untitled1/pages/chat_page.dart';
+import 'package:untitled1/utils/payment_installment_dates.dart';
 import 'package:xml/xml.dart';
 import 'package:internet_connection_checker_plus/internet_connection_checker_plus.dart';
 
@@ -832,9 +833,7 @@ class InvoiceItem {
 }
 
 class _PaymentMethodEntry {
-  _PaymentMethodEntry() {
-    ensureCreditInstallmentCount(1);
-  }
+  _PaymentMethodEntry();
 
   String method = 'cash';
   bool isExpanded = true;
@@ -844,8 +843,8 @@ class _PaymentMethodEntry {
   final cardNameController = TextEditingController();
   final cardExpirationController = TextEditingController();
   final installmentsController = TextEditingController(text: '1');
-  final List<DateTime?> creditInstallmentDates = [];
-  final List<TextEditingController> creditInstallmentDateControllers = [];
+  final creditFirstPaymentDateController = TextEditingController();
+  DateTime? creditFirstPaymentDate;
   final checkNumberController = TextEditingController();
   final checkPaymentDateController = TextEditingController();
   DateTime? checkPaymentDate;
@@ -859,18 +858,6 @@ class _PaymentMethodEntry {
   final transferBranchController = TextEditingController();
   final transferBranchFocusNode = FocusNode();
   final transferAccountController = TextEditingController();
-
-  void ensureCreditInstallmentCount(int count) {
-    final safeCount = count.clamp(1, 999);
-    while (creditInstallmentDates.length < safeCount) {
-      creditInstallmentDates.add(null);
-      creditInstallmentDateControllers.add(TextEditingController());
-    }
-    while (creditInstallmentDates.length > safeCount) {
-      creditInstallmentDates.removeLast();
-      creditInstallmentDateControllers.removeLast().dispose();
-    }
-  }
 
   Map<String, dynamic> toMap() {
     final data = <String, dynamic>{'method': method};
@@ -894,14 +881,28 @@ class _PaymentMethodEntry {
         if (installmentsController.text.trim().isNotEmpty) {
           data['installments'] = installmentsController.text.trim();
         }
+        final parsedInstallmentCount = int.tryParse(
+          installmentsController.text.trim(),
+        );
         final installmentCount =
-            int.tryParse(installmentsController.text.trim()) ?? 1;
-        if (installmentCount > 1 &&
-            creditInstallmentDates.length == installmentCount &&
-            creditInstallmentDates.every((date) => date != null)) {
-          data['installmentDates'] = creditInstallmentDates
-              .map((date) => intl.DateFormat('yyyy-MM-dd').format(date!))
-              .toList(growable: false);
+            parsedInstallmentCount != null &&
+                parsedInstallmentCount >= 1 &&
+                parsedInstallmentCount <= 999
+            ? parsedInstallmentCount
+            : 1;
+        if (creditFirstPaymentDate != null) {
+          data['paymentDate'] = intl.DateFormat(
+            'yyyy-MM-dd',
+          ).format(creditFirstPaymentDate!);
+        }
+        if (installmentCount > 1 && creditFirstPaymentDate != null) {
+          data['installmentDates'] =
+              generateMonthlyInstallmentDates(
+                    firstDate: creditFirstPaymentDate!,
+                    count: installmentCount,
+                  )
+                  .map((date) => intl.DateFormat('yyyy-MM-dd').format(date))
+                  .toList(growable: false);
         }
         break;
       case 'check':
@@ -945,9 +946,7 @@ class _PaymentMethodEntry {
     cardNameController.dispose();
     cardExpirationController.dispose();
     installmentsController.dispose();
-    for (final controller in creditInstallmentDateControllers) {
-      controller.dispose();
-    }
+    creditFirstPaymentDateController.dispose();
     checkNumberController.dispose();
     checkPaymentDateController.dispose();
     checkBankController.dispose();
@@ -995,6 +994,8 @@ class InvoiceBuilderPage extends StatefulWidget {
   final String? cancellationSourceDocumentNumber;
   final List<Map<String, dynamic>> initialLinkedDocuments;
   final bool returnDraftOnSend;
+  final bool returnDraftOnSave;
+  final bool lockInitialDocType;
 
   const InvoiceBuilderPage({
     super.key,
@@ -1029,6 +1030,8 @@ class InvoiceBuilderPage extends StatefulWidget {
     this.cancellationSourceDocumentNumber,
     this.initialLinkedDocuments = const [],
     this.returnDraftOnSend = false,
+    this.returnDraftOnSave = false,
+    this.lockInitialDocType = false,
   });
 
   @override
@@ -1198,6 +1201,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   String? _selectedSavedClientExternalNumber;
   final Map<String, _LinkedInvoiceDocument> _linkedDocuments = {};
   bool _isAddingClient = false;
+  bool _isReceiverPrefillActive = false;
 
   // Payment method state
   final List<_PaymentMethodEntry> _paymentMethods = [_PaymentMethodEntry()];
@@ -1604,6 +1608,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     // Auto-fill from widget parameters
     if (widget.receiverName != null) {
       _clientNameController.text = widget.receiverName!;
+      _isReceiverPrefillActive = widget.receiverName!.trim().isNotEmpty;
     }
     if (widget.receiverPhone != null) {
       _clientPhoneController.text = widget.receiverPhone!;
@@ -5852,27 +5857,19 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     });
   }
 
-  Future<void> _pickCreditInstallmentDate(
-    _PaymentMethodEntry entry,
-    int installmentIndex,
-  ) async {
-    final previousDate = installmentIndex > 0
-        ? entry.creditInstallmentDates[installmentIndex - 1]
-        : null;
+  Future<void> _pickCreditFirstPaymentDate(_PaymentMethodEntry entry) async {
     final picked = await showDatePicker(
       context: context,
-      initialDate:
-          entry.creditInstallmentDates[installmentIndex] ??
-          previousDate?.add(const Duration(days: 30)) ??
-          _selectedInvoiceDate,
+      initialDate: entry.creditFirstPaymentDate ?? _selectedInvoiceDate,
       firstDate: DateTime(2000),
       lastDate: DateTime(2100),
     );
     if (picked == null || !mounted) return;
     setState(() {
-      entry.creditInstallmentDates[installmentIndex] = picked;
-      entry.creditInstallmentDateControllers[installmentIndex].text =
-          intl.DateFormat('dd/MM/yyyy').format(picked);
+      entry.creditFirstPaymentDate = picked;
+      entry.creditFirstPaymentDateController.text = intl.DateFormat(
+        'dd/MM/yyyy',
+      ).format(picked);
     });
   }
 
@@ -5988,20 +5985,17 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           );
           return false;
         }
-        if (parsed != null && parsed > 1) {
-          methodEntry.ensureCreditInstallmentCount(parsed);
-          if (methodEntry.creditInstallmentDates.any((date) => date == null)) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  isRtl
-                      ? 'חובה לבחור תאריך פירעון לכל תשלום באשראי (שורה ${i + 1}).'
-                      : 'Select a due date for every credit-card installment (row ${i + 1}).',
-                ),
+        if (methodEntry.creditFirstPaymentDate == null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                isRtl
+                    ? 'חובה לבחור תאריך תשלום ראשון באשראי (שורה ${i + 1}).'
+                    : 'Select the first credit-card payment date (row ${i + 1}).',
               ),
-            );
-            return false;
-          }
+            ),
+          );
+          return false;
         }
       }
     }
@@ -6160,6 +6154,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                 ? null
                 : _handleBuilderBack,
             onPendingSaveChanged: _setDocumentSavePending,
+            returnAfterSave: widget.returnDraftOnSave,
             onCheckSaveStatus: () => _reconcileServerDocument(saveServerResult),
             onSave: () async {
               final serverResult = await _finalizeDocumentOnServer();
@@ -7099,22 +7094,24 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                     ),
                                   ],
                                 ],
-                                onChanged: (val) async {
-                                  if (val == null) return;
-                                  setState(() {
-                                    if (val == 'receipt' &&
-                                        _selectedDocType != 'receipt') {
-                                      _clearServiceItems();
-                                    }
-                                    _selectedDocType = val;
-                                    _linkedDocuments.clear();
-                                    _currentDocumentCounter = null;
-                                    _invoiceNumber = '';
-                                  });
-                                  await _loadCurrentDocumentNumber(
-                                    promptIfMissing: true,
-                                  );
-                                },
+                                onChanged: widget.lockInitialDocType
+                                    ? null
+                                    : (val) async {
+                                        if (val == null) return;
+                                        setState(() {
+                                          if (val == 'receipt' &&
+                                              _selectedDocType != 'receipt') {
+                                            _clearServiceItems();
+                                          }
+                                          _selectedDocType = val;
+                                          _linkedDocuments.clear();
+                                          _currentDocumentCounter = null;
+                                          _invoiceNumber = '';
+                                        });
+                                        await _loadCurrentDocumentNumber(
+                                          promptIfMissing: true,
+                                        );
+                                      },
                               ),
                             ],
                           ),
@@ -8084,44 +8081,33 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                     return newValue;
                   }),
                 ],
-                onChanged: (value) {
-                  final count = int.tryParse(value);
-                  if (count == null || count < 1 || count > 999) return;
-                  setState(() => entry.ensureCreditInstallmentCount(count));
-                },
+                onChanged: (_) => setState(() {}),
+              ),
+            ),
+            const SizedBox(height: 12),
+            _buildTextField(
+              entry.creditFirstPaymentDateController,
+              isRtl
+                  ? 'תאריך תשלום ראשון (חובה)'
+                  : 'First Payment Date (Required)',
+              Icons.event_outlined,
+              required: true,
+              readOnly: true,
+              onTap: () => _pickCreditFirstPaymentDate(entry),
+              suffixIcon: IconButton(
+                tooltip: isRtl ? 'בחירת תאריך' : 'Select date',
+                onPressed: () => _pickCreditFirstPaymentDate(entry),
+                icon: const Icon(Icons.calendar_month_outlined),
               ),
             ),
             if ((int.tryParse(entry.installmentsController.text.trim()) ?? 1) >
                 1) ...[
-              const SizedBox(height: 12),
-              ...List.generate(
-                entry.creditInstallmentDateControllers.length,
-                (installmentIndex) => Padding(
-                  padding: EdgeInsets.only(
-                    bottom:
-                        installmentIndex ==
-                            entry.creditInstallmentDateControllers.length - 1
-                        ? 0
-                        : 12,
-                  ),
-                  child: _buildTextField(
-                    entry.creditInstallmentDateControllers[installmentIndex],
-                    isRtl
-                        ? 'תאריך פירעון תשלום ${installmentIndex + 1}'
-                        : 'Installment ${installmentIndex + 1} Due Date',
-                    Icons.event_outlined,
-                    required: true,
-                    readOnly: true,
-                    onTap: () =>
-                        _pickCreditInstallmentDate(entry, installmentIndex),
-                    suffixIcon: IconButton(
-                      tooltip: isRtl ? 'בחירת תאריך' : 'Select date',
-                      onPressed: () =>
-                          _pickCreditInstallmentDate(entry, installmentIndex),
-                      icon: const Icon(Icons.calendar_month_outlined),
-                    ),
-                  ),
-                ),
+              const SizedBox(height: 8),
+              Text(
+                isRtl
+                    ? 'שאר תאריכי התשלום ייווצרו אוטומטית מדי חודש.'
+                    : 'The remaining payment dates are generated monthly.',
+                style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
               ),
             ],
           ],
@@ -8591,6 +8577,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
 
   void _applySavedClient(_InvoiceClient client) {
     setState(() {
+      _isReceiverPrefillActive = false;
       if (_selectedSavedClientId != client.id) {
         _linkedDocuments.clear();
       }
@@ -8644,7 +8631,19 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     }
   }
 
-  void _handleClientNameChanged(String _) {
+  void _handleClientNameChanged(String value) {
+    if (_isReceiverPrefillActive) {
+      final originalName = widget.receiverName?.trim() ?? '';
+      if (value.trim() == originalName) return;
+      setState(() {
+        _isReceiverPrefillActive = false;
+        _clientIdController.clear();
+        _clientPhoneController.clear();
+        _clientEmailController.clear();
+        _clientAddressController.clear();
+      });
+      return;
+    }
     if (_selectedSavedClientId == null) return;
     setState(() {
       _selectedSavedClientId = null;
@@ -8660,6 +8659,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   void _handleClientNameFocusChanged() {
     if (_clientNameFocusNode.hasFocus ||
         _selectedSavedClientId != null ||
+        _isReceiverPrefillActive ||
         _isAddingClient) {
       return;
     }
@@ -9387,6 +9387,7 @@ class _InvoicePreviewPage extends StatefulWidget {
   final Future<void> Function()? onSend;
   final VoidCallback? onReturnAfterSave;
   final ValueChanged<bool>? onPendingSaveChanged;
+  final bool returnAfterSave;
 
   const _InvoicePreviewPage({
     required this.pdfBytes,
@@ -9402,6 +9403,7 @@ class _InvoicePreviewPage extends StatefulWidget {
     this.onSend,
     this.onReturnAfterSave,
     this.onPendingSaveChanged,
+    this.returnAfterSave = false,
   });
 
   @override
@@ -10287,6 +10289,9 @@ class _InvoicePreviewPageState extends State<_InvoicePreviewPage>
         }
         _isSaved = true;
       });
+      if (widget.returnAfterSave && mounted) {
+        Navigator.pop(context, 'send');
+      }
     } catch (e, stackTrace) {
       dev.log(
         'Unable to save the final document',

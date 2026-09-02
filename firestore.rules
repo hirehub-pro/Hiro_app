@@ -21,6 +21,9 @@ service cloud.firestore {
     // users/{uid}/receivedInvoices: owner-read, server-write mirror.
     // users/{uid}/clients/{clientId}/ledgerEntries/{postingId}: immutable
     // server-created customer debit/credit posting; owner-readable only.
+    // users/{customerUid}/requests and users/{workerUid}/RequestToMe: private
+    // mirrored work requests. The assigned worker may add bounded quote PDF
+    // metadata without changing request identity or ownership.
     // chat_rooms/{id}/messages/{id}: room participants only.
     // blog_posts and nested blog_comments: authenticated community content,
     // with author identity and bounded content validation.
@@ -577,7 +580,8 @@ service cloud.firestore {
       return data.keys().hasOnly([
         'title', 'body', 'message', 'type', 'requestType', 'url', 'isRead', 'read',
         'timestamp', 'createdAt', 'fromId', 'fromUserId', 'fromName',
-        'fromUserName', 'fromLocation', 'roomId', 'chatPartnerId',
+        'fromUserName', 'fromLocation', 'fromPhone', 'fromEmail', 'fromAddress',
+        'roomId', 'chatPartnerId',
         'chatPartnerName', 'messageId', 'requestId', 'requestOwnerId',
         'requestUrl', 'workerId', 'workerName', 'workerNotificationId',
         'workerRequestToMeId', 'invoiceDocId', 'status', 'date',
@@ -585,11 +589,16 @@ service cloud.firestore {
         'serviceLocationType', 'locationName', 'latitude', 'longitude',
         'mapUrl', 'images', 'videos', 'media', 'cancelledAt', 'price',
         'description', 'quotePrice', 'quoteDescription', 'seenAt',
-        'reviewedAt', 'reviewedBy', 'updatedAt'
+        'reviewedAt', 'reviewedBy', 'updatedAt', 'quoteUrl', 'quoteFileName',
+        'quoteDocType', 'quoteInvoiceDocId',
+        'quoteDocumentNumber', 'quoteSentAt'
       ]) &&
       optionalString(data, 'title', 240) && optionalString(data, 'body', 4000) &&
       optionalString(data, 'message', 4000) && optionalString(data, 'type', 80) &&
       optionalString(data, 'requestType', 80) &&
+      optionalString(data, 'fromPhone', 32) &&
+      optionalEmail(data, 'fromEmail') &&
+      optionalString(data, 'fromAddress', 500) &&
       optionalUrl(data, 'url', 4096) && optionalBool(data, 'isRead') &&
       optionalBool(data, 'read') && optionalTimestamp(data, 'timestamp') &&
       optionalTimestamp(data, 'createdAt') &&
@@ -601,6 +610,13 @@ service cloud.firestore {
       optionalString(data, 'description', 4000) &&
       optionalString(data, 'quotePrice', 80) &&
       optionalString(data, 'quoteDescription', 4000) &&
+      optionalUrl(data, 'quoteUrl', 4096) &&
+      optionalString(data, 'quoteFileName', 240) &&
+      optionalString(data, 'quoteDocType', 40) &&
+      (!( 'quoteDocType' in data) || data.quoteDocType == 'quote') &&
+      optionalString(data, 'quoteInvoiceDocId', 180) &&
+      optionalString(data, 'quoteDocumentNumber', 80) &&
+      optionalTimestamp(data, 'quoteSentAt') &&
       optionalString(data, 'reviewedBy', 128) &&
       optionalList(data, 'images', 20) && optionalList(data, 'videos', 20) &&
       optionalList(data, 'media', 40);
@@ -610,10 +626,13 @@ service cloud.firestore {
       return data.keys().hasOnly([
         'requestId', 'workerId', 'workerName', 'workerNotificationId',
         'workerRequestToMeId', 'type', 'fromId', 'fromName', 'fromLocation',
+        'fromPhone', 'fromEmail', 'fromAddress',
         'profession', 'jobDescription', 'images', 'latitude', 'longitude',
         'date', 'requestedFrom', 'requestedTo', 'locationName',
         'serviceLocationType', 'timestamp', 'status', 'title', 'body',
         'acceptedWindow', 'quotePrice', 'quoteDescription', 'quoteSentAt',
+        'quoteUrl', 'quoteFileName', 'quoteDocType', 'quoteInvoiceDocId',
+        'quoteDocumentNumber',
         'seenAt', 'reviewedAt', 'reviewedBy', 'cancelledAt', 'updatedAt'
       ]) && data.keys().hasAll([
         'requestId', 'workerId', 'workerName', 'workerNotificationId',
@@ -634,6 +653,9 @@ service cloud.firestore {
       optionalString(data, 'workerRequestToMeId', 180) &&
       optionalString(data, 'fromName', 100) &&
       optionalString(data, 'fromLocation', 300) &&
+      optionalString(data, 'fromPhone', 32) &&
+      optionalEmail(data, 'fromEmail') &&
+      optionalString(data, 'fromAddress', 500) &&
       optionalString(data, 'profession', 120) &&
       optionalString(data, 'jobDescription', 10000) &&
       optionalList(data, 'images', 20) &&
@@ -648,6 +670,12 @@ service cloud.firestore {
       optionalMap(data, 'acceptedWindow', 4) &&
       optionalString(data, 'quotePrice', 80) &&
       optionalString(data, 'quoteDescription', 4000) &&
+      optionalUrl(data, 'quoteUrl', 4096) &&
+      optionalString(data, 'quoteFileName', 240) &&
+      optionalString(data, 'quoteDocType', 40) &&
+      (!( 'quoteDocType' in data) || data.quoteDocType == 'quote') &&
+      optionalString(data, 'quoteInvoiceDocId', 180) &&
+      optionalString(data, 'quoteDocumentNumber', 80) &&
       optionalTimestamp(data, 'quoteSentAt') && optionalTimestamp(data, 'seenAt') &&
       optionalTimestamp(data, 'reviewedAt') &&
       optionalString(data, 'reviewedBy', 128) &&
@@ -1055,7 +1083,9 @@ service cloud.firestore {
           ((isOwner(userId) &&
             request.resource.data.diff(resource.data).affectedKeys()
               .hasOnly([
-                'isRead', 'read', 'status', 'seenAt', 'reviewedAt', 'reviewedBy'
+                'isRead', 'read', 'status', 'seenAt', 'reviewedAt', 'reviewedBy',
+                'quotePrice', 'quoteUrl', 'quoteFileName', 'quoteDocType',
+                'quoteInvoiceDocId', 'quoteDocumentNumber', 'quoteSentAt'
               ])) ||
             (resource.data.get('workerId', '') == userId &&
               validPendingRequestEditBySender()));
@@ -1076,7 +1106,9 @@ service cloud.firestore {
             (isAuthenticated() && request.auth.uid == resource.data.workerId &&
               request.resource.data.diff(resource.data).affectedKeys().hasOnly([
                 'status', 'acceptedWindow', 'quotePrice', 'quoteDescription',
-                'quoteSentAt', 'seenAt', 'reviewedAt', 'reviewedBy', 'updatedAt'
+                'quoteSentAt', 'quoteUrl', 'quoteFileName', 'quoteDocType',
+                'quoteInvoiceDocId', 'quoteDocumentNumber', 'seenAt',
+                'reviewedAt', 'reviewedBy', 'updatedAt'
               ])));
       }
 
@@ -1087,7 +1119,9 @@ service cloud.firestore {
           ((isOwner(userId) &&
             request.resource.data.diff(resource.data).affectedKeys().hasOnly([
               'status', 'acceptedWindow', 'quotePrice', 'quoteDescription',
-              'quoteSentAt', 'seenAt', 'reviewedAt', 'reviewedBy', 'updatedAt'
+              'quoteSentAt', 'quoteUrl', 'quoteFileName', 'quoteDocType',
+              'quoteInvoiceDocId', 'quoteDocumentNumber', 'seenAt',
+              'reviewedAt', 'reviewedBy', 'updatedAt'
             ])) ||
             (resource.data.workerId == userId &&
               validPendingRequestEditBySender()));

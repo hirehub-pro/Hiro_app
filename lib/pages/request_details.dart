@@ -3,9 +3,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart' as intl;
+import 'package:url_launcher/url_launcher.dart';
+import 'package:untitled1/pages/invoice_builder.dart';
 import 'package:untitled1/services/language_provider.dart';
 import 'package:untitled1/services/map_app_launcher.dart';
 import 'package:untitled1/services/notification_service.dart';
+import 'package:untitled1/services/profile_document_service.dart';
 import 'package:untitled1/pages/chat_page.dart';
 import 'package:untitled1/utils/request_expiration.dart';
 
@@ -28,6 +31,9 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
   late TimeOfDay _availableTo;
   bool _isLoading = false;
   bool _reviewTrackingStarted = false;
+  bool _isBusinessVerified = false;
+  bool _isVerificationLoading = true;
+  InvoiceBuilderDraftResult? _pendingQuoteAttachment;
   final _priceController = TextEditingController();
   final _quoteDescController = TextEditingController();
 
@@ -66,6 +72,7 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
     }
 
     _markRequestAsSeenAndReviewed();
+    _loadBusinessVerification();
   }
 
   @override
@@ -73,6 +80,31 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
     _priceController.dispose();
     _quoteDescController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadBusinessVerification() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      if (mounted) setState(() => _isVerificationLoading = false);
+      return;
+    }
+
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
+      if (!mounted) return;
+      final data = snapshot.data();
+      setState(() {
+        _isBusinessVerified =
+            data?['isVerified'] == true || data?['isBusinessVerified'] == true;
+        _isVerificationLoading = false;
+      });
+    } catch (error) {
+      debugPrint('Unable to load business verification: $error');
+      if (mounted) setState(() => _isVerificationLoading = false);
+    }
   }
 
   List<Map<String, String>> _normalizePartialRanges(dynamic value) {
@@ -166,6 +198,14 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
           'confirm_send_quote_title': 'לשלוח הצעת מחיר?',
           'confirm_send_quote_body': 'הלקוח יקבל את הצעת המחיר שלך.',
           'quote_sent': 'הצעת המחיר נשלחה בהצלחה',
+          'create_quote_document': 'יצירת מסמך הצעת מחיר',
+          'create_quote_document_hint':
+              'פרטי הלקוח ימולאו אוטומטית והמסמך יצורף לבקשה לאחר השמירה.',
+          'attached_quote': 'הצעת מחיר מצורפת',
+          'open_attached_quote': 'פתיחת הצעת המחיר',
+          'retry_attach_quote': 'נסה לצרף שוב',
+          'quote_attachment_failed':
+              'המסמך נשמר, אך לא ניתן היה לצרף אותו לבקשה. נסה שוב.',
           'quote_description_hint': 'הוסף הערה ללקוח (אופציונלי)...',
           'open_chat': 'פתח צ\'אט',
           'unknown': 'לא ידוע',
@@ -211,6 +251,14 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
           'confirm_send_quote_title': 'إرسال عرض السعر؟',
           'confirm_send_quote_body': 'سيتلقى العميل عرض السعر الخاص بك.',
           'quote_sent': 'تم إرسال عرض السعر بنجاح',
+          'create_quote_document': 'إنشاء مستند عرض سعر',
+          'create_quote_document_hint':
+              'ستتم تعبئة بيانات العميل تلقائيًا وإرفاق المستند بالطلب بعد الحفظ.',
+          'attached_quote': 'عرض السعر المرفق',
+          'open_attached_quote': 'فتح عرض السعر',
+          'retry_attach_quote': 'إعادة محاولة الإرفاق',
+          'quote_attachment_failed':
+              'تم حفظ المستند، ولكن تعذر إرفاقه بالطلب. حاول مرة أخرى.',
           'quote_description_hint': 'أضف ملاحظة للعميل (اختياري)...',
           'open_chat': 'فتح المحادثة',
           'unknown': 'غير معروف',
@@ -256,6 +304,14 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
           'confirm_send_quote_title': 'ይህን ዋጋ ልላክ?',
           'confirm_send_quote_body': 'ደንበኛው የእርስዎን የዋጋ ቅናሽ ይቀበላል።',
           'quote_sent': 'የዋጋ ቅናሹ በተሳካ ሁኔታ ተልኳል',
+          'create_quote_document': 'የዋጋ ቅናሽ ሰነድ ፍጠር',
+          'create_quote_document_hint':
+              'የደንበኛው ዝርዝሮች በራስ-ሰር ይሞላሉ፣ ከተቀመጠም በኋላ ሰነዱ ከጥያቄው ጋር ይያያዛል።',
+          'attached_quote': 'የተያያዘ የዋጋ ቅናሽ',
+          'open_attached_quote': 'የዋጋ ቅናሹን ክፈት',
+          'retry_attach_quote': 'እንደገና ለማያያዝ ሞክር',
+          'quote_attachment_failed':
+              'ሰነዱ ተቀምጧል፣ ነገር ግን ከጥያቄው ጋር ማያያዝ አልተቻለም። እንደገና ይሞክሩ።',
           'quote_description_hint': 'ለደንበኛው ማስታወሻ ያክሉ (አማራጭ)...',
           'open_chat': 'ቻት ክፈት',
           'unknown': 'ያልታወቀ',
@@ -304,6 +360,14 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
           'confirm_send_quote_title': 'Отправить это предложение?',
           'confirm_send_quote_body': 'Клиент получит ваше ценовое предложение.',
           'quote_sent': 'Предложение успешно отправлено',
+          'create_quote_document': 'Создать документ предложения',
+          'create_quote_document_hint':
+              'Данные клиента заполнятся автоматически, а сохранённый документ прикрепится к запросу.',
+          'attached_quote': 'Прикреплённое предложение',
+          'open_attached_quote': 'Открыть предложение',
+          'retry_attach_quote': 'Повторить прикрепление',
+          'quote_attachment_failed':
+              'Документ сохранён, но его не удалось прикрепить к запросу. Повторите попытку.',
           'quote_description_hint':
               'Добавьте заметку для клиента (необязательно)...',
           'open_chat': 'Открыть чат',
@@ -353,6 +417,14 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
           'confirm_send_quote_body':
               'The client will receive your price quote.',
           'quote_sent': 'Quote sent successfully',
+          'create_quote_document': 'Create Quote Document',
+          'create_quote_document_hint':
+              'Client details will be filled automatically and the saved document will be attached to this request.',
+          'attached_quote': 'Attached Quote',
+          'open_attached_quote': 'Open Quote',
+          'retry_attach_quote': 'Retry Attachment',
+          'quote_attachment_failed':
+              'The document was saved, but it could not be attached to the request. Please retry.',
           'quote_description_hint': 'Add a note to the client (optional)...',
           'open_chat': 'Open Chat',
           'unknown': 'Unknown',
@@ -441,6 +513,302 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
               horizontal: 16,
               vertical: 14,
             ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildVerifiedQuoteAction(Map<String, String> strings) {
+    final hasPendingAttachment = _pendingQuoteAttachment != null;
+    return _sectionCard(
+      title: strings['quote_price_label']!,
+      subtitle: strings['create_quote_document_hint']!,
+      children: [
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            onPressed: _isLoading
+                ? null
+                : hasPendingAttachment
+                ? () => _attachQuoteDocument(_pendingQuoteAttachment!)
+                : _openQuoteDocumentBuilder,
+            icon: Icon(
+              hasPendingAttachment
+                  ? Icons.cloud_upload_outlined
+                  : Icons.request_quote_outlined,
+            ),
+            label: Text(
+              hasPendingAttachment
+                  ? strings['retry_attach_quote']!
+                  : strings['create_quote_document']!,
+            ),
+            style: FilledButton.styleFrom(
+              minimumSize: const Size.fromHeight(52),
+              backgroundColor: const Color(0xFF15803D),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _formatQuoteAmount(double amount) {
+    if (amount == amount.roundToDouble()) return amount.round().toString();
+    return amount.toStringAsFixed(2);
+  }
+
+  Future<Map<String, dynamic>?> _linkedSavedClient(
+    String workerId,
+    String clientId,
+  ) async {
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(workerId)
+          .collection('clients')
+          .where('linkedUserId', isEqualTo: clientId)
+          .limit(1)
+          .get();
+      if (snapshot.docs.isEmpty) return null;
+      return <String, dynamic>{
+        ...snapshot.docs.first.data(),
+        'id': snapshot.docs.first.id,
+      };
+    } catch (error) {
+      debugPrint('Unable to load linked invoice client: $error');
+      return null;
+    }
+  }
+
+  Future<void> _openQuoteDocumentBuilder() async {
+    final user = FirebaseAuth.instance.currentUser;
+    final clientId = widget.data['fromId']?.toString().trim() ?? '';
+    if (user == null || clientId.isEmpty || _isLoading) return;
+
+    setState(() => _isLoading = true);
+    Map<String, dynamic> workerProfile = const {};
+    Map<String, dynamic>? savedClient;
+    try {
+      final results = await Future.wait([
+        ProfileDocumentService.load(user.uid),
+        _linkedSavedClient(user.uid, clientId),
+      ]);
+      workerProfile = results[0] ?? const <String, dynamic>{};
+      savedClient = results[1];
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+    if (!mounted) return;
+
+    final clientName = (savedClient?['name'] ?? widget.data['fromName'] ?? '')
+        .toString()
+        .trim();
+    final clientAddress =
+        (savedClient?['address'] ??
+                widget.data['fromAddress'] ??
+                widget.data['fromLocation'] ??
+                '')
+            .toString()
+            .trim();
+    final description = (widget.data['jobDescription'] ?? '').toString().trim();
+    final strings = _getLocalizedStrings(context);
+
+    final result = await Navigator.push<InvoiceBuilderDraftResult>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => InvoiceBuilderPage(
+          workerName:
+              (workerProfile['name'] ?? user.displayName ?? 'Professional')
+                  .toString(),
+          workerPhone:
+              (workerProfile['phone'] ?? workerProfile['optionalPhone'])
+                  ?.toString(),
+          workerEmail: (workerProfile['email'] ?? user.email)?.toString(),
+          receiverId: clientId,
+          receiverName: clientName,
+          receiverPhone: (savedClient?['phone'] ?? widget.data['fromPhone'])
+              ?.toString(),
+          receiverEmail: (savedClient?['email'] ?? widget.data['fromEmail'])
+              ?.toString(),
+          receiverAddress: clientAddress,
+          initialSavedClientId: savedClient?['id']?.toString(),
+          initialClientTaxId: savedClient?['taxId']?.toString(),
+          initialClientExternalNumber: savedClient?['externalClientNumber']
+              ?.toString(),
+          initialDocType: 'quote',
+          lockInitialDocType: true,
+          returnDraftOnSend: true,
+          returnDraftOnSave: true,
+          initialItems: [
+            {
+              'description': description.isEmpty
+                  ? strings['job_description']!
+                  : description,
+              'quantity': 1,
+            },
+          ],
+        ),
+      ),
+    );
+
+    if (!mounted || result == null) return;
+    _pendingQuoteAttachment = result;
+    await _attachQuoteDocument(result);
+  }
+
+  Future<void> _attachQuoteDocument(InvoiceBuilderDraftResult quote) async {
+    final user = FirebaseAuth.instance.currentUser;
+    final clientId = widget.data['fromId']?.toString().trim() ?? '';
+    final requestId = widget.data['requestId']?.toString().trim() ?? '';
+    if (user == null || clientId.isEmpty || requestId.isEmpty) return;
+
+    final strings = _getLocalizedStrings(context);
+    final price = _formatQuoteAmount(quote.amount);
+    final attachment = <String, dynamic>{
+      'status': 'accepted',
+      'quotePrice': price,
+      'quoteUrl': quote.url,
+      'quoteFileName': quote.fileName,
+      'quoteDocType': quote.docType,
+      'quoteInvoiceDocId': quote.invoiceDocId,
+      if (quote.documentNumber?.trim().isNotEmpty == true)
+        'quoteDocumentNumber': quote.documentNumber!.trim(),
+      'quoteSentAt': FieldValue.serverTimestamp(),
+    };
+
+    setState(() => _isLoading = true);
+    try {
+      final firestore = FirebaseFirestore.instance;
+      final workerNotificationId =
+          (widget.data['workerNotificationId'] ?? widget.notificationId)
+              .toString()
+              .trim();
+      final workerRequestToMeId = widget.data['workerRequestToMeId']
+          ?.toString()
+          .trim();
+      final workerNotificationRef = firestore
+          .collection('users')
+          .doc(user.uid)
+          .collection('notifications')
+          .doc(workerNotificationId);
+      final workerRequestRef =
+          workerRequestToMeId == null || workerRequestToMeId.isEmpty
+          ? null
+          : firestore
+                .collection('users')
+                .doc(user.uid)
+                .collection('RequestToMe')
+                .doc(workerRequestToMeId);
+      final mirrorSnapshots = await Future.wait([
+        workerNotificationRef.get(),
+        if (workerRequestRef != null) workerRequestRef.get(),
+      ]);
+
+      final batch = firestore.batch();
+      batch.update(
+        firestore
+            .collection('users')
+            .doc(clientId)
+            .collection('requests')
+            .doc(requestId),
+        {...attachment, 'updatedAt': FieldValue.serverTimestamp()},
+      );
+      if (mirrorSnapshots.first.exists) {
+        batch.update(workerNotificationRef, attachment);
+      }
+      if (workerRequestRef != null &&
+          mirrorSnapshots.length > 1 &&
+          mirrorSnapshots[1].exists) {
+        batch.update(workerRequestRef, {
+          ...attachment,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      }
+
+      final notificationRef = firestore
+          .collection('users')
+          .doc(clientId)
+          .collection('notifications')
+          .doc();
+      batch.set(notificationRef, {
+        'type': 'quote_response',
+        'fromId': user.uid,
+        'fromName': user.displayName ?? 'Professional',
+        'requestId': requestId,
+        'price': price,
+        'url': quote.url,
+        'invoiceDocId': quote.invoiceDocId,
+        'title': strings['attached_quote']!,
+        'body':
+            "${user.displayName ?? 'The professional'} sent you a quote: $price",
+        'isRead': false,
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+      await batch.commit();
+      await NotificationService.sendPushNotification(
+        targetUserId: clientId,
+        title: strings['attached_quote']!,
+        body:
+            "${user.displayName ?? 'The professional'} sent you a quote: $price",
+      );
+
+      if (!mounted) return;
+      setState(() {
+        widget.data.addAll({...attachment, 'quoteSentAt': Timestamp.now()});
+        _pendingQuoteAttachment = null;
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(strings['quote_sent']!)));
+    } catch (error) {
+      debugPrint('Unable to attach saved quote: $error');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(strings['quote_attachment_failed']!)),
+      );
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Widget _buildAttachedQuote(Map<String, String> strings) {
+    final quoteUrl = widget.data['quoteUrl']?.toString().trim() ?? '';
+    final documentNumber = widget.data['quoteDocumentNumber']
+        ?.toString()
+        .trim();
+    final price = widget.data['quotePrice']?.toString().trim();
+    return _sectionCard(
+      title: strings['attached_quote']!,
+      children: [
+        if (documentNumber?.isNotEmpty == true || price?.isNotEmpty == true)
+          Text(
+            [
+              if (documentNumber?.isNotEmpty == true) '#$documentNumber',
+              if (price?.isNotEmpty == true) price!,
+            ].join(' • '),
+            style: const TextStyle(
+              color: Color(0xFF334155),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        if (documentNumber?.isNotEmpty == true || price?.isNotEmpty == true)
+          const SizedBox(height: 10),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: quoteUrl.isEmpty
+                ? null
+                : () => launchUrl(
+                    Uri.parse(quoteUrl),
+                    mode: LaunchMode.externalApplication,
+                  ),
+            icon: const Icon(Icons.picture_as_pdf_outlined),
+            label: Text(strings['open_attached_quote']!),
           ),
         ),
       ],
@@ -928,9 +1296,18 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
                     const SizedBox(height: 12),
                     _buildQuickActions(strings, data),
                   ],
+                  if ((data['quoteUrl'] ?? '').toString().isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    _buildAttachedQuote(strings),
+                  ],
                   if (isQuoteRequest && isPending) ...[
                     const SizedBox(height: 14),
-                    _buildPriceInput(strings),
+                    if (_isVerificationLoading)
+                      const Center(child: CircularProgressIndicator())
+                    else if (_isBusinessVerified)
+                      _buildVerifiedQuoteAction(strings)
+                    else
+                      _buildPriceInput(strings),
                   ],
                   if (!isQuoteRequest) ...[
                     const SizedBox(height: 12),
@@ -1496,6 +1873,29 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
     final isQuoteRequest =
         widget.data['type'] == 'quote_request' ||
         widget.data['requestType'] == 'quote_request';
+    if (isQuoteRequest && _isBusinessVerified) {
+      return SizedBox(
+        width: double.infinity,
+        height: 52,
+        child: ElevatedButton.icon(
+          onPressed: _isLoading ? null : () => _confirmAndProcess(false),
+          icon: const Icon(Icons.close_rounded),
+          label: Text(
+            strings['decline']!,
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFFFEF2F2),
+            foregroundColor: const Color(0xFFB91C1C),
+            elevation: 0,
+            side: const BorderSide(color: Color(0xFFFECACA)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+          ),
+        ),
+      );
+    }
     return Row(
       children: [
         Expanded(
@@ -1503,6 +1903,8 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
             height: 52,
             child: FilledButton.icon(
               onPressed: _isLoading
+                  ? null
+                  : (isQuoteRequest && _isVerificationLoading)
                   ? null
                   : (isQuoteRequest
                         ? _confirmAndSendQuote

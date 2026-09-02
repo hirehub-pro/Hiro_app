@@ -17,6 +17,7 @@ import 'package:record/record.dart';
 import 'package:audioplayers/audioplayers.dart' as ap;
 import 'package:path_provider/path_provider.dart';
 import 'package:open_filex/open_filex.dart';
+import 'package:pasteboard/pasteboard.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:http/http.dart' as http;
 import 'package:untitled1/ptofile.dart';
@@ -59,6 +60,10 @@ class _ChatPageState extends State<ChatPage> {
   );
 
   final TextEditingController _messageController = TextEditingController();
+  Uint8List? _pastedImageBytes;
+  String _pastedImageExtension = '.png';
+  bool _isReadingClipboardImage = false;
+  bool _isSendingPastedImage = false;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseStorage _storage = FirebaseStorage.instance;
@@ -95,6 +100,9 @@ class _ChatPageState extends State<ChatPage> {
   // Selection Mode State
   bool _isSelectionMode = false;
   final Set<String> _selectedMessageIds = {};
+  final Map<String, Map<String, dynamic>> _selectedMessages = {};
+  bool _isCopyingMessage = false;
+  bool _isDeletingMessages = false;
 
   bool _isWorker = false;
   bool _canCreateInvoices = false;
@@ -687,7 +695,8 @@ class _ChatPageState extends State<ChatPage> {
       String lastMsgDisplay = "";
       switch (type) {
         case 'image':
-          lastMsgDisplay = "📷 Photo";
+          final caption = text?.trim() ?? '';
+          lastMsgDisplay = caption.isEmpty ? "📷 Photo" : "📷 $caption";
           break;
         case 'video':
           lastMsgDisplay = "🎥 Video";
@@ -808,80 +817,92 @@ class _ChatPageState extends State<ChatPage> {
         Provider.of<LanguageProvider>(context).locale.languageCode == 'he' ||
         Provider.of<LanguageProvider>(context).locale.languageCode == 'ar';
 
-    return Scaffold(
-      appBar: AppBar(
-        title: _buildChatHeaderTitle(isRtl),
-        centerTitle: true,
-        backgroundColor: Colors.white,
-        foregroundColor: const Color(0xFF1976D2),
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
-          onPressed: () => Navigator.pop(context),
-        ),
-        actions: [
-          if (_canCreateInvoices)
-            Padding(
-              padding: const EdgeInsetsDirectional.only(end: 8),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(12),
-                onTap: _isOpeningInvoice ? null : _openInvoiceForChatContact,
-                child: Tooltip(
-                  message: _t(
-                    en: "Create Invoice",
-                    he: "הפק חשבונית",
-                    ar: "إنشاء فاتورة",
-                    am: "ደረሰኝ ፍጠር",
-                    ru: "Создать счет",
-                  ),
-                  child: SizedBox(
-                    width: 72,
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        if (_isOpeningInvoice)
-                          const SizedBox.square(
-                            dimension: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        else
-                          const Icon(Icons.receipt_long_rounded, size: 22),
-                        const SizedBox(height: 2),
-                        Text(
-                          _t(
-                            en: "Create Invoice",
-                            he: "צור חשבונית",
-                            ar: "إنشاء فاتورة",
-                            am: "ደረሰኝ ፍጠር",
-                            ru: "Создать счет",
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 10, height: 1.1),
+    final scaffold = Scaffold(
+      appBar: _isSelectionMode
+          ? _buildSelectionAppBar()
+          : AppBar(
+              title: _buildChatHeaderTitle(isRtl),
+              centerTitle: true,
+              backgroundColor: Colors.white,
+              foregroundColor: const Color(0xFF1976D2),
+              elevation: 0,
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+                onPressed: () => Navigator.pop(context),
+              ),
+              actions: [
+                if (_canCreateInvoices)
+                  Padding(
+                    padding: const EdgeInsetsDirectional.only(end: 8),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(12),
+                      onTap: _isOpeningInvoice
+                          ? null
+                          : _openInvoiceForChatContact,
+                      child: Tooltip(
+                        message: _t(
+                          en: "Create Invoice",
+                          he: "הפק חשבונית",
+                          ar: "إنشاء فاتورة",
+                          am: "ደረሰኝ ፍጠር",
+                          ru: "Создать счет",
                         ),
-                      ],
+                        child: SizedBox(
+                          width: 72,
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              if (_isOpeningInvoice)
+                                const SizedBox.square(
+                                  dimension: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              else
+                                const Icon(
+                                  Icons.receipt_long_rounded,
+                                  size: 22,
+                                ),
+                              const SizedBox(height: 2),
+                              Text(
+                                _t(
+                                  en: "Create Invoice",
+                                  he: "צור חשבונית",
+                                  ar: "إنشاء فاتورة",
+                                  am: "ደረሰኝ ፍጠር",
+                                  ru: "Создать счет",
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 10,
+                                  height: 1.1,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                     ),
                   ),
+                IconButton(
+                  icon: const Icon(Icons.call_rounded, size: 22),
+                  onPressed: () async {
+                    try {
+                      final data = await _getContactDetails(widget.receiverId);
+                      final phone = data['phone']?.toString().trim() ?? '';
+                      if (phone.isNotEmpty) {
+                        final Uri url = Uri.parse('tel:$phone');
+                        if (await canLaunchUrl(url)) await launchUrl(url);
+                      }
+                    } catch (error) {
+                      debugPrint('Could not load chat contact phone: $error');
+                    }
+                  },
                 ),
-              ),
+              ],
             ),
-          IconButton(
-            icon: const Icon(Icons.call_rounded, size: 22),
-            onPressed: () async {
-              try {
-                final data = await _getContactDetails(widget.receiverId);
-                final phone = data['phone']?.toString().trim() ?? '';
-                if (phone.isNotEmpty) {
-                  final Uri url = Uri.parse('tel:$phone');
-                  if (await canLaunchUrl(url)) await launchUrl(url);
-                }
-              } catch (error) {
-                debugPrint('Could not load chat contact phone: $error');
-              }
-            },
-          ),
-        ],
-      ),
       body: Column(
         children: [
           Expanded(
@@ -994,13 +1015,157 @@ class _ChatPageState extends State<ChatPage> {
               },
             ),
           ),
-          if (_isSelectionMode)
-            _buildSelectionActionBar()
-          else
-            _buildInputArea(isRtl),
+          if (!_isSelectionMode) _buildInputArea(isRtl),
         ],
       ),
     );
+
+    return PopScope(
+      canPop: !_isSelectionMode,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && _isSelectionMode) {
+          _clearMessageSelection();
+        }
+      },
+      child: scaffold,
+    );
+  }
+
+  PreferredSizeWidget _buildSelectionAppBar() {
+    final selectionCount = _selectedMessageIds.length;
+    final currentUserId = _auth.currentUser?.uid;
+    final canCopy =
+        selectionCount == 1 && _selectedMessages.values.any(_isCopyableMessage);
+    final canDelete =
+        currentUserId != null &&
+        _selectedMessages.length == selectionCount &&
+        _selectedMessages.values.every(
+          (message) => message['senderId'] == currentUserId,
+        );
+
+    return AppBar(
+      backgroundColor: const Color(0xFF1976D2),
+      foregroundColor: Colors.white,
+      elevation: 1,
+      leading: IconButton(
+        tooltip: _t(
+          en: 'Cancel selection',
+          he: 'בטל בחירה',
+          ar: 'إلغاء التحديد',
+          am: 'ምርጫን ሰርዝ',
+          ru: 'Отменить выбор',
+        ),
+        icon: const Icon(Icons.close_rounded),
+        onPressed: _isDeletingMessages || _isCopyingMessage
+            ? null
+            : _clearMessageSelection,
+      ),
+      titleSpacing: 0,
+      title: Text(
+        _t(
+          en: '$selectionCount selected',
+          he: '$selectionCount נבחרו',
+          ar: 'تم تحديد $selectionCount',
+          am: '$selectionCount ተመርጠዋል',
+          ru: 'Выбрано: $selectionCount',
+        ),
+        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+      ),
+      actions: [
+        if (_isCopyingMessage)
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 20),
+            child: Center(
+              child: SizedBox.square(
+                dimension: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          )
+        else
+          IconButton(
+            tooltip: _t(
+              en: 'Copy',
+              he: 'העתק',
+              ar: 'نسخ',
+              am: 'ቅዳ',
+              ru: 'Копировать',
+            ),
+            icon: const Icon(Icons.copy_rounded),
+            onPressed: canCopy && !_isDeletingMessages ? _copyMessages : null,
+          ),
+        if (_isDeletingMessages)
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 20),
+            child: Center(
+              child: SizedBox.square(
+                dimension: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          )
+        else
+          IconButton(
+            tooltip: canDelete
+                ? _t(
+                    en: 'Delete',
+                    he: 'מחק',
+                    ar: 'حذف',
+                    am: 'ሰርዝ',
+                    ru: 'Удалить',
+                  )
+                : _t(
+                    en: 'You can only delete messages you sent',
+                    he: 'ניתן למחוק רק הודעות ששלחת',
+                    ar: 'يمكنك حذف الرسائل التي أرسلتها فقط',
+                    am: 'እርስዎ የላኳቸውን መልዕክቶች ብቻ መሰረዝ ይችላሉ',
+                    ru: 'Можно удалить только отправленные вами сообщения',
+                  ),
+            icon: const Icon(Icons.delete_outline_rounded),
+            onPressed: canDelete && !_isCopyingMessage ? _deleteMessages : null,
+          ),
+        const SizedBox(width: 4),
+      ],
+    );
+  }
+
+  void _toggleMessageSelection(
+    String messageId,
+    Map<String, dynamic> message, {
+    bool fromLongPress = false,
+  }) {
+    if (fromLongPress && !_isSelectionMode) {
+      unawaited(HapticFeedback.mediumImpact());
+    } else {
+      unawaited(HapticFeedback.selectionClick());
+    }
+
+    setState(() {
+      if (_selectedMessageIds.remove(messageId)) {
+        _selectedMessages.remove(messageId);
+      } else {
+        _selectedMessageIds.add(messageId);
+        _selectedMessages[messageId] = Map<String, dynamic>.from(message);
+      }
+      _isSelectionMode = _selectedMessageIds.isNotEmpty;
+    });
+  }
+
+  void _clearMessageSelection() {
+    if (!mounted) return;
+    setState(() {
+      _isSelectionMode = false;
+      _selectedMessageIds.clear();
+      _selectedMessages.clear();
+      _isCopyingMessage = false;
+      _isDeletingMessages = false;
+    });
   }
 
   Widget _buildMessageBubble(
@@ -1018,120 +1183,181 @@ class _ChatPageState extends State<ChatPage> {
         ? intl.DateFormat('HH:mm').format(timestamp.toDate())
         : "";
 
-    return GestureDetector(
-      onLongPress: () {
-        setState(() {
-          _isSelectionMode = true;
-          _selectedMessageIds.add(messageId);
-        });
-      },
-      onTap: () {
-        if (_isSelectionMode) {
-          setState(() {
-            if (isSelected) {
-              _selectedMessageIds.remove(messageId);
-              if (_selectedMessageIds.isEmpty) _isSelectionMode = false;
+    return Semantics(
+      selected: isSelected,
+      button: _isSelectionMode,
+      label: isSelected
+          ? _t(
+              en: 'Selected message',
+              he: 'הודעה נבחרה',
+              ar: 'رسالة محددة',
+              am: 'የተመረጠ መልዕክት',
+              ru: 'Сообщение выбрано',
+            )
+          : null,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onLongPress: () =>
+            _toggleMessageSelection(messageId, message, fromLongPress: true),
+        onTap: () {
+          if (_isSelectionMode) {
+            _toggleMessageSelection(messageId, message);
+          } else if (type == 'file') {
+            if (message['signingRequest'] == true) {
+              final uri = Uri.tryParse(url);
+              if (uri != null) {
+                launchUrl(uri, mode: LaunchMode.externalApplication);
+              }
             } else {
-              _selectedMessageIds.add(messageId);
+              _openFile(url, fileName);
             }
-          });
-        } else if (type == 'file') {
-          if (message['signingRequest'] == true) {
-            final uri = Uri.tryParse(url);
-            if (uri != null) {
-              launchUrl(uri, mode: LaunchMode.externalApplication);
-            }
-          } else {
-            _openFile(url, fileName);
+          } else if (type == 'image') {
+            _openImageFullscreen(url, fileName: fileName);
+          } else if (type == 'video') {
+            _openVideoFullscreen(url, fileName: fileName);
+          } else if (type == 'media_group') {
+            _openMediaGroup(mediaGroupItems);
+          } else if (type == 'report_reference') {
+            _openReportFromMessage(message);
+          } else if (type == 'report_resolved') {
+            _openReportFromMessage(message);
+          } else if (type == 'request_link') {
+            _openRequestFromMessage(message);
           }
-        } else if (type == 'image') {
-          _openImageFullscreen(url, fileName: fileName);
-        } else if (type == 'video') {
-          _openVideoFullscreen(url, fileName: fileName);
-        } else if (type == 'media_group') {
-          _openMediaGroup(mediaGroupItems);
-        } else if (type == 'report_reference') {
-          _openReportFromMessage(message);
-        } else if (type == 'report_resolved') {
-          _openReportFromMessage(message);
-        } else if (type == 'request_link') {
-          _openRequestFromMessage(message);
-        }
-      },
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-        child: Container(
-          constraints: BoxConstraints(
-            maxWidth: MediaQuery.of(context).size.width * 0.75,
-          ),
-          padding: const EdgeInsets.all(12),
+        },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          curve: Curves.easeOut,
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
           decoration: BoxDecoration(
-            color: isSelected
-                ? Colors.blue.withValues(alpha: 0.2)
-                : (isMe ? const Color(0xFF1976D2) : Colors.white),
-            borderRadius: BorderRadius.only(
-              topLeft: const Radius.circular(16),
-              topRight: const Radius.circular(16),
-              bottomLeft: isMe ? const Radius.circular(16) : Radius.zero,
-              bottomRight: isMe ? Radius.zero : const Radius.circular(16),
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.05),
-                blurRadius: 4,
-                offset: const Offset(0, 2),
-              ),
-            ],
+            color: isSelected ? const Color(0x1F1976D2) : Colors.transparent,
+            borderRadius: BorderRadius.circular(14),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Row(
             children: [
-              if (type == 'text')
-                Text(
-                  _resolveMessageText(message),
-                  style: TextStyle(color: isMe ? Colors.white : Colors.black87),
-                )
-              else if (type == 'report_reference')
-                _buildReportReferenceBubble(message, isMe)
-              else if (type == 'report_resolved')
-                _buildReportResolvedBubble(message, isMe)
-              else if (type == 'request_link')
-                _buildRequestLinkBubble(message, isMe)
-              else if (type == 'image')
-                _buildImageAttachment(url, fileName)
-              else if (type == 'video')
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: CachedVideoPlayer(
-                    url: url,
-                    play: false, // Don't autoplay in chat list
+              if (_isSelectionMode) ...[
+                _buildSelectionIndicator(isSelected),
+                const SizedBox(width: 10),
+              ],
+              Expanded(
+                child: Align(
+                  alignment: isMe
+                      ? Alignment.centerRight
+                      : Alignment.centerLeft,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 160),
+                    constraints: BoxConstraints(
+                      maxWidth: MediaQuery.of(context).size.width * 0.75,
+                    ),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: isMe ? const Color(0xFF1976D2) : Colors.white,
+                      border: isSelected
+                          ? Border.all(color: const Color(0xFF1976D2), width: 2)
+                          : null,
+                      borderRadius: BorderRadius.only(
+                        topLeft: const Radius.circular(16),
+                        topRight: const Radius.circular(16),
+                        bottomLeft: isMe
+                            ? const Radius.circular(16)
+                            : Radius.zero,
+                        bottomRight: isMe
+                            ? Radius.zero
+                            : const Radius.circular(16),
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.05),
+                          blurRadius: 4,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (type == 'text')
+                          Text(
+                            _resolveMessageText(message),
+                            style: TextStyle(
+                              color: isMe ? Colors.white : Colors.black87,
+                            ),
+                          )
+                        else if (type == 'report_reference')
+                          _buildReportReferenceBubble(message, isMe)
+                        else if (type == 'report_resolved')
+                          _buildReportResolvedBubble(message, isMe)
+                        else if (type == 'request_link')
+                          _buildRequestLinkBubble(message, isMe)
+                        else if (type == 'image')
+                          _buildImageAttachment(url, fileName)
+                        else if (type == 'video')
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: CachedVideoPlayer(
+                              url: url,
+                              play: false, // Don't autoplay in chat list
+                            ),
+                          )
+                        else if (type == 'media_group')
+                          _buildMediaGroupAttachment(mediaGroupItems, isMe)
+                        else if (type == 'file')
+                          _buildFileAttachment(url, fileName, isMe)
+                        else if (type == 'audio')
+                          _buildAudioPlayer(
+                            url,
+                            isMe: isMe,
+                            fileName: fileName,
+                            durationSeconds:
+                                (message['durationSeconds'] as num?)?.toInt(),
+                          ),
+                        if (type == 'image' &&
+                            _resolveMessageText(message).trim().isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            _resolveMessageText(message),
+                            style: TextStyle(
+                              color: isMe ? Colors.white : Colors.black87,
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 4),
+                        Text(
+                          timeStr,
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: isMe ? Colors.white70 : Colors.grey[500],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                )
-              else if (type == 'media_group')
-                _buildMediaGroupAttachment(mediaGroupItems, isMe)
-              else if (type == 'file')
-                _buildFileAttachment(url, fileName, isMe)
-              else if (type == 'audio')
-                _buildAudioPlayer(
-                  url,
-                  isMe: isMe,
-                  fileName: fileName,
-                  durationSeconds: (message['durationSeconds'] as num?)
-                      ?.toInt(),
-                ),
-              const SizedBox(height: 4),
-              Text(
-                timeStr,
-                style: TextStyle(
-                  fontSize: 10,
-                  color: isMe ? Colors.white70 : Colors.grey[500],
                 ),
               ),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildSelectionIndicator(bool isSelected) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 160),
+      width: 24,
+      height: 24,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: isSelected ? const Color(0xFF1976D2) : Colors.white,
+        border: Border.all(
+          color: isSelected ? const Color(0xFF1976D2) : const Color(0xFF94A3B8),
+          width: 2,
+        ),
+      ),
+      child: isSelected
+          ? const Icon(Icons.check_rounded, color: Colors.white, size: 17)
+          : null,
     );
   }
 
@@ -2464,7 +2690,7 @@ class _ChatPageState extends State<ChatPage> {
                       ),
                     )
                   : Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      padding: const EdgeInsetsDirectional.only(start: 12),
                       decoration: BoxDecoration(
                         color: const Color(0xFFF1F5F9),
                         borderRadius: BorderRadius.circular(24),
@@ -2472,12 +2698,65 @@ class _ChatPageState extends State<ChatPage> {
                       child: TextField(
                         controller: _messageController,
                         maxLines: null,
+                        contentInsertionConfiguration:
+                            ContentInsertionConfiguration(
+                              allowedMimeTypes: const [
+                                'image/png',
+                                'image/jpeg',
+                                'image/gif',
+                                'image/webp',
+                              ],
+                              onContentInserted: _handleKeyboardInsertedContent,
+                            ),
+                        contextMenuBuilder: (context, editableTextState) {
+                          final buttonItems =
+                              editableTextState.contextMenuButtonItems;
+                          buttonItems.add(
+                            ContextMenuButtonItem(
+                              label: _pasteImageLabel(),
+                              onPressed: () {
+                                ContextMenuController.removeAny();
+                                unawaited(_pasteImageFromClipboard());
+                              },
+                            ),
+                          );
+                          return AdaptiveTextSelectionToolbar.buttonItems(
+                            anchors: editableTextState.contextMenuAnchors,
+                            buttonItems: buttonItems,
+                          );
+                        },
                         decoration: InputDecoration(
                           hintText: isRtl
                               ? "כתוב הודעה..."
                               : "Type a message...",
                           border: InputBorder.none,
                           hintStyle: TextStyle(color: Colors.grey[500]),
+                          prefixIcon: _pastedImageBytes == null
+                              ? null
+                              : _buildPastedImageThumbnail(),
+                          prefixIconConstraints: const BoxConstraints(
+                            minWidth: 52,
+                            minHeight: 48,
+                          ),
+                          suffixIcon: IconButton(
+                            tooltip: _pasteImageLabel(),
+                            icon: _isReadingClipboardImage
+                                ? const SizedBox.square(
+                                    dimension: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(
+                                    Icons.content_paste_go_rounded,
+                                    size: 20,
+                                  ),
+                            onPressed:
+                                _isReadingClipboardImage ||
+                                    _isSendingPastedImage
+                                ? null
+                                : _pasteImageFromClipboard,
+                          ),
                         ),
                       ),
                     ),
@@ -2503,23 +2782,35 @@ class _ChatPageState extends State<ChatPage> {
               ValueListenableBuilder<TextEditingValue>(
                 valueListenable: _messageController,
                 builder: (context, value, _) {
-                  final hasInput = value.text.isNotEmpty;
+                  final hasInput = value.text.trim().isNotEmpty;
+                  final hasImage = _pastedImageBytes != null;
+                  final canSend = hasInput || hasImage;
                   return CircleAvatar(
                     backgroundColor: const Color(0xFF1976D2),
-                    child: IconButton(
-                      icon: Icon(
-                        hasInput ? Icons.send_rounded : Icons.mic_rounded,
-                        color: Colors.white,
-                        size: 20,
-                      ),
-                      onPressed: () {
-                        if (hasInput) {
-                          _sendMessage(text: value.text);
-                        } else {
-                          _startRecording();
-                        }
-                      },
-                    ),
+                    child: _isSendingPastedImage
+                        ? const Padding(
+                            padding: EdgeInsets.all(11),
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : IconButton(
+                            icon: Icon(
+                              canSend ? Icons.send_rounded : Icons.mic_rounded,
+                              color: Colors.white,
+                              size: 20,
+                            ),
+                            onPressed: () {
+                              if (hasImage) {
+                                unawaited(_sendPastedImage(value.text));
+                              } else if (hasInput) {
+                                _sendMessage(text: value.text);
+                              } else {
+                                _startRecording();
+                              }
+                            },
+                          ),
                   );
                 },
               ),
@@ -2529,39 +2820,225 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
-  Widget _buildSelectionActionBar() {
-    return Container(
-      color: Colors.white,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          IconButton(
-            icon: const Icon(Icons.close_rounded),
-            onPressed: () => setState(() {
-              _isSelectionMode = false;
-              _selectedMessageIds.clear();
-            }),
-          ),
-          Text("${_selectedMessageIds.length} selected"),
-          Row(
-            children: [
-              IconButton(
-                icon: const Icon(Icons.copy_rounded),
-                onPressed: _copyMessages,
-              ),
-              IconButton(
-                icon: const Icon(
-                  Icons.delete_outline_rounded,
-                  color: Colors.red,
+  String _pasteImageLabel() {
+    return _t(
+      en: 'Paste image',
+      he: 'הדבק תמונה',
+      ar: 'لصق صورة',
+      am: 'ምስል ለጥፍ',
+      ru: 'Вставить изображение',
+    );
+  }
+
+  Widget _buildPastedImageThumbnail() {
+    return Padding(
+      padding: const EdgeInsetsDirectional.only(end: 6),
+      child: SizedBox.square(
+        dimension: 46,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Image.memory(
+                _pastedImageBytes!,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => const ColoredBox(
+                  color: Color(0xFFE2E8F0),
+                  child: Icon(
+                    Icons.broken_image_outlined,
+                    color: Color(0xFF64748B),
+                  ),
                 ),
-                onPressed: _deleteMessages,
               ),
-            ],
-          ),
-        ],
+            ),
+            PositionedDirectional(
+              top: 1,
+              end: 1,
+              child: Material(
+                color: Colors.black54,
+                shape: const CircleBorder(),
+                child: InkWell(
+                  customBorder: const CircleBorder(),
+                  onTap: _isSendingPastedImage ? null : _removePastedImage,
+                  child: const Padding(
+                    padding: EdgeInsets.all(3),
+                    child: Icon(
+                      Icons.close_rounded,
+                      color: Colors.white,
+                      size: 13,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
+  }
+
+  void _removePastedImage() {
+    setState(() {
+      _pastedImageBytes = null;
+      _pastedImageExtension = '.png';
+    });
+  }
+
+  void _handleKeyboardInsertedContent(KeyboardInsertedContent content) {
+    final data = content.data;
+    if (data != null && data.isNotEmpty) {
+      setState(() {
+        _pastedImageBytes = data;
+        _pastedImageExtension = _imageExtension(
+          data,
+          mimeType: content.mimeType,
+        );
+      });
+      unawaited(HapticFeedback.selectionClick());
+      return;
+    }
+    unawaited(_pasteImageFromClipboard());
+  }
+
+  Future<void> _pasteImageFromClipboard() async {
+    if (_isReadingClipboardImage || _isSendingPastedImage) return;
+    setState(() => _isReadingClipboardImage = true);
+
+    try {
+      final imageBytes = await Pasteboard.image;
+      if (!mounted) return;
+      if (imageBytes == null || imageBytes.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            behavior: SnackBarBehavior.floating,
+            content: Text(
+              _t(
+                en: 'There is no image on the clipboard.',
+                he: 'אין תמונה בלוח ההעתקה.',
+                ar: 'لا توجد صورة في الحافظة.',
+                am: 'በቅንጥብ ሰሌዳው ላይ ምስል የለም።',
+                ru: 'В буфере обмена нет изображения.',
+              ),
+            ),
+          ),
+        );
+        return;
+      }
+
+      setState(() {
+        _pastedImageBytes = imageBytes;
+        _pastedImageExtension = _imageExtension(imageBytes);
+      });
+      unawaited(HapticFeedback.selectionClick());
+    } catch (error) {
+      debugPrint('Could not paste image from clipboard: $error');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          content: Text(
+            _t(
+              en: 'Could not paste the image. Try again.',
+              he: 'לא ניתן להדביק את התמונה. נסה שוב.',
+              ar: 'تعذر لصق الصورة. حاول مرة أخرى.',
+              am: 'ምስሉን መለጠፍ አልተቻለም። እንደገና ይሞክሩ።',
+              ru: 'Не удалось вставить изображение. Повторите попытку.',
+            ),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isReadingClipboardImage = false);
+    }
+  }
+
+  String _imageExtension(Uint8List bytes, {String? mimeType}) {
+    final normalizedMimeType = mimeType?.toLowerCase() ?? '';
+    if (normalizedMimeType.contains('jpeg')) return '.jpg';
+    if (normalizedMimeType.contains('png')) return '.png';
+    if (normalizedMimeType.contains('gif')) return '.gif';
+    if (normalizedMimeType.contains('webp')) return '.webp';
+
+    if (bytes.length >= 4 &&
+        bytes[0] == 0x89 &&
+        bytes[1] == 0x50 &&
+        bytes[2] == 0x4E &&
+        bytes[3] == 0x47) {
+      return '.png';
+    }
+    if (bytes.length >= 3 &&
+        bytes[0] == 0xFF &&
+        bytes[1] == 0xD8 &&
+        bytes[2] == 0xFF) {
+      return '.jpg';
+    }
+    if (bytes.length >= 4 &&
+        bytes[0] == 0x47 &&
+        bytes[1] == 0x49 &&
+        bytes[2] == 0x46 &&
+        bytes[3] == 0x38) {
+      return '.gif';
+    }
+    if (bytes.length >= 12 &&
+        bytes[8] == 0x57 &&
+        bytes[9] == 0x45 &&
+        bytes[10] == 0x42 &&
+        bytes[11] == 0x50) {
+      return '.webp';
+    }
+    return '.png';
+  }
+
+  Future<void> _sendPastedImage(String caption) async {
+    final imageBytes = _pastedImageBytes;
+    if (imageBytes == null || _isSendingPastedImage) return;
+    setState(() => _isSendingPastedImage = true);
+
+    try {
+      final timestamp = DateTime.now().microsecondsSinceEpoch;
+      final fileName = 'pasted_image_$timestamp$_pastedImageExtension';
+      final temporaryDirectory = await getTemporaryDirectory();
+      final imageDirectory = Directory(
+        '${temporaryDirectory.path}/pasted_chat_images',
+      );
+      await imageDirectory.create(recursive: true);
+      final imageFile = File('${imageDirectory.path}/$fileName');
+      await imageFile.writeAsBytes(imageBytes, flush: true);
+
+      if (!mounted) return;
+      setState(() {
+        _pastedImageBytes = null;
+        _pastedImageExtension = '.png';
+      });
+      _messageController.clear();
+
+      await _uploadAndSend(
+        imageFile,
+        'image',
+        fileName,
+        caption: caption.trim().isEmpty ? null : caption.trim(),
+      );
+    } catch (error) {
+      debugPrint('Could not send pasted image: $error');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          content: Text(
+            _t(
+              en: 'Could not prepare the pasted image. Try again.',
+              he: 'לא ניתן להכין את התמונה המודבקת. נסה שוב.',
+              ar: 'تعذر تجهيز الصورة الملصقة. حاول مرة أخرى.',
+              am: 'የተለጠፈውን ምስል ማዘጋጀት አልተቻለም። እንደገና ይሞክሩ።',
+              ru: 'Не удалось подготовить вставленное изображение. Повторите попытку.',
+            ),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isSendingPastedImage = false);
+    }
   }
 
   void _showAttachmentOptions() {
@@ -2740,6 +3217,7 @@ class _ChatPageState extends State<ChatPage> {
     String type,
     String fileName, {
     int? durationSeconds,
+    String? caption,
   }) async {
     final shouldTrackInChat = type == 'image' || type == 'video';
     final pendingId = DateTime.now().microsecondsSinceEpoch.toString();
@@ -2797,6 +3275,7 @@ class _ChatPageState extends State<ChatPage> {
       );
 
       _sendMessage(
+        text: caption,
         type: type,
         url: url,
         fileName: fileName,
@@ -3400,27 +3879,234 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
-  void _copyMessages() {
-    setState(() => _isSelectionMode = false);
+  String _copyableMessageText(Map<String, dynamic> message) {
+    return _resolveMessageText(message).trim();
   }
 
-  void _deleteMessages() async {
-    final chatRoomId = _getChatRoomId(
-      _auth.currentUser!.uid,
-      widget.receiverId,
+  bool _isCopyableMessage(Map<String, dynamic> message) {
+    if (_copyableMessageText(message).isNotEmpty) return true;
+    return _resolveMessageType(message) == 'image' &&
+        _resolveMessageUrl(message).isNotEmpty;
+  }
+
+  Future<void> _copyMessages() async {
+    if (_selectedMessages.length != 1 || _isCopyingMessage) return;
+
+    final message = _selectedMessages.values.single;
+    if (!_isCopyableMessage(message)) return;
+
+    final isImage = _resolveMessageType(message) == 'image';
+    setState(() => _isCopyingMessage = true);
+
+    try {
+      if (isImage) {
+        final url = _resolveMessageUrl(message);
+        _localResolveFutures.remove(url);
+        final localPath = await _resolveLocalAttachmentCached(
+          url: url,
+          type: 'image',
+          fileName: message['fileName']?.toString(),
+          autoDownload: true,
+        );
+        if (localPath == null) {
+          throw StateError('Could not download the selected image');
+        }
+
+        final imageBytes = await File(localPath).readAsBytes();
+        if (imageBytes.isEmpty) {
+          throw StateError('The selected image is empty');
+        }
+        await Pasteboard.writeImage(imageBytes);
+      } else {
+        await Clipboard.setData(
+          ClipboardData(text: _copyableMessageText(message)),
+        );
+      }
+      if (!mounted) return;
+
+      _clearMessageSelection();
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            behavior: SnackBarBehavior.floating,
+            content: Text(
+              _t(
+                en: isImage ? 'Image copied' : 'Message copied',
+                he: isImage ? 'התמונה הועתקה' : 'ההודעה הועתקה',
+                ar: isImage ? 'تم نسخ الصورة' : 'تم نسخ الرسالة',
+                am: isImage ? 'ምስሉ ተቀድቷል' : 'መልዕክቱ ተቀድቷል',
+                ru: isImage
+                    ? 'Изображение скопировано'
+                    : 'Сообщение скопировано',
+              ),
+            ),
+          ),
+        );
+    } catch (error) {
+      debugPrint('Could not copy selected message: $error');
+      if (!mounted) return;
+      setState(() => _isCopyingMessage = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          content: Text(
+            _t(
+              en: isImage
+                  ? 'Could not copy the image. Try again.'
+                  : 'Could not copy the message. Try again.',
+              he: isImage
+                  ? 'לא ניתן להעתיק את התמונה. נסה שוב.'
+                  : 'לא ניתן להעתיק את ההודעה. נסה שוב.',
+              ar: isImage
+                  ? 'تعذر نسخ الصورة. حاول مرة أخرى.'
+                  : 'تعذر نسخ الرسالة. حاول مرة أخرى.',
+              am: isImage
+                  ? 'ምስሉን መቅዳት አልተቻለም። እንደገና ይሞክሩ።'
+                  : 'መልዕክቱን መቅዳት አልተቻለም። እንደገና ይሞክሩ።',
+              ru: isImage
+                  ? 'Не удалось скопировать изображение. Повторите попытку.'
+                  : 'Не удалось скопировать сообщение. Повторите попытку.',
+            ),
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _deleteMessages() async {
+    if (_selectedMessageIds.isEmpty || _isDeletingMessages) return;
+
+    final currentUser = _auth.currentUser;
+    final canDelete =
+        currentUser != null &&
+        _selectedMessages.length == _selectedMessageIds.length &&
+        _selectedMessages.values.every(
+          (message) => message['senderId'] == currentUser.uid,
+        );
+    if (!canDelete) return;
+
+    final selectionCount = _selectedMessageIds.length;
+    final shouldDelete = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent),
+        title: Text(
+          _t(
+            en: selectionCount == 1 ? 'Delete message?' : 'Delete messages?',
+            he: selectionCount == 1 ? 'למחוק את ההודעה?' : 'למחוק הודעות?',
+            ar: selectionCount == 1 ? 'حذف الرسالة؟' : 'حذف الرسائل؟',
+            am: selectionCount == 1 ? 'መልዕክቱ ይሰረዝ?' : 'መልዕክቶቹ ይሰረዙ?',
+            ru: selectionCount == 1
+                ? 'Удалить сообщение?'
+                : 'Удалить сообщения?',
+          ),
+        ),
+        content: Text(
+          _t(
+            en: selectionCount == 1
+                ? 'This message will be permanently deleted for everyone.'
+                : 'These $selectionCount messages will be permanently deleted for everyone.',
+            he: selectionCount == 1
+                ? 'ההודעה תימחק לצמיתות עבור כולם.'
+                : '$selectionCount ההודעות יימחקו לצמיתות עבור כולם.',
+            ar: selectionCount == 1
+                ? 'سيتم حذف هذه الرسالة نهائيًا لدى الجميع.'
+                : 'سيتم حذف $selectionCount رسائل نهائيًا لدى الجميع.',
+            am: selectionCount == 1
+                ? 'ይህ መልዕክት ለሁሉም ሰው በቋሚነት ይሰረዛል።'
+                : 'እነዚህ $selectionCount መልዕክቶች ለሁሉም ሰው በቋሚነት ይሰረዛሉ።',
+            ru: selectionCount == 1
+                ? 'Сообщение будет безвозвратно удалено у всех.'
+                : 'Эти сообщения ($selectionCount) будут безвозвратно удалены у всех.',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(
+              _t(
+                en: 'Cancel',
+                he: 'ביטול',
+                ar: 'إلغاء',
+                am: 'ይቅር',
+                ru: 'Отмена',
+              ),
+            ),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(
+              _t(en: 'Delete', he: 'מחק', ar: 'حذف', am: 'ሰርዝ', ru: 'Удалить'),
+            ),
+          ),
+        ],
+      ),
     );
-    for (var id in _selectedMessageIds) {
-      await _firestore
+    if (shouldDelete != true || !mounted) return;
+
+    setState(() => _isDeletingMessages = true);
+    final selectedIds = _selectedMessageIds.toList(growable: false);
+    final chatRoomId = _getChatRoomId(currentUser.uid, widget.receiverId);
+
+    try {
+      final batch = _firestore.batch();
+      final messages = _firestore
           .collection('chat_rooms')
           .doc(chatRoomId)
-          .collection('messages')
-          .doc(id)
-          .delete();
+          .collection('messages');
+      for (final id in selectedIds) {
+        batch.delete(messages.doc(id));
+      }
+      await batch.commit();
+      if (!mounted) return;
+
+      unawaited(HapticFeedback.mediumImpact());
+      _clearMessageSelection();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          content: Text(
+            _t(
+              en: selectionCount == 1
+                  ? 'Message deleted'
+                  : '$selectionCount messages deleted',
+              he: selectionCount == 1
+                  ? 'ההודעה נמחקה'
+                  : '$selectionCount הודעות נמחקו',
+              ar: selectionCount == 1
+                  ? 'تم حذف الرسالة'
+                  : 'تم حذف $selectionCount رسائل',
+              am: selectionCount == 1
+                  ? 'መልዕክቱ ተሰርዟል'
+                  : '$selectionCount መልዕክቶች ተሰርዘዋል',
+              ru: selectionCount == 1
+                  ? 'Сообщение удалено'
+                  : 'Удалено сообщений: $selectionCount',
+            ),
+          ),
+        ),
+      );
+    } catch (error) {
+      debugPrint('Could not delete selected messages: $error');
+      if (!mounted) return;
+      setState(() => _isDeletingMessages = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          content: Text(
+            _t(
+              en: 'Could not delete the selected messages. Try again.',
+              he: 'לא ניתן למחוק את ההודעות שנבחרו. נסה שוב.',
+              ar: 'تعذر حذف الرسائل المحددة. حاول مرة أخرى.',
+              am: 'የተመረጡትን መልዕክቶች መሰረዝ አልተቻለም። እንደገና ይሞክሩ።',
+              ru: 'Не удалось удалить выбранные сообщения. Повторите попытку.',
+            ),
+          ),
+        ),
+      );
     }
-    setState(() {
-      _isSelectionMode = false;
-      _selectedMessageIds.clear();
-    });
   }
 }
 
