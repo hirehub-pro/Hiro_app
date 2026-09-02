@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
@@ -43,11 +44,17 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
   bool _isLoadingStatus = true;
   String? _currentStatus;
   File? _businessLogo;
+  String? _businessLogoUrl;
+  String? _businessSignatureUrl;
+  final List<Offset?> _signaturePoints = [];
 
   bool _acceptedTerms = false;
   bool _isLegalDeclarationSigned = false;
   bool _acceptedResponsibility = false;
   bool _hasBranches = false;
+
+  bool get _isBusinessApproved =>
+      _currentStatus == 'approved' || _currentStatus == 'verified';
 
   @override
   void initState() {
@@ -96,14 +103,28 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
           'branch_number_invalid': 'יש להזין מספר סניף של 1–7 ספרות',
           'business_logo': 'לוגו העסק',
           'business_logo_optional': 'לוגו העסק (אופציונלי)',
-          'business_logo_hint':
-              'אפשר להוסיף לוגו כדי לעזור לנו לזהות את העסק שלך מהר יותר.',
+          'business_logo_hint': 'הלוגו יוצג במסמכים העסקיים שתפיק.',
+          'document_branding': 'לוגו וחתימה למסמכים',
+          'document_branding_hint':
+              'אופציונלי. הלוגו והחתימה ישמשו רק במסמכים העסקיים שתפיק.',
           'add_logo': 'הוסף לוגו',
           'change_logo': 'החלף לוגו',
           'remove_logo': 'הסר לוגו',
+          'business_signature_optional': 'חתימת העסק (אופציונלי)',
+          'business_signature_hint':
+              'חתום בתוך התיבה. החתימה תישמר למסמכים העסקיים שלך.',
+          'draw_signature': 'חתום כאן',
+          'tap_to_draw_signature': 'לחץ כדי לפתוח את משטח החתימה',
+          'clear_signature': 'נקה חתימה',
+          'save_signature': 'שמור חתימה',
+          'cancel': 'ביטול',
           'required': 'חובה',
           'business_id_9_digits': 'מספר העסק חייב להכיל 9 ספרות',
           'business_id_invalid': 'מספר העוסק / ח.פ / ת.ז אינו תקין',
+          'business_id_locked_title': 'לא ניתן לשנות את מספר העסק',
+          'business_id_locked_message':
+              'לאחר אימות העסק, לא ניתן לשנות את מספר העוסק / ח.פ / ת.ז. כדי להשתמש במספר עסק אחר, יש לפתוח חשבון חדש.',
+          'close': 'סגור',
           'step_classification': 'סיווג עוסק לצרכי מס',
           'classification_note':
               'שים לב: הגדרה זו תקבע את סוגי המסמכים (חשבונית/קבלה) שתוכל להפיק.',
@@ -153,14 +174,29 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
           'business_logo': 'شعار النشاط التجاري',
           'business_logo_optional': 'شعار النشاط التجاري (اختياري)',
           'business_logo_hint':
-              'يمكنك إضافة شعار لمساعدتنا في التعرف على نشاطك بشكل أسرع.',
+              'سيظهر الشعار على مستندات النشاط التجاري التي تنشئها.',
+          'document_branding': 'الشعار والتوقيع للمستندات',
+          'document_branding_hint':
+              'اختياري. سيُستخدم الشعار والتوقيع فقط في مستندات النشاط التجاري التي تنشئها.',
           'add_logo': 'إضافة شعار',
           'change_logo': 'تغيير الشعار',
           'remove_logo': 'إزالة الشعار',
+          'business_signature_optional': 'توقيع النشاط التجاري (اختياري)',
+          'business_signature_hint':
+              'وقّع داخل المربع. سيتم حفظ التوقيع لمستندات نشاطك التجاري.',
+          'draw_signature': 'وقّع هنا',
+          'tap_to_draw_signature': 'اضغط لفتح لوحة التوقيع',
+          'clear_signature': 'مسح التوقيع',
+          'save_signature': 'حفظ التوقيع',
+          'cancel': 'إلغاء',
           'required': 'مطلوب',
           'business_id_9_digits': 'يجب أن يتكون رقم النشاط من 9 أرقام بالضبط',
           'business_id_invalid':
               'رقم النشاط التجاري / الشركة / الهوية الإسرائيلية غير صالح',
+          'business_id_locked_title': 'لا يمكن تغيير رقم النشاط التجاري',
+          'business_id_locked_message':
+              'بعد توثيق النشاط التجاري، لا يمكن تغيير رقم النشاط / ضريبة القيمة المضافة / الهوية. لاستخدام رقم نشاط آخر، يجب فتح حساب جديد.',
+          'close': 'إغلاق',
           'step_classification': 'تصنيف دافع الضريبة',
           'classification_note':
               'ملاحظة: هذا الإعداد يحدد أنواع المستندات (فاتورة/إيصال) التي يمكنك إصدارها.',
@@ -213,14 +249,29 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
           'business_logo': 'Логотип бизнеса',
           'business_logo_optional': 'Логотип бизнеса (необязательно)',
           'business_logo_hint':
-              'Вы можете добавить логотип, чтобы нам было проще быстрее распознать ваш бизнес.',
+              'Логотип будет отображаться на создаваемых вами деловых документах.',
+          'document_branding': 'Логотип и подпись для документов',
+          'document_branding_hint':
+              'Необязательно. Логотип и подпись будут использоваться только в создаваемых вами деловых документах.',
           'add_logo': 'Добавить логотип',
           'change_logo': 'Изменить логотип',
           'remove_logo': 'Удалить логотип',
+          'business_signature_optional': 'Подпись компании (необязательно)',
+          'business_signature_hint':
+              'Распишитесь в поле. Подпись будет сохранена для ваших деловых документов.',
+          'draw_signature': 'Распишитесь здесь',
+          'tap_to_draw_signature': 'Нажмите, чтобы открыть поле подписи',
+          'clear_signature': 'Очистить подпись',
+          'save_signature': 'Сохранить подпись',
+          'cancel': 'Отмена',
           'required': 'Обязательно',
           'business_id_9_digits': 'Бизнес ID должен состоять ровно из 9 цифр',
           'business_id_invalid':
               'Недействительный израильский бизнес-ID или номер удостоверения личности',
+          'business_id_locked_title': 'Идентификатор бизнеса нельзя изменить',
+          'business_id_locked_message':
+              'После подтверждения бизнеса его ID / VAT ID изменить нельзя. Чтобы использовать другой номер бизнеса, необходимо открыть новую учетную запись.',
+          'close': 'Закрыть',
           'step_classification': 'Налоговая категория бизнеса',
           'classification_note':
               'Примечание: эта настройка определяет типы документов (счет/квитанция), которые вы сможете создавать.',
@@ -269,13 +320,27 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
           'branch_number_invalid': 'ከ1–7 አሃዞች ያለው የቅርንጫፍ ቁጥር ያስገቡ',
           'business_logo': 'የንግድ አርማ',
           'business_logo_optional': 'የንግድ አርማ (አማራጭ)',
-          'business_logo_hint': 'ንግድዎን በፍጥነት እንድንለይ ለማገዝ አርማ ማከል ይችላሉ።',
+          'business_logo_hint': 'አርማው በሚፈጥሯቸው የንግድ ሰነዶች ላይ ይታያል።',
+          'document_branding': 'ለሰነዶች አርማ እና ፊርማ',
+          'document_branding_hint':
+              'አማራጭ። አርማው እና ፊርማው በሚፈጥሯቸው የንግድ ሰነዶች ላይ ብቻ ይጠቀማሉ።',
           'add_logo': 'አርማ ጨምር',
           'change_logo': 'አርማ ቀይር',
           'remove_logo': 'አርማ አስወግድ',
+          'business_signature_optional': 'የንግድ ፊርማ (አማራጭ)',
+          'business_signature_hint': 'በሳጥኑ ውስጥ ይፈርሙ። ፊርማው ለንግድ ሰነዶችዎ ይቀመጣል።',
+          'draw_signature': 'እዚህ ይፈርሙ',
+          'tap_to_draw_signature': 'የፊርማ ሰሌዳውን ለመክፈት ይንኩ',
+          'clear_signature': 'ፊርማውን አጽዳ',
+          'save_signature': 'ፊርማ አስቀምጥ',
+          'cancel': 'ሰርዝ',
           'required': 'ያስፈልጋል',
           'business_id_9_digits': 'የንግድ መለያው በትክክል 9 አሃዞች መሆን አለበት',
           'business_id_invalid': 'የእስራኤል የንግድ ወይም የመታወቂያ ቁጥሩ ትክክል አይደለም',
+          'business_id_locked_title': 'የንግድ መለያውን መቀየር አይቻልም',
+          'business_id_locked_message':
+              'ንግዱ ከተረጋገጠ በኋላ የንግድ መለያ / VAT ID መቀየር አይቻልም። ሌላ የንግድ ቁጥር ለመጠቀም አዲስ መለያ መክፈት አለብዎት።',
+          'close': 'ዝጋ',
           'step_classification': 'የግብር ንግድ ምድብ',
           'classification_note':
               'ማስታወሻ: ይህ ቅንብር ሊያወጡ የሚችሉትን የሰነድ አይነቶች (ደረሰኝ/ቅብዓት) ይወስናል።',
@@ -325,14 +390,30 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
           'branch_number_invalid': 'Enter a branch number of 1–7 digits',
           'business_logo': 'Business Logo',
           'business_logo_optional': 'Business Logo (Optional)',
-          'business_logo_hint': 'Add logo to put on your documents.',
+          'business_logo_hint':
+              'Your logo will appear on the business documents you create.',
+          'document_branding': 'Logo & Signature for Documents',
+          'document_branding_hint':
+              'Optional. Your logo and signature are used only on the business documents you create.',
           'add_logo': 'Add Logo',
           'change_logo': 'Change Logo',
           'remove_logo': 'Remove Logo',
+          'business_signature_optional': 'Business Signature (Optional)',
+          'business_signature_hint':
+              'Sign inside the box. Your signature will be saved for your business documents.',
+          'draw_signature': 'Sign here',
+          'tap_to_draw_signature': 'Tap to open the signature pad',
+          'clear_signature': 'Clear Signature',
+          'save_signature': 'Save Signature',
+          'cancel': 'Cancel',
           'required': 'Required',
           'business_id_9_digits': 'Business ID must be exactly 9 digits',
           'business_id_invalid':
               'Enter a valid Israeli business or identity number',
+          'business_id_locked_title': 'Business ID cannot be changed',
+          'business_id_locked_message':
+              'After your business is verified, its Business ID / VAT ID cannot be changed. To use a different business number, you must open a new account.',
+          'close': 'Close',
           'step_classification': 'Tax Dealer Classification',
           'classification_note':
               'Note: This setting determines the document types (Invoice/Receipt) you can generate.',
@@ -365,25 +446,120 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
       try {
-        final doc = await FirebaseFirestore.instance
+        final userRef = FirebaseFirestore.instance
             .collection('users')
-            .doc(user.uid)
-            .collection('verification_info')
-            .doc('latest')
-            .get();
+            .doc(user.uid);
+        final snapshots = await Future.wait([
+          userRef.get(),
+          userRef.collection('verification_info').doc('latest').get(),
+        ]);
+        final userData = snapshots[0].data() ?? <String, dynamic>{};
+        final doc = snapshots[1];
         if (doc.exists && mounted) {
           final data = doc.data() ?? <String, dynamic>{};
+          final savedStatus =
+              (data['businessVerificationStatus'] ?? data['status'])
+                  ?.toString()
+                  .trim()
+                  .toLowerCase();
+          final isApproved =
+              userData['isapproved'] == true ||
+              savedStatus == 'approved' ||
+              savedStatus == 'verified';
+          final savedDealerType = (data['dealerType'] ?? userData['dealerType'])
+              ?.toString();
           setState(() {
-            _currentStatus =
-                data['businessVerificationStatus'] ?? data['status'];
-            _streetController.text = (data['street'] ?? '').toString();
-            _houseNumberController.text = (data['houseNumber'] ?? '')
+            _currentStatus = isApproved
+                ? 'approved'
+                : (savedStatus?.isNotEmpty ?? false)
+                ? savedStatus
+                : null;
+            _businessNameController.text =
+                (data['businessName'] ??
+                        userData['businessName'] ??
+                        userData['name'] ??
+                        '')
+                    .toString();
+            _idController.text =
+                (data['businessId'] ?? userData['businessId'] ?? '').toString();
+            _streetController.text =
+                (data['street'] ??
+                        data['address'] ??
+                        userData['businessAddress'] ??
+                        userData['address'] ??
+                        '')
+                    .toString();
+            _houseNumberController.text =
+                (data['houseNumber'] ?? userData['houseNumber'] ?? '')
+                    .toString();
+            _cityController.text = (data['city'] ?? userData['city'] ?? '')
                 .toString();
-            _cityController.text = (data['city'] ?? '').toString();
-            _postalCodeController.text = (data['postalCode'] ?? '').toString();
-            _hasBranches = data['hasBranches'] == true;
-            _branchNumberController.text = (data['branchNumber'] ?? '')
+            _postalCodeController.text =
+                (data['postalCode'] ?? userData['postalCode'] ?? '').toString();
+            _hasBranches =
+                data['hasBranches'] == true || userData['hasBranches'] == true;
+            _branchNumberController.text =
+                (data['branchNumber'] ?? userData['branchNumber'] ?? '')
+                    .toString();
+            if (const {
+              'exempt',
+              'licensed',
+              'company',
+            }.contains(savedDealerType)) {
+              _dealerType = savedDealerType!;
+            }
+            _acceptedTerms =
+                isApproved ||
+                data['termsAccepted'] == true ||
+                data['legalAccepted'] == true;
+            _isLegalDeclarationSigned =
+                isApproved ||
+                data['legalDeclarationAccepted'] == true ||
+                data['legalAccepted'] == true;
+            _acceptedResponsibility =
+                isApproved || data['responsibilityAccepted'] == true;
+            _businessLogoUrl =
+                (data['businessLogoUrl'] ?? userData['businessLogoUrl'])
+                    ?.toString()
+                    .trim();
+            _businessSignatureUrl =
+                (data['businessSignatureUrl'] ??
+                        userData['businessSignatureUrl'])
+                    ?.toString()
+                    .trim();
+          });
+        } else if (mounted && userData['isapproved'] == true) {
+          setState(() {
+            _currentStatus = 'approved';
+            _businessNameController.text =
+                (userData['businessName'] ?? userData['name'] ?? '').toString();
+            _idController.text = (userData['businessId'] ?? '').toString();
+            _streetController.text =
+                (userData['businessAddress'] ?? userData['address'] ?? '')
+                    .toString();
+            _houseNumberController.text = (userData['houseNumber'] ?? '')
                 .toString();
+            _cityController.text = (userData['city'] ?? '').toString();
+            _postalCodeController.text = (userData['postalCode'] ?? '')
+                .toString();
+            _hasBranches = userData['hasBranches'] == true;
+            _branchNumberController.text = (userData['branchNumber'] ?? '')
+                .toString();
+            _dealerType =
+                const {
+                  'exempt',
+                  'licensed',
+                  'company',
+                }.contains(userData['dealerType'])
+                ? userData['dealerType'].toString()
+                : _dealerType;
+            _acceptedTerms = true;
+            _isLegalDeclarationSigned = true;
+            _acceptedResponsibility = true;
+            _businessLogoUrl = userData['businessLogoUrl']?.toString().trim();
+            _businessSignatureUrl = userData['businessSignatureUrl']
+                ?.toString()
+                .trim();
           });
         }
       } catch (e) {
@@ -414,7 +590,8 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
     try {
       final user = FirebaseAuth.instance.currentUser!;
       final businessId = _idController.text.trim();
-      String? businessLogoUrl;
+      String? businessLogoUrl = _businessLogoUrl;
+      String? businessSignatureUrl = _businessSignatureUrl;
 
       if (_businessLogo != null) {
         final ref = FirebaseStorage.instance.ref().child(
@@ -422,6 +599,18 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
         );
         await ref.putFile(_businessLogo!);
         businessLogoUrl = await ref.getDownloadURL();
+      }
+
+      final signatureBytes = await _renderSignaturePng();
+      if (signatureBytes != null) {
+        final ref = FirebaseStorage.instance.ref().child(
+          'business_signatures/${user.uid}.png',
+        );
+        await ref.putData(
+          signatureBytes,
+          SettableMetadata(contentType: 'image/png'),
+        );
+        businessSignatureUrl = await ref.getDownloadURL();
       }
 
       await _functions.httpsCallable('submitBusinessVerification').call({
@@ -439,6 +628,7 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
         'legalDeclarationAccepted': _isLegalDeclarationSigned,
         'responsibilityAccepted': _acceptedResponsibility,
         'businessLogoUrl': businessLogoUrl,
+        'businessSignatureUrl': businessSignatureUrl,
       });
 
       if (mounted) {
@@ -478,6 +668,40 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
     setState(() => _businessLogo = File(picked.path));
   }
 
+  bool get _hasDrawnSignature => _signaturePoints.any((point) => point != null);
+
+  Future<Uint8List?> _renderSignaturePng() async {
+    if (!_hasDrawnSignature) return null;
+
+    const width = 1200;
+    const height = 400;
+    const size = Size(1200, 400);
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    _SignaturePainter(_signaturePoints).paint(canvas, size);
+    final image = await recorder.endRecording().toImage(width, height);
+    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+    image.dispose();
+    return byteData?.buffer.asUint8List();
+  }
+
+  void _showBusinessIdLockedDialog(Map<String, String> strings) {
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        icon: const Icon(Icons.lock_outline_rounded, color: _primary, size: 34),
+        title: Text(strings['business_id_locked_title']!),
+        content: Text(strings['business_id_locked_message']!),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(strings['close']!),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showSuccessDialog(Map<String, String> strings) {
     showDialog(
       context: context,
@@ -514,9 +738,6 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
     final locale = Provider.of<LanguageProvider>(context).locale.languageCode;
     final strings = _getLocalizedStrings(context);
     final isRtl = locale == 'he' || locale == 'ar';
-    final isApproved =
-        _currentStatus == 'approved' || _currentStatus == 'verified';
-
     return Directionality(
       textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
       child: Scaffold(
@@ -538,7 +759,7 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
         ),
         body: _isLoadingStatus
             ? _buildLoadingState()
-            : _currentStatus == 'pending' || isApproved
+            : _currentStatus == 'pending'
             ? _buildStatusScreen(strings)
             : _buildVerificationForm(strings),
       ),
@@ -578,6 +799,8 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
                         const SizedBox(height: 16),
                       ],
                       _buildBusinessSection(strings),
+                      const SizedBox(height: 16),
+                      _buildDocumentBrandingSection(strings),
                       const SizedBox(height: 16),
                       _buildClassificationSection(strings),
                       const SizedBox(height: 16),
@@ -721,9 +944,18 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
           TextFormField(
             controller: _idController,
             textInputAction: TextInputAction.next,
+            readOnly: _isBusinessApproved,
             decoration: _inputStyle(
               strings['business_id']!,
               Icons.badge_outlined,
+              suffixIcon: _isBusinessApproved
+                  ? IconButton(
+                      tooltip: strings['business_id_locked_title']!,
+                      onPressed: () => _showBusinessIdLockedDialog(strings),
+                      icon: const Icon(Icons.help_outline_rounded),
+                      color: _primary,
+                    )
+                  : null,
             ),
             keyboardType: TextInputType.number,
             inputFormatters: [
@@ -827,8 +1059,24 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
               },
             ),
           ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDocumentBrandingSection(Map<String, String> strings) {
+    return _buildSectionCard(
+      step: 2,
+      title: strings['document_branding']!,
+      icon: Icons.add_photo_alternate_outlined,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildInfoNote(strings['document_branding_hint']!),
           const SizedBox(height: 14),
           _buildLogoPicker(strings),
+          const SizedBox(height: 14),
+          _buildSignaturePicker(strings),
         ],
       ),
     );
@@ -836,7 +1084,7 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
 
   Widget _buildClassificationSection(Map<String, String> strings) {
     return _buildSectionCard(
-      step: 2,
+      step: 3,
       title: strings['step_classification']!,
       icon: Icons.receipt_long_rounded,
       child: Column(
@@ -852,7 +1100,7 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
 
   Widget _buildLegalSection(Map<String, String> strings) {
     return _buildSectionCard(
-      step: 3,
+      step: 4,
       title: strings['step_legal']!,
       icon: Icons.gavel_rounded,
       child: Column(
@@ -1091,6 +1339,25 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
   }
 
   Widget _buildLogoPicker(Map<String, String> strings) {
+    return _buildDocumentImagePicker(
+      title: strings['business_logo_optional']!,
+      hint: strings['business_logo_hint']!,
+      image: _businessLogo,
+      imageUrl: _businessLogoUrl,
+      placeholderIcon: Icons.storefront_outlined,
+      onPick: _pickBusinessLogo,
+      onRemove: () => setState(() {
+        _businessLogo = null;
+        _businessLogoUrl = null;
+      }),
+      addLabel: strings['add_logo']!,
+      changeLabel: strings['change_logo']!,
+      removeLabel: strings['remove_logo']!,
+    );
+  }
+
+  Widget _buildSignaturePicker(Map<String, String> strings) {
+    final hasSavedSignature = _businessSignatureUrl?.isNotEmpty ?? false;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1102,7 +1369,7 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            strings['business_logo_optional']!,
+            strings['business_signature_optional']!,
             style: const TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w600,
@@ -1111,7 +1378,317 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
           ),
           const SizedBox(height: 6),
           Text(
-            strings['business_logo_hint']!,
+            strings['business_signature_hint']!,
+            style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+          ),
+          const SizedBox(height: 14),
+          Material(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            child: InkWell(
+              onTap: () => _showSignatureDrawingDialog(strings),
+              borderRadius: BorderRadius.circular(14),
+              child: Container(
+                height: 120,
+                width: double.infinity,
+                clipBehavior: Clip.antiAlias,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: const Color(0xFFCBD5E1)),
+                ),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    if (hasSavedSignature && !_hasDrawnSignature)
+                      Padding(
+                        padding: const EdgeInsets.all(10),
+                        child: Image.network(
+                          _businessSignatureUrl!,
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                        ),
+                      ),
+                    if (_hasDrawnSignature)
+                      Padding(
+                        padding: const EdgeInsets.all(10),
+                        child: CustomPaint(
+                          painter: _SignaturePainter(_signaturePoints),
+                        ),
+                      ),
+                    if (!hasSavedSignature && !_hasDrawnSignature)
+                      Center(
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.draw_outlined,
+                              color: Color(0xFF64748B),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              strings['tap_to_draw_signature']!,
+                              style: const TextStyle(
+                                color: Color(0xFF64748B),
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    if (hasSavedSignature || _hasDrawnSignature)
+                      const PositionedDirectional(
+                        top: 8,
+                        end: 8,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: Color(0xFFEAF4FF),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Padding(
+                            padding: EdgeInsets.all(7),
+                            child: Icon(
+                              Icons.edit_rounded,
+                              color: _primary,
+                              size: 18,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showSignatureDrawingDialog(Map<String, String> strings) async {
+    final draftPoints = List<Offset?>.from(_signaturePoints);
+    var showSavedSignature =
+        draftPoints.every((point) => point == null) &&
+        (_businessSignatureUrl?.isNotEmpty ?? false);
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          final hasDraft = draftPoints.any((point) => point != null);
+          final dialogHeight = (MediaQuery.sizeOf(context).height * 0.72).clamp(
+            360.0,
+            600.0,
+          );
+          return Dialog(
+            insetPadding: const EdgeInsets.all(16),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(24),
+            ),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 720),
+              child: SizedBox(
+                height: dialogHeight,
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              strings['business_signature_optional']!,
+                              style: const TextStyle(
+                                color: _ink,
+                                fontSize: 19,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: strings['cancel']!,
+                            onPressed: () => Navigator.pop(dialogContext),
+                            icon: const Icon(Icons.close_rounded),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        strings['business_signature_hint']!,
+                        style: const TextStyle(color: _muted, fontSize: 13),
+                      ),
+                      const SizedBox(height: 16),
+                      Expanded(
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            final padSize = Size(
+                              constraints.maxWidth,
+                              constraints.maxHeight,
+                            );
+                            Offset normalized(Offset position) => Offset(
+                              (position.dx / padSize.width)
+                                  .clamp(0.0, 1.0)
+                                  .toDouble(),
+                              (position.dy / padSize.height)
+                                  .clamp(0.0, 1.0)
+                                  .toDouble(),
+                            );
+
+                            void finishStroke() {
+                              if (draftPoints.isNotEmpty &&
+                                  draftPoints.last != null) {
+                                setDialogState(() => draftPoints.add(null));
+                              }
+                            }
+
+                            return GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onPanStart: (details) {
+                                setDialogState(() {
+                                  showSavedSignature = false;
+                                  draftPoints.add(
+                                    normalized(details.localPosition),
+                                  );
+                                });
+                              },
+                              onPanUpdate: (details) {
+                                setDialogState(() {
+                                  draftPoints.add(
+                                    normalized(details.localPosition),
+                                  );
+                                });
+                              },
+                              onPanEnd: (_) => finishStroke(),
+                              onPanCancel: finishStroke,
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: const Color(0xFF94A3B8),
+                                    width: 1.4,
+                                  ),
+                                ),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(15),
+                                  child: Stack(
+                                    fit: StackFit.expand,
+                                    children: [
+                                      if (showSavedSignature)
+                                        Padding(
+                                          padding: const EdgeInsets.all(16),
+                                          child: Image.network(
+                                            _businessSignatureUrl!,
+                                            fit: BoxFit.contain,
+                                          ),
+                                        ),
+                                      if (!showSavedSignature && !hasDraft)
+                                        Center(
+                                          child: Text(
+                                            strings['draw_signature']!,
+                                            style: const TextStyle(
+                                              color: Color(0xFF94A3B8),
+                                              fontSize: 17,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                        ),
+                                      CustomPaint(
+                                        painter: _SignaturePainter(draftPoints),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      OverflowBar(
+                        alignment: MainAxisAlignment.end,
+                        overflowAlignment: OverflowBarAlignment.end,
+                        spacing: 8,
+                        overflowSpacing: 8,
+                        children: [
+                          OutlinedButton.icon(
+                            onPressed: () {
+                              setDialogState(() {
+                                draftPoints.clear();
+                                showSavedSignature = false;
+                              });
+                            },
+                            icon: const Icon(Icons.delete_outline_rounded),
+                            label: Text(strings['clear_signature']!),
+                          ),
+                          TextButton(
+                            onPressed: () => Navigator.pop(dialogContext),
+                            child: Text(strings['cancel']!),
+                          ),
+                          FilledButton.icon(
+                            onPressed: () {
+                              setState(() {
+                                _signaturePoints
+                                  ..clear()
+                                  ..addAll(draftPoints);
+                                if (!showSavedSignature) {
+                                  _businessSignatureUrl = null;
+                                }
+                              });
+                              Navigator.pop(dialogContext);
+                            },
+                            icon: const Icon(Icons.check_rounded),
+                            label: Text(strings['save_signature']!),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildDocumentImagePicker({
+    required String title,
+    required String hint,
+    required File? image,
+    required String? imageUrl,
+    required IconData placeholderIcon,
+    required VoidCallback onPick,
+    required VoidCallback onRemove,
+    required String addLabel,
+    required String changeLabel,
+    required String removeLabel,
+  }) {
+    final hasRemoteImage = imageUrl?.isNotEmpty ?? false;
+    final hasImage = image != null || hasRemoteImage;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF1E293B),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            hint,
             style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
           ),
           const SizedBox(height: 14),
@@ -1126,13 +1703,23 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
                   border: Border.all(color: const Color(0xFFE2E8F0)),
                 ),
                 clipBehavior: Clip.antiAlias,
-                child: _businessLogo == null
-                    ? const Icon(
-                        Icons.storefront_outlined,
-                        color: Color(0xFF94A3B8),
-                        size: 32,
+                child: image != null
+                    ? Image.file(image, fit: BoxFit.contain)
+                    : hasRemoteImage
+                    ? Image.network(
+                        imageUrl!,
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, _, _) => Icon(
+                          placeholderIcon,
+                          color: const Color(0xFF94A3B8),
+                          size: 32,
+                        ),
                       )
-                    : Image.file(_businessLogo!, fit: BoxFit.cover),
+                    : Icon(
+                        placeholderIcon,
+                        color: const Color(0xFF94A3B8),
+                        size: 32,
+                      ),
               ),
               const SizedBox(width: 16),
               Expanded(
@@ -1141,23 +1728,16 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
                   runSpacing: 8,
                   children: [
                     OutlinedButton.icon(
-                      onPressed: _pickBusinessLogo,
+                      onPressed: onPick,
                       icon: Icon(
-                        _businessLogo == null
+                        !hasImage
                             ? Icons.upload_outlined
                             : Icons.refresh_rounded,
                       ),
-                      label: Text(
-                        _businessLogo == null
-                            ? strings['add_logo']!
-                            : strings['change_logo']!,
-                      ),
+                      label: Text(!hasImage ? addLabel : changeLabel),
                     ),
-                    if (_businessLogo != null)
-                      TextButton(
-                        onPressed: () => setState(() => _businessLogo = null),
-                        child: Text(strings['remove_logo']!),
-                      ),
+                    if (hasImage)
+                      TextButton(onPressed: onRemove, child: Text(removeLabel)),
                   ],
                 ),
               ),
@@ -1210,7 +1790,11 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
     );
   }
 
-  InputDecoration _inputStyle(String label, IconData icon) {
+  InputDecoration _inputStyle(
+    String label,
+    IconData icon, {
+    Widget? suffixIcon,
+  }) {
     OutlineInputBorder border(Color color, [double width = 1]) {
       return OutlineInputBorder(
         borderRadius: BorderRadius.circular(16),
@@ -1226,6 +1810,7 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
         fontWeight: FontWeight.w700,
       ),
       prefixIcon: Icon(icon, color: const Color(0xFF7290AC), size: 21),
+      suffixIcon: suffixIcon,
       filled: true,
       fillColor: const Color(0xFFF8FBFE),
       border: border(_line),
@@ -1356,4 +1941,44 @@ class _VerifyBusinessPageState extends State<VerifyBusinessPage> {
       ),
     );
   }
+}
+
+class _SignaturePainter extends CustomPainter {
+  const _SignaturePainter(this.points);
+
+  final List<Offset?> points;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final strokeWidth = size.shortestSide * 0.012;
+    final paint = Paint()
+      ..color = const Color(0xFF07101F)
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..style = PaintingStyle.stroke;
+
+    Offset? previous;
+    for (final point in points) {
+      if (point == null) {
+        previous = null;
+        continue;
+      }
+      final current = Offset(point.dx * size.width, point.dy * size.height);
+      if (previous == null) {
+        canvas.drawCircle(
+          current,
+          strokeWidth / 2,
+          paint..style = PaintingStyle.fill,
+        );
+        paint.style = PaintingStyle.stroke;
+      } else {
+        canvas.drawLine(previous, current, paint);
+      }
+      previous = current;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _SignaturePainter oldDelegate) => true;
 }

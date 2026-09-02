@@ -5802,6 +5802,9 @@ exports.submitBusinessVerification = onCall(
           .filter(Boolean).join(", ");
       const dealerType = normalizeString(payload.dealerType).trim();
       const businessLogoUrl = normalizeString(payload.businessLogoUrl).trim();
+      const businessSignatureUrl = normalizeString(
+          payload.businessSignatureUrl,
+      ).trim();
 
       if (!businessId || !isValidIsraeliBusinessId(businessId)) {
         throw new HttpsError("invalid-argument", "Invalid business ID.");
@@ -5823,6 +5826,14 @@ exports.submitBusinessVerification = onCall(
           (!businessLogoUrl.startsWith("https://") ||
            businessLogoUrl.length > 2048)) {
         throw new HttpsError("invalid-argument", "Invalid business logo URL.");
+      }
+      if (businessSignatureUrl &&
+          (!businessSignatureUrl.startsWith("https://") ||
+           businessSignatureUrl.length > 2048)) {
+        throw new HttpsError(
+            "invalid-argument",
+            "Invalid business signature URL.",
+        );
       }
       if (payload.legalAccepted !== true ||
           payload.termsAccepted !== true ||
@@ -5855,9 +5866,31 @@ exports.submitBusinessVerification = onCall(
           );
         }
 
-        const userSnapshot = await transaction.get(userRef);
+        const [userSnapshot, existingVerificationSnapshot] = await Promise.all([
+          transaction.get(userRef),
+          transaction.get(verificationRef),
+        ]);
         if (!userSnapshot.exists) {
           throw new HttpsError("not-found", "User profile not found.");
+        }
+
+        const existingVerification = existingVerificationSnapshot.data() || {};
+        const existingStatus = normalizeString(
+            existingVerification.businessVerificationStatus ||
+              existingVerification.status,
+        ).trim().toLowerCase();
+        const existingBusinessId = normalizeBusinessId(
+            existingVerification.businessId,
+        );
+        const isApproved = userSnapshot.data()?.isapproved === true ||
+          existingStatus === "approved" || existingStatus === "verified";
+        if (isApproved && existingBusinessId &&
+            existingBusinessId !== businessId) {
+          throw new HttpsError(
+              "failed-precondition",
+              "A verified Business ID cannot be changed. " +
+                "Open a new account to use a different Business ID.",
+          );
         }
 
         transaction.set(verificationRef, {
@@ -5880,10 +5913,12 @@ exports.submitBusinessVerification = onCall(
           responsibilityAccepted: true,
           timestamp: admin.firestore.FieldValue.serverTimestamp(),
           businessLogoUrl: businessLogoUrl || null,
+          businessSignatureUrl: businessSignatureUrl || null,
         }, {merge: true});
         transaction.update(userRef, {
           businessId: admin.firestore.FieldValue.delete(),
           businessLogoUrl: admin.firestore.FieldValue.delete(),
+          businessSignatureUrl: admin.firestore.FieldValue.delete(),
           businessVerificationStatus: admin.firestore.FieldValue.delete(),
         });
       });
@@ -5977,6 +6012,7 @@ exports.reviewBusinessVerification = onCall(
           verifiedAt: reviewedAt,
           businessId: admin.firestore.FieldValue.delete(),
           businessLogoUrl: admin.firestore.FieldValue.delete(),
+          businessSignatureUrl: admin.firestore.FieldValue.delete(),
           businessVerificationStatus: admin.firestore.FieldValue.delete(),
         } : {
           isapproved: false,
@@ -5984,6 +6020,7 @@ exports.reviewBusinessVerification = onCall(
           verifiedAt: admin.firestore.FieldValue.delete(),
           businessId: admin.firestore.FieldValue.delete(),
           businessLogoUrl: admin.firestore.FieldValue.delete(),
+          businessSignatureUrl: admin.firestore.FieldValue.delete(),
           businessVerificationStatus: admin.firestore.FieldValue.delete(),
         });
         transaction.set(verificationRef, approved ? {
