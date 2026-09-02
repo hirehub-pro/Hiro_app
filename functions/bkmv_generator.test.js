@@ -393,6 +393,73 @@ test("maps every credit transaction type to its bookkeeping code", () => {
   }
 });
 
+test("keeps a five-payment credit deal in one D120 record", () => {
+  const mapping = mapPaymentDetails({
+    logData: {paymentMethods: [{
+      method: "credit",
+      amount: 500,
+      installments: "5",
+      dealType: "credit",
+      paymentDate: "2026-09-01",
+      installmentDates: [
+        "2026-09-01",
+        "2026-10-01",
+        "2026-11-01",
+        "2026-12-01",
+        "2027-01-01",
+      ],
+      cardName: "CAL",
+    }]},
+    invoiceData: {},
+    defaultAmount: 500,
+  });
+
+  assert.equal(mapping.details.length, 1);
+  assert.equal(mapping.details[0].amount, 500);
+  assert.equal(mapping.details[0].creditDealType, 3);
+  assert.equal(mapping.details[0].paymentDate, "2026-09-01");
+});
+
+test("exports a five-payment credit deal as exactly one D120 line", () => {
+  const fixture = invoiceReceiptFixture();
+  const paymentMethods = [{
+    method: "credit",
+    amount: 106.2,
+    installments: "5",
+    dealType: "credit",
+    paymentDate: "2026-09-01",
+    installmentDates: [
+      "2026-09-01",
+      "2026-10-01",
+      "2026-11-01",
+      "2026-12-01",
+      "2027-01-01",
+    ],
+    cardName: "CAL",
+  }];
+  fixture.logs[0].data.paymentMethods = paymentMethods;
+  const invoice = fixture.invoicesById[fixture.logs[0].data.invoiceDocId];
+  invoice.paymentMethods = paymentMethods;
+  invoice.authoritativeServerDocument.paymentMethods = paymentMethods;
+
+  const result = generateBkmvPackage({
+    context: businessContext(),
+    logs: fixture.logs,
+    invoicesById: fixture.invoicesById,
+    clients: [],
+    fromDate: "2026-08-01",
+    toDate: "2026-08-31",
+    exportTimestamp: new Date("2026-08-25T14:30:00+03:00"),
+    mainId: "123456789012345",
+  });
+
+  const payments = result.records.filter((record) => record.startsWith("D120"));
+  assert.equal(result.recordCounts.D120, 1);
+  assert.equal(payments.length, 1);
+  assert.equal(payments[0].slice(103, 118), "+00000000010620");
+  assert.equal(payments[0].slice(139, 140), "3");
+});
+
 test("writes receipt withholding only to positive C100 field 1224", () => {
   const invoiceDocId = "receipt_2026-0043";
   const paymentMethods = [

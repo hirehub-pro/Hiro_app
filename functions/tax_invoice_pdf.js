@@ -747,6 +747,7 @@ function splitInstallmentAmount(value, count) {
 
 function expandPaymentInstallments(payment) {
   if (payment.method !== "credit") return [payment];
+  if (payment.dealType === "credit") return [payment];
   const count = Number.parseInt(String(payment.installments || "1"), 10);
   const dates = Array.isArray(payment.installmentDates) ?
     payment.installmentDates : [];

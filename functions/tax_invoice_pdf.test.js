@@ -117,6 +117,31 @@ test("expands credit installments into separately dated PDF rows", () => {
   assert.deepEqual(rows.map((row) => row.amount), [20, 20, 20, 20, 20]);
 });
 
+test("keeps a credit deal with payment number 5 in one PDF row", () => {
+  const presentation = normalizeTaxInvoicePresentation({
+    paymentMethods: [{
+      method: "credit",
+      dealType: "credit",
+      amount: 100,
+      installments: "5",
+      paymentDate: "2026-08-04",
+      installmentDates: [
+        "2026-08-04",
+        "2026-09-04",
+        "2026-10-04",
+        "2026-11-04",
+        "2026-12-04",
+      ],
+    }],
+  });
+
+  const rows = expandPaymentInstallments(presentation.paymentMethods[0]);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].installments, "5");
+  assert.equal(rows[0].installmentLabel, undefined);
+  assert.equal(rows[0].amount, 100);
+});
+
 test("renders Hebrew credit details and keeps the amount at the far left", () => {
   assert.equal(creditCompanyLabel("CAL"), "כאל");
   assert.equal(creditCompanyLabel("American Express"), "אמריקן אקספרס");

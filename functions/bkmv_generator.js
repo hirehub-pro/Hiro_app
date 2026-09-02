@@ -316,6 +316,16 @@ function paymentDetailsFromEntry(entry, defaultAmount) {
     const installments = installmentCount(entry.installments);
     const installmentDates = Array.isArray(entry.installmentDates) ?
       entry.installmentDates : [];
+    if (entry.dealType === "credit") {
+      return [{
+        typeCode: 3,
+        amount,
+        paymentDate: String(entry.paymentDate || ""),
+        creditCompanyCode: mapCreditCompanyCode(entry.cardName),
+        cardName: String(entry.cardName || "CREDIT"),
+        creditDealType: 3,
+      }];
+    }
     if (installments > 1 && installmentDates.length !== installments) {
       return [{
         typeCode: 3,

@@ -5992,8 +5992,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
             SnackBar(
               content: Text(
                 isRtl
-                    ? 'חובה לבחור תאריך תשלום ראשון באשראי (שורה ${i + 1}).'
-                    : 'Select the first credit-card payment date (row ${i + 1}).',
+                    ? 'חובה לבחור תאריך תשלום באשראי (שורה ${i + 1}).'
+                    : 'Select the credit-card payment date (row ${i + 1}).',
               ),
             ),
           );
@@ -8131,9 +8131,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
             const SizedBox(height: 12),
             _buildTextField(
               entry.creditFirstPaymentDateController,
-              isRtl
-                  ? 'תאריך תשלום ראשון (חובה)'
-                  : 'First Payment Date (Required)',
+              isRtl ? 'תאריך תשלום (חובה)' : 'Payment Date (Required)',
               Icons.event_outlined,
               required: true,
               readOnly: true,
