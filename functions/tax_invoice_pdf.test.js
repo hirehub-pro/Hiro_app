@@ -6,6 +6,7 @@ const {PDFDocument} = require("pdf-lib");
 
 const {
   buildTaxInvoicePdf,
+  expandPaymentInstallments,
   footerGeneratedAtText,
   formatMoney,
   normalizeTaxInvoicePresentation,
@@ -79,6 +80,38 @@ test("presentation normalization keeps only bounded supported fields", () => {
     "savedClientId",
   ]);
   assert.equal("secret" in presentation.paymentMethods[0], false);
+});
+
+test("expands credit installments into separately dated PDF rows", () => {
+  const presentation = normalizeTaxInvoicePresentation({
+    paymentMethods: [{
+      method: "credit",
+      amount: 100,
+      installments: "5",
+      paymentDate: "2026-08-04",
+      installmentDates: [
+        "2026-08-04",
+        "2026-09-04",
+        "2026-10-04",
+        "2026-11-04",
+        "2026-12-04",
+      ],
+    }],
+  });
+
+  const rows = expandPaymentInstallments(presentation.paymentMethods[0]);
+  assert.equal(rows.length, 5);
+  assert.deepEqual(rows.map((row) => row.paymentDate), [
+    "2026-08-04",
+    "2026-09-04",
+    "2026-10-04",
+    "2026-11-04",
+    "2026-12-04",
+  ]);
+  assert.deepEqual(rows.map((row) => row.installmentLabel), [
+    "1/5", "2/5", "3/5", "4/5", "5/5",
+  ]);
+  assert.deepEqual(rows.map((row) => row.amount), [20, 20, 20, 20, 20]);
 });
 
 test("presentation validates an inline document logo without persisting bytes", () => {

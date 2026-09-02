@@ -82,7 +82,22 @@ async function render() {
       clientEmail: "client@example.com",
       roundTotalEnabled: true,
       paymentMethods: [
-        {method: "credit", amount: 700, cardName: "Visa", cardNumber: "1234", cardExpiration: "12/29", installments: "2"},
+        {
+          method: "credit",
+          amount: 700,
+          cardName: "Visa",
+          cardNumber: "1234",
+          cardExpiration: "12/29",
+          installments: "5",
+          paymentDate: "2026-09-10",
+          installmentDates: [
+            "2026-09-10",
+            "2026-10-10",
+            "2026-11-10",
+            "2026-12-10",
+            "2027-01-10",
+          ],
+        },
         {method: "transfer", amount: 300, bank: "לאומי", branch: "800", account: "123456"},
         {method: "bit", amount: 180},
       ],

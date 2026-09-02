@@ -44,10 +44,22 @@ function money(value) {
   return Math.round(safeNumber(value) * 100) / 100;
 }
 
+function normalizedIsoDate(value) {
+  const result = boundedString(value, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(result)) return null;
+  const date = new Date(`${result}T00:00:00Z`);
+  return !Number.isNaN(date.getTime()) &&
+    date.toISOString().slice(0, 10) === result ? result : null;
+}
+
 function normalizePaymentMethods(value) {
   if (!Array.isArray(value)) return [];
   return value.slice(0, 20).map((entry) => {
     const data = entry && typeof entry === "object" ? entry : {};
+    const installmentDates = Array.isArray(data.installmentDates) ?
+      data.installmentDates.slice(0, 999)
+          .map(normalizedIsoDate)
+          .filter(Boolean) : [];
     return {
       method: boundedString(data.method, 24, "cash"),
       amount: Math.max(0, money(data.amount)),
@@ -59,6 +71,8 @@ function normalizePaymentMethods(value) {
       bank: boundedOptionalString(data.bank, 80),
       branch: boundedOptionalString(data.branch, 32),
       account: boundedOptionalString(data.account, 40),
+      paymentDate: normalizedIsoDate(data.paymentDate),
+      installmentDates,
     };
   });
 }
@@ -687,18 +701,46 @@ function paymentRow(method, payment, date, negative) {
         value(payment.cardName),
         value(payment.cardNumber),
         value(payment.cardExpiration),
-        value(payment.installments || "1"),
+        value(payment.installmentLabel || payment.installments || "1"),
     );
   }
   row.push("-");
   return row;
 }
 
+function splitInstallmentAmount(value, count) {
+  const totalMinorUnits = Math.round(
+      (safeNumber(value) + Number.EPSILON) * 100,
+  );
+  const base = Math.floor(totalMinorUnits / count);
+  const remainder = totalMinorUnits % count;
+  return Array.from({length: count}, (_, index) =>
+    (base + (index < remainder ? 1 : 0)) / 100);
+}
+
+function expandPaymentInstallments(payment) {
+  if (payment.method !== "credit") return [payment];
+  const count = Number.parseInt(String(payment.installments || "1"), 10);
+  const dates = Array.isArray(payment.installmentDates) ?
+    payment.installmentDates : [];
+  if (!Number.isInteger(count) || count <= 1 || count > 999 ||
+      dates.length !== count) {
+    return [payment];
+  }
+  const amounts = splitInstallmentAmount(payment.amount, count);
+  return dates.map((paymentDate, index) => ({
+    ...payment,
+    amount: amounts[index],
+    paymentDate,
+    installmentLabel: `${index + 1}/${count}`,
+  }));
+}
+
 function paymentGroups(presentation) {
   const groups = new Map();
   for (const payment of presentation.paymentMethods) {
     if (!groups.has(payment.method)) groups.set(payment.method, []);
-    groups.get(payment.method).push(payment);
+    groups.get(payment.method).push(...expandPaymentInstallments(payment));
   }
   return [...groups.entries()];
 }
@@ -719,7 +761,7 @@ function drawPaymentGroup(page, font, method, payments, invoice,
     paymentRow(
         method,
         payment,
-        invoice.invoice_date,
+        payment.paymentDate || invoice.invoice_date,
         presentation.isNegativeReceipt,
     ).reverse(),
   );
@@ -1002,6 +1044,7 @@ async function buildTaxInvoicePdf({
 
 module.exports = {
   buildTaxInvoicePdf,
+  expandPaymentInstallments,
   footerGeneratedAtText,
   formatMoney,
   normalizeTaxInvoicePresentation,
