@@ -7,7 +7,6 @@ import 'package:flutter/services.dart';
 import 'package:pdf/pdf.dart' as pdf;
 import 'package:printing/printing.dart';
 import 'package:intl/intl.dart' as intl;
-import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:untitled1/services/language_provider.dart';
 import 'package:untitled1/utils/israeli_id_validator.dart';
@@ -1198,7 +1197,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   final _creditOriginalInvoiceDateController = TextEditingController();
   final _creditReceiptConfirmationController = TextEditingController();
   final _startingDocumentNumberController = TextEditingController();
-  final ImagePicker _imagePicker = ImagePicker();
   String? _selectedSavedClientId;
   String? _selectedSavedClientExternalNumber;
   final Map<String, _LinkedInvoiceDocument> _linkedDocuments = {};
@@ -1576,12 +1574,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   bool _hasLoadedDealerType = false;
   String? _businessId;
   String? _workerName;
-  String? _verifiedBusinessLogoUrl;
   bool _isBusinessVerified = false;
   String _selectedDocType = 'quote';
-  bool _isLoadingBusinessLogo = false;
-  bool _invoiceLogoTouched = false;
-  Uint8List? _businessLogoBytes;
 
   Map<String, String>? _cachedStrings;
   String? _lastLocale;
@@ -2766,9 +2760,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
               .get();
           if (!mounted) return;
           final vData = vInfoDoc.data();
-          final businessLogoUrl = (vData?['businessLogoUrl'] ?? '')
-              .toString()
-              .trim();
           final dealerType = (vData?['dealerType'] ?? 'exempt')
               .toString()
               .trim()
@@ -2780,10 +2771,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
             if (!_isLicensedDealerType) {
               _selectedPriceTaxMode = 'after_tax';
             }
-            _verifiedBusinessLogoUrl = businessLogoUrl.isEmpty
-                ? null
-                : businessLogoUrl;
-
             if (!_isLicensedDealerType &&
                 _licensedOnlyDocumentTypes.contains(_selectedDocType)) {
               _selectedDocType = 'quote';
@@ -2799,9 +2786,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
               }
             }
           });
-          if (vInfoDoc.exists) {
-            await _loadDefaultBusinessLogo();
-          }
           await _loadCurrentDocumentNumber(promptIfMissing: true);
         }
       } catch (e) {
@@ -2932,23 +2916,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     }).toList();
   }
 
-  Map<String, dynamic> _documentLogoServerPayload() {
-    if (!_invoiceLogoTouched) {
-      return const {'documentLogoMode': 'default'};
-    }
-    final bytes = _businessLogoBytes;
-    if (bytes == null || bytes.isEmpty) {
-      return const {'documentLogoMode': 'none'};
-    }
-    if (bytes.length > 3 * 1024 * 1024) {
-      throw StateError('The selected document logo must be smaller than 3 MB.');
-    }
-    return {
-      'documentLogoMode': 'inline',
-      'documentLogoBase64': base64Encode(bytes),
-    };
-  }
-
   Future<_ServerDocumentResult> _requestTaxAuthorityAllocation() async {
     final languageCode = Provider.of<LanguageProvider>(
       context,
@@ -3011,7 +2978,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'paymentMethods': _showsPaymentMethodSection
               ? _paymentMethodsForStorage()
               : const <Map<String, dynamic>>[],
-          ..._documentLogoServerPayload(),
         },
       });
       final draftId = draftResult.data['draftId']?.toString().trim();
@@ -3707,7 +3673,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'cancellationSourceDocumentNumber':
           widget.cancellationSourceDocumentNumber,
       if (_creditNoteLegalData != null) 'creditNoteLegal': _creditNoteLegalData,
-      ..._documentLogoServerPayload(),
     };
   }
 
@@ -3889,50 +3854,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     return messages.take(3).join('\n');
   }
 
-  Future<void> _loadDefaultBusinessLogo() async {
-    final logoUrl = _verifiedBusinessLogoUrl;
-    if (_invoiceLogoTouched || logoUrl == null || logoUrl.isEmpty) return;
-
-    setState(() => _isLoadingBusinessLogo = true);
-    try {
-      final ref = firebase_storage.FirebaseStorage.instance.refFromURL(logoUrl);
-      final bytes = await ref.getData(3 * 1024 * 1024);
-      if (!mounted || _invoiceLogoTouched) return;
-
-      setState(() {
-        _businessLogoBytes = bytes;
-        _isLoadingBusinessLogo = false;
-      });
-    } catch (e) {
-      dev.log('Business logo load failed: $e');
-      if (!mounted || _invoiceLogoTouched) return;
-      setState(() => _isLoadingBusinessLogo = false);
-    }
-  }
-
-  Future<void> _pickBusinessLogo() async {
-    final picked = await _imagePicker.pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 85,
-    );
-    if (picked == null || !mounted) return;
-
-    final bytes = await picked.readAsBytes();
-    if (!mounted) return;
-
-    setState(() {
-      _invoiceLogoTouched = true;
-      _businessLogoBytes = bytes;
-    });
-  }
-
-  void _removeBusinessLogo() {
-    setState(() {
-      _invoiceLogoTouched = true;
-      _businessLogoBytes = null;
-    });
-  }
-
   Map<String, String> _getLocalizedStrings(
     BuildContext context, {
     bool listen = true,
@@ -4026,14 +3947,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'empty_items': 'נא להוסיף לפחות פריט אחד',
           'worker': 'פרטי העסק:',
           'date': 'תאריך:',
-          'business_logo_section': 'לוגו לחשבונית',
-          'business_logo': 'לוגו העסק',
-          'business_logo_hint':
-              'הלוגו שאימתת בעסק נטען כברירת מחדל ויופיע על החשבוניות שלך. אפשר להחליף או להסיר אותו למסמך הזה.',
-          'add_logo': 'הוסף לוגו',
-          'change_logo': 'החלף לוגו',
-          'remove_logo': 'הסר לוגו',
-          'verified_logo_badge': 'ברירת מחדל מאימות העסק',
           'payment_due_date': 'לתשלום עד:',
           'inv_no': 'מספר מסמך:',
           'invoice_counter': 'מונה חשבוניות',
@@ -4187,14 +4100,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'empty_items': 'يرجى إضافة عنصر واحد على الأقل',
           'worker': 'تفاصيل النشاط التجاري:',
           'date': 'التاريخ:',
-          'business_logo_section': 'شعار الفاتورة',
-          'business_logo': 'شعار النشاط التجاري',
-          'business_logo_hint':
-              'سيتم تحميل الشعار الذي وثقته للنشاط التجاري كخيار افتراضي وسيظهر على فواتيرك. يمكنك تغييره أو إزالته لهذا المستند.',
-          'add_logo': 'إضافة شعار',
-          'change_logo': 'تغيير الشعار',
-          'remove_logo': 'إزالة الشعار',
-          'verified_logo_badge': 'افتراضي من توثيق النشاط',
           'payment_due_date': 'الدفع حتى:',
           'inv_no': 'رقم المستند:',
           'invoice_counter': 'عداد الفواتير',
@@ -4337,14 +4242,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'empty_items': 'Добавьте хотя бы одну позицию',
           'worker': 'Данные бизнеса:',
           'date': 'Дата:',
-          'business_logo_section': 'Логотип счета',
-          'business_logo': 'Логотип бизнеса',
-          'business_logo_hint':
-              'Логотип из подтверждения бизнеса загружается по умолчанию и будет показан в ваших счетах. Для этого документа его можно заменить или убрать.',
-          'add_logo': 'Добавить логотип',
-          'change_logo': 'Изменить логотип',
-          'remove_logo': 'Удалить логотип',
-          'verified_logo_badge': 'По умолчанию из проверки бизнеса',
           'payment_due_date': 'Оплатить до:',
           'inv_no': 'Номер документа:',
           'invoice_counter': 'Счетчик счетов',
@@ -4484,14 +4381,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'empty_items': 'ቢያንስ አንድ እቃ ያክሉ',
           'worker': 'የንግድ ዝርዝሮች:',
           'date': 'ቀን:',
-          'business_logo_section': 'የደረሰኝ አርማ',
-          'business_logo': 'የንግድ አርማ',
-          'business_logo_hint':
-              'በንግድ ማረጋገጫው ውስጥ ያከሉት አርማ እንደ ነባሪ ይጫናል እና በደረሰኞችዎ ላይ ይታያል። ለዚህ ሰነድ መቀየር ወይም ማስወገድ ይችላሉ።',
-          'add_logo': 'አርማ ጨምር',
-          'change_logo': 'አርማ ቀይር',
-          'remove_logo': 'አርማ አስወግድ',
-          'verified_logo_badge': 'ከንግድ ማረጋገጫ ነባሪ',
           'payment_due_date': 'እስከዚህ ቀን ይከፈል:',
           'inv_no': 'የሰነድ ቁጥር:',
           'invoice_counter': 'የደረሰኝ ቆጣሪ',
@@ -4632,14 +4521,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'empty_items': 'Please add at least one item',
           'worker': 'Business Details:',
           'date': 'Date:',
-          'business_logo_section': 'Document Logo',
-          'business_logo': 'Business Logo',
-          'business_logo_hint':
-              'Your verified business logo loads by default and appears on your documents. You can change or remove it for this document.',
-          'add_logo': 'Add Logo',
-          'change_logo': 'Change Logo',
-          'remove_logo': 'Remove Logo',
-          'verified_logo_badge': 'Default from business verification',
           'payment_due_date': 'Pay Until:',
           'inv_no': 'Document No:',
           'invoice_counter': 'Invoice Counter',
@@ -4816,14 +4697,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'sent_success': 'Invoice sent successfully!',
       'worker': 'Business Details:',
       'date': 'Date:',
-      'business_logo_section': 'Document Logo',
-      'business_logo': 'Business Logo',
-      'business_logo_hint':
-          'Your verified business logo loads by default and appears on your documents. You can change or remove it for this document.',
-      'add_logo': 'Add Logo',
-      'change_logo': 'Change Logo',
-      'remove_logo': 'Remove Logo',
-      'verified_logo_badge': 'Default from business verification',
       'payment_due_date': 'Pay Until:',
       'inv_no': 'Document No:',
       'tax_invoice_num': 'Tax Invoice No:',
@@ -5563,128 +5436,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   Future<Uint8List?> _getGeneratedPdfBytes() async {
     if (_items.isEmpty && _selectedDocType != 'receipt') return null;
     return _createServerDocumentPreview();
-  }
-
-  Widget _buildBusinessLogoSection(Map<String, String> strings) {
-    final hasLogo =
-        _businessLogoBytes != null && _businessLogoBytes!.isNotEmpty;
-
-    return _buildSectionCard(
-      title: strings['business_logo_section']!,
-      icon: Icons.image_outlined,
-      children: [
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: const Color(0xFFF8FAFC),
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    width: 84,
-                    height: 84,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: const Color(0xFFE2E8F0)),
-                    ),
-                    clipBehavior: Clip.antiAlias,
-                    child: _isLoadingBusinessLogo
-                        ? const Padding(
-                            padding: EdgeInsets.all(24),
-                            child: CircularProgressIndicator(strokeWidth: 2.4),
-                          )
-                        : hasLogo
-                        ? Image.memory(_businessLogoBytes!, fit: BoxFit.cover)
-                        : const Icon(
-                            Icons.storefront_outlined,
-                            size: 34,
-                            color: Color(0xFF94A3B8),
-                          ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          strings['business_logo']!,
-                          style: const TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFF0F172A),
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          strings['business_logo_hint']!,
-                          style: const TextStyle(
-                            fontSize: 12.5,
-                            height: 1.4,
-                            color: Color(0xFF64748B),
-                          ),
-                        ),
-                        if (!_invoiceLogoTouched &&
-                            (_verifiedBusinessLogoUrl?.isNotEmpty ?? false) &&
-                            hasLogo) ...[
-                          const SizedBox(height: 10),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 6,
-                            ),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFE0F2FE),
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                            child: Text(
-                              strings['verified_logo_badge']!,
-                              style: const TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                                color: Color(0xFF0369A1),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 14),
-              Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: [
-                  OutlinedButton.icon(
-                    onPressed: _pickBusinessLogo,
-                    icon: Icon(
-                      hasLogo ? Icons.refresh_rounded : Icons.upload_outlined,
-                    ),
-                    label: Text(
-                      hasLogo ? strings['change_logo']! : strings['add_logo']!,
-                    ),
-                  ),
-                  if (hasLogo)
-                    TextButton(
-                      onPressed: _removeBusinessLogo,
-                      child: Text(strings['remove_logo']!),
-                    ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
   }
 
   bool _validateClientDetails() {
@@ -7117,8 +6868,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                               ),
                             ],
                           ),
-                          const SizedBox(height: 20),
-                          _buildBusinessLogoSection(strings),
                           const SizedBox(height: 20),
                           // Client information
                           _buildSectionCard(
