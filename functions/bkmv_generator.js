@@ -267,7 +267,7 @@ function mapDocumentType(value) {
 }
 
 function mapCreditDealType(value) {
-  return {installments: 2, credit: 3, other: 4}[value] || 1;
+  return {installments: 2, credit: 3, deferred: 4, other: 5}[value] || 1;
 }
 
 function mapCreditCompanyCode(value) {

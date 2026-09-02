@@ -370,6 +370,29 @@ test("maps modern payment methods and every supported clearing company", () => {
   }
 });
 
+test("maps every credit transaction type to its bookkeeping code", () => {
+  const expectedCodes = new Map([
+    ["regular", 1],
+    ["installments", 2],
+    ["credit", 3],
+    ["deferred", 4],
+    ["other", 5],
+  ]);
+  for (const [dealType, expectedCode] of expectedCodes) {
+    const mapping = mapPaymentDetails({
+      logData: {paymentMethods: [{
+        method: "credit",
+        amount: 50,
+        installments: "1",
+        dealType,
+      }]},
+      invoiceData: {},
+      defaultAmount: 50,
+    });
+    assert.equal(mapping.details[0].creditDealType, expectedCode, dealType);
+  }
+});
+
 test("writes receipt withholding only to positive C100 field 1224", () => {
   const invoiceDocId = "receipt_2026-0043";
   const paymentMethods = [

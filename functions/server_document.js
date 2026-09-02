@@ -66,6 +66,11 @@ function normalizePaymentMethods(value) {
         true,
     );
     const installments = optionalString(data.installments, 8);
+    const dealType = optionalString(data.dealType, 20) || "regular";
+    if (method === "credit" && !["regular", "installments", "credit",
+      "deferred", "other"].includes(dealType)) {
+      throw new Error(`Payment ${index + 1} transaction type is unsupported.`);
+    }
     const installmentCount = installments ? Number.parseInt(installments, 10) : 1;
     if (method === "credit" && (!Number.isInteger(installmentCount) ||
         installmentCount < 1 || installmentCount > 999)) {
@@ -87,6 +92,7 @@ function normalizePaymentMethods(value) {
       cardName: optionalString(data.cardName, 80),
       cardExpiration: optionalString(data.cardExpiration, 12),
       installments,
+      dealType,
       checkNumber: optionalString(data.checkNumber, 32),
       bank: optionalString(data.bank, 80),
       branch: optionalString(data.branch, 32),

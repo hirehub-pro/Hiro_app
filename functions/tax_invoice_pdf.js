@@ -67,6 +67,9 @@ function normalizePaymentMethods(value) {
       cardName: boundedOptionalString(data.cardName, 80),
       cardExpiration: boundedOptionalString(data.cardExpiration, 12),
       installments: boundedOptionalString(data.installments, 8),
+      dealType: ["regular", "installments", "credit", "deferred", "other"]
+          .includes(boundedString(data.dealType, 20)) ?
+        data.dealType : "regular",
       checkNumber: boundedOptionalString(data.checkNumber, 32),
       bank: boundedOptionalString(data.bank, 80),
       branch: boundedOptionalString(data.branch, 32),
@@ -673,16 +676,38 @@ function drawSummary(page, font, invoice, presentation, reservation, y) {
   return {bottom: y - height, finalTotal, rounding};
 }
 
+function creditCompanyLabel(company) {
+  return {
+    Diners: "דיינרס",
+    CAL: "כאל",
+    "Leumi Card": "לאומי קארד",
+    "American Express": "אמריקן אקספרס",
+    Isracard: "ישראכרט",
+  }[boundedString(company, 80)] || boundedString(company, 80) || "-";
+}
+
+function creditDealTypeLabel(dealType) {
+  return {
+    regular: "רגיל",
+    installments: "תשלומים",
+    credit: "קרדיט",
+    deferred: "חיוב נדחה",
+    other: "אחר",
+  }[boundedString(dealType, 20)] || "רגיל";
+}
+
 function paymentColumns(method) {
-  const columns = ["תאריך", "סכום"];
+  const columns = ["תאריך"];
   if (["transfer", "check"].includes(method)) {
     columns.push("שם הבנק", "סניף", "מספר חשבון");
   }
   if (method === "check") columns.push("מספר צ׳ק");
   if (method === "credit") {
-    columns.push("סוג כרטיס", "מספר כרטיס", "תוקף", "מספר תשלומים");
+    columns.push("סוג כרטיס", "מספר כרטיס", "תוקף", "סוג העסקה", "מספר תשלום");
+  } else {
+    columns.push("סוג העסקה");
   }
-  columns.push("פרטים נוספים");
+  columns.push("סכום");
   return columns;
 }
 
@@ -690,7 +715,6 @@ function paymentRow(method, payment, date, negative) {
   const value = (raw) => boundedString(raw, 80) || "-";
   const row = [
     formatDate(date),
-    formatMoney(negative ? -Math.abs(payment.amount) : payment.amount),
   ];
   if (["transfer", "check"].includes(method)) {
     row.push(value(payment.bank), value(payment.branch), value(payment.account));
@@ -698,13 +722,16 @@ function paymentRow(method, payment, date, negative) {
   if (method === "check") row.push(value(payment.checkNumber));
   if (method === "credit") {
     row.push(
-        value(payment.cardName),
+        creditCompanyLabel(payment.cardName),
         value(payment.cardNumber),
         value(payment.cardExpiration),
+        creditDealTypeLabel(payment.dealType),
         value(payment.installmentLabel || payment.installments || "1"),
     );
+  } else {
+    row.push("-");
   }
-  row.push("-");
+  row.push(formatMoney(negative ? -Math.abs(payment.amount) : payment.amount));
   return row;
 }
 
@@ -1044,10 +1071,13 @@ async function buildTaxInvoicePdf({
 
 module.exports = {
   buildTaxInvoicePdf,
+  creditCompanyLabel,
+  creditDealTypeLabel,
   expandPaymentInstallments,
   footerGeneratedAtText,
   formatMoney,
   normalizeTaxInvoicePresentation,
+  paymentColumns,
   taxableSubtotalBeforeTax,
   validateTaxInvoicePresentation,
   visualText,

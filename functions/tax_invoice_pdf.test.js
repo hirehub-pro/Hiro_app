@@ -6,10 +6,13 @@ const {PDFDocument} = require("pdf-lib");
 
 const {
   buildTaxInvoicePdf,
+  creditCompanyLabel,
+  creditDealTypeLabel,
   expandPaymentInstallments,
   footerGeneratedAtText,
   formatMoney,
   normalizeTaxInvoicePresentation,
+  paymentColumns,
   taxableSubtotalBeforeTax,
   visualText,
 } = require("./tax_invoice_pdf");
@@ -112,6 +115,22 @@ test("expands credit installments into separately dated PDF rows", () => {
     "1/5", "2/5", "3/5", "4/5", "5/5",
   ]);
   assert.deepEqual(rows.map((row) => row.amount), [20, 20, 20, 20, 20]);
+});
+
+test("renders Hebrew credit details and keeps the amount at the far left", () => {
+  assert.equal(creditCompanyLabel("CAL"), "כאל");
+  assert.equal(creditCompanyLabel("American Express"), "אמריקן אקספרס");
+  assert.equal(creditDealTypeLabel("deferred"), "חיוב נדחה");
+  assert.equal(creditDealTypeLabel("other"), "אחר");
+  assert.deepEqual(paymentColumns("credit").slice(-3), [
+    "סוג העסקה",
+    "מספר תשלום",
+    "סכום",
+  ]);
+  assert.equal(paymentColumns("credit").at(-1), "סכום");
+  assert.equal(paymentColumns("cash").at(-1), "סכום");
+  assert.equal(paymentColumns("check").at(-1), "סכום");
+  assert.equal(paymentColumns("transfer").at(-1), "סכום");
 });
 
 test("presentation validates an inline document logo without persisting bytes", () => {

@@ -843,6 +843,7 @@ class _PaymentMethodEntry {
   final cardNameController = TextEditingController();
   final cardExpirationController = TextEditingController();
   final installmentsController = TextEditingController(text: '1');
+  String creditDealType = 'regular';
   final creditFirstPaymentDateController = TextEditingController();
   DateTime? creditFirstPaymentDate;
   final checkNumberController = TextEditingController();
@@ -881,6 +882,7 @@ class _PaymentMethodEntry {
         if (installmentsController.text.trim().isNotEmpty) {
           data['installments'] = installmentsController.text.trim();
         }
+        data['dealType'] = creditDealType;
         final parsedInstallmentCount = int.tryParse(
           installmentsController.text.trim(),
         );
@@ -8053,37 +8055,79 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
               ],
             ),
             const SizedBox(height: 12),
-            Focus(
-              onFocusChange: (hasFocus) {
-                if (!hasFocus &&
-                    entry.installmentsController.text.trim().isEmpty) {
-                  setState(() => entry.installmentsController.text = '1');
-                }
-              },
-              child: _buildTextField(
-                entry.installmentsController,
-                isRtl
-                    ? 'מספר תשלומים (אופציונלי)'
-                    : 'Number of Payments (Optional)',
-                Icons.format_list_numbered,
-                keyboardType: TextInputType.number,
-                inputFormatters: [
-                  FilteringTextInputFormatter.digitsOnly,
-                  TextInputFormatter.withFunction((oldValue, newValue) {
-                    final value = int.tryParse(newValue.text);
-                    if (newValue.text.isNotEmpty &&
-                        (value == null || value < 1)) {
-                      return const TextEditingValue(
-                        text: '1',
-                        selection: TextSelection.collapsed(offset: 1),
-                      );
-                    }
-                    return newValue;
-                  }),
-                ],
-                onChanged: (_) => setState(() {}),
+            DropdownButtonFormField<String>(
+              isExpanded: true,
+              initialValue: entry.creditDealType,
+              decoration: _inputStyle(
+                isRtl ? 'סוג העסקה' : 'Transaction Type',
+                Icons.receipt_long_outlined,
               ),
+              items: [
+                DropdownMenuItem(
+                  value: 'regular',
+                  child: Text(isRtl ? 'רגיל' : 'Regular'),
+                ),
+                DropdownMenuItem(
+                  value: 'installments',
+                  child: Text(isRtl ? 'תשלומים' : 'Installments'),
+                ),
+                DropdownMenuItem(
+                  value: 'credit',
+                  child: Text(isRtl ? 'קרדיט' : 'Credit'),
+                ),
+                DropdownMenuItem(
+                  value: 'deferred',
+                  child: Text(isRtl ? 'חיוב נדחה' : 'Deferred Charge'),
+                ),
+                DropdownMenuItem(
+                  value: 'other',
+                  child: Text(isRtl ? 'אחר' : 'Other'),
+                ),
+              ],
+              onChanged: (value) {
+                if (value == null) return;
+                setState(() {
+                  entry.creditDealType = value;
+                  if (!{'installments', 'credit'}.contains(value)) {
+                    entry.installmentsController.text = '1';
+                  }
+                });
+              },
             ),
+            if ({'installments', 'credit'}.contains(entry.creditDealType)) ...[
+              const SizedBox(height: 12),
+              Focus(
+                onFocusChange: (hasFocus) {
+                  if (!hasFocus &&
+                      entry.installmentsController.text.trim().isEmpty) {
+                    setState(() => entry.installmentsController.text = '1');
+                  }
+                },
+                child: _buildTextField(
+                  entry.installmentsController,
+                  isRtl
+                      ? 'מספר תשלום (אופציונלי)'
+                      : 'Payment Number (Optional)',
+                  Icons.format_list_numbered,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [
+                    FilteringTextInputFormatter.digitsOnly,
+                    TextInputFormatter.withFunction((oldValue, newValue) {
+                      final value = int.tryParse(newValue.text);
+                      if (newValue.text.isNotEmpty &&
+                          (value == null || value < 1)) {
+                        return const TextEditingValue(
+                          text: '1',
+                          selection: TextSelection.collapsed(offset: 1),
+                        );
+                      }
+                      return newValue;
+                    }),
+                  ],
+                  onChanged: (_) => setState(() {}),
+                ),
+              ),
+            ],
             const SizedBox(height: 12),
             _buildTextField(
               entry.creditFirstPaymentDateController,

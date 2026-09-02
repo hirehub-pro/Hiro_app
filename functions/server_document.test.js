@@ -221,6 +221,31 @@ test("validates and preserves credit installment dates", () => {
   })), /one date per installment/);
 });
 
+test("validates and preserves the credit transaction type", () => {
+  const document = normalize(base({
+    docType: "receipt",
+    documentNumber: "2026-0050",
+    sequenceNumber: 50,
+    paymentMethods: [{
+      method: "credit",
+      amount: 100,
+      dealType: "deferred",
+    }],
+  }));
+  assert.equal(document.paymentMethods[0].dealType, "deferred");
+
+  assert.throws(() => normalize(base({
+    docType: "receipt",
+    documentNumber: "2026-0051",
+    sequenceNumber: 51,
+    paymentMethods: [{
+      method: "credit",
+      amount: 100,
+      dealType: "unsupported",
+    }],
+  })), /transaction type is unsupported/);
+});
+
 test("rejects mismatched numbers, invalid email, and incomplete cancellation", () => {
   assert.throws(() => normalize(base({sequenceNumber: 41})), /sequence/);
   assert.throws(() => normalize(base({
