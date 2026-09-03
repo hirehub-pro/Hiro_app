@@ -88,6 +88,41 @@ test("denies public and cross-user private account reads", {
   await assertFails(getDoc(doc(bob, "users/alice-user-id-000001")));
 });
 
+test("keeps document download capabilities server-only", {
+  skip: !emulatorAvailable,
+}, async () => {
+  const tokenHash = "a".repeat(64);
+  await seed(`documentDownloadTokens/${tokenHash}`, {
+    userId: "owner-user-id-0000001",
+    invoiceId: "invoice-1",
+    storagePath: "invoices/owner-user-id-0000001/invoice-1.pdf",
+    fileName: "invoice-1.pdf",
+    createdAt: new Date(),
+    revokedAt: null,
+  });
+
+  const guest = testEnv.unauthenticatedContext().firestore();
+  const owner = testEnv.authenticatedContext(
+      "owner-user-id-0000001",
+  ).firestore();
+  await assertFails(getDoc(doc(
+      guest,
+      `documentDownloadTokens/${tokenHash}`,
+  )));
+  await assertFails(getDoc(doc(
+      owner,
+      `documentDownloadTokens/${tokenHash}`,
+  )));
+  await assertFails(setDoc(doc(
+      owner,
+      `documentDownloadTokens/${"b".repeat(64)}`,
+  ), {
+    userId: "owner-user-id-0000001",
+    invoiceId: "invoice-2",
+    storagePath: "invoices/owner-user-id-0000001/invoice-2.pdf",
+  }));
+});
+
 test("exposes visible profiles while protecting server-managed fields", {
   skip: !emulatorAvailable,
 }, async () => {

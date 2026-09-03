@@ -25,6 +25,12 @@ const {
 const {createSesTransport, sendSesEmail} = require("./ses_email");
 const {ownedInvoicePdfPath} = require("./document_security");
 const {
+  createDocumentDownloadToken,
+  documentDownloadTokenFromRequest,
+  documentDownloadUrl,
+  hashDocumentDownloadToken,
+} = require("./document_download");
+const {
   taxAuthorityFailureState,
   taxInvoiceDraftSignature,
   taxInvoiceFinalizationMode,
@@ -350,6 +356,7 @@ async function loadCanonicalUserProfile(db, userId, accountSnap = null) {
   return publicSnap.exists ? {...accountData, ...publicSnap.data()} : accountData;
 }
 const PUBLIC_APP_ORIGIN = "https://hiro-services.com";
+const DOCUMENT_DOWNLOAD_COLLECTION = "documentDownloadTokens";
 const SIGNING_REQUEST_LIFETIME_DAYS = 30;
 // A signing link is a bearer capability, so only one submitted signature may
 // own it at a time. This lease is deliberately longer than the HTTP function
@@ -761,6 +768,101 @@ exports.publicDocumentSigning = onRequest(
       } catch (error) {
         logger.error("Public document signing failed", {error});
         res.status(500).json({error: "לא ניתן היה לחתום על המסמך."});
+      }
+    },
+);
+
+exports.publicDocumentDownload = onRequest(
+    {
+      region: "us-central1",
+      cors: false,
+      timeoutSeconds: 60,
+      memory: "512MiB",
+    },
+    async (req, res) => {
+      res.set({
+        "Cache-Control": "private, no-store",
+        "Referrer-Policy": "no-referrer",
+        "X-Content-Type-Options": "nosniff",
+      });
+
+      if (req.method !== "GET" && req.method !== "HEAD") {
+        res.set("Allow", "GET, HEAD");
+        res.status(405).send("Method Not Allowed");
+        return;
+      }
+
+      const token = documentDownloadTokenFromRequest(req);
+      if (!token) {
+        res.status(404).send("Document link not found.");
+        return;
+      }
+
+      try {
+        const tokenSnap = await admin.firestore()
+            .collection(DOCUMENT_DOWNLOAD_COLLECTION)
+            .doc(hashDocumentDownloadToken(token))
+            .get();
+        if (!tokenSnap.exists) {
+          res.status(404).send("Document link not found.");
+          return;
+        }
+
+        const access = tokenSnap.data() || {};
+        const userId = normalizeString(access.userId).trim();
+        const invoiceId = normalizeString(access.invoiceId).trim();
+        const storagePath = ownedInvoicePdfPath(access.storagePath, userId);
+        if (access.revokedAt || !userId || !invoiceId || !storagePath) {
+          res.status(410).send("This document link is no longer available.");
+          return;
+        }
+
+        const invoiceSnap = await admin.firestore()
+            .collection("users")
+            .doc(userId)
+            .collection("invoices")
+            .doc(invoiceId)
+            .get();
+        const currentStoragePath = invoiceSnap.exists ?
+          ownedInvoicePdfPath(invoiceSnap.get("storagePath"), userId) : null;
+        if (!currentStoragePath || currentStoragePath !== storagePath) {
+          res.status(410).send("This document link is no longer available.");
+          return;
+        }
+
+        const fileName = downloadFileName(access.fileName || "document.pdf");
+        const asciiFileName = safeHeaderFileName(fileName);
+        const file = admin.storage().bucket().file(storagePath);
+        let bytes = null;
+        let contentLength;
+        if (req.method === "HEAD") {
+          const [metadata] = await file.getMetadata();
+          contentLength = metadata.size;
+        } else {
+          [bytes] = await file.download();
+          contentLength = bytes.length;
+        }
+        res.set({
+          "Content-Type": "application/pdf",
+          "Content-Disposition": `attachment; filename="${asciiFileName}"; ` +
+            `filename*=UTF-8''${encodeURIComponent(fileName)}`,
+          "Content-Length": String(contentLength),
+        });
+        if (req.method === "HEAD") {
+          res.status(200).end();
+          return;
+        }
+
+        res.status(200).send(bytes);
+      } catch (error) {
+        logger.error("Secure document download failed", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        if (!res.headersSent) {
+          res.status(500).send("Could not download the document.");
+        } else {
+          res.end();
+        }
       }
     },
 );
@@ -6622,6 +6724,8 @@ exports.emailSavedInvoice = onDocumentWritten(
       });
       if (!claimed) return;
 
+      let downloadTokenRef = null;
+      let emailAccepted = false;
       try {
         const clientEmail = normalizeEmail(invoice.clientEmail);
         if (!clientEmail) {
@@ -6661,23 +6765,33 @@ exports.emailSavedInvoice = onDocumentWritten(
 
         const bucket = admin.storage().bucket();
         const fileName = normalizeString(invoice.fileName).trim() || "invoice.pdf";
-        const pdfFile = bucket.file(storagePath);
-        await pdfFile.setMetadata({
-          contentDisposition: `attachment; filename="${downloadFileName(fileName)}"`,
+        const downloadToken = createDocumentDownloadToken();
+        downloadTokenRef = db.collection(DOCUMENT_DOWNLOAD_COLLECTION)
+            .doc(hashDocumentDownloadToken(downloadToken));
+        await downloadTokenRef.create({
+          userId,
+          invoiceId: event.params.invoiceId,
+          invoicePath: invoiceRef.path,
+          storagePath,
+          fileName,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          revokedAt: null,
         });
-        const [pdfBytes] = await pdfFile.download();
+        const downloadUrl = documentDownloadUrl(
+            PUBLIC_APP_ORIGIN,
+            downloadToken,
+        );
         const [[appIconBytes], [appStoreBadgeBytes], [googlePlayBadgeBytes]] =
           await Promise.all([
             bucket.file(EMAIL_APP_ICON_STORAGE_PATH).download(),
             bucket.file(EMAIL_APP_STORE_BADGE_STORAGE_PATH).download(),
             bucket.file(EMAIL_GOOGLE_PLAY_BADGE_STORAGE_PATH).download(),
           ]);
-        const downloadUrl = normalizeString(invoice.url).trim();
         const emailIds = await sendInvoiceEmailDeliveries(
             deliveries,
             async (delivery) => {
               const emailText = buildClientInvoiceEmailText(
-                  invoice, clientName, businessName,
+                  invoice, clientName, businessName, downloadUrl,
               );
               const emailHtml = buildClientInvoiceEmailHtml(
                   invoice, clientName, businessName, downloadUrl, fileName,
@@ -6690,7 +6804,6 @@ exports.emailSavedInvoice = onDocumentWritten(
                 text: emailText,
                 html: emailHtml,
                 attachments: [
-                  {filename: fileName, content: pdfBytes},
                   {
                     filename: "hiro-app-icon.png",
                     content: appIconBytes,
@@ -6711,6 +6824,7 @@ exports.emailSavedInvoice = onDocumentWritten(
               return emailData.id;
             },
         );
+        emailAccepted = true;
 
         await invoiceRef.update(buildSentInvoiceEmailUpdate(
             emailIds,
@@ -6726,6 +6840,15 @@ exports.emailSavedInvoice = onDocumentWritten(
           invoiceId: event.params.invoiceId,
           error: error instanceof Error ? error.message : String(error),
         });
+        if (downloadTokenRef && !emailAccepted) {
+          await downloadTokenRef.delete().catch((cleanupError) => {
+            logger.warn("Could not remove unused document download token", {
+              invoiceId: event.params.invoiceId,
+              error: cleanupError instanceof Error ?
+                cleanupError.message : String(cleanupError),
+            });
+          });
+        }
         await invoiceRef.update(buildFailedInvoiceEmailUpdate(error));
       }
     },
@@ -8335,7 +8458,9 @@ function buildInvoiceEmailSubject(invoice, name, preposition = "ל") {
     `${introduction}: ${documentType} מספר ${documentNumber}` : introduction;
 }
 
-function buildClientInvoiceEmailText(invoice, clientName, businessName) {
+function buildClientInvoiceEmailText(
+    invoice, clientName, businessName, downloadUrl,
+) {
   const documentType = hebrewDocumentType(invoice.docType || invoice.type);
   const documentNumber = normalizeString(
       invoice.sequenceNumber || invoice.invoiceNumber || invoice.documentNumber,
@@ -8343,7 +8468,8 @@ function buildClientInvoiceEmailText(invoice, clientName, businessName) {
   const documentReference = documentNumber ?
     `${documentType} מספר ${documentNumber}` : documentType;
   return `שלום ${clientName},\n\n` +
-    `מצורף ${documentReference} שהופק עבורכם.\n\n` +
+    `${documentReference} הופק עבורכם.\n` +
+    `ניתן להוריד אותו בכל עת בקישור הבא:\n${downloadUrl}\n\n` +
     "תודה שבחרתם לעבוד איתנו.\n\n" +
     `בברכה,\n${businessName}\n\n` +
     "מסמך זה נשלח באופן אוטומטי באמצעות מערכת הירו.\n" +
@@ -8452,7 +8578,7 @@ function buildClientInvoiceEmailHtml(
   return buildInvoiceEmailHtml({
     name: clientName,
     heading: "מסמך חדש הופק עבורך",
-    content: `<p style="margin:0;font-size:16px;line-height:1.7;">מצורף ${escapeHtml(documentReference)} שהופק עבורכם.</p>` +
+    content: `<p style="margin:0;font-size:16px;line-height:1.7;">${escapeHtml(documentReference)} הופק עבורכם. ניתן להוריד אותו בכל עת באמצעות הכפתור הבא.</p>` +
       documentCard(documentReference, downloadUrl, fileName) +
       `<p style="margin:0;font-size:16px;line-height:1.7;">תודה שבחרתם לעבוד איתנו.</p><p style="margin:20px 0 0;font-size:16px;font-weight:700;">בברכה,<br>${escapeHtml(businessName)}</p>`,
     footer: "",

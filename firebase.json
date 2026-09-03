@@ -15,6 +15,13 @@
     "cleanUrls": true,
     "rewrites": [
       {
+        "source": "/document-download/**",
+        "function": {
+          "functionId": "publicDocumentDownload",
+          "region": "us-central1"
+        }
+      },
+      {
         "source": "/sign/**",
         "function": {
           "functionId": "publicDocumentSigning",
