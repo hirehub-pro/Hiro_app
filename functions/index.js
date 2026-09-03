@@ -1354,7 +1354,7 @@ async function serverDocumentContext(
   const verificationStatus = normalizeString(
       verification.businessVerificationStatus || verification.status,
   ).trim();
-  if (user.isapproved !== true || verificationStatus !== "approved") {
+  if (verificationStatus !== "approved") {
     throw new HttpsError(
         "failed-precondition",
         "An approved business is required to create documents.",
@@ -6298,9 +6298,9 @@ exports.submitBusinessVerification = onCall(
         const existingBusinessId = normalizeBusinessId(
             existingVerification.businessId,
         );
-        const isApproved = userSnapshot.data()?.isapproved === true ||
-          existingStatus === "approved" || existingStatus === "verified";
-        if (isApproved && existingBusinessId &&
+        const hasApprovedVerification = existingStatus === "approved" ||
+          existingStatus === "verified";
+        if (hasApprovedVerification && existingBusinessId &&
             existingBusinessId !== businessId) {
           throw new HttpsError(
               "failed-precondition",
@@ -6321,17 +6321,24 @@ exports.submitBusinessVerification = onCall(
           hasBranches,
           branchNumber,
           dealerType,
-          businessVerificationStatus: "pending",
+          businessVerificationStatus: "approved",
           status: admin.firestore.FieldValue.delete(),
           legalAccepted: true,
           termsAccepted: true,
           legalDeclarationAccepted: true,
           responsibilityAccepted: true,
           timestamp: admin.firestore.FieldValue.serverTimestamp(),
+          approvedAt: admin.firestore.FieldValue.serverTimestamp(),
+          reviewedAt: admin.firestore.FieldValue.delete(),
+          reviewedBy: admin.firestore.FieldValue.delete(),
+          rejectedAt: admin.firestore.FieldValue.delete(),
+          rejectionReason: admin.firestore.FieldValue.delete(),
           businessLogoUrl: businessLogoUrl || null,
           businessSignatureUrl: businessSignatureUrl || null,
         }, {merge: true});
         transaction.update(userRef, {
+          isVerified: true,
+          verifiedAt: admin.firestore.FieldValue.serverTimestamp(),
           businessId: admin.firestore.FieldValue.delete(),
           businessLogoUrl: admin.firestore.FieldValue.delete(),
           businessSignatureUrl: admin.firestore.FieldValue.delete(),
@@ -6339,7 +6346,7 @@ exports.submitBusinessVerification = onCall(
         });
       });
 
-      return {status: "pending"};
+      return {status: "approved"};
     },
 );
 
@@ -6423,7 +6430,6 @@ exports.reviewBusinessVerification = onCall(
         const reviewedAt = admin.firestore.FieldValue.serverTimestamp();
         const approved = decision === "approve";
         transaction.update(userRef, approved ? {
-          isapproved: true,
           isVerified: true,
           verifiedAt: reviewedAt,
           businessId: admin.firestore.FieldValue.delete(),
@@ -6431,7 +6437,6 @@ exports.reviewBusinessVerification = onCall(
           businessSignatureUrl: admin.firestore.FieldValue.delete(),
           businessVerificationStatus: admin.firestore.FieldValue.delete(),
         } : {
-          isapproved: false,
           isVerified: false,
           verifiedAt: admin.firestore.FieldValue.delete(),
           businessId: admin.firestore.FieldValue.delete(),
@@ -8946,21 +8951,16 @@ async function getVerifiedTaxAuthorityBusinessId(userId) {
   const verificationRef = userRef
       .collection("verification_info")
       .doc("latest");
-  const [userSnap, verificationSnap] = await Promise.all([
-    userRef.get(),
-    verificationRef.get(),
-  ]);
-  const userData = userSnap.data() || {};
+  const verificationSnap = await verificationRef.get();
   const verificationData = verificationSnap.data() || {};
   const businessId = normalizeBusinessId(verificationData.businessId);
   const dealerType = normalizeString(verificationData.dealerType).trim();
   const verificationStatus = normalizeString(
       verificationData.businessVerificationStatus || verificationData.status,
   ).trim();
-  const isApproved = userData.isapproved === true &&
-    verificationStatus === "approved";
+  const hasApprovedVerification = verificationStatus === "approved";
 
-  if (!isApproved ||
+  if (!hasApprovedVerification ||
       !businessId ||
       !["licensed", "company"].includes(dealerType)) {
     throw new HttpsError(

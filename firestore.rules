@@ -159,7 +159,7 @@ service cloud.firestore {
         'activeLocationLabel', 'activeLocationSource', 'activeLocationUpdatedAt',
         'activeSearchLat', 'activeSearchLng', 'dealerType', 'verifiedAt',
         'isVerified',
-        'isapproved', 'avgRating', 'reviewCount', 'totalStars',
+        'avgRating', 'reviewCount', 'totalStars',
         'professionStats', 'ratingsUpdatedAt', 'isInChatPage',
         'activeChatWith', 'activeChatUpdatedAt', 'isPro', 'isSubscribed', 'isVIP',
         'subscriptionAccountToken', 'subscriptionCanceled', 'subscriptionDate',
@@ -207,7 +207,6 @@ service cloud.firestore {
       optionalBool(data, 'hideSchedule') &&
       optionalBool(data, 'notificationsEnabled') &&
       optionalBool(data, 'isVerified') &&
-      optionalBool(data, 'isapproved') &&
       optionalBool(data, 'isInChatPage') &&
       optionalBool(data, 'isPro') &&
       optionalBool(data, 'isSubscribed') &&
@@ -226,7 +225,6 @@ service cloud.firestore {
           'spokenLanguages', 'town', 'workRadius'
         ])) &&
         data.get('emailVerified', false) == false &&
-        data.get('isapproved', false) == false &&
         data.get('isVerified', false) == false &&
         data.get('isPro', false) == false &&
         data.get('isSubscribed', false) == false &&
@@ -254,7 +252,7 @@ service cloud.firestore {
 
     function userServerFieldsUnchanged() {
       return !request.resource.data.diff(resource.data).affectedKeys().hasAny([
-        'role', 'isapproved', 'isVerified', 'verifiedAt', 'isPro',
+        'role', 'isVerified', 'verifiedAt', 'isPro',
         'isSubscribed', 'isVIP',
         'subscriptionAccountToken', 'subscriptionCanceled', 'subscriptionDate',
         'subscriptionExpiresAt', 'subscriptionOwnershipKey',

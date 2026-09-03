@@ -2749,11 +2749,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
             .doc(user.uid)
             .get();
         if (workerDoc.exists && mounted) {
-          final workerData = workerDoc.data();
           final profileData = await ProfileDocumentService.load(user.uid);
           if (!mounted) return;
           setState(() {
-            _isBusinessVerified = workerData?['isapproved'] ?? false;
             _workerName = profileData['name']?.toString().trim();
           });
 
@@ -2766,11 +2764,17 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
               .get();
           if (!mounted) return;
           final vData = vInfoDoc.data();
+          final verificationStatus =
+              (vData?['businessVerificationStatus'] ?? vData?['status'])
+                  ?.toString()
+                  .trim()
+                  .toLowerCase();
           final dealerType = (vData?['dealerType'] ?? 'exempt')
               .toString()
               .trim()
               .toLowerCase();
           setState(() {
+            _isBusinessVerified = verificationStatus == 'approved';
             _businessId = vData?['businessId']?.toString();
             _dealerType = dealerType;
             _hasLoadedDealerType = true;
