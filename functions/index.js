@@ -1213,7 +1213,10 @@ async function restoreServerDocumentLogo(document) {
   });
 }
 
-async function serverDocumentContext(userId) {
+async function serverDocumentContext(
+    userId,
+    {includeAppIcon = true} = {},
+) {
   const db = admin.firestore();
   const userRef = db.collection("users").doc(userId);
   const [userSnap, verificationSnap, systemSnap] = await Promise.all([
@@ -1238,7 +1241,7 @@ async function serverDocumentContext(userId) {
   const businessId = normalizeBusinessId(verification.businessId);
   const [logoBytes, appIconBytes] = await Promise.all([
     optionalStorageBytes(`business_logos/${userId}.jpg`),
-    optionalStorageBytes(EMAIL_APP_ICON_STORAGE_PATH),
+    includeAppIcon ? optionalStorageBytes(EMAIL_APP_ICON_STORAGE_PATH) : null,
   ]);
   return {
     dealerType: normalizeString(
@@ -1289,6 +1292,7 @@ function serverDocumentRenderingBusiness(document, context) {
 }
 
 async function generateServerDocumentPdf(document, context, previewOnly) {
+  const business = serverDocumentRenderingBusiness(document, context);
   return buildTaxInvoicePdf({
     payload: serverDocumentPdfPayload(
         document,
@@ -1301,10 +1305,48 @@ async function generateServerDocumentPdf(document, context, previewOnly) {
       sequenceNumber: document.sequenceNumber,
       invoiceDocId: document.invoiceDocId,
     },
-    business: serverDocumentRenderingBusiness(document, context),
+    business: previewOnly ? {...business, appIconBytes: null} : business,
     presentation: serverDocumentPresentation(document),
     previewOnly,
   });
+}
+
+async function createServerDocumentPreviewPdf(userId, data) {
+  const context = await serverDocumentContext(userId, {
+    includeAppIcon: false,
+  });
+  let document;
+  try {
+    document = normalizeServerDocumentRequest(data, {
+      dealerType: context.dealerType,
+      vatPercent: context.vatPercent,
+    });
+  } catch (error) {
+    throw new HttpsError("invalid-argument", error.message);
+  }
+  const pdfBytes = await generateServerDocumentPdf(
+      document,
+      context,
+      true,
+  );
+  if (pdfBytes.length < 1 || pdfBytes.length > 8 * 1024 * 1024) {
+    throw new HttpsError(
+        "resource-exhausted",
+        "The generated preview PDF is too large.",
+    );
+  }
+  return {document, pdfBytes};
+}
+
+function previewDocumentHttpStatus(error) {
+  switch (error?.code) {
+    case "unauthenticated": return 401;
+    case "permission-denied": return 403;
+    case "invalid-argument": return 400;
+    case "failed-precondition": return 412;
+    case "resource-exhausted": return 413;
+    default: return 500;
+  }
 }
 
 function serverDocumentBucket(docType) {
@@ -1905,32 +1947,81 @@ exports.previewServerDocument = onCall(
       if (!userId) {
         throw new HttpsError("unauthenticated", "Authentication required.");
       }
-      const context = await serverDocumentContext(userId);
-      let document;
-      try {
-        document = normalizeServerDocumentRequest(request.data, {
-          dealerType: context.dealerType,
-          vatPercent: context.vatPercent,
-        });
-      } catch (error) {
-        throw new HttpsError("invalid-argument", error.message);
-      }
-      const pdfBytes = await generateServerDocumentPdf(
-          document,
-          context,
-          true,
+      const {document, pdfBytes} = await createServerDocumentPreviewPdf(
+          userId,
+          request.data,
       );
-      if (pdfBytes.length < 1 || pdfBytes.length > 8 * 1024 * 1024) {
-        throw new HttpsError(
-            "resource-exhausted",
-            "The generated preview PDF is too large.",
-        );
-      }
       return {
         pdfBase64: pdfBytes.toString("base64"),
         fileName: `preview_${document.docType}.pdf`,
         previewOnly: true,
       };
+    },
+);
+
+// Returns the same preview PDF as raw bytes. The dedicated Firebase header
+// keeps the endpoint reachable through public Cloud Run IAM while the handler
+// still requires and verifies the signed-in user's Firebase ID token.
+exports.previewServerDocumentHttp = onRequest(
+    {
+      region: "me-west1",
+      timeoutSeconds: 120,
+      memory: "512MiB",
+      cors: true,
+      invoker: "public",
+    },
+    async (request, response) => {
+      response.set({
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
+      });
+      if (request.method !== "POST") {
+        response.set("Allow", "POST");
+        response.status(405).json({error: "POST is required."});
+        return;
+      }
+
+      const firebaseToken = normalizeString(
+          request.get("X-Firebase-Auth"),
+      ).trim();
+      if (!firebaseToken) {
+        response.status(401).json({error: "Authentication required."});
+        return;
+      }
+
+      let userId;
+      try {
+        userId = (await admin.auth().verifyIdToken(firebaseToken)).uid;
+      } catch (error) {
+        response.status(401).json({error: "Authentication required."});
+        return;
+      }
+
+      try {
+        const {document, pdfBytes} = await createServerDocumentPreviewPdf(
+            userId,
+            request.body,
+        );
+        response.set({
+          "Content-Type": "application/pdf",
+          "Content-Disposition": `inline; filename="preview_${
+            safeHeaderFileName(document.docType)
+          }.pdf"`,
+          "Content-Length": String(pdfBytes.length),
+        });
+        response.status(200).send(pdfBytes);
+      } catch (error) {
+        const status = previewDocumentHttpStatus(error);
+        logger.error("Could not generate binary document preview", {
+          userId,
+          status,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        response.status(status).json({
+          error: status === 500 ?
+            "The document preview could not be generated." : error.message,
+        });
+      }
     },
 );
 

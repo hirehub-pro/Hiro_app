@@ -15,6 +15,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart' as firebase_storage;
+import 'package:http/http.dart' as http;
 import 'package:untitled1/services/subscription_access_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:share_plus/share_plus.dart';
@@ -25,6 +26,7 @@ import 'package:untitled1/services/app_navigation_service.dart';
 import 'package:untitled1/services/profile_document_service.dart';
 import 'package:untitled1/pages/chat_page.dart';
 import 'package:untitled1/utils/payment_installment_dates.dart';
+import 'package:untitled1/utils/invoice_preview_cache.dart';
 import 'package:xml/xml.dart';
 import 'package:internet_connection_checker_plus/internet_connection_checker_plus.dart';
 
@@ -1040,6 +1042,9 @@ class InvoiceBuilderPage extends StatefulWidget {
 }
 
 class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
+  static const String _previewDocumentEndpoint =
+      'https://me-west1-hire-hub-fe6c4.cloudfunctions.net/'
+      'previewServerDocumentHttp';
   static const int _sandboxAccountingSoftwareNumber = 987654321;
   static const Set<String> _licensedOnlyDocumentTypes = {
     'invoice',
@@ -1104,6 +1109,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   final FirebaseFunctions _functions = FirebaseFunctions.instanceFor(
     region: 'me-west1',
   );
+  final InvoicePreviewCache _previewCache = InvoicePreviewCache();
 
   bool get _isLicensedDealerType =>
       _dealerType == 'licensed' || _dealerType == 'company';
@@ -3677,20 +3683,44 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   }
 
   Future<Uint8List> _createServerDocumentPreview() async {
-    final callable = _functions.httpsCallable('previewServerDocument');
-    final result = await callable.call<Map<String, dynamic>>(
-      _serverDocumentRequestPayload(),
-    );
-    final encoded = result.data['pdfBase64']?.toString().trim();
-    if (result.data['previewOnly'] != true ||
-        encoded == null ||
-        encoded.isEmpty) {
-      throw StateError('The server did not return a document preview.');
+    final payload = _serverDocumentRequestPayload();
+    final cachedBytes = _previewCache.lookup(payload);
+    if (cachedBytes != null) return cachedBytes;
+
+    final user = FirebaseAuth.instance.currentUser;
+    final idToken = await user?.getIdToken();
+    if (idToken == null || idToken.isEmpty) {
+      throw StateError('Authentication required.');
     }
-    final bytes = base64Decode(encoded);
+
+    final response = await http.post(
+      Uri.parse(_previewDocumentEndpoint),
+      headers: <String, String>{
+        'Accept': 'application/pdf',
+        'Content-Type': 'application/json',
+        'X-Firebase-Auth': idToken,
+      },
+      body: jsonEncode(payload),
+    );
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      var message = 'The server did not return a document preview.';
+      try {
+        final error = jsonDecode(utf8.decode(response.bodyBytes));
+        if (error is Map &&
+            error['error']?.toString().trim().isNotEmpty == true) {
+          message = error['error'].toString().trim();
+        }
+      } on FormatException {
+        // Keep the stable fallback for non-JSON infrastructure errors.
+      }
+      throw StateError(message);
+    }
+
+    final bytes = response.bodyBytes;
     if (bytes.length < 4 || String.fromCharCodes(bytes.take(4)) != '%PDF') {
       throw StateError('The server returned an invalid document preview.');
     }
+    _previewCache.store(payload, bytes);
     return bytes;
   }
 

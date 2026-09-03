@@ -24,6 +24,9 @@ const FONT_PATH = path.join(
     "fonts",
     "Rubik-VariableFont_wght.ttf",
 );
+// Packaged fonts never change during an instance's lifetime. Reading once at
+// cold start avoids a synchronous filesystem read for every generated PDF.
+const FONT_BYTES = fs.readFileSync(FONT_PATH);
 
 function boundedString(value, maxLength, fallback = "") {
   const result = value == null ? "" : String(value).trim();
@@ -877,8 +880,7 @@ async function buildTaxInvoicePdf({
   const invoice = payload.invoices_list[0];
   const pdf = await PDFDocument.create();
   pdf.registerFontkit(fontkit);
-  const fontBytes = fs.readFileSync(FONT_PATH);
-  const font = await pdf.embedFont(fontBytes, {subset: true});
+  const font = await pdf.embedFont(FONT_BYTES, {subset: true});
 
   async function embedOptionalImage(bytes) {
     if (!bytes) return null;
@@ -895,7 +897,8 @@ async function buildTaxInvoicePdf({
   }
 
   const logo = await embedOptionalImage(business.logoBytes);
-  const appIcon = await embedOptionalImage(business.appIconBytes);
+  const appIcon = previewOnly ? null :
+    await embedOptionalImage(business.appIconBytes);
   const generatedParts = Object.fromEntries(new Intl.DateTimeFormat("en-GB", {
     day: "2-digit",
     month: "2-digit",
