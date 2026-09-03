@@ -68,6 +68,14 @@ const {
   validateTaxInvoicePresentation,
 } = require("./tax_invoice_pdf");
 const {
+  decodeMasterKey,
+  decryptSigningCredential,
+  encryptSigningCredential,
+  generateBusinessSigningCredential,
+  isAccountingDocumentType,
+  signPdfWithCredential,
+} = require("./pdf_digital_signature");
+const {
   buildUniformArtifacts,
   loadBkmvSourceData,
   normalizeUniformExportRequest,
@@ -100,6 +108,7 @@ const AWS_SES_SMTP_USERNAME = defineSecret("AWS_SES_SMTP_USERNAME");
 const AWS_SES_SMTP_PASSWORD = defineSecret("AWS_SES_SMTP_PASSWORD");
 const AWS_SES_REGION = defineSecret("AWS_SES_REGION");
 const AWS_SES_FROM_EMAIL = defineSecret("AWS_SES_FROM_EMAIL");
+const PDF_SIGNING_MASTER_KEY = defineSecret("PDF_SIGNING_MASTER_KEY");
 const AWS_SES_SECRETS = [
   AWS_SES_SMTP_USERNAME,
   AWS_SES_SMTP_PASSWORD,
@@ -108,6 +117,121 @@ const AWS_SES_SECRETS = [
 ];
 
 let cachedSesTransport;
+
+function documentSigningCredentialRef(userId, businessId) {
+  const safeBusinessId = normalizeString(businessId).replace(/\D/g, "");
+  if (!safeBusinessId) {
+    throw new Error("A verified business ID is required for PDF signing.");
+  }
+  return admin.firestore().collection("users").doc(userId)
+      .collection("documentSigningCredentials").doc(safeBusinessId);
+}
+
+function decryptStoredBusinessCredential({snapshot, masterKey, userId,
+  business}) {
+  const data = snapshot.data() || {};
+  const storedBusinessId = normalizeString(data.businessId).replace(/\D/g, "");
+  const expectedBusinessId = normalizeString(business.businessId)
+      .replace(/\D/g, "");
+  if (!storedBusinessId || storedBusinessId !== expectedBusinessId) {
+    throw new Error("The PDF signing credential belongs to another business.");
+  }
+  return {
+    ...decryptSigningCredential({
+      encrypted: data.encryptedCredential,
+      masterKey,
+      userId,
+      businessId: expectedBusinessId,
+    }),
+    metadata: data.certificate || {},
+  };
+}
+
+async function getOrCreateBusinessSigningCredential({userId, business}) {
+  const masterKey = decodeMasterKey(PDF_SIGNING_MASTER_KEY.value());
+  const credentialRef = documentSigningCredentialRef(
+      userId,
+      business.businessId,
+  );
+  let snapshot = await credentialRef.get();
+  if (snapshot.exists) {
+    return decryptStoredBusinessCredential({
+      snapshot,
+      masterKey,
+      userId,
+      business,
+    });
+  }
+
+  const generated = generateBusinessSigningCredential({
+    businessId: business.businessId,
+    businessName: business.name,
+  });
+  const encryptedCredential = encryptSigningCredential({
+    credential: generated,
+    masterKey,
+    userId,
+    businessId: business.businessId,
+  });
+  try {
+    await credentialRef.create({
+      schemaVersion: 1,
+      businessId: generated.metadata.businessId,
+      businessName: generated.metadata.businessName,
+      encryptedCredential,
+      certificate: generated.metadata,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    return generated;
+  } catch (error) {
+    if (error?.code !== 6 && error?.code !== "already-exists") throw error;
+    snapshot = await credentialRef.get();
+    if (!snapshot.exists) throw error;
+    return decryptStoredBusinessCredential({
+      snapshot,
+      masterKey,
+      userId,
+      business,
+    });
+  }
+}
+
+async function digitallySignFinalAccountingPdf({
+  userId,
+  business,
+  reservation,
+  pdfBytes,
+}) {
+  if (!isAccountingDocumentType(reservation.docType)) {
+    return {pdfBytes: Buffer.from(pdfBytes), digitalSignature: null};
+  }
+  const credential = await getOrCreateBusinessSigningCredential({
+    userId,
+    business,
+  });
+  const signedAt = new Date();
+  const signedPdf = await signPdfWithCredential({
+    pdfBytes,
+    credential,
+    business,
+    documentNumber: reservation.documentNumber,
+    signingTime: signedAt,
+  });
+  return {
+    pdfBytes: signedPdf,
+    digitalSignature: {
+      status: "signed",
+      format: "PAdES/CAdES detached",
+      digestAlgorithm: "SHA-256",
+      signerBusinessId: normalizeString(business.businessId).replace(/\D/g, ""),
+      signerName: normalizeString(business.name).trim(),
+      certificateType: credential.metadata.certificateType,
+      certificateFingerprintSha256:
+        credential.metadata.certificateFingerprintSha256,
+      signedAt,
+    },
+  };
+}
 
 function sesTransport() {
   cachedSesTransport ||= createSesTransport({
@@ -1308,6 +1432,7 @@ async function generateServerDocumentPdf(document, context, previewOnly) {
     business: previewOnly ? {...business, appIconBytes: null} : business,
     presentation: serverDocumentPresentation(document),
     previewOnly,
+    digitallySigned: !previewOnly && isAccountingDocumentType(document.docType),
   });
 }
 
@@ -1564,6 +1689,22 @@ function serverDocumentResponse(data, document) {
     amount: Number(data.amount),
     docType: document.docType,
     items: Array.isArray(data.items) ? data.items : [],
+    digitalSignature: data.digitalSignature || null,
+  };
+}
+
+function storedDigitalSignature(value) {
+  if (!value) return null;
+  return {
+    status: "signed",
+    format: normalizeString(value.format).trim(),
+    digestAlgorithm: normalizeString(value.digestAlgorithm).trim(),
+    signerBusinessId: normalizeString(value.signerBusinessId).trim(),
+    signerName: normalizeString(value.signerName).trim(),
+    certificateType: normalizeString(value.certificateType).trim(),
+    certificateFingerprintSha256:
+      normalizeString(value.certificateFingerprintSha256).trim(),
+    signedAt: admin.firestore.Timestamp.fromDate(value.signedAt),
   };
 }
 
@@ -1575,6 +1716,7 @@ function serverDocumentStoredFields({
   downloadUrl,
   size,
   generation,
+  digitalSignature = null,
 }) {
   const signedAmount = document.isNegativeReceipt ?
     -document.finalTotal : document.finalTotal;
@@ -1593,6 +1735,7 @@ function serverDocumentStoredFields({
   const date = document.date.replaceAll("-", "");
   const paymentDueDate = document.paymentDueDate ?
     document.paymentDueDate.replaceAll("-", "") : null;
+  const storedSignature = storedDigitalSignature(digitalSignature);
   return {
     type: document.docType,
     docType: document.docType,
@@ -1651,6 +1794,7 @@ function serverDocumentStoredFields({
     } : {}),
     ...(document.creditNoteLegal ?
       {creditNoteLegal: document.creditNoteLegal} : {}),
+    ...(storedSignature ? {digitalSignature: storedSignature} : {}),
     authoritativeServerDocument: document,
     serverDocument: {
       operationId: document.operationId,
@@ -1667,6 +1811,7 @@ function serverDocumentStoredFields({
       contentType: "application/pdf",
       generation,
       generatedBy: "server",
+      ...(storedSignature ? {digitalSignature: storedSignature} : {}),
     },
     fallbackPreview: admin.firestore.FieldValue.delete(),
   };
@@ -2028,6 +2173,7 @@ exports.previewServerDocumentHttp = onRequest(
 exports.createServerDocument = onCall(
     {
       region: "me-west1",
+      secrets: [PDF_SIGNING_MASTER_KEY],
       timeoutSeconds: 120,
       memory: "512MiB",
     },
@@ -2175,11 +2321,19 @@ exports.createServerDocument = onCall(
 
       let generationStage = "pdf_generation";
       try {
-        const pdfBytes = await generateServerDocumentPdf(
+        const unsignedPdfBytes = await generateServerDocumentPdf(
             document,
             context,
             false,
         );
+        generationStage = "pdf_signing";
+        const {pdfBytes, digitalSignature} =
+          await digitallySignFinalAccountingPdf({
+            userId,
+            business: context.business,
+            reservation: document,
+            pdfBytes: unsignedPdfBytes,
+          });
         if (pdfBytes.length < 1 || pdfBytes.length > 25 * 1024 * 1024) {
           throw new Error("The generated PDF has an invalid size.");
         }
@@ -2210,6 +2364,11 @@ exports.createServerDocument = onCall(
               invoiceDocId: document.invoiceDocId,
               ownerUid: userId,
               generatedBy: "server",
+              ...(digitalSignature ? {
+                digitalSignatureFormat: digitalSignature.format,
+                digitalSignatureFingerprint:
+                  digitalSignature.certificateFingerprintSha256,
+              } : {}),
             },
           },
         });
@@ -2228,6 +2387,7 @@ exports.createServerDocument = onCall(
           downloadUrl,
           size: Number(metadata.size),
           generation: normalizeString(metadata.generation),
+          digitalSignature,
         });
         const ledgerPosting = buildClientLedgerPosting({
           userId,
@@ -3015,7 +3175,11 @@ exports.initializeDocumentCounter = onCall(
 exports.requestTaxInvoiceAllocation = onCall(
     {
       region: "me-west1",
-      secrets: [TAX_AUTH_CLIENT_ID, TAX_AUTH_CLIENT_SECRET],
+      secrets: [
+        TAX_AUTH_CLIENT_ID,
+        TAX_AUTH_CLIENT_SECRET,
+        PDF_SIGNING_MASTER_KEY,
+      ],
       timeoutSeconds: 120,
       memory: "512MiB",
     },
@@ -3242,7 +3406,11 @@ exports.requestTaxInvoiceAllocation = onCall(
 exports.submitTaxInvoiceDecision = onCall(
     {
       region: "me-west1",
-      secrets: [TAX_AUTH_CLIENT_ID, TAX_AUTH_CLIENT_SECRET],
+      secrets: [
+        TAX_AUTH_CLIENT_ID,
+        TAX_AUTH_CLIENT_SECRET,
+        PDF_SIGNING_MASTER_KEY,
+      ],
       timeoutSeconds: 120,
       memory: "512MiB",
     },
@@ -3521,7 +3689,7 @@ exports.submitTaxInvoiceDecision = onCall(
 exports.finalizeTaxInvoiceDocument = onCall(
     {
       region: "me-west1",
-      secrets: [TAX_AUTH_CLIENT_SECRET],
+      secrets: [TAX_AUTH_CLIENT_SECRET, PDF_SIGNING_MASTER_KEY],
       timeoutSeconds: 120,
       memory: "512MiB",
     },
@@ -4246,7 +4414,18 @@ async function createAutomaticCancellationCreditNote({
   const document = claim.document;
   const creditRef = claim.creditRef;
   try {
-    const pdfBytes = await generateServerDocumentPdf(document, context, false);
+    const unsignedPdfBytes = await generateServerDocumentPdf(
+        document,
+        context,
+        false,
+    );
+    const {pdfBytes, digitalSignature} =
+      await digitallySignFinalAccountingPdf({
+        userId,
+        business: context.business,
+        reservation: document,
+        pdfBytes: unsignedPdfBytes,
+      });
     if (pdfBytes.length < 1 || pdfBytes.length > 25 * 1024 * 1024) {
       throw new Error("The generated Tax Invoice Credit PDF has an invalid size.");
     }
@@ -4276,6 +4455,9 @@ async function createAutomaticCancellationCreditNote({
           invoiceDocId: document.invoiceDocId,
           ownerUid: userId,
           generatedBy: "server-automatic-cancellation",
+          digitalSignatureFormat: digitalSignature.format,
+          digitalSignatureFingerprint:
+            digitalSignature.certificateFingerprintSha256,
         },
       },
     });
@@ -4293,6 +4475,7 @@ async function createAutomaticCancellationCreditNote({
       downloadUrl,
       size: Number(metadata.size),
       generation: normalizeString(metadata.generation),
+      digitalSignature,
     });
     const ledgerPosting = buildClientLedgerPosting({
       userId,
@@ -4421,6 +4604,7 @@ function taxInvoiceStorageFields({
   size,
   generation,
   workflowStatus = "finalized",
+  digitalSignature = null,
 }) {
   const invoice = payload.invoices_list[0];
   const totalBeforeRounding = roundMoney(invoice.payment_amount_including_vat);
@@ -4458,6 +4642,7 @@ function taxInvoiceStorageFields({
   const name = clientName ?
     `${displayType} #${reservation.documentNumber} - ${clientName}` :
     `${displayType} #${reservation.documentNumber}`;
+  const storedSignature = storedDigitalSignature(digitalSignature);
   return {
     invoice: {
       type: reservation.docType,
@@ -4493,6 +4678,7 @@ function taxInvoiceStorageFields({
       invoiceDocId: reservation.invoiceDocId,
       date,
       ...(paymentDueDate ? {paymentDueDate} : {}),
+      ...(storedSignature ? {digitalSignature: storedSignature} : {}),
       paymentStatus: reservation.docType === "invoice" ? "unpaid" : "paid",
       paidAmount: reservation.docType === "invoice" ? 0 : Math.abs(total),
       ...(allocation?.confirmationNumber ? {
@@ -4517,6 +4703,7 @@ function taxInvoiceStorageFields({
         contentType: "application/pdf",
         generation,
         generatedBy: "server",
+        ...(storedSignature ? {digitalSignature: storedSignature} : {}),
       },
       fallbackPreview: admin.firestore.FieldValue.delete(),
     },
@@ -4758,6 +4945,7 @@ async function finalizeAllocatedTaxInvoiceAttempt({
       amount: Number(current.amount),
       docType: reservation.docType,
       items: Array.isArray(current.items) ? current.items : [],
+      digitalSignature: current.digitalSignature || null,
     };
   }
   if (allocation?.confirmationNumber &&
@@ -4776,13 +4964,21 @@ async function finalizeAllocatedTaxInvoiceAttempt({
       payload,
       reservation,
     });
-  const pdfBytes = await buildTaxInvoicePdf({
+  const unsignedPdfBytes = await buildTaxInvoicePdf({
     payload,
     allocation,
     reservation,
     presentation,
     business,
+    digitallySigned: true,
   });
+  const {pdfBytes, digitalSignature} =
+    await digitallySignFinalAccountingPdf({
+      userId,
+      business,
+      reservation,
+      pdfBytes: unsignedPdfBytes,
+    });
   if (pdfBytes.length < 1 || pdfBytes.length > 25 * 1024 * 1024) {
     throw new Error("The generated invoice PDF has an invalid size.");
   }
@@ -4812,6 +5008,9 @@ async function finalizeAllocatedTaxInvoiceAttempt({
         invoiceDocId: reservation.invoiceDocId,
         ownerUid: userId,
         generatedBy: "server",
+        digitalSignatureFormat: digitalSignature.format,
+        digitalSignatureFingerprint:
+          digitalSignature.certificateFingerprintSha256,
       },
     },
   });
@@ -4833,6 +5032,7 @@ async function finalizeAllocatedTaxInvoiceAttempt({
     size: Number(metadata.size),
     generation: normalizeString(metadata.generation),
     workflowStatus,
+    digitalSignature,
   });
   fields.log.userId = userId;
   const userRef = admin.firestore().collection("users").doc(userId);
@@ -4920,6 +5120,7 @@ async function finalizeAllocatedTaxInvoiceAttempt({
     amount: fields.total,
     docType: reservation.docType,
     items: fields.invoice.items,
+    digitalSignature: fields.invoice.digitalSignature || null,
   };
 }
 

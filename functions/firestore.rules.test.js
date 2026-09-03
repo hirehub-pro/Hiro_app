@@ -605,6 +605,16 @@ test("keeps OAuth and verification secrets inaccessible to clients", {
   await assertFails(getDoc(doc(db, `users/${uid}/tax_authority/oauth`)));
   await assertFails(getDoc(doc(db, `taxAuthorityOAuthTokens/${uid}`)));
   await assertFails(getDoc(doc(db, `taxAuthorityUniformOAuthTokens/${uid}`)));
+  await assertFails(getDoc(doc(
+      db,
+      `users/${uid}/documentSigningCredentials/123456789`,
+  )));
+  await assertFails(setDoc(doc(
+      db,
+      `users/${uid}/documentSigningCredentials/123456789`,
+  ), {
+    encryptedCredential: "fake",
+  }));
   await assertFails(setDoc(doc(db, `users/${uid}/invoiceBuilderVerifications/emailCode`), {
     codeHash: "fake",
   }));

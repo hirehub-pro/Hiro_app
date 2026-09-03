@@ -368,24 +368,39 @@ function footerGeneratedAtText(generatedAt, previewOnly) {
   return previewOnly ? null : generatedAt;
 }
 
+function footerSignatureText(previewOnly, digitallySigned) {
+  if (previewOnly) {
+    return {
+      title: "טיוטה – לתצוגה מקדימה בלבד",
+      helper: "יש לשמור את המסמך כדי להפיק מסמך תקף",
+    };
+  }
+  if (digitallySigned) {
+    return {
+      title: "חתימה דיגיטלית מאובטחת",
+      helper: "מסמך ממוחשב נחתם דיגיטלית על ידי העסק המפיק",
+    };
+  }
+  return {
+    title: "מסמך הופק באופן ממוחשב",
+    helper: "הופק על ידי הירו",
+  };
+}
+
 function drawFooter(page, font, pageNumber, pageCount, generatedAt,
-    reservation, appIcon, previewOnly) {
+    reservation, appIcon, previewOnly, digitallySigned) {
   page.drawLine({
     start: {x: MARGIN, y: 59},
     end: {x: A4.width - MARGIN, y: 59},
     thickness: 0.8,
     color: rgb(38 / 255, 50 / 255, 56 / 255),
   });
-  const footerTitle = previewOnly ?
-    "טיוטה – לתצוגה מקדימה בלבד" : "חתימה דיגיטלית מאובטחת";
-  const footerHelper = previewOnly ?
-    "יש לשמור את המסמך כדי לאמת אותו ולהפיק מסמך תקף" :
-    "מסמך ממוחשב הופק על ידי הירו";
-  drawRight(page, font, footerTitle,
+  const footerText = footerSignatureText(previewOnly, digitallySigned);
+  drawRight(page, font, footerText.title,
       A4.width - MARGIN, 37, 15.75, {color: TEXT});
   const signatureRight = A4.width - MARGIN;
   const signatureHelperWidth = drawRight(
-      page, font, footerHelper, signatureRight, 20, 8.25, {color: MUTED},
+      page, font, footerText.helper, signatureRight, 20, 8.25, {color: MUTED},
   );
   if (appIcon && !previewOnly) {
     const scale = Math.min(20 / appIcon.width, 20 / appIcon.height);
@@ -876,6 +891,7 @@ async function buildTaxInvoicePdf({
   presentation,
   generatedAt = new Date(),
   previewOnly = false,
+  digitallySigned = false,
 }) {
   const invoice = payload.invoices_list[0];
   const pdf = await PDFDocument.create();
@@ -1034,6 +1050,7 @@ async function buildTaxInvoicePdf({
         reservation,
         appIcon,
         previewOnly,
+        digitallySigned,
     );
     if (previewOnly) {
       const watermark = visualText("לתצוגה מקדימה בלבד");
@@ -1079,6 +1096,7 @@ module.exports = {
   creditDealTypeLabel,
   expandPaymentInstallments,
   footerGeneratedAtText,
+  footerSignatureText,
   formatMoney,
   normalizeTaxInvoicePresentation,
   paymentColumns,

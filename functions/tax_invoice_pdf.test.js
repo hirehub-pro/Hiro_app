@@ -10,6 +10,7 @@ const {
   creditDealTypeLabel,
   expandPaymentInstallments,
   footerGeneratedAtText,
+  footerSignatureText,
   formatMoney,
   normalizeTaxInvoicePresentation,
   paymentColumns,
@@ -21,6 +22,13 @@ test("hides the creation date in preview footers only", () => {
   const generatedAt = "13:00 18-08-2026";
   assert.equal(footerGeneratedAtText(generatedAt, true), null);
   assert.equal(footerGeneratedAtText(generatedAt, false), generatedAt);
+});
+
+test("claims a digital signature only when one will be embedded", () => {
+  assert.match(footerSignatureText(false, true).title, /חתימה דיגיטלית/);
+  assert.match(footerSignatureText(false, true).helper, /מסמך ממוחשב/);
+  assert.doesNotMatch(footerSignatureText(false, false).title, /חתימה דיגיטלית/);
+  assert.match(footerSignatureText(true, false).title, /טיוטה/);
 });
 
 function samplePayload() {

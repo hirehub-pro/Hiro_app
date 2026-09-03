@@ -1016,6 +1016,12 @@ service cloud.firestore {
         allow read, write: if false;
       }
 
+      // Encrypted private keys are only accessible to trusted backend code.
+      // Admin SDK writes bypass these client rules.
+      match /documentSigningCredentials/{credentialId} {
+        allow read, write: if false;
+      }
+
       match /uniformTaxSubmissions/{submissionId} {
         allow read: if isOwner(userId);
         allow write: if false;
