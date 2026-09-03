@@ -14,6 +14,7 @@ const {
   formatMoney,
   normalizeTaxInvoicePresentation,
   paymentColumns,
+  splitTrailingPostalCode,
   taxableSubtotalBeforeTax,
   visualText,
 } = require("./tax_invoice_pdf");
@@ -194,6 +195,14 @@ test("formats PDF money with thousands separators and two decimals", () => {
   assert.equal(formatMoney(-1234.567), "-1,234.57 ₪");
 });
 
+test("keeps a trailing postal code in its own left-to-right PDF run", () => {
+  assert.deepEqual(
+      splitTrailingPostalCode("אל רחמה, שייח דנון, 2524800"),
+      {address: "אל רחמה, שייח דנון", postalCode: "2524800"},
+  );
+  assert.equal(splitTrailingPostalCode("רחוב הרצל 10"), null);
+});
+
 test("calculates the subtotal subject to VAT when exempt items exist", () => {
   const invoice = {
     amount_before_discount: 4000,
@@ -282,6 +291,33 @@ test("server generator creates a readable multi-language PDF", async () => {
   assert.ok(pdf.getPageCount() >= 1);
   assert.match(pdf.getTitle(), /2026-0042/);
   assert.equal(pdf.getSubject(), "Tax Authority allocation 987654321");
+});
+
+test("renders a stored business signature above the footer", async () => {
+  const signatureBytes = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL39wAAAABJRU5ErkJggg==",
+      "base64",
+  );
+  const bytes = await buildTaxInvoicePdf({
+    payload: samplePayload(),
+    allocation: null,
+    reservation: {
+      docType: "quote",
+      documentNumber: "",
+      sequenceNumber: null,
+      invoiceDocId: "quote_signature_test",
+    },
+    business: {
+      name: "עסק בדיקה",
+      businessId: "123456789",
+      dealerType: "licensed",
+      signatureBytes,
+    },
+    presentation: normalizeTaxInvoicePresentation({}),
+    generatedAt: new Date("2026-08-18T10:00:00Z"),
+  });
+  const pdf = await PDFDocument.load(bytes);
+  assert.equal(pdf.getPageCount(), 1);
 });
 
 test("preview PDFs are marked preview-only without changing final PDFs", async () => {

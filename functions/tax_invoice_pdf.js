@@ -348,9 +348,51 @@ function drawLabelValue(page, font, label, value, xRight, y, width) {
   });
   const valueRight = xRight - labelWidth - 3;
   const safeValue = boundedString(value, 500, "—");
+  const addressWithPostalCode = splitTrailingPostalCode(safeValue);
+  if (addressWithPostalCode) {
+    const postalCodeWidth = font.widthOfTextAtSize(
+        addressWithPostalCode.postalCode,
+        11.25,
+    );
+    const addressLines = wrapLogicalText(
+        addressWithPostalCode.address,
+        font,
+        11.25,
+        Math.max(60, width - labelWidth - postalCodeWidth - 12),
+    );
+    const addressWidth = drawRight(
+        page,
+        font,
+        addressLines[0] || "—",
+        valueRight,
+        y,
+        11.25,
+    );
+    drawLeft(
+        page,
+        font,
+        addressWithPostalCode.postalCode,
+        Math.max(MARGIN, valueRight - addressWidth - postalCodeWidth - 6),
+        y,
+        11.25,
+        {direction: "ltr"},
+    );
+    return;
+  }
   const lines = wrapLogicalText(safeValue, font, 11.25,
       Math.max(60, width - labelWidth - 6));
   drawRight(page, font, lines[0] || "—", valueRight, y, 11.25);
+}
+
+function splitTrailingPostalCode(value) {
+  const match = boundedString(value, 500).match(
+      /^(.+?)[,\s]+(\d{4,8})$/u,
+  );
+  if (!match) return null;
+  return {
+    address: match[1].trim(),
+    postalCode: match[2],
+  };
 }
 
 function drawInlineLabelValue(page, font, label, value, xRight, y, size,
@@ -388,7 +430,7 @@ function footerSignatureText(previewOnly, digitallySigned) {
 }
 
 function drawFooter(page, font, pageNumber, pageCount, generatedAt,
-    reservation, appIcon, previewOnly, digitallySigned) {
+    reservation, appIcon, businessSignature, previewOnly, digitallySigned) {
   page.drawLine({
     start: {x: MARGIN, y: 59},
     end: {x: A4.width - MARGIN, y: 59},
@@ -444,6 +486,39 @@ function drawFooter(page, font, pageNumber, pageCount, generatedAt,
   drawLeft(page, font, `${pageNumber} / ${pageCount}`, MARGIN, 17, 9.75, {
     color: MUTED_LIGHT,
   });
+
+  if (businessSignature) {
+    const signatureRight = A4.width - MARGIN;
+    const signatureLineWidth = 190;
+    const signatureLineY = 91;
+    page.drawLine({
+      start: {x: signatureRight - signatureLineWidth, y: signatureLineY},
+      end: {x: signatureRight, y: signatureLineY},
+      thickness: 0.8,
+      color: MUTED,
+    });
+    drawRight(
+        page,
+        font,
+        "חתימת העסק:",
+        signatureRight - signatureLineWidth - 10,
+        88,
+        11.25,
+        {color: MUTED},
+    );
+    const scale = Math.min(
+        signatureLineWidth / businessSignature.width,
+        62 / businessSignature.height,
+    );
+    const width = businessSignature.width * scale;
+    const height = businessSignature.height * scale;
+    page.drawImage(businessSignature, {
+      x: signatureRight - width,
+      y: signatureLineY + 6,
+      width,
+      height,
+    });
+  }
 }
 
 function addInvoicePage(pdf) {
@@ -602,7 +677,7 @@ function drawItemRow(page, font, item, y, widths, layout) {
 
 function drawSummary(page, font, invoice, presentation, reservation, y) {
   const width = 260;
-  const x = A4.width - MARGIN - width;
+  const x = MARGIN;
   const beforeRounding = money(invoice.payment_amount_including_vat);
   const rounding = presentation.roundTotalEnabled ? money(beforeRounding - Math.floor(beforeRounding)) : 0;
   const finalTotal = money(beforeRounding - rounding);
@@ -913,6 +988,7 @@ async function buildTaxInvoicePdf({
   }
 
   const logo = await embedOptionalImage(business.logoBytes);
+  const businessSignature = await embedOptionalImage(business.signatureBytes);
   const appIcon = previewOnly ? null :
     await embedOptionalImage(business.appIconBytes);
   const generatedParts = Object.fromEntries(new Intl.DateTimeFormat("en-GB", {
@@ -952,16 +1028,22 @@ async function buildTaxInvoicePdf({
   ], MARGIN + cardWidth + cardGap, cardBottom,
   cardWidth, cardHeight, BLUE_PALE);
   addDetailCard(page, font, "פרטי לקוח", invoice.customer_name, "לכבוד", [
-    ["מספר עוסק", invoice.customer_vat_number],
+    ["מס' עוסק / ת.ז / ח.פ", invoice.customer_vat_number],
+    ["כתובת", presentation.clientAddress],
     ["טלפון", presentation.clientPhone],
     ["דוא״ל", presentation.clientEmail],
-    ["כתובת", presentation.clientAddress],
   ], MARGIN, cardBottom, cardWidth, cardHeight, CLIENT_PALE);
   y = cardBottom - 28;
 
   const groups = paymentGroups(presentation);
+  const hasClientSignatureLine =
+    ["quote", "work_order"].includes(reservation.docType);
+  const minimumContentY = Math.max(
+      businessSignature ? 142 : 88,
+      hasClientSignatureLine ? 170 : 88,
+  );
   const ensureSpace = (needed, continuationTable = false) => {
-    if (y - needed >= 88) return;
+    if (y - needed >= minimumContentY) return;
     state = newPage();
     page = state.page;
     y = state.y;
@@ -1025,17 +1107,17 @@ async function buildTaxInvoicePdf({
     y = drawNotes(page, font, invoice.invoice_note, y);
   }
 
-  if (["quote", "work_order"].includes(reservation.docType)) {
+  if (hasClientSignatureLine) {
     ensureSpace(42);
-    const lineWidth = 230;
-    const center = A4.width / 2;
+    const lineWidth = 190;
+    const lineStart = MARGIN;
     page.drawLine({
-      start: {x: center - lineWidth / 2, y: 91},
-      end: {x: center + lineWidth / 2, y: 91},
+      start: {x: lineStart, y: 91},
+      end: {x: lineStart + lineWidth, y: 91},
       thickness: 0.8,
       color: MUTED,
     });
-    drawRight(page, font, "חתימה:", center + lineWidth / 2 + 62, 88, 11.25, {
+    drawRight(page, font, "חתימת הלקוח:", lineStart + lineWidth + 62, 88, 11.25, {
       color: MUTED,
     });
   }
@@ -1049,6 +1131,7 @@ async function buildTaxInvoicePdf({
         createdLabel,
         reservation,
         appIcon,
+        businessSignature,
         previewOnly,
         digitallySigned,
     );
@@ -1100,6 +1183,7 @@ module.exports = {
   formatMoney,
   normalizeTaxInvoicePresentation,
   paymentColumns,
+  splitTrailingPostalCode,
   taxableSubtotalBeforeTax,
   validateTaxInvoicePresentation,
   visualText,

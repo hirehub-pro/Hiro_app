@@ -1364,8 +1364,13 @@ async function serverDocumentContext(
   const vatPercent = Number.isFinite(vatPercentValue) &&
       vatPercentValue > 0 && vatPercentValue <= 100 ? vatPercentValue : 17;
   const businessId = normalizeBusinessId(verification.businessId);
-  const [logoBytes, appIconBytes] = await Promise.all([
+  const businessSignatureUrl = normalizeString(
+      verification.businessSignatureUrl,
+  ).trim();
+  const [logoBytes, signatureBytes, appIconBytes] = await Promise.all([
     optionalStorageBytes(`business_logos/${userId}.jpg`),
+    businessSignatureUrl ?
+      optionalStorageBytes(`business_signatures/${userId}.png`) : null,
     includeAppIcon ? optionalStorageBytes(EMAIL_APP_ICON_STORAGE_PATH) : null,
   ]);
   return {
@@ -1387,6 +1392,7 @@ async function serverDocumentContext(
       phone: normalizeString(user.phone || user.optionalPhone).trim(),
       email: normalizeString(user.email).trim(),
       logoBytes,
+      signatureBytes,
       appIconBytes,
     },
   };
@@ -3770,8 +3776,13 @@ async function taxInvoiceBusinessProfile(userId, expectedBusinessId) {
         "The verified business details changed before PDF generation.",
     );
   }
-  const [logoBytes, appIconBytes] = await Promise.all([
+  const businessSignatureUrl = normalizeString(
+      verification.businessSignatureUrl,
+  ).trim();
+  const [logoBytes, signatureBytes, appIconBytes] = await Promise.all([
     optionalStorageBytes(`business_logos/${userId}.jpg`),
+    businessSignatureUrl ?
+      optionalStorageBytes(`business_signatures/${userId}.png`) : null,
     optionalStorageBytes(EMAIL_APP_ICON_STORAGE_PATH),
   ]);
   return {
@@ -3788,6 +3799,7 @@ async function taxInvoiceBusinessProfile(userId, expectedBusinessId) {
     phone: normalizeString(user.phone || user.optionalPhone).trim(),
     email: normalizeString(user.email).trim(),
     logoBytes,
+    signatureBytes,
     appIconBytes,
   };
 }
@@ -9749,7 +9761,9 @@ async function signAndReplacePdf(signingRequest, signatureBytes, signerName) {
   const font = await pdfDocument.embedFont(fontBytes, {subset: true});
   const page = pdfDocument.getPages().at(-1);
   const pageWidth = page.getWidth();
-  const maxWidth = Math.min(190, pageWidth - 100);
+  const signatureLineStart = 42.52;
+  const signatureLineWidth = 190;
+  const maxWidth = Math.min(signatureLineWidth, pageWidth - 100);
   const maxHeight = 62;
   const scale = Math.min(
       maxWidth / signature.width,
@@ -9758,10 +9772,9 @@ async function signAndReplacePdf(signingRequest, signatureBytes, signerName) {
   );
   const width = signature.width * scale;
   const height = signature.height * scale;
-  const x = Math.max(40, (pageWidth - width) / 2);
-  // Quotes and work orders already contain a signature line at y=91 and a
-  // footer below y=59. Preserve both and add only the signing information in
-  // the space reserved by the original document template.
+  const x = signatureLineStart + (signatureLineWidth - width) / 2;
+  // Quotes and work orders reserve the lower-left area for the customer's
+  // signature line at y=91, with the footer below y=59.
   const y = 96;
 
   page.drawImage(signature, {x, y, width, height});
@@ -9775,6 +9788,7 @@ async function signAndReplacePdf(signingRequest, signatureBytes, signerName) {
     font,
     size: 7.5,
     y: 72,
+    centerX: signatureLineStart + signatureLineWidth / 2,
     color: rgb(0.2, 0.22, 0.25),
   });
 
@@ -10102,7 +10116,7 @@ function drawCenteredPdfParts(page, parts, options) {
     gap * Math.max(0, parts.length - 1);
   drawPdfParts(page, parts, {
     ...options,
-    x: (page.getWidth() - totalWidth) / 2,
+    x: (options.centerX ?? page.getWidth() / 2) - totalWidth / 2,
     gap,
   });
 }
