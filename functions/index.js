@@ -15,7 +15,6 @@ const {onMessagePublished} = require("firebase-functions/v2/pubsub");
 const {onSchedule} = require("firebase-functions/v2/scheduler");
 const logger = require("firebase-functions/logger");
 const {google} = require("googleapis");
-const {Resend} = require("resend");
 const {
   buildFailedInvoiceEmailUpdate,
   buildInvoiceEmailDeliveries,
@@ -23,6 +22,7 @@ const {
   isTerminalInvoiceEmailStatus,
   sendInvoiceEmailDeliveries,
 } = require("./email_saved_invoice");
+const {createSesTransport, sendSesEmail} = require("./ses_email");
 const {ownedInvoicePdfPath} = require("./document_security");
 const {
   taxAuthorityFailureState,
@@ -90,8 +90,34 @@ admin.initializeApp();
 
 const TAX_AUTH_CLIENT_ID = defineSecret("TAX_AUTH_CLIENT_ID");
 const TAX_AUTH_CLIENT_SECRET = defineSecret("TAX_AUTH_CLIENT_SECRET");
-const RESEND_API_KEY = defineSecret("RESEND_API_KEY");
-const RESEND_FROM_EMAIL = defineSecret("RESEND_FROM_EMAIL");
+const AWS_SES_SMTP_USERNAME = defineSecret("AWS_SES_SMTP_USERNAME");
+const AWS_SES_SMTP_PASSWORD = defineSecret("AWS_SES_SMTP_PASSWORD");
+const AWS_SES_REGION = defineSecret("AWS_SES_REGION");
+const AWS_SES_FROM_EMAIL = defineSecret("AWS_SES_FROM_EMAIL");
+const AWS_SES_SECRETS = [
+  AWS_SES_SMTP_USERNAME,
+  AWS_SES_SMTP_PASSWORD,
+  AWS_SES_REGION,
+  AWS_SES_FROM_EMAIL,
+];
+
+let cachedSesTransport;
+
+function sesTransport() {
+  cachedSesTransport ||= createSesTransport({
+    region: AWS_SES_REGION.value(),
+    smtpUsername: AWS_SES_SMTP_USERNAME.value(),
+    smtpPassword: AWS_SES_SMTP_PASSWORD.value(),
+  });
+  return cachedSesTransport;
+}
+
+async function sendEmailWithSes(message) {
+  return sendSesEmail(sesTransport(), {
+    from: AWS_SES_FROM_EMAIL.value(),
+    ...message,
+  });
+}
 
 const GOOGLE_PLAY_PACKAGE_NAME = "com.hirehub.app";
 const APPLE_BUNDLE_ID = "com.hiro.hiroapp";
@@ -344,7 +370,7 @@ const EMAIL_GOOGLE_PLAY_BADGE_STORAGE_PATH =
 
 const REQUEST_EXPIRY_TIME_ZONE = "Asia/Jerusalem";
 const INVOICE_BUILDER_EMAIL_CODE_TTL_MS = 10 * 60 * 1000;
-const INVOICE_BUILDER_EMAIL_CODE_RESEND_DELAY_MS = 60 * 1000;
+const INVOICE_BUILDER_EMAIL_CODE_SEND_DELAY_MS = 60 * 1000;
 const INVOICE_BUILDER_EMAIL_CODE_MAX_ATTEMPTS = 5;
 
 function assertOwnedInvoicePdfPath(storagePath, userId) {
@@ -4824,7 +4850,7 @@ exports.generateUniformExport = onCall(
       region: "me-west1",
       timeoutSeconds: 540,
       memory: "1GiB",
-      secrets: [RESEND_API_KEY, RESEND_FROM_EMAIL],
+      secrets: AWS_SES_SECRETS,
     },
     async (request) => {
       const userId = request.auth?.uid;
@@ -4887,22 +4913,17 @@ exports.generateUniformExport = onCall(
         if (totalEmailBytes > 28 * 1024 * 1024) {
           throw new Error("The generated files are too large to send by email.");
         }
-        const {data: emailData, error: emailError} =
-          await new Resend(RESEND_API_KEY.value()).emails.send({
-            from: RESEND_FROM_EMAIL.value(),
-            to: [input.recipientEmail],
-            subject: "קבצים במבנה אחיד מהירו",
-            text: "שלום,\n\nמצורפים קבצי המבנה האחיד שהופקו " +
-              "באמצעות הירו. קישור ההורדה תקף לזמן מוגבל.\n\n" +
-              "בברכה,\nצוות הירו",
-            attachments: emailFiles.map((file) => ({
-              filename: file.fileName,
-              content: file.bytes,
-            })),
-          });
-        if (emailError) {
-          throw new Error(emailError.message || "Resend rejected the email.");
-        }
+        const emailData = await sendEmailWithSes({
+          to: [input.recipientEmail],
+          subject: "קבצים במבנה אחיד מהירו",
+          text: "שלום,\n\nמצורפים קבצי המבנה האחיד שהופקו " +
+            "באמצעות הירו. קישור ההורדה תקף לזמן מוגבל.\n\n" +
+            "בברכה,\nצוות הירו",
+          attachments: emailFiles.map((file) => ({
+            filename: file.fileName,
+            content: file.bytes,
+          })),
+        });
 
         const completedAt = admin.firestore.Timestamp.now();
         await exportRef.set({
@@ -4915,7 +4936,7 @@ exports.generateUniformExport = onCall(
           storageRoot: saved.root,
           bundleFileName: artifacts.files.bundle.fileName,
           downloadUrl: saved.downloadUrl,
-          emailId: emailData?.id || null,
+          emailId: emailData.id,
           emailedAt: completedAt,
           expiresAt: admin.firestore.Timestamp.fromDate(saved.expiresAt),
           completedAt,
@@ -6346,7 +6367,7 @@ async function sendInvoiceBuilderEmailVerification({db, userId, email}) {
     const lastSentAt = current.data()?.sentAt?.toDate?.();
     if (lastSentAt &&
         now - lastSentAt.getTime() <
-          INVOICE_BUILDER_EMAIL_CODE_RESEND_DELAY_MS) {
+          INVOICE_BUILDER_EMAIL_CODE_SEND_DELAY_MS) {
       throw new HttpsError(
           "resource-exhausted",
           "A verification email was sent recently. Please wait one minute.",
@@ -6362,8 +6383,7 @@ async function sendInvoiceBuilderEmailVerification({db, userId, email}) {
   try {
     const link = await admin.auth().generateEmailVerificationLink(email);
     const safeLink = escapeHtml(link);
-    const {error} = await new Resend(RESEND_API_KEY.value()).emails.send({
-      from: RESEND_FROM_EMAIL.value(),
+    await sendEmailWithSes({
       to: [email],
       subject: "אימות כתובת הדוא״ל שלך בהירו",
       text: "כדי לאמת את כתובת הדוא״ל שלך בהירו, יש לפתוח את הקישור הבא:\n\n" +
@@ -6377,13 +6397,7 @@ async function sendInvoiceBuilderEmailVerification({db, userId, email}) {
         `font-weight:700">אימות כתובת הדוא״ל</a></p>` +
         `<p>לאחר האימות יש לחזור לאפליקציה ולנסות שוב.</p>` +
         `</div>`,
-    }, {
-      idempotencyKey:
-        `invoice-builder-email-verification/${userId}/${requestId}`,
     });
-    if (error) {
-      throw new Error(error.message || "Resend rejected the verification email.");
-    }
   } catch (error) {
     await db.runTransaction(async (transaction) => {
       const current = await transaction.get(verificationRef);
@@ -6407,7 +6421,7 @@ async function sendInvoiceBuilderEmailVerification({db, userId, email}) {
 exports.sendInvoiceBuilderEmailCode = onCall(
     {
       region: "me-west1",
-      secrets: [RESEND_API_KEY, RESEND_FROM_EMAIL],
+      secrets: AWS_SES_SECRETS,
     },
     async (request) => {
       const userId = request.auth?.uid;
@@ -6456,7 +6470,7 @@ exports.sendInvoiceBuilderEmailCode = onCall(
         const lastSentAt = current.data()?.sentAt?.toDate?.();
         if (lastSentAt &&
             now - lastSentAt.getTime() <
-              INVOICE_BUILDER_EMAIL_CODE_RESEND_DELAY_MS) {
+              INVOICE_BUILDER_EMAIL_CODE_SEND_DELAY_MS) {
           throw new HttpsError(
               "resource-exhausted",
               "Please wait one minute before requesting another code.",
@@ -6472,24 +6486,23 @@ exports.sendInvoiceBuilderEmailCode = onCall(
       });
 
       try {
-        const {data, error} = await new Resend(RESEND_API_KEY.value())
-            .emails.send({
-              from: RESEND_FROM_EMAIL.value(),
-              to: [email],
-              subject: "קוד אימות ליוצר החשבוניות של הירו",
-              text: `קוד האימות שלך בהירו הוא: ${code}\n\n` +
-                "הקוד תקף ל-10 דקות. אם לא ביקשת את הקוד, אפשר להתעלם מהודעה זו.",
-              html: "<div dir=\"rtl\" style=\"font-family:Arial,sans-serif;" +
-                "color:#1f2937;line-height:1.6\">" +
-                "<p>קוד האימות שלך בהירו הוא:</p>" +
-                `<p dir="ltr" style="font-size:28px;font-weight:700;letter-spacing:4px">${code}</p>` +
-                "<p>הקוד תקף ל-10 דקות. אם לא ביקשת את הקוד, אפשר להתעלם מהודעה זו.</p>" +
-                "</div>",
-            }, {idempotencyKey: `invoice-builder-email-code/${userId}/${requestId}`});
-        if (error) {
-          throw new Error(error.message || "Resend rejected the email.");
-        }
-        return {sent: true, expiresAt: expiresAt.toISOString(), emailId: data?.id || null};
+        const emailData = await sendEmailWithSes({
+          to: [email],
+          subject: "קוד אימות ליוצר החשבוניות של הירו",
+          text: `קוד האימות שלך בהירו הוא: ${code}\n\n` +
+            "הקוד תקף ל-10 דקות. אם לא ביקשת את הקוד, אפשר להתעלם מהודעה זו.",
+          html: "<div dir=\"rtl\" style=\"font-family:Arial,sans-serif;" +
+            "color:#1f2937;line-height:1.6\">" +
+            "<p>קוד האימות שלך בהירו הוא:</p>" +
+            `<p dir="ltr" style="font-size:28px;font-weight:700;letter-spacing:4px">${code}</p>` +
+            "<p>הקוד תקף ל-10 דקות. אם לא ביקשת את הקוד, אפשר להתעלם מהודעה זו.</p>" +
+            "</div>",
+        });
+        return {
+          sent: true,
+          expiresAt: expiresAt.toISOString(),
+          emailId: emailData.id,
+        };
       } catch (error) {
         await verificationRef.delete().catch(() => undefined);
         logger.error("Could not send invoice builder email code", {
@@ -6563,7 +6576,7 @@ exports.emailSavedInvoice = onDocumentWritten(
     {
       document: "users/{userId}/invoices/{invoiceId}",
       region: "us-central1",
-      secrets: [RESEND_API_KEY, RESEND_FROM_EMAIL],
+      secrets: AWS_SES_SECRETS,
     },
     async (event) => {
       const invoice = event.data?.after?.data();
@@ -6610,6 +6623,15 @@ exports.emailSavedInvoice = onDocumentWritten(
       if (!claimed) return;
 
       try {
+        const clientEmail = normalizeEmail(invoice.clientEmail);
+        if (!clientEmail) {
+          await invoiceRef.update({
+            invoiceEmailStatus: "skipped",
+            invoiceEmailError: "No valid client email address.",
+          });
+          return;
+        }
+
         const userSnap = await db.collection("users").doc(userId).get();
         const profileData = await loadCanonicalUserProfile(
             db,
@@ -6618,15 +6640,6 @@ exports.emailSavedInvoice = onDocumentWritten(
         );
         const verificationSnap = await userSnap.ref
             .collection("verification_info").doc("latest").get();
-        let ownerEmail = normalizeEmail(profileData.email);
-        let userName = normalizeString(profileData.name).trim();
-        if (!ownerEmail || !userName) {
-          const authUser = await admin.auth().getUser(userId);
-          ownerEmail = ownerEmail || normalizeEmail(authUser.email);
-          userName = userName || normalizeString(authUser.displayName).trim();
-        }
-        userName = userName || "משתמש יקר";
-        const clientEmail = normalizeEmail(invoice.clientEmail);
         const businessName = normalizeString(
             verificationSnap.get("businessName") ||
             userSnap.get("businessName") ||
@@ -6635,9 +6648,7 @@ exports.emailSavedInvoice = onDocumentWritten(
         const clientName =
           normalizeString(invoice.clientName).trim() || "לקוח";
         const deliveries = buildInvoiceEmailDeliveries({
-          ownerEmail,
           clientEmail,
-          clientName,
           businessName,
         });
         if (deliveries.length === 0) {
@@ -6662,31 +6673,16 @@ exports.emailSavedInvoice = onDocumentWritten(
             bucket.file(EMAIL_GOOGLE_PLAY_BADGE_STORAGE_PATH).download(),
           ]);
         const downloadUrl = normalizeString(invoice.url).trim();
-        const resend = new Resend(RESEND_API_KEY.value());
         const emailIds = await sendInvoiceEmailDeliveries(
             deliveries,
             async (delivery) => {
-              const emailText = delivery.type === "client" ?
-                buildClientInvoiceEmailText(invoice, clientName, businessName) :
-                clientEmail ?
-                  buildOwnerInvoiceEmailText(
-                      invoice, userName, clientName, clientEmail,
-                  ) :
-                  buildOwnerInvoiceWithoutClientEmailText(invoice, userName);
-              const emailHtml = delivery.type === "client" ?
-                buildClientInvoiceEmailHtml(
-                    invoice, clientName, businessName, downloadUrl, fileName,
-                ) :
-                clientEmail ?
-                  buildOwnerInvoiceEmailHtml(
-                      invoice, userName, clientName, clientEmail,
-                      downloadUrl, fileName,
-                  ) :
-                  buildOwnerInvoiceWithoutClientEmailHtml(
-                      invoice, userName, downloadUrl, fileName,
-                  );
-              const {data, error} = await resend.emails.send({
-                from: RESEND_FROM_EMAIL.value(),
+              const emailText = buildClientInvoiceEmailText(
+                  invoice, clientName, businessName,
+              );
+              const emailHtml = buildClientInvoiceEmailHtml(
+                  invoice, clientName, businessName, downloadUrl, fileName,
+              );
+              const emailData = await sendEmailWithSes({
                 to: [delivery.email],
                 subject: buildInvoiceEmailSubject(
                     invoice, delivery.subjectName, delivery.subjectPreposition,
@@ -6698,27 +6694,21 @@ exports.emailSavedInvoice = onDocumentWritten(
                   {
                     filename: "hiro-app-icon.png",
                     content: appIconBytes,
-                    contentId: "hiro-app-icon",
+                    cid: "hiro-app-icon",
                   },
                   {
                     filename: "app-store-badge.svg",
                     content: appStoreBadgeBytes,
-                    contentId: "app-store-badge",
+                    cid: "app-store-badge",
                   },
                   {
                     filename: "google-play-badge.png",
                     content: googlePlayBadgeBytes,
-                    contentId: "google-play-badge",
+                    cid: "google-play-badge",
                   },
                 ],
-              }, {
-                idempotencyKey:
-                  `invoice-email/${userId}/${event.params.invoiceId}/${delivery.type}`,
               });
-              if (error) {
-                throw new Error(error.message || "Resend rejected the email.");
-              }
-              return data?.id || null;
+              return emailData.id;
             },
         );
 
@@ -6748,7 +6738,7 @@ exports.emailSavedInvoice = onDocumentWritten(
 exports.sendAccountingExportEmailHttp = onRequest(
     {
       region: "us-central1",
-      secrets: [RESEND_API_KEY, RESEND_FROM_EMAIL],
+      secrets: AWS_SES_SECRETS,
       invoker: "public",
     },
     async (request, response) => {
@@ -6837,20 +6827,15 @@ exports.sendAccountingExportEmailHttp = onRequest(
           filename: names[index],
           content,
         }));
-        const {data, error} = await new Resend(RESEND_API_KEY.value())
-            .emails.send({
-              from: RESEND_FROM_EMAIL.value(),
-              to: [recipientEmail],
-              subject: names.length === 4 ?
-                "קובצי MOVEIN ו-HESHIN מהירו" : "קובצי MOVEIN מהירו",
-              text: names.length === 4 ?
-                "שלום,\n\nמצורפים קובצי HESHIN.DAT ו-HESHIN.PRM לייבוא כרטיסי החשבון, וקובצי MOVEIN.DOC ו-MOVEIN.PRM לייבוא פקודות היומן. יש לייבא תחילה את קובצי HESHIN ולאחר מכן את קובצי MOVEIN.\n\nבברכה,\nצוות הירו" :
-                "שלום,\n\nמצורפים קובצי MOVEIN.DOC ו-MOVEIN.PRM לייבוא בהנהלת החשבונות.\n\nבברכה,\nצוות הירו",
-              attachments,
-            });
-        if (error) {
-          throw new Error(error.message || "Resend rejected the email.");
-        }
+        const emailData = await sendEmailWithSes({
+          to: [recipientEmail],
+          subject: names.length === 4 ?
+            "קובצי MOVEIN ו-HESHIN מהירו" : "קובצי MOVEIN מהירו",
+          text: names.length === 4 ?
+            "שלום,\n\nמצורפים קובצי HESHIN.DAT ו-HESHIN.PRM לייבוא כרטיסי החשבון, וקובצי MOVEIN.DOC ו-MOVEIN.PRM לייבוא פקודות היומן. יש לייבא תחילה את קובצי HESHIN ולאחר מכן את קובצי MOVEIN.\n\nבברכה,\nצוות הירו" :
+            "שלום,\n\nמצורפים קובצי MOVEIN.DOC ו-MOVEIN.PRM לייבוא בהנהלת החשבונות.\n\nבברכה,\nצוות הירו",
+          attachments,
+        });
 
         await Promise.all(files.map(async (file) => {
           await file.delete().catch((deleteError) => {
@@ -6860,7 +6845,7 @@ exports.sendAccountingExportEmailHttp = onRequest(
             });
           });
         }));
-        response.json({sent: true, emailId: data?.id || null});
+        response.json({sent: true, emailId: emailData.id});
       } catch (error) {
         const statusCode = error?.statusCode ||
           (error?.code?.startsWith?.("auth/") ? 401 : 500);

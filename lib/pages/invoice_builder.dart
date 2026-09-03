@@ -6050,22 +6050,22 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           .toString()
           .trim();
       if (status == 'sent') {
-        final clientEmail = _clientEmailController.text.trim();
-        final sentToClient =
-            RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(clientEmail) &&
-            clientEmail.toLowerCase() != (user.email ?? '').toLowerCase();
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              sentToClient
-                  ? 'Document was sent to your email and the client’s email.'
-                  : 'Document was sent to your email.',
-            ),
+          const SnackBar(
+            content: Text('Document was sent to the client’s email.'),
           ),
         );
       } else if (status == 'failed') {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Could not send the document email.')),
+        );
+      } else if (status == 'skipped') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Document was saved, but no valid client email was provided.',
+            ),
+          ),
         );
       }
     } on TimeoutException {

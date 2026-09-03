@@ -19,33 +19,18 @@ function isTerminalInvoiceEmailStatus(value) {
 }
 
 function buildInvoiceEmailDeliveries({
-  ownerEmail,
   clientEmail,
-  clientName,
   businessName,
 }) {
-  const normalizedOwnerEmail = normalizeEmail(ownerEmail);
   const normalizedClientEmail = normalizeEmail(clientEmail);
-  const deliveries = [];
+  if (!normalizedClientEmail) return [];
 
-  if (normalizedOwnerEmail) {
-    deliveries.push({
-      email: normalizedOwnerEmail,
-      subjectName: clientName,
-      subjectPreposition: "ל",
-      type: "owner",
-    });
-  }
-  if (normalizedClientEmail && normalizedClientEmail !== normalizedOwnerEmail) {
-    deliveries.push({
-      email: normalizedClientEmail,
-      subjectName: businessName,
-      subjectPreposition: "מ",
-      type: "client",
-    });
-  }
-
-  return deliveries;
+  return [{
+    email: normalizedClientEmail,
+    subjectName: businessName,
+    subjectPreposition: "מ",
+    type: "client",
+  }];
 }
 
 async function sendInvoiceEmailDeliveries(deliveries, sendDelivery) {
