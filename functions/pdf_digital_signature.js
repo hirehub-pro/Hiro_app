@@ -7,7 +7,7 @@ const {pdflibAddPlaceholder} = require("@signpdf/placeholder-pdf-lib");
 const {P12Signer} = require("@signpdf/signer-p12");
 const {SignPdf} = require("@signpdf/signpdf");
 const {
-  SUBFILTER_ETSI_CADES_DETACHED,
+  SUBFILTER_ADOBE_PKCS7_DETACHED,
   extractSignature,
 } = require("@signpdf/utils");
 
@@ -21,6 +21,8 @@ const ACCOUNTING_DOCUMENT_TYPES = new Set([
 const CREDENTIAL_SCHEMA_VERSION = 1;
 const ENCRYPTION_ALGORITHM = "aes-256-gcm";
 const SIGNATURE_PLACEHOLDER_LENGTH = 16384;
+const SIGNATURE_SUBFILTER = SUBFILTER_ADOBE_PKCS7_DETACHED;
+const SIGNATURE_FORMAT = "CMS detached PDF signature";
 
 function boundedText(value, maxLength, fallback = "") {
   const text = value == null ? "" : String(value).trim();
@@ -181,7 +183,7 @@ function generateBusinessSigningCredential({
     metadata: {
       schemaVersion: CREDENTIAL_SCHEMA_VERSION,
       certificateType: "hiro_verified_business_self_signed",
-      signatureFormat: "PAdES/CAdES detached",
+      signatureFormat: SIGNATURE_FORMAT,
       digestAlgorithm: "SHA-256",
       keyAlgorithm: "RSA-2048",
       businessId: id,
@@ -203,13 +205,13 @@ function inspectPdfDigitalSignature(pdfBytes) {
   const {ByteRange, signature, signedData} = extractSignature(pdf);
   const coversWholeDocument = ByteRange[0] === 0 &&
     ByteRange[2] + ByteRange[3] === pdf.length;
-  const hasPadesSubFilter = pdf.includes(
-      Buffer.from("/SubFilter /ETSI.CAdES.detached"),
+  const hasSupportedSubFilter = pdf.includes(
+      Buffer.from(`/SubFilter /${SIGNATURE_SUBFILTER}`),
   );
   return {
     byteRange: ByteRange,
     coversWholeDocument,
-    hasPadesSubFilter,
+    hasSupportedSubFilter,
     signatureBytes: Buffer.from(signature, "binary"),
     signedData,
   };
@@ -248,7 +250,7 @@ async function signPdfWithCredential({
     location: "Israel",
     signingTime,
     signatureLength: SIGNATURE_PLACEHOLDER_LENGTH,
-    subFilter: SUBFILTER_ETSI_CADES_DETACHED,
+    subFilter: SIGNATURE_SUBFILTER,
     appName: "Hiro",
   });
   const prepared = Buffer.from(await pdf.save({useObjectStreams: false}));
@@ -257,7 +259,7 @@ async function signPdfWithCredential({
   });
   const signedPdf = await new SignPdf().sign(prepared, signer, signingTime);
   const inspection = inspectPdfDigitalSignature(signedPdf);
-  if (!inspection.coversWholeDocument || !inspection.hasPadesSubFilter ||
+  if (!inspection.coversWholeDocument || !inspection.hasSupportedSubFilter ||
       inspection.signatureBytes.length < 1) {
     throw new Error("The generated PDF digital signature failed verification.");
   }
@@ -267,6 +269,7 @@ async function signPdfWithCredential({
 module.exports = {
   ACCOUNTING_DOCUMENT_TYPES,
   CREDENTIAL_SCHEMA_VERSION,
+  SIGNATURE_FORMAT,
   decodeMasterKey,
   decryptSigningCredential,
   encryptSigningCredential,

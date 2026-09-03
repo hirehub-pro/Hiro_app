@@ -111,7 +111,7 @@ test("encrypts each business credential with authenticated business binding", ()
   }), /could not be decrypted/);
 });
 
-test("creates a whole-document PAdES signature that OpenSSL verifies", async () => {
+test("creates a whole-document CMS signature that OpenSSL verifies", async () => {
   const credential = generateBusinessSigningCredential({
     businessId: TEST_BUSINESS.businessId,
     businessName: TEST_BUSINESS.name,
@@ -126,7 +126,7 @@ test("creates a whole-document PAdES signature that OpenSSL verifies", async () 
   });
   const inspection = inspectPdfDigitalSignature(signed);
   assert.equal(inspection.coversWholeDocument, true);
-  assert.equal(inspection.hasPadesSubFilter, true);
+  assert.equal(inspection.hasSupportedSubFilter, true);
   assert.ok(inspection.signatureBytes.length > 500);
   assert.equal(verifyCmsWithOpenSsl(inspection), true);
 

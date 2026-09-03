@@ -73,6 +73,7 @@ const {
   encryptSigningCredential,
   generateBusinessSigningCredential,
   isAccountingDocumentType,
+  SIGNATURE_FORMAT,
   signPdfWithCredential,
 } = require("./pdf_digital_signature");
 const {
@@ -221,7 +222,7 @@ async function digitallySignFinalAccountingPdf({
     pdfBytes: signedPdf,
     digitalSignature: {
       status: "signed",
-      format: "PAdES/CAdES detached",
+      format: SIGNATURE_FORMAT,
       digestAlgorithm: "SHA-256",
       signerBusinessId: normalizeString(business.businessId).replace(/\D/g, ""),
       signerName: normalizeString(business.name).trim(),

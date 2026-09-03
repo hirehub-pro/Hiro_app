@@ -6,7 +6,7 @@ issuer-signed by this workflow.
 
 ## Signature format
 
-- PAdES-compatible PDF signature with the `ETSI.CAdES.detached` subfilter
+- CMS detached PDF signature with the `adbe.pkcs7.detached` subfilter
 - SHA-256 document digest
 - RSA-2048 business signing key
 - One self-signed X.509 certificate per verified Hiro business account
