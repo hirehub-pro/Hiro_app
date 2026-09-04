@@ -307,6 +307,14 @@ function drawLeft(page, font, value, x, y, size, options = {}) {
   return font.widthOfTextAtSize(text, size);
 }
 
+function fittedTextSize(font, value, maxWidth, preferredSize,
+    minimumSize = 5.5) {
+  const text = visualText(value, "ltr");
+  const textWidth = font.widthOfTextAtSize(text, preferredSize);
+  if (textWidth <= maxWidth) return preferredSize;
+  return Math.max(minimumSize, preferredSize * maxWidth / textWidth);
+}
+
 function drawRoundedRectangle(page, {x, y, width, height, radius = 8,
   color, borderColor, borderWidth = 0}) {
   const r = Math.max(0, Math.min(radius, width / 2, height / 2));
@@ -491,19 +499,25 @@ function drawFooter(page, font, pageNumber, pageCount, generatedAt,
     const signatureRight = A4.width - MARGIN;
     const signatureLineWidth = 190;
     const signatureLineY = 91;
+    const signatureLabel = "חתימת העסק:";
+    const signatureLabelSize = 11.25;
+    const signatureLabelWidth = font.widthOfTextAtSize(
+        visualText(signatureLabel), signatureLabelSize,
+    );
+    const signatureLineRight = signatureRight - signatureLabelWidth - 8;
     page.drawLine({
-      start: {x: signatureRight - signatureLineWidth, y: signatureLineY},
-      end: {x: signatureRight, y: signatureLineY},
+      start: {x: signatureLineRight - signatureLineWidth, y: signatureLineY},
+      end: {x: signatureLineRight, y: signatureLineY},
       thickness: 0.8,
       color: MUTED,
     });
     drawRight(
         page,
         font,
-        "חתימת העסק:",
-        signatureRight - signatureLineWidth - 10,
-        88,
-        11.25,
+        signatureLabel,
+        signatureRight,
+        signatureLineY - 4,
+        signatureLabelSize,
         {color: MUTED},
     );
     const scale = Math.min(
@@ -513,7 +527,7 @@ function drawFooter(page, font, pageNumber, pageCount, generatedAt,
     const width = businessSignature.width * scale;
     const height = businessSignature.height * scale;
     page.drawImage(businessSignature, {
-      x: signatureRight - width,
+      x: signatureLineRight - width,
       y: signatureLineY + 6,
       width,
       height,
@@ -660,7 +674,8 @@ function drawItemRow(page, font, item, y, widths, layout) {
   ];
   let cursor = x;
   values.forEach((value, index) => {
-    drawRight(page, font, value, cursor + widths[index] - 7, y - 14, 11.25, {
+    const size = fittedTextSize(font, value, widths[index] - 14, 11.25);
+    drawRight(page, font, value, cursor + widths[index] - 7, y - 14, size, {
       direction: "ltr",
     });
     cursor += widths[index];
@@ -731,23 +746,36 @@ function drawSummary(page, font, invoice, presentation, reservation, y) {
   let rowY = y - 25;
   rows.forEach(([label, value], index) => {
     const isLast = index === rows.length - 1;
+    const preferredSize = isLast ? 15 : 11.25;
     const labelWidth = drawRight(page, font, label, x + width - 14, rowY,
-        isLast ? 15 : 11.25, {
+        preferredSize, {
       color: isLast ? BLUE_DARK : TEXT,
     });
+    let vatRateWidth = 0;
     if (hasVat && label === "מע״מ") {
+      const vatRateText = `${formatVatRate(vatRate)}%`;
+      vatRateWidth = font.widthOfTextAtSize(vatRateText, 11.25);
       drawRight(
           page,
           font,
-          `${formatVatRate(vatRate)}%`,
+          vatRateText,
           x + width - 18 - labelWidth,
           rowY,
           11.25,
           {color: TEXT, direction: "ltr"},
       );
     }
-    drawLeft(page, font, value, x + 14, rowY,
-        isLast ? 15 : 11.25, {
+    const valueMaxWidth = Math.max(
+        40,
+        width - 36 - labelWidth - vatRateWidth,
+    );
+    const valueSize = fittedTextSize(
+        font,
+        value,
+        valueMaxWidth,
+        preferredSize,
+    );
+    drawLeft(page, font, value, x + 14, rowY, valueSize, {
       color: isLast ? BLUE_DARK : TEXT,
     });
     if (!isLast && index < rows.length - 1) {
@@ -923,7 +951,8 @@ function drawPaymentGroup(page, font, method, payments, invoice,
     });
     row.forEach((value, index) => {
       const right = x + (index + 1) * columnWidth - 5;
-      drawRight(page, font, value, right, top - 20, 9, {
+      const size = fittedTextSize(font, value, columnWidth - 10, 9);
+      drawRight(page, font, value, right, top - 20, size, {
         color: rgb(46 / 255, 51 / 255, 59 / 255),
         direction: index === columns.indexOf("סכום") ? "ltr" : "rtl",
       });
@@ -1117,7 +1146,7 @@ async function buildTaxInvoicePdf({
       thickness: 0.8,
       color: MUTED,
     });
-    drawRight(page, font, "חתימת הלקוח:", lineStart + lineWidth + 62, 88, 11.25, {
+    drawRight(page, font, "חתימת הלקוח:", lineStart + lineWidth, 72, 11.25, {
       color: MUTED,
     });
   }
@@ -1180,6 +1209,7 @@ module.exports = {
   expandPaymentInstallments,
   footerGeneratedAtText,
   footerSignatureText,
+  fittedTextSize,
   formatMoney,
   normalizeTaxInvoicePresentation,
   paymentColumns,

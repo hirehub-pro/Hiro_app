@@ -11,6 +11,7 @@ const {
   expandPaymentInstallments,
   footerGeneratedAtText,
   footerSignatureText,
+  fittedTextSize,
   formatMoney,
   normalizeTaxInvoicePresentation,
   paymentColumns,
@@ -193,6 +194,16 @@ test("formats PDF money with thousands separators and two decimals", () => {
   assert.equal(formatMoney(1000), "1,000.00 ₪");
   assert.equal(formatMoney(1000000.5), "1,000,000.50 ₪");
   assert.equal(formatMoney(-1234.567), "-1,234.57 ₪");
+});
+
+test("reduces a long monetary value to fit its PDF cell", () => {
+  const font = {
+    widthOfTextAtSize: (text, size) => text.length * size,
+  };
+  assert.equal(fittedTextSize(font, "123", 100, 11.25), 11.25);
+  assert.ok(
+      fittedTextSize(font, "1,234,567,890,123.00 ₪", 90, 11.25) < 11.25,
+  );
 });
 
 test("keeps a trailing postal code in its own left-to-right PDF run", () => {

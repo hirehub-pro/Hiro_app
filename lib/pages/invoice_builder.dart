@@ -837,6 +837,7 @@ class _PaymentMethodEntry {
   _PaymentMethodEntry();
 
   String method = 'cash';
+  bool isCommitted = false;
   bool isExpanded = true;
   final amountController = TextEditingController();
 
@@ -1246,11 +1247,16 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       _selectedDocType == 'transaction_account' ||
       _selectedDocType == 'invoice';
   bool get _requiresSequentialDocumentNumber => !_isQuoteLike;
+  bool _documentTypeShowsPaymentMethods(String documentType) =>
+      documentType != 'quote' &&
+      documentType != 'work_order' &&
+      documentType != 'invoice' &&
+      documentType != 'transaction_account' &&
+      documentType != 'credit_note';
+  bool _documentTypeShowsServiceItems(String documentType) =>
+      documentType != 'receipt';
   bool get _showsPaymentMethodSection =>
-      !_isQuoteLike &&
-      _selectedDocType != 'invoice' &&
-      _selectedDocType != 'transaction_account' &&
-      _selectedDocType != 'credit_note';
+      _documentTypeShowsPaymentMethods(_selectedDocType);
   bool get _usesVat => _isLicensedDealerType && _selectedDocType != 'receipt';
   bool get _isTaxInvoiceDocType =>
       _selectedDocType == 'invoice' || _selectedDocType == 'invoice_receipt';
@@ -3672,6 +3678,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'notes': _notesController.text.trim(),
       'paymentMethods': _showsPaymentMethodSection
           ? _paymentMethods
+                .where((entry) => entry.isCommitted)
                 .map((entry) => entry.toMap())
                 .toList(growable: false)
           : const <Map<String, dynamic>>[],
@@ -4878,6 +4885,15 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     _selectedPriceTaxMode = 'after_tax';
   }
 
+  void _clearPaymentMethods() {
+    for (final entry in _paymentMethods) {
+      entry.dispose();
+    }
+    _paymentMethods
+      ..clear()
+      ..add(_PaymentMethodEntry());
+  }
+
   Future<void> _loadCurrentDocumentNumber({
     bool promptIfMissing = false,
   }) async {
@@ -5611,14 +5627,16 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
 
   double _paymentMethodsAmountTotal() {
     var total = 0.0;
-    for (final methodEntry in _paymentMethods) {
+    for (final methodEntry in _paymentMethods.where(
+      (entry) => entry.isCommitted,
+    )) {
       total += _parsePaymentAmount(methodEntry.amountController.text) ?? 0.0;
     }
     return total;
   }
 
   List<Map<String, dynamic>> _paymentMethodsForStorage() {
-    return _paymentMethods.map((entry) {
+    return _paymentMethods.where((entry) => entry.isCommitted).map((entry) {
       final data = entry.toMap();
       final amount = data['amount'];
       if (_isNegativeReceipt && amount is num) {
@@ -5626,6 +5644,55 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       }
       return data;
     }).toList();
+  }
+
+  _PaymentMethodEntry? get _draftPaymentMethod {
+    for (final entry in _paymentMethods) {
+      if (!entry.isCommitted) return entry;
+    }
+    return null;
+  }
+
+  void _commitPaymentMethod() {
+    final draft = _draftPaymentMethod;
+    if (draft == null ||
+        !_validatePaymentMethods(
+          requireMatchingTotal: false,
+          entryToValidate: draft,
+        )) {
+      return;
+    }
+
+    setState(() {
+      draft
+        ..isCommitted = true
+        ..isExpanded = false;
+      _paymentMethods.add(_PaymentMethodEntry());
+    });
+  }
+
+  void _editPaymentMethod(_PaymentMethodEntry entry) {
+    if (!entry.isCommitted) return;
+    setState(() {
+      final draft = _draftPaymentMethod;
+      if (draft != null && !identical(draft, entry)) {
+        _paymentMethods.remove(draft);
+        draft.dispose();
+      }
+      entry
+        ..isCommitted = false
+        ..isExpanded = true;
+    });
+  }
+
+  void _removePaymentMethod(_PaymentMethodEntry entry) {
+    setState(() {
+      _paymentMethods.remove(entry);
+      entry.dispose();
+      if (_draftPaymentMethod == null) {
+        _paymentMethods.add(_PaymentMethodEntry());
+      }
+    });
   }
 
   Future<void> _pickCheckPaymentDate(_PaymentMethodEntry entry) async {
@@ -5660,7 +5727,10 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     });
   }
 
-  bool _validatePaymentMethods() {
+  bool _validatePaymentMethods({
+    bool requireMatchingTotal = true,
+    _PaymentMethodEntry? entryToValidate,
+  }) {
     if (!_showsPaymentMethodSection) return true;
 
     final strings = _getLocalizedStrings(context, listen: false);
@@ -5670,8 +5740,15 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     ).locale.languageCode;
     final isRtl = locale == 'he' || locale == 'ar';
 
-    for (var i = 0; i < _paymentMethods.length; i++) {
-      final methodEntry = _paymentMethods[i];
+    final committedMethods = _paymentMethods
+        .where((entry) => entry.isCommitted)
+        .toList(growable: false);
+    final methodsToValidate = entryToValidate == null
+        ? committedMethods
+        : <_PaymentMethodEntry>[entryToValidate];
+
+    for (var i = 0; i < methodsToValidate.length; i++) {
+      final methodEntry = methodsToValidate[i];
       final amount = _parsePaymentAmount(methodEntry.amountController.text);
       if (amount == null || amount <= 0) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -5787,7 +5864,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       }
     }
 
-    if (_paymentMethods.isEmpty) {
+    if (entryToValidate == null && committedMethods.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -5803,7 +5880,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
 
     final paidTotal = _paymentMethodsAmountTotal();
     final expectedTotal = _totalAmount;
-    if ((paidTotal - expectedTotal).abs() > 0.01) {
+    if (requireMatchingTotal && (paidTotal - expectedTotal).abs() > 0.01) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -6886,9 +6963,21 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                     : (val) async {
                                         if (val == null) return;
                                         setState(() {
-                                          if (val == 'receipt' &&
-                                              _selectedDocType != 'receipt') {
+                                          if (_documentTypeShowsServiceItems(
+                                                _selectedDocType,
+                                              ) &&
+                                              !_documentTypeShowsServiceItems(
+                                                val,
+                                              )) {
                                             _clearServiceItems();
+                                          }
+                                          if (_documentTypeShowsPaymentMethods(
+                                                _selectedDocType,
+                                              ) &&
+                                              !_documentTypeShowsPaymentMethods(
+                                                val,
+                                              )) {
+                                            _clearPaymentMethods();
                                           }
                                           _selectedDocType = val;
                                           _linkedDocuments.clear();
@@ -7150,6 +7239,10 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                       ),
                                     ),
                                   ),
+                                  if (_items.isNotEmpty) ...[
+                                    const SizedBox(height: 16),
+                                    _buildAddedItemsList(strings),
+                                  ],
                                 ],
                               ),
                             ),
@@ -7161,45 +7254,28 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                               title: isRtl ? 'אמצעי תשלום' : 'Payment Method',
                               icon: Icons.payment,
                               children: [
-                                ...List.generate(_paymentMethods.length, (
-                                  index,
-                                ) {
-                                  return Padding(
-                                    padding: EdgeInsets.only(
-                                      bottom:
-                                          index == _paymentMethods.length - 1
-                                          ? 0
-                                          : 12,
-                                    ),
-                                    child: _buildPaymentMethodCard(
-                                      index,
-                                      _paymentMethods[index],
-                                      isRtl,
-                                    ),
-                                  );
-                                }),
+                                if (_draftPaymentMethod != null)
+                                  _buildPaymentMethodCard(
+                                    _draftPaymentMethod!,
+                                    isRtl,
+                                  ),
                                 const SizedBox(height: 12),
                                 SizedBox(
                                   width: double.infinity,
-                                  child: OutlinedButton.icon(
-                                    onPressed: () {
-                                      setState(() {
-                                        for (final methodEntry
-                                            in _paymentMethods) {
-                                          methodEntry.isExpanded = false;
-                                        }
-                                        _paymentMethods.add(
-                                          _PaymentMethodEntry(),
-                                        );
-                                      });
-                                    },
+                                  child: ElevatedButton.icon(
+                                    onPressed: _commitPaymentMethod,
                                     icon: const Icon(Icons.add_rounded),
                                     label: Text(
                                       isRtl
                                           ? 'הוסף אמצעי תשלום'
                                           : 'Add Payment Method',
                                     ),
-                                    style: OutlinedButton.styleFrom(
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: const Color(
+                                        0xFF1976D2,
+                                      ).withValues(alpha: 0.1),
+                                      foregroundColor: const Color(0xFF1976D2),
+                                      elevation: 0,
                                       padding: const EdgeInsets.symmetric(
                                         vertical: 14,
                                       ),
@@ -7209,84 +7285,27 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                     ),
                                   ),
                                 ),
+                                if (_paymentMethods.any(
+                                  (entry) => entry.isCommitted,
+                                )) ...[
+                                  const SizedBox(height: 12),
+                                  ..._paymentMethods
+                                      .where((entry) => entry.isCommitted)
+                                      .map((entry) {
+                                        return Padding(
+                                          padding: const EdgeInsets.only(
+                                            bottom: 12,
+                                          ),
+                                          child: _buildPaymentMethodCard(
+                                            entry,
+                                            isRtl,
+                                          ),
+                                        );
+                                      }),
+                                ],
                               ],
                             ),
                           ],
-                          if (_selectedDocType != 'receipt' &&
-                              _items.isNotEmpty) ...[
-                            const SizedBox(height: 16),
-                            ListView.builder(
-                              shrinkWrap: true,
-                              physics: const NeverScrollableScrollPhysics(),
-                              itemCount: _items.length,
-                              itemBuilder: (context, index) {
-                                final item = _items[index];
-                                final taxModeLabel =
-                                    switch (item.priceTaxMode) {
-                                      'before_tax' =>
-                                        strings['entered_price_before_tax']!,
-                                      'vat_exempt' =>
-                                        strings['entered_price_vat_exempt']!,
-                                      _ => strings['entered_price_after_tax']!,
-                                    };
-                                return Container(
-                                  margin: const EdgeInsets.only(bottom: 8),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
-                                    borderRadius: BorderRadius.circular(12),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: Colors.black.withValues(
-                                          alpha: 0.03,
-                                        ),
-                                        blurRadius: 4,
-                                        offset: const Offset(0, 2),
-                                      ),
-                                    ],
-                                  ),
-                                  child: ListTile(
-                                    onTap: () => _editItem(index),
-                                    contentPadding: const EdgeInsets.symmetric(
-                                      horizontal: 16,
-                                      vertical: 4,
-                                    ),
-                                    title: Text(
-                                      item.description,
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 14,
-                                      ),
-                                    ),
-                                    subtitle: Text(
-                                      "${item.quantity} x ${item.price.toStringAsFixed(2)} ₪${_isLicensedDealerType ? ' ($taxModeLabel)' : ''}",
-                                    ),
-                                    trailing: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Text(
-                                          "${_signedItemTotal(item).toStringAsFixed(2)} ₪",
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                            color: Color(0xFF1976D2),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 8),
-                                        IconButton(
-                                          icon: const Icon(
-                                            Icons.remove_circle_outline,
-                                            color: Colors.red,
-                                            size: 20,
-                                          ),
-                                          onPressed: () => _removeItem(index),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-                          ],
-
                           const SizedBox(height: 20),
                           _buildSectionCard(
                             title: strings['notes']!,
@@ -7530,6 +7549,71 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     );
   }
 
+  Widget _buildAddedItemsList(Map<String, String> strings) {
+    return ListView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: _items.length,
+      itemBuilder: (context, index) {
+        final item = _items[index];
+        final taxModeLabel = switch (item.priceTaxMode) {
+          'before_tax' => strings['entered_price_before_tax']!,
+          'vat_exempt' => strings['entered_price_vat_exempt']!,
+          _ => strings['entered_price_after_tax']!,
+        };
+        return Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.03),
+                blurRadius: 4,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: ListTile(
+            onTap: () => _editItem(index),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 4,
+            ),
+            title: Text(
+              item.description,
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+            ),
+            subtitle: Text(
+              "${item.quantity} x ${item.price.toStringAsFixed(2)} ₪${_isLicensedDealerType ? ' ($taxModeLabel)' : ''}",
+            ),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  "${_signedItemTotal(item).toStringAsFixed(2)} ₪",
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF1976D2),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  icon: const Icon(
+                    Icons.remove_circle_outline,
+                    color: Colors.red,
+                    size: 20,
+                  ),
+                  onPressed: () => _removeItem(index),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildSectionCard({
     required String title,
     required IconData icon,
@@ -7568,11 +7652,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     );
   }
 
-  Widget _buildPaymentMethodCard(
-    int index,
-    _PaymentMethodEntry entry,
-    bool isRtl,
-  ) {
+  Widget _buildPaymentMethodCard(_PaymentMethodEntry entry, bool isRtl) {
     final parsedAmount = _parsePaymentAmount(entry.amountController.text);
     final methodLabel = _paymentMethodLabel(isRtl, entry.method);
     final methodIcon = switch (entry.method) {
@@ -7589,7 +7669,13 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       return Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: () => setState(() => entry.isExpanded = true),
+          onTap: () {
+            if (entry.isCommitted) {
+              _editPaymentMethod(entry);
+            } else {
+              setState(() => entry.isExpanded = true);
+            }
+          },
           borderRadius: BorderRadius.circular(16),
           child: Container(
             padding: const EdgeInsets.all(14),
@@ -7615,45 +7701,37 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        isRtl
-                            ? 'אמצעי תשלום ${index + 1}'
-                            : 'Payment method ${index + 1}',
-                        style: const TextStyle(
-                          color: Color(0xFF64748B),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        parsedAmount == null
-                            ? methodLabel
-                            : '$methodLabel  •  ${parsedAmount.toStringAsFixed(2)} ₪',
+                        methodLabel,
                         style: const TextStyle(
                           fontWeight: FontWeight.w800,
                           color: Color(0xFF0F172A),
                           fontSize: 15,
                         ),
                       ),
+                      const SizedBox(height: 3),
+                      Text(
+                        parsedAmount == null
+                            ? ''
+                            : '${parsedAmount.toStringAsFixed(2)} ₪',
+                        style: const TextStyle(
+                          color: Color(0xFF64748B),
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                     ],
                   ),
                 ),
-                if (_paymentMethods.length > 1)
+                if (entry.isCommitted)
                   IconButton(
-                    onPressed: () {
-                      setState(() {
-                        final removed = _paymentMethods.removeAt(index);
-                        removed.dispose();
-                      });
-                    },
-                    icon: const Icon(Icons.delete_outline_rounded),
-                    color: const Color(0xFFDC2626),
+                    onPressed: () => _removePaymentMethod(entry),
+                    icon: const Icon(
+                      Icons.remove_circle_outline,
+                      color: Colors.red,
+                      size: 20,
+                    ),
                     tooltip: isRtl ? 'הסר' : 'Remove',
                   ),
-                const Icon(
-                  Icons.keyboard_arrow_down_rounded,
-                  color: Color(0xFF64748B),
-                ),
               ],
             ),
           ),
@@ -7691,50 +7769,15 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      isRtl
-                          ? 'אמצעי תשלום ${index + 1}'
-                          : 'Payment method ${index + 1}',
-                      style: const TextStyle(
-                        color: Color(0xFF64748B),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      methodLabel,
-                      style: const TextStyle(
-                        color: Color(0xFF0F172A),
-                        fontSize: 15,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ],
+                child: Text(
+                  methodLabel,
+                  style: const TextStyle(
+                    color: Color(0xFF0F172A),
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
               ),
-              IconButton(
-                onPressed: () {
-                  setState(() => entry.isExpanded = false);
-                },
-                icon: const Icon(Icons.keyboard_arrow_up_rounded),
-                tooltip: isRtl ? 'כווץ' : 'Collapse',
-              ),
-              if (_paymentMethods.length > 1)
-                IconButton(
-                  onPressed: () {
-                    setState(() {
-                      final removed = _paymentMethods.removeAt(index);
-                      removed.dispose();
-                    });
-                  },
-                  icon: const Icon(Icons.delete_outline_rounded),
-                  color: const Color(0xFFDC2626),
-                  tooltip: isRtl ? 'הסר' : 'Remove',
-                ),
             ],
           ),
           const SizedBox(height: 14),
@@ -7753,26 +7796,26 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                 child: Text(isRtl ? 'מזומן' : 'Cash'),
               ),
               DropdownMenuItem(
-                value: 'credit',
-                child: Text(isRtl ? 'אשראי' : 'Credit Card'),
+                value: 'check',
+                child: Text(isRtl ? 'צ׳ק' : 'Check'),
               ),
               DropdownMenuItem(
                 value: 'transfer',
                 child: Text(isRtl ? 'העברה בנקאית' : 'Bank Transfer'),
               ),
               const DropdownMenuItem(value: 'bit', child: Text('Bit')),
-              const DropdownMenuItem(value: 'paybox', child: Text('PayBox')),
               DropdownMenuItem(
-                value: 'other',
-                child: Text(isRtl ? 'אחר' : 'Other'),
+                value: 'credit',
+                child: Text(isRtl ? 'אשראי' : 'Credit Card'),
               ),
+              const DropdownMenuItem(value: 'paybox', child: Text('PayBox')),
               DropdownMenuItem(
                 value: 'withholding_tax',
                 child: Text(isRtl ? 'ניכוי מס במקור' : 'Withholding Tax'),
               ),
               DropdownMenuItem(
-                value: 'check',
-                child: Text(isRtl ? 'צ׳ק' : 'Check'),
+                value: 'other',
+                child: Text(isRtl ? 'אחר' : 'Other'),
               ),
             ],
             onChanged: (val) {
