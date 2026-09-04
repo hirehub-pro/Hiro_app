@@ -1152,6 +1152,8 @@ async function buildTaxInvoicePdf({
   }
 
   pages.forEach((currentPage, index) => {
+    const finalPageBusinessSignature = index === pages.length - 1 ?
+      businessSignature : null;
     drawFooter(
         currentPage,
         font,
@@ -1160,7 +1162,7 @@ async function buildTaxInvoicePdf({
         createdLabel,
         reservation,
         appIcon,
-        businessSignature,
+        finalPageBusinessSignature,
         previewOnly,
         digitallySigned,
     );
