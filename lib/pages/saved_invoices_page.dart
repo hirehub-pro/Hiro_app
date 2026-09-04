@@ -1622,6 +1622,42 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
               );
             }
 
+            final cancelledSourceDocumentIds = <String>{};
+            for (final document in docs) {
+              final documentData = document.data();
+              final documentStatus = (documentData['documentStatus'] ?? '')
+                  .toString()
+                  .trim();
+              final isCompleted =
+                  documentStatus.isEmpty || documentStatus == 'finalized';
+              if (!isCompleted) continue;
+              final documentType = (documentData['docType'] ?? '')
+                  .toString()
+                  .trim();
+              final isCancellationDocument =
+                  documentData['isCancellationDocument'] == true ||
+                  documentType == 'credit_note';
+              if (!isCancellationDocument) continue;
+
+              for (final field in [
+                'cancellationSourceDocumentId',
+                'sourceInvoiceDocId',
+              ]) {
+                final sourceId = (documentData[field] ?? '').toString().trim();
+                if (sourceId.isNotEmpty) {
+                  cancelledSourceDocumentIds.add(sourceId);
+                }
+              }
+              final linkedIds = documentData['linkedDocumentIds'];
+              if (linkedIds is List) {
+                cancelledSourceDocumentIds.addAll(
+                  linkedIds
+                      .map((value) => value.toString().trim())
+                      .where((value) => value.isNotEmpty),
+                );
+              }
+            }
+
             final query = _searchQuery.trim();
             final searchTerms = _searchTerms(query);
             final filteredDocs = docs.where((doc) {
@@ -1918,10 +1954,18 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                             final amount = (data['amount'] as num?)?.toDouble();
                             final isCancelled =
                                 (data['cancellationStatus'] ?? '')
-                                    .toString()
-                                    .trim()
-                                    .toLowerCase() ==
-                                'cancelled';
+                                        .toString()
+                                        .trim()
+                                        .toLowerCase() ==
+                                    'cancelled' ||
+                                cancelledSourceDocumentIds.contains(
+                                  invoiceDoc.id,
+                                ) ||
+                                cancelledSourceDocumentIds.contains(
+                                  (data['invoiceDocId'] ?? '')
+                                      .toString()
+                                      .trim(),
+                                );
                             final canCreateCreditNote =
                                 !isReceivedScope &&
                                 isFinalizedTaxDocument &&
