@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:intl/intl.dart' as intl;
 import 'package:provider/provider.dart';
 import 'package:untitled1/pages/chat_page.dart';
 import 'package:untitled1/pages/invoice_builder.dart';
@@ -122,7 +123,7 @@ class ClientDetailsPage extends StatelessWidget {
     final user = FirebaseAuth.instance.currentUser;
 
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Scaffold(
         backgroundColor: const Color(0xFFF7FBFF),
         appBar: AppBar(
@@ -145,6 +146,8 @@ class ClientDetailsPage extends StatelessWidget {
             const SizedBox(width: 8),
           ],
           bottom: TabBar(
+            isScrollable: true,
+            tabAlignment: TabAlignment.start,
             labelColor: const Color(0xFF1976D2),
             unselectedLabelColor: const Color(0xFF64748B),
             indicatorColor: const Color(0xFF1976D2),
@@ -153,6 +156,7 @@ class ClientDetailsPage extends StatelessWidget {
             tabs: [
               Tab(text: strings.clientDetailsTab),
               Tab(text: strings.contactDetails),
+              Tab(text: strings.historyTab),
             ],
           ),
         ),
@@ -465,6 +469,12 @@ class ClientDetailsPage extends StatelessWidget {
                         client: client,
                         strings: strings,
                       ),
+                      _ClientHistoryTab(
+                        clientId: clientId,
+                        userId: user.uid,
+                        locale: locale,
+                        strings: strings,
+                      ),
                     ],
                   );
                 },
@@ -472,6 +482,585 @@ class ClientDetailsPage extends StatelessWidget {
       ),
     );
   }
+}
+
+class _ClientHistoryTab extends StatelessWidget {
+  const _ClientHistoryTab({
+    required this.clientId,
+    required this.userId,
+    required this.locale,
+    required this.strings,
+  });
+
+  final String clientId;
+  final String userId;
+  final String locale;
+  final _ClientDetailsStrings strings;
+
+  String _formatAmount(int agorot, {required String sign}) {
+    final amount = agorot.abs() / 100;
+    final numberLocale = switch (locale) {
+      'he' => 'he_IL',
+      'ar' => 'ar',
+      'ru' => 'ru',
+      'am' => 'am',
+      _ => 'en_US',
+    };
+    final formatted = intl.NumberFormat(
+      '#,##0.00',
+      numberLocale,
+    ).format(amount);
+    return '$sign$formatted ₪';
+  }
+
+  String _formatBalance(int agorot) {
+    final sign = agorot < 0 ? '-' : '';
+    return _formatAmount(agorot, sign: sign);
+  }
+
+  String _formatDate(DateTime date) =>
+      intl.DateFormat('dd/MM/yyyy').format(date.toLocal());
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .collection('clients')
+          .doc(clientId)
+          .collection('ledgerEntries')
+          .orderBy('effectiveDate', descending: true)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return _DetailsMessage(
+            icon: Icons.cloud_off_rounded,
+            title: strings.historyLoadFailed,
+            message: strings.tryAgain,
+          );
+        }
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        final entries = snapshot.data!.docs
+            .map(_ClientLedgerEntry.fromSnapshot)
+            .toList(growable: false);
+        if (entries.isEmpty) {
+          return _DetailsMessage(
+            icon: Icons.receipt_long_outlined,
+            title: strings.noHistory,
+            message: strings.noHistoryMessage,
+          );
+        }
+
+        final totalDebits = entries.fold<int>(
+          0,
+          (total, entry) => total + entry.debitAgorot,
+        );
+        final totalCredits = entries.fold<int>(
+          0,
+          (total, entry) => total + entry.creditAgorot,
+        );
+        final balance = totalDebits - totalCredits;
+
+        return ListView.separated(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 42),
+          itemCount: entries.length + 2,
+          separatorBuilder: (_, index) =>
+              SizedBox(height: index == 0 ? 24 : 12),
+          itemBuilder: (context, index) {
+            if (index == 0) {
+              return Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 820),
+                  child: _HistorySummaryCard(
+                    balance: _formatBalance(balance),
+                    totalDebits: _formatAmount(totalDebits, sign: ''),
+                    totalCredits: _formatAmount(totalCredits, sign: ''),
+                    balanceIsOutstanding: balance > 0,
+                    strings: strings,
+                  ),
+                ),
+              );
+            }
+            if (index == 1) {
+              return Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 820),
+                  child: Text(
+                    strings.transactionHistory,
+                    style: const TextStyle(
+                      color: Color(0xFF0F172A),
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              );
+            }
+
+            final entry = entries[index - 2];
+            return Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 820),
+                child: _HistoryEntryCard(
+                  entry: entry,
+                  date: _formatDate(entry.date),
+                  amountFormatter: _formatAmount,
+                  strings: strings,
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+class _HistorySummaryCard extends StatelessWidget {
+  const _HistorySummaryCard({
+    required this.balance,
+    required this.totalDebits,
+    required this.totalCredits,
+    required this.balanceIsOutstanding,
+    required this.strings,
+  });
+
+  final String balance;
+  final String totalDebits;
+  final String totalCredits;
+  final bool balanceIsOutstanding;
+  final _ClientDetailsStrings strings;
+
+  @override
+  Widget build(BuildContext context) {
+    final balanceColor = balanceIsOutstanding
+        ? const Color(0xFFB45309)
+        : const Color(0xFF047857);
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: const Color(0xFFD8E6F3)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0D0F172A),
+            blurRadius: 18,
+            offset: Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            strings.currentBalance,
+            style: const TextStyle(
+              color: Color(0xFF64748B),
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Directionality(
+            textDirection: TextDirection.ltr,
+            child: Text(
+              balance,
+              style: TextStyle(
+                color: balanceColor,
+                fontSize: 30,
+                fontWeight: FontWeight.w900,
+                letterSpacing: -0.5,
+              ),
+            ),
+          ),
+          const SizedBox(height: 18),
+          Row(
+            children: [
+              Expanded(
+                child: _HistoryTotal(
+                  icon: Icons.trending_up_rounded,
+                  label: strings.totalDebt,
+                  value: totalDebits,
+                  color: const Color(0xFFB45309),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _HistoryTotal(
+                  icon: Icons.payments_outlined,
+                  label: strings.totalPaidAndCredits,
+                  value: totalCredits,
+                  color: const Color(0xFF047857),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HistoryTotal extends StatelessWidget {
+  const _HistoryTotal({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: color, size: 17),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Text(
+                  label,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF64748B),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Directionality(
+            textDirection: TextDirection.ltr,
+            child: Text(
+              value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: color,
+                fontSize: 15,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HistoryEntryCard extends StatelessWidget {
+  const _HistoryEntryCard({
+    required this.entry,
+    required this.date,
+    required this.amountFormatter,
+    required this.strings,
+  });
+
+  final _ClientLedgerEntry entry;
+  final String date;
+  final String Function(int agorot, {required String sign}) amountFormatter;
+  final _ClientDetailsStrings strings;
+
+  @override
+  Widget build(BuildContext context) {
+    final activities = entry.activities(strings);
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEAF4FF),
+                  borderRadius: BorderRadius.circular(13),
+                ),
+                child: const Icon(
+                  Icons.description_outlined,
+                  color: Color(0xFF1976D2),
+                  size: 21,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      entry.documentLabel(strings),
+                      style: const TextStyle(
+                        color: Color(0xFF0F172A),
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      entry.documentNumber.isEmpty
+                          ? date
+                          : '${strings.documentNumber} ${entry.documentNumber} • $date',
+                      style: const TextStyle(
+                        color: Color(0xFF64748B),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          const Divider(height: 1, color: Color(0xFFE2E8F0)),
+          for (var index = 0; index < activities.length; index++) ...[
+            if (index > 0) const Divider(height: 1, color: Color(0xFFF1F5F9)),
+            _HistoryActivityRow(
+              activity: activities[index],
+              amount: amountFormatter(
+                activities[index].agorot,
+                sign: activities[index].sign,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _HistoryActivityRow extends StatelessWidget {
+  const _HistoryActivityRow({required this.activity, required this.amount});
+
+  final _LedgerActivity activity;
+  final String amount;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Row(
+        children: [
+          Icon(activity.icon, color: activity.color, size: 21),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              activity.label,
+              style: const TextStyle(
+                color: Color(0xFF334155),
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Directionality(
+            textDirection: TextDirection.ltr,
+            child: Text(
+              amount,
+              style: TextStyle(
+                color: activity.color,
+                fontSize: 15,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ClientLedgerEntry {
+  const _ClientLedgerEntry({
+    required this.documentKind,
+    required this.documentNumber,
+    required this.date,
+    required this.debitAgorot,
+    required this.creditAgorot,
+    required this.reversalOf,
+  });
+
+  factory _ClientLedgerEntry.fromSnapshot(
+    QueryDocumentSnapshot<Map<String, dynamic>> snapshot,
+  ) {
+    final data = snapshot.data();
+    DateTime? timestampDate(dynamic value) => value is Timestamp
+        ? value.toDate()
+        : value is DateTime
+        ? value
+        : null;
+    DateTime? compactDate(dynamic value) {
+      final digits = value?.toString().replaceAll(RegExp(r'[^0-9]'), '') ?? '';
+      if (digits.length != 8) return null;
+      final year = int.tryParse(digits.substring(0, 4));
+      final month = int.tryParse(digits.substring(4, 6));
+      final day = int.tryParse(digits.substring(6, 8));
+      if (year == null || month == null || day == null) return null;
+      return DateTime(year, month, day);
+    }
+
+    int agorot(dynamic value) {
+      final numeric = value is num
+          ? value
+          : num.tryParse(value?.toString() ?? '');
+      return numeric == null ? 0 : numeric.round().clamp(0, 0x7FFFFFFF).toInt();
+    }
+
+    return _ClientLedgerEntry(
+      documentKind: (data['documentKind'] ?? '').toString().trim(),
+      documentNumber: (data['documentNumber'] ?? '').toString().trim(),
+      date:
+          timestampDate(data['effectiveDate']) ??
+          compactDate(data['documentDate']) ??
+          timestampDate(data['createdAt']) ??
+          DateTime.now(),
+      debitAgorot: agorot(data['debitAgorot']),
+      creditAgorot: agorot(data['creditAgorot']),
+      reversalOf: (data['reversalOf'] ?? '').toString().trim(),
+    );
+  }
+
+  final String documentKind;
+  final String documentNumber;
+  final DateTime date;
+  final int debitAgorot;
+  final int creditAgorot;
+  final String reversalOf;
+
+  String documentLabel(_ClientDetailsStrings strings) {
+    switch (documentKind) {
+      case 'invoice':
+        return strings.taxInvoice;
+      case 'invoice_receipt':
+        return strings.taxInvoiceReceipt;
+      case 'credit_note':
+        return strings.creditInvoice;
+      case 'receipt':
+        return reversalOf.isNotEmpty
+            ? strings.cancelledReceipt
+            : strings.receipt;
+      case 'transaction_account':
+        return strings.transactionAccount;
+      default:
+        return strings.businessDocument;
+    }
+  }
+
+  List<_LedgerActivity> activities(_ClientDetailsStrings strings) {
+    if (reversalOf.isNotEmpty) {
+      return [
+        _LedgerActivity(
+          label: strings.paymentReturned,
+          agorot: debitAgorot > 0 ? debitAgorot : creditAgorot,
+          sign: '-',
+          icon: Icons.undo_rounded,
+          color: const Color(0xFFDC2626),
+        ),
+      ];
+    }
+    if (documentKind == 'credit_note') {
+      return [
+        _LedgerActivity(
+          label: strings.debtReduced,
+          agorot: creditAgorot,
+          sign: '-',
+          icon: Icons.trending_down_rounded,
+          color: const Color(0xFF047857),
+        ),
+      ];
+    }
+    if (documentKind == 'receipt') {
+      return [
+        _LedgerActivity(
+          label: strings.paymentReceived,
+          agorot: creditAgorot,
+          sign: '+',
+          icon: Icons.payments_outlined,
+          color: const Color(0xFF047857),
+        ),
+      ];
+    }
+
+    final result = <_LedgerActivity>[];
+    if (debitAgorot > 0) {
+      result.add(
+        _LedgerActivity(
+          label: strings.debtAdded,
+          agorot: debitAgorot,
+          sign: '+',
+          icon: Icons.add_chart_rounded,
+          color: const Color(0xFFB45309),
+        ),
+      );
+    }
+    if (creditAgorot > 0) {
+      result.add(
+        _LedgerActivity(
+          label: strings.paymentReceived,
+          agorot: creditAgorot,
+          sign: '+',
+          icon: Icons.payments_outlined,
+          color: const Color(0xFF047857),
+        ),
+      );
+    }
+    if (result.isEmpty) {
+      result.add(
+        _LedgerActivity(
+          label: strings.accountingEntry,
+          agorot: 0,
+          sign: '',
+          icon: Icons.swap_horiz_rounded,
+          color: const Color(0xFF64748B),
+        ),
+      );
+    }
+    return result;
+  }
+}
+
+class _LedgerActivity {
+  const _LedgerActivity({
+    required this.label,
+    required this.agorot,
+    required this.sign,
+    required this.icon,
+    required this.color,
+  });
+
+  final String label;
+  final int agorot;
+  final String sign;
+  final IconData icon;
+  final Color color;
 }
 
 class _ClientContactDetailsTab extends StatefulWidget {
@@ -1645,6 +2234,27 @@ class _ClientDetailsStrings {
   String get noBranchesFound => _value('noBranchesFound');
   String get branchesLoadFailed => _value('branchesLoadFailed');
   String get retry => _value('retry');
+  String get historyTab => _value('historyTab');
+  String get historyLoadFailed => _value('historyLoadFailed');
+  String get noHistory => _value('noHistory');
+  String get noHistoryMessage => _value('noHistoryMessage');
+  String get transactionHistory => _value('transactionHistory');
+  String get currentBalance => _value('currentBalance');
+  String get totalDebt => _value('totalDebt');
+  String get totalPaidAndCredits => _value('totalPaidAndCredits');
+  String get documentNumber => _value('documentNumber');
+  String get taxInvoice => _value('taxInvoice');
+  String get taxInvoiceReceipt => _value('taxInvoiceReceipt');
+  String get creditInvoice => _value('creditInvoice');
+  String get receipt => _value('receipt');
+  String get cancelledReceipt => _value('cancelledReceipt');
+  String get transactionAccount => _value('transactionAccount');
+  String get businessDocument => _value('businessDocument');
+  String get debtAdded => _value('debtAdded');
+  String get debtReduced => _value('debtReduced');
+  String get paymentReceived => _value('paymentReceived');
+  String get paymentReturned => _value('paymentReturned');
+  String get accountingEntry => _value('accountingEntry');
 
   static const _translations = <String, Map<String, String>>{
     'en': {
@@ -1699,6 +2309,28 @@ class _ClientDetailsStrings {
       'noBranchesFound': 'No branches found',
       'branchesLoadFailed': 'Could not load the branch list.',
       'retry': 'Retry',
+      'historyTab': 'History',
+      'historyLoadFailed': 'Could not load transaction history',
+      'noHistory': 'No transactions yet',
+      'noHistoryMessage':
+          'Invoices, receipts, credits, and returned payments will appear here.',
+      'transactionHistory': 'Transaction history',
+      'currentBalance': 'Current outstanding balance',
+      'totalDebt': 'Total debt entries',
+      'totalPaidAndCredits': 'Payments & credits',
+      'documentNumber': 'Document',
+      'taxInvoice': 'Tax invoice',
+      'taxInvoiceReceipt': 'Tax invoice / receipt',
+      'creditInvoice': 'Credit invoice',
+      'receipt': 'Receipt',
+      'cancelledReceipt': 'Cancelled receipt',
+      'transactionAccount': 'Transaction account',
+      'businessDocument': 'Business document',
+      'debtAdded': 'Debt added',
+      'debtReduced': 'Debt reduced',
+      'paymentReceived': 'Payment received',
+      'paymentReturned': 'Payment returned',
+      'accountingEntry': 'Accounting entry',
     },
     'he': {
       'title': 'פרטי לקוח',
@@ -1752,6 +2384,27 @@ class _ClientDetailsStrings {
       'noBranchesFound': 'לא נמצאו סניפים',
       'branchesLoadFailed': 'לא ניתן לטעון את רשימת הסניפים.',
       'retry': 'נסה שוב',
+      'historyTab': 'היסטוריה',
+      'historyLoadFailed': 'לא ניתן לטעון את היסטוריית העסקאות',
+      'noHistory': 'עדיין אין עסקאות',
+      'noHistoryMessage': 'חשבוניות, קבלות, זיכויים והחזרי תשלום יופיעו כאן.',
+      'transactionHistory': 'היסטוריית עסקאות',
+      'currentBalance': 'יתרת חוב נוכחית',
+      'totalDebt': 'סה״כ חיובים',
+      'totalPaidAndCredits': 'תשלומים וזיכויים',
+      'documentNumber': 'מסמך',
+      'taxInvoice': 'חשבונית מס',
+      'taxInvoiceReceipt': 'חשבונית מס / קבלה',
+      'creditInvoice': 'חשבונית זיכוי',
+      'receipt': 'קבלה',
+      'cancelledReceipt': 'קבלה מבוטלת',
+      'transactionAccount': 'חשבון עסקה',
+      'businessDocument': 'מסמך עסקי',
+      'debtAdded': 'נוסף לחוב',
+      'debtReduced': 'החוב הופחת',
+      'paymentReceived': 'תשלום התקבל',
+      'paymentReturned': 'תשלום הוחזר',
+      'accountingEntry': 'תנועה חשבונאית',
     },
     'ar': {
       'title': 'تفاصيل العميل',
@@ -1805,6 +2458,28 @@ class _ClientDetailsStrings {
       'noBranchesFound': 'لم يتم العثور على فروع',
       'branchesLoadFailed': 'تعذر تحميل قائمة الفروع.',
       'retry': 'إعادة المحاولة',
+      'historyTab': 'السجل',
+      'historyLoadFailed': 'تعذر تحميل سجل المعاملات',
+      'noHistory': 'لا توجد معاملات بعد',
+      'noHistoryMessage':
+          'ستظهر هنا الفواتير والإيصالات والإشعارات الدائنة والمدفوعات المرتجعة.',
+      'transactionHistory': 'سجل المعاملات',
+      'currentBalance': 'الرصيد المستحق الحالي',
+      'totalDebt': 'إجمالي المديونية',
+      'totalPaidAndCredits': 'المدفوعات والأرصدة الدائنة',
+      'documentNumber': 'المستند',
+      'taxInvoice': 'فاتورة ضريبية',
+      'taxInvoiceReceipt': 'فاتورة ضريبية / إيصال',
+      'creditInvoice': 'فاتورة دائنة',
+      'receipt': 'إيصال',
+      'cancelledReceipt': 'إيصال ملغى',
+      'transactionAccount': 'حساب معاملة',
+      'businessDocument': 'مستند تجاري',
+      'debtAdded': 'تمت إضافة مديونية',
+      'debtReduced': 'تم تخفيض المديونية',
+      'paymentReceived': 'تم استلام الدفعة',
+      'paymentReturned': 'تم إرجاع الدفعة',
+      'accountingEntry': 'قيد محاسبي',
     },
     'ru': {
       'title': 'Данные клиента',
@@ -1858,6 +2533,28 @@ class _ClientDetailsStrings {
       'noBranchesFound': 'Отделения не найдены',
       'branchesLoadFailed': 'Не удалось загрузить список отделений.',
       'retry': 'Повторить',
+      'historyTab': 'История',
+      'historyLoadFailed': 'Не удалось загрузить историю операций',
+      'noHistory': 'Операций пока нет',
+      'noHistoryMessage':
+          'Здесь появятся счета, квитанции, кредиты и возвраты платежей.',
+      'transactionHistory': 'История операций',
+      'currentBalance': 'Текущая задолженность',
+      'totalDebt': 'Всего начислено',
+      'totalPaidAndCredits': 'Платежи и кредиты',
+      'documentNumber': 'Документ',
+      'taxInvoice': 'Налоговый счет',
+      'taxInvoiceReceipt': 'Налоговый счет / квитанция',
+      'creditInvoice': 'Кредитный счет',
+      'receipt': 'Квитанция',
+      'cancelledReceipt': 'Отмененная квитанция',
+      'transactionAccount': 'Счет операции',
+      'businessDocument': 'Деловой документ',
+      'debtAdded': 'Начислена задолженность',
+      'debtReduced': 'Задолженность уменьшена',
+      'paymentReceived': 'Платеж получен',
+      'paymentReturned': 'Платеж возвращен',
+      'accountingEntry': 'Бухгалтерская запись',
     },
     'am': {
       'title': 'የደንበኛ ዝርዝሮች',
@@ -1911,6 +2608,27 @@ class _ClientDetailsStrings {
       'noBranchesFound': 'ምንም ቅርንጫፍ አልተገኘም',
       'branchesLoadFailed': 'የቅርንጫፎችን ዝርዝር መጫን አልተቻለም።',
       'retry': 'እንደገና ሞክር',
+      'historyTab': 'ታሪክ',
+      'historyLoadFailed': 'የግብይት ታሪክን መጫን አልተቻለም',
+      'noHistory': 'እስካሁን ምንም ግብይት የለም',
+      'noHistoryMessage': 'ደረሰኞች፣ ክፍያዎች፣ ቅናሾች እና የተመለሱ ክፍያዎች እዚህ ይታያሉ።',
+      'transactionHistory': 'የግብይት ታሪክ',
+      'currentBalance': 'የአሁኑ ቀሪ ዕዳ',
+      'totalDebt': 'ጠቅላላ ዕዳ',
+      'totalPaidAndCredits': 'ክፍያዎች እና ቅናሾች',
+      'documentNumber': 'ሰነድ',
+      'taxInvoice': 'የግብር ደረሰኝ',
+      'taxInvoiceReceipt': 'የግብር ደረሰኝ / የክፍያ ደረሰኝ',
+      'creditInvoice': 'የብድር ደረሰኝ',
+      'receipt': 'የክፍያ ደረሰኝ',
+      'cancelledReceipt': 'የተሰረዘ ደረሰኝ',
+      'transactionAccount': 'የግብይት ሂሳብ',
+      'businessDocument': 'የንግድ ሰነድ',
+      'debtAdded': 'ዕዳ ታክሏል',
+      'debtReduced': 'ዕዳ ቀንሷል',
+      'paymentReceived': 'ክፍያ ደርሷል',
+      'paymentReturned': 'ክፍያ ተመልሷል',
+      'accountingEntry': 'የሂሳብ መዝገብ',
     },
   };
 }
