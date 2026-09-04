@@ -2426,6 +2426,15 @@ exports.createServerDocument = onCall(
                 "The linked source document no longer exists.",
             );
           }
+          const cancelsSource = document.isNegativeReceipt ||
+            document.docType === "credit_note";
+          if (sourceRef && cancelsSource &&
+              sourceSnap.data()?.cancellationStatus === "cancelled") {
+            throw new HttpsError(
+                "failed-precondition",
+                "The linked source document is already cancelled.",
+            );
+          }
           transaction.set(invoiceRef, stored, {merge: true});
           writeServerDocumentCreatedNotification(transaction, userRef, {
             docType: document.docType,
@@ -2487,7 +2496,7 @@ exports.createServerDocument = onCall(
               updatedAt: admin.firestore.FieldValue.serverTimestamp(),
             });
           }
-          if (sourceRef && document.isNegativeReceipt) {
+          if (sourceRef && cancelsSource) {
             transaction.update(sourceRef, {
               cancellationStatus: "cancelled",
               cancelledByDocumentId: document.invoiceDocId,

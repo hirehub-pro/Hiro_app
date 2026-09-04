@@ -172,10 +172,15 @@ function validateTaxInvoicePresentation({presentation, payload, reservation}) {
 }
 
 function visualText(value, direction = "rtl") {
-  // Fontkit performs Unicode bidirectional layout while encoding the embedded
-  // Rubik font. Returning logical text here prevents a second reversal of
-  // Hebrew glyphs while preserving numbers, dates, email addresses and marks.
-  return boundedString(value, 4000);
+  const text = boundedString(value, 4000);
+  if (direction !== "rtl" || !/[\u0590-\u08ff]/u.test(text)) return text;
+  // Fontkit reverses an RTL glyph run as a whole, including embedded LTR text.
+  // Reverse only the Latin/number runs before encoding so Fontkit's layout
+  // restores their visual order while still positioning them within Hebrew.
+  return text.replace(
+      /[A-Za-z0-9@._:/,+%#()$€£₪-]+/g,
+      (run) => [...run].reverse().join(""),
+  );
 }
 
 function formatMoney(value) {
@@ -1034,8 +1039,12 @@ async function buildTaxInvoicePdf({
   const pages = [];
 
   function newPage() {
+    const isFirstPage = pages.length === 0;
     const next = addInvoicePage(pdf);
     pages.push(next);
+    if (!isFirstPage) {
+      return {page: next, y: A4.height - MARGIN - 4};
+    }
     const headerBottom = drawPageHeader(
         next, font, reservation, allocation, payload, logo,
     );

@@ -2,7 +2,10 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const {PDFDocument} = require("pdf-lib");
+const fs = require("fs");
+const path = require("path");
+const fontkit = require("@pdf-lib/fontkit");
+const {PDFDict, PDFDocument, PDFName} = require("pdf-lib");
 
 const {
   buildTaxInvoicePdf,
@@ -182,12 +185,27 @@ test("presentation validates an inline document logo without persisting bytes", 
   assert.equal(Object.keys(presentation).includes("documentLogoBytes"), false);
 });
 
-test("passes logical Hebrew to Fontkit exactly once", () => {
-  assert.equal(visualText("חשבונית מס 1042"), "חשבונית מס 1042");
+test("protects numbers and Latin text inside Fontkit RTL runs", () => {
+  assert.equal(visualText("גג667"), "גג766");
+  assert.equal(visualText("חשבונית מס 1042"), "חשבונית מס 2401");
+  assert.equal(visualText("מע״מ 18%"), "מע״מ %81");
+  assert.equal(visualText("סכום 667₪"), "סכום ₪766");
   assert.equal(
       visualText("תאריך: 19-08-2026 | דוא״ל: client@example.com"),
-      "תאריך: 19-08-2026 | דוא״ל: client@example.com",
+      "תאריך: 6202-80-91 | דוא״ל: moc.elpmaxe@tneilc",
   );
+  assert.equal(visualText("667", "ltr"), "667");
+  const font = fontkit.create(fs.readFileSync(path.join(
+      __dirname,
+      "assets",
+      "fonts",
+      "Rubik-VariableFont_wght.ttf",
+  )));
+  const glyphText = font.layout(visualText("גג667")).glyphs
+      .flatMap((glyph) => glyph.codePoints)
+      .map((codePoint) => String.fromCodePoint(codePoint))
+      .join("");
+  assert.equal(glyphText, "667גג");
 });
 
 test("formats PDF money with thousands separators and two decimals", () => {
@@ -329,6 +347,56 @@ test("renders a stored business signature above the footer", async () => {
   });
   const pdf = await PDFDocument.load(bytes);
   assert.equal(pdf.getPageCount(), 1);
+});
+
+test("renders the document header only on the first page", async () => {
+  const payload = samplePayload();
+  payload.invoices_list[0].items = Array.from({length: 70}, (_, index) => ({
+    description: `עבודת בדיקה ארוכה ${index + 1}`,
+    quantity: 1,
+    price_per_unit: 10,
+    total_amount: 10,
+    vat_rate: 18,
+    vat_amount: 1.8,
+  }));
+  const logoBytes = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL39wAAAABJRU5ErkJggg==",
+      "base64",
+  );
+  const bytes = await buildTaxInvoicePdf({
+    payload,
+    allocation: null,
+    reservation: {
+      docType: "invoice",
+      documentNumber: "2026-0042",
+      sequenceNumber: 42,
+      invoiceDocId: "invoice_multipage_header_test",
+    },
+    business: {
+      name: "עסק בדיקה",
+      businessId: "123456789",
+      address: "רחוב העסק 2",
+      dealerType: "licensed",
+      logoBytes,
+    },
+    presentation: normalizeTaxInvoicePresentation({
+      clientAddress: "רחוב הלקוח 1",
+    }),
+    generatedAt: new Date("2026-08-18T10:00:00Z"),
+  });
+  const pdf = await PDFDocument.load(bytes);
+  const pages = pdf.getPages();
+  assert.ok(pages.length > 1);
+
+  const pageImageCount = (page) => {
+    const resources = page.node.Resources();
+    const images = resources?.lookup(PDFName.of("XObject"), PDFDict);
+    return images?.keys().length || 0;
+  };
+  assert.equal(pageImageCount(pages[0]), 1);
+  for (const continuationPage of pages.slice(1)) {
+    assert.equal(pageImageCount(continuationPage), 0);
+  }
 });
 
 test("preview PDFs are marked preview-only without changing final PDFs", async () => {

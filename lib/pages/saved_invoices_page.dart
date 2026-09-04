@@ -833,6 +833,8 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
             initialClientExternalNumber:
                 (detailData['externalClientNumber'] ?? '').toString(),
             initialDocType: 'credit_note',
+            sourceInvoiceNumber: invoiceNumber,
+            sourceInvoiceDocId: invoiceDocId,
             initialItems: items,
             initialNotes: (detailData['notes'] ?? '').toString(),
             initialPaymentMethod: (detailData['paymentMethod'] ?? '')
@@ -1914,22 +1916,29 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                 .contains(invoiceDoc.id);
                             final createdAt = data['createdAt'] as Timestamp?;
                             final amount = (data['amount'] as num?)?.toDouble();
+                            final isCancelled =
+                                (data['cancellationStatus'] ?? '')
+                                    .toString()
+                                    .trim()
+                                    .toLowerCase() ==
+                                'cancelled';
                             final canCreateCreditNote =
                                 !isReceivedScope &&
                                 isFinalizedTaxDocument &&
+                                !isCancelled &&
                                 (docType == 'invoice' ||
                                     docType == 'invoice_receipt');
                             final canCreateReceipt =
                                 !isReceivedScope &&
                                 isFinalizedTaxDocument &&
+                                !isCancelled &&
                                 docType == 'invoice';
                             final canCancelReceipt =
                                 !isReceivedScope &&
                                 isFinalizedTaxDocument &&
                                 docType == 'receipt' &&
                                 data['isCancellationDocument'] != true &&
-                                (data['cancellationStatus'] ?? '') !=
-                                    'cancelled';
+                                !isCancelled;
                             final isProformaInvoice =
                                 !isReceivedScope &&
                                 isFinalizedTaxDocument &&
@@ -2129,8 +2138,12 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                                         ),
                                                       ),
                                                     ),
-                                                  if (hasTaxWorkflow ||
-                                                      hasServerWorkflow)
+                                                  if ((hasTaxWorkflow ||
+                                                          hasServerWorkflow) &&
+                                                      displayedDocumentStatus !=
+                                                          'finalized' &&
+                                                      displayedDocumentStatus !=
+                                                          'reserved')
                                                     Container(
                                                       padding:
                                                           const EdgeInsets.symmetric(
@@ -2155,17 +2168,49 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                                           isRtl,
                                                         ),
                                                         style: TextStyle(
-                                                          color:
-                                                              _documentWorkflowColor(
-                                                                documentStatus,
-                                                              ),
+                                                          color: _documentWorkflowColor(
+                                                            displayedDocumentStatus,
+                                                          ),
                                                           fontSize: 11,
                                                           fontWeight:
                                                               FontWeight.w700,
                                                         ),
                                                       ),
                                                     ),
-                                                  if (docType == 'invoice')
+                                                  if (isCancelled)
+                                                    Container(
+                                                      padding:
+                                                          const EdgeInsets.symmetric(
+                                                            horizontal: 10,
+                                                            vertical: 5,
+                                                          ),
+                                                      decoration: BoxDecoration(
+                                                        color:
+                                                            const Color(
+                                                              0xFFDC2626,
+                                                            ).withValues(
+                                                              alpha: 0.12,
+                                                            ),
+                                                        borderRadius:
+                                                            BorderRadius.circular(
+                                                              999,
+                                                            ),
+                                                      ),
+                                                      child: Text(
+                                                        isRtl
+                                                            ? 'המסמך בוטל'
+                                                            : 'Document cancelled',
+                                                        style: const TextStyle(
+                                                          color: Color(
+                                                            0xFFB91C1C,
+                                                          ),
+                                                          fontSize: 11,
+                                                          fontWeight:
+                                                              FontWeight.w700,
+                                                        ),
+                                                      ),
+                                                    )
+                                                  else if (docType == 'invoice')
                                                     Container(
                                                       padding:
                                                           const EdgeInsets.symmetric(
@@ -2944,7 +2989,8 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                         ],
                                       ),
                                     ],
-                                    if (docType == 'invoice') ...[
+                                    if (docType == 'invoice' &&
+                                        !isCancelled) ...[
                                       const SizedBox(height: 8),
                                       _buildMetaRow(
                                         icon: Icons.payments_outlined,

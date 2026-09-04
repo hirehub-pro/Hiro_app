@@ -146,8 +146,6 @@ class ClientDetailsPage extends StatelessWidget {
             const SizedBox(width: 8),
           ],
           bottom: TabBar(
-            isScrollable: true,
-            tabAlignment: TabAlignment.start,
             labelColor: const Color(0xFF1976D2),
             unselectedLabelColor: const Color(0xFF64748B),
             indicatorColor: const Color(0xFF1976D2),
@@ -521,6 +519,118 @@ class _ClientHistoryTab extends StatelessWidget {
   String _formatDate(DateTime date) =>
       intl.DateFormat('dd/MM/yyyy').format(date.toLocal());
 
+  Future<void> _openDocument(
+    BuildContext context,
+    _ClientLedgerEntry entry,
+  ) async {
+    final messenger = ScaffoldMessenger.of(context);
+    if (entry.sourceDocumentId.isEmpty) {
+      messenger.showSnackBar(
+        SnackBar(content: Text(strings.historyDocumentOpenFailed)),
+      );
+      return;
+    }
+
+    messenger
+      ..clearSnackBars()
+      ..showSnackBar(
+        SnackBar(
+          duration: const Duration(seconds: 20),
+          content: Row(
+            children: [
+              const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(strings.openingDocument),
+            ],
+          ),
+        ),
+      );
+
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .collection('invoices')
+          .doc(entry.sourceDocumentId)
+          .get();
+      if (!snapshot.exists) throw StateError('Document not found');
+      final data = snapshot.data()!;
+      final name = (data['name'] ?? entry.documentLabel(strings))
+          .toString()
+          .trim();
+      final fileName = (data['fileName'] ?? '$name.pdf').toString().trim();
+      final url = (data['url'] ?? '').toString().trim();
+      final storagePath = (data['storagePath'] ?? '').toString().trim();
+      final documentStatus = (data['documentStatus'] ?? '').toString().trim();
+      final hasWorkflow =
+          data['taxAuthorityAllocationRequest'] is Map ||
+          data['serverDocument'] is Map;
+      final recovery = data['documentRecovery'];
+      final hasMissingFinalPdf =
+          recovery is Map &&
+          recovery['status'] == 'needs_reconciliation' &&
+          recovery['reason'] == 'missing_final_pdf';
+      final fallback = data['fallbackPreview'];
+      final fallbackUrl = fallback is Map
+          ? (fallback['url'] ?? '').toString().trim()
+          : '';
+      final fallbackStoragePath = fallback is Map
+          ? (fallback['storagePath'] ?? '').toString().trim()
+          : '';
+      final fallbackFileName = fallback is Map
+          ? (fallback['fileName'] ?? fileName).toString().trim()
+          : fileName;
+      final hasFallback =
+          fallback is Map &&
+          fallback['status'] == 'available' &&
+          fallback['previewOnly'] == true &&
+          fallbackUrl.isNotEmpty &&
+          fallbackStoragePath.isNotEmpty;
+      final isFinalized =
+          (!hasWorkflow || documentStatus == 'finalized') &&
+          !hasMissingFinalPdf;
+      final opensFallback = hasFallback && !isFinalized;
+      final openingUrl = opensFallback ? fallbackUrl : url;
+      final openingStoragePath = opensFallback
+          ? fallbackStoragePath
+          : storagePath;
+      final openingFileName = opensFallback ? fallbackFileName : fileName;
+      if (openingUrl.isEmpty && openingStoragePath.isEmpty) {
+        throw StateError('Document file is unavailable');
+      }
+
+      if (!context.mounted) return;
+      messenger.clearSnackBars();
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => SavedInvoicePreviewPage(
+            name: openingFileName,
+            url: openingUrl,
+            invoiceDocId: entry.sourceDocumentId,
+            canReportMissing: isFinalized,
+            storagePath: openingStoragePath,
+            previewOnly: opensFallback,
+          ),
+        ),
+      );
+    } catch (_) {
+      if (!context.mounted) return;
+      messenger
+        ..clearSnackBars()
+        ..showSnackBar(
+          SnackBar(content: Text(strings.historyDocumentOpenFailed)),
+        );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
@@ -610,6 +720,7 @@ class _ClientHistoryTab extends StatelessWidget {
                   date: _formatDate(entry.date),
                   amountFormatter: _formatAmount,
                   strings: strings,
+                  onTap: () => _openDocument(context, entry),
                 ),
               ),
             );
@@ -774,83 +885,99 @@ class _HistoryEntryCard extends StatelessWidget {
     required this.date,
     required this.amountFormatter,
     required this.strings,
+    required this.onTap,
   });
 
   final _ClientLedgerEntry entry;
   final String date;
   final String Function(int agorot, {required String sign}) amountFormatter;
   final _ClientDetailsStrings strings;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final activities = entry.activities(strings);
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
-      child: Column(
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+        child: Ink(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+          ),
+          child: Column(
             children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFEAF4FF),
-                  borderRadius: BorderRadius.circular(13),
-                ),
-                child: const Icon(
-                  Icons.description_outlined,
-                  color: Color(0xFF1976D2),
-                  size: 21,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      entry.documentLabel(strings),
-                      style: const TextStyle(
-                        color: Color(0xFF0F172A),
-                        fontSize: 15,
-                        fontWeight: FontWeight.w800,
-                      ),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEAF4FF),
+                      borderRadius: BorderRadius.circular(13),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      entry.documentNumber.isEmpty
-                          ? date
-                          : '${strings.documentNumber} ${entry.documentNumber} • $date',
-                      style: const TextStyle(
-                        color: Color(0xFF64748B),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
+                    child: const Icon(
+                      Icons.description_outlined,
+                      color: Color(0xFF1976D2),
+                      size: 21,
                     ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          entry.documentLabel(strings),
+                          style: const TextStyle(
+                            color: Color(0xFF0F172A),
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          entry.documentNumber.isEmpty
+                              ? date
+                              : '${strings.documentNumber} ${entry.documentNumber} • $date',
+                          style: const TextStyle(
+                            color: Color(0xFF64748B),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  const Icon(
+                    Icons.chevron_right_rounded,
+                    size: 22,
+                    color: Color(0xFF94A3B8),
+                  ),
+                ],
               ),
+              const SizedBox(height: 14),
+              const Divider(height: 1, color: Color(0xFFE2E8F0)),
+              for (var index = 0; index < activities.length; index++) ...[
+                if (index > 0)
+                  const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                _HistoryActivityRow(
+                  activity: activities[index],
+                  amount: amountFormatter(
+                    activities[index].agorot,
+                    sign: activities[index].sign,
+                  ),
+                ),
+              ],
             ],
           ),
-          const SizedBox(height: 14),
-          const Divider(height: 1, color: Color(0xFFE2E8F0)),
-          for (var index = 0; index < activities.length; index++) ...[
-            if (index > 0) const Divider(height: 1, color: Color(0xFFF1F5F9)),
-            _HistoryActivityRow(
-              activity: activities[index],
-              amount: amountFormatter(
-                activities[index].agorot,
-                sign: activities[index].sign,
-              ),
-            ),
-          ],
-        ],
+        ),
       ),
     );
   }
@@ -906,6 +1033,7 @@ class _ClientLedgerEntry {
     required this.debitAgorot,
     required this.creditAgorot,
     required this.reversalOf,
+    required this.sourceDocumentId,
   });
 
   factory _ClientLedgerEntry.fromSnapshot(
@@ -945,6 +1073,9 @@ class _ClientLedgerEntry {
       debitAgorot: agorot(data['debitAgorot']),
       creditAgorot: agorot(data['creditAgorot']),
       reversalOf: (data['reversalOf'] ?? '').toString().trim(),
+      sourceDocumentId: (data['sourceDocumentId'] ?? snapshot.id)
+          .toString()
+          .trim(),
     );
   }
 
@@ -954,6 +1085,7 @@ class _ClientLedgerEntry {
   final int debitAgorot;
   final int creditAgorot;
   final String reversalOf;
+  final String sourceDocumentId;
 
   String documentLabel(_ClientDetailsStrings strings) {
     switch (documentKind) {
@@ -2255,6 +2387,8 @@ class _ClientDetailsStrings {
   String get paymentReceived => _value('paymentReceived');
   String get paymentReturned => _value('paymentReturned');
   String get accountingEntry => _value('accountingEntry');
+  String get openingDocument => _value('openingDocument');
+  String get historyDocumentOpenFailed => _value('historyDocumentOpenFailed');
 
   static const _translations = <String, Map<String, String>>{
     'en': {
@@ -2331,6 +2465,9 @@ class _ClientDetailsStrings {
       'paymentReceived': 'Payment received',
       'paymentReturned': 'Payment returned',
       'accountingEntry': 'Accounting entry',
+      'openingDocument': 'Opening document...',
+      'historyDocumentOpenFailed':
+          'Could not open this document. Please try again.',
     },
     'he': {
       'title': 'פרטי לקוח',
@@ -2405,6 +2542,8 @@ class _ClientDetailsStrings {
       'paymentReceived': 'תשלום התקבל',
       'paymentReturned': 'תשלום הוחזר',
       'accountingEntry': 'תנועה חשבונאית',
+      'openingDocument': 'פותח את המסמך...',
+      'historyDocumentOpenFailed': 'לא ניתן לפתוח את המסמך. נסה שוב.',
     },
     'ar': {
       'title': 'تفاصيل العميل',
@@ -2480,6 +2619,8 @@ class _ClientDetailsStrings {
       'paymentReceived': 'تم استلام الدفعة',
       'paymentReturned': 'تم إرجاع الدفعة',
       'accountingEntry': 'قيد محاسبي',
+      'openingDocument': 'جارٍ فتح المستند...',
+      'historyDocumentOpenFailed': 'تعذر فتح هذا المستند. حاول مرة أخرى.',
     },
     'ru': {
       'title': 'Данные клиента',
@@ -2555,6 +2696,9 @@ class _ClientDetailsStrings {
       'paymentReceived': 'Платеж получен',
       'paymentReturned': 'Платеж возвращен',
       'accountingEntry': 'Бухгалтерская запись',
+      'openingDocument': 'Открытие документа...',
+      'historyDocumentOpenFailed':
+          'Не удалось открыть документ. Повторите попытку.',
     },
     'am': {
       'title': 'የደንበኛ ዝርዝሮች',
@@ -2629,6 +2773,8 @@ class _ClientDetailsStrings {
       'paymentReceived': 'ክፍያ ደርሷል',
       'paymentReturned': 'ክፍያ ተመልሷል',
       'accountingEntry': 'የሂሳብ መዝገብ',
+      'openingDocument': 'ሰነዱን በመክፈት ላይ...',
+      'historyDocumentOpenFailed': 'ይህን ሰነድ መክፈት አልተቻለም። እንደገና ይሞክሩ።',
     },
   };
 }
