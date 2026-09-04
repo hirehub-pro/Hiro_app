@@ -5653,13 +5653,133 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     return null;
   }
 
+  bool get _hasPendingServiceItemDraft {
+    final quantity = _itemQtyController.text.trim();
+    return _editingItemIndex != null ||
+        _itemDescController.text.trim().isNotEmpty ||
+        _itemPriceController.text.trim().isNotEmpty ||
+        (quantity.isNotEmpty && quantity != '1');
+  }
+
+  bool _hasPendingPaymentMethodDraft(_PaymentMethodEntry entry) {
+    return entry.method != 'cash' ||
+        entry.amountController.text.trim().isNotEmpty ||
+        entry.cardNumberController.text.trim().isNotEmpty ||
+        entry.cardNameController.text.trim().isNotEmpty ||
+        entry.cardExpirationController.text.trim().isNotEmpty ||
+        entry.installmentsController.text.trim() != '1' ||
+        entry.creditDealType != 'regular' ||
+        entry.creditFirstPaymentDate != null ||
+        entry.checkNumberController.text.trim().isNotEmpty ||
+        entry.checkPaymentDate != null ||
+        entry.checkBankController.text.trim().isNotEmpty ||
+        entry.checkBranchController.text.trim().isNotEmpty ||
+        entry.checkAccountController.text.trim().isNotEmpty ||
+        entry.transferBankController.text.trim().isNotEmpty ||
+        entry.transferBranchController.text.trim().isNotEmpty ||
+        entry.transferAccountController.text.trim().isNotEmpty;
+  }
+
+  bool _isPaymentMethodComplete(_PaymentMethodEntry entry) {
+    final amount = _parsePaymentAmount(entry.amountController.text);
+    if (amount == null || amount <= 0) return false;
+
+    if (entry.method == 'check') {
+      return entry.checkNumberController.text.trim().isNotEmpty &&
+          entry.checkPaymentDate != null &&
+          entry.checkBankController.text.trim().isNotEmpty &&
+          entry.checkBranchController.text.trim().isNotEmpty &&
+          entry.checkAccountController.text.trim().isNotEmpty;
+    }
+
+    if (entry.method == 'credit') {
+      final installments = entry.installmentsController.text.trim();
+      final count = int.tryParse(installments);
+      return (installments.isEmpty ||
+              (count != null && count >= 1 && count <= 999)) &&
+          entry.creditFirstPaymentDate != null;
+    }
+
+    return true;
+  }
+
+  String _localizedBuilderMessage({
+    required String hebrew,
+    required String english,
+  }) {
+    final locale = Provider.of<LanguageProvider>(
+      context,
+      listen: false,
+    ).locale.languageCode;
+    return locale == 'he' ? hebrew : english;
+  }
+
+  void _showIncompletePaymentMethodError() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          _localizedBuilderMessage(
+            hebrew:
+                'יש למלא את כל שדות החובה באמצעי התשלום, ואז ללחוץ על "הוסף אמצעי תשלום".',
+            english:
+                'Complete all required payment fields, then press "Add Payment Method".',
+          ),
+        ),
+      ),
+    );
+  }
+
+  bool _validatePendingSectionDrafts() {
+    if (_documentTypeShowsServiceItems(_selectedDocType) &&
+        _hasPendingServiceItemDraft) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _localizedBuilderMessage(
+              hebrew:
+                  'מילאת פרטי פריט שעדיין לא נוסף. יש ללחוץ על "הוסף פריט" לפני הפקת המסמך.',
+              english:
+                  'You entered an item that has not been added. Press "Add Item" before generating the document.',
+            ),
+          ),
+        ),
+      );
+      return false;
+    }
+
+    final paymentDraft = _draftPaymentMethod;
+    if (_showsPaymentMethodSection &&
+        paymentDraft != null &&
+        _hasPendingPaymentMethodDraft(paymentDraft)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _localizedBuilderMessage(
+              hebrew:
+                  'מילאת אמצעי תשלום שעדיין לא נוסף. יש ללחוץ על "הוסף אמצעי תשלום" לפני הפקת המסמך.',
+              english:
+                  'You entered a payment method that has not been added. Press "Add Payment Method" before generating the document.',
+            ),
+          ),
+        ),
+      );
+      return false;
+    }
+
+    return true;
+  }
+
   void _commitPaymentMethod() {
     final draft = _draftPaymentMethod;
-    if (draft == null ||
-        !_validatePaymentMethods(
-          requireMatchingTotal: false,
-          entryToValidate: draft,
-        )) {
+    if (draft == null) return;
+    if (!_isPaymentMethodComplete(draft)) {
+      _showIncompletePaymentMethodError();
+      return;
+    }
+    if (!_validatePaymentMethods(
+      requireMatchingTotal: false,
+      entryToValidate: draft,
+    )) {
       return;
     }
 
@@ -5951,6 +6071,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   }
 
   Future<void> _openPreviewPage() async {
+    if (!_validatePendingSectionDrafts()) {
+      return;
+    }
     if (_items.isEmpty && _selectedDocType != 'receipt') {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -6659,6 +6782,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   }
 
   Future<bool> _sendToContact(String receiverId, String receiverName) async {
+    if (!_validatePendingSectionDrafts()) {
+      return false;
+    }
     if (!_validateClientDetails()) {
       return false;
     }
