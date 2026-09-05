@@ -18,7 +18,6 @@ service cloud.firestore {
     // users/{uid}/counters/{id}: owner-readable sequence state. Initialization
     // is server-only; later increments must be linked to a matching invoice.
     // users/{uid}/tax_authority and invoiceBuilderVerifications: server-only.
-    // users/{uid}/receivedInvoices: owner-read, server-write mirror.
     // users/{uid}/clients/{clientId}/ledgerEntries/{postingId}: immutable
     // server-created customer debit/credit posting; owner-readable only.
     // users/{customerUid}/requests and users/{workerUid}/RequestToMe: private
@@ -1046,11 +1045,6 @@ service cloud.firestore {
 
       match /invoiceBuilderVerifications/{document=**} {
         allow read, write: if false;
-      }
-
-      match /receivedInvoices/{invoiceId} {
-        allow read: if isOwner(userId);
-        allow write: if false;
       }
 
       match /clients/{clientId} {

@@ -28,14 +28,10 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
   late final TextEditingController _searchController;
   final FocusNode _searchFocusNode = FocusNode();
   Stream<QuerySnapshot<Map<String, dynamic>>>? _invoicesStream;
-  Stream<QuerySnapshot<Map<String, dynamic>>>? _receivedInvoicesStream;
-  bool _isLoadingReceivedInvoices = true;
-  bool _hasReceivedInvoicePhone = false;
   bool _canCreateTaxDocuments = false;
   String _searchQuery = '';
   String _selectedDocType = 'all';
   DateTimeRange? _selectedDateRange;
-  _InvoiceScope _selectedScope = _InvoiceScope.createdByMe;
   final Set<String> _generatingSigningLinks = <String>{};
   final Set<String> _retryingDocuments = <String>{};
   final Set<String> _expandedCreateActions = <String>{};
@@ -70,6 +66,7 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
     super.initState();
     _searchQuery = widget.initialSearchQuery.trim();
     _searchController = TextEditingController(text: _searchQuery);
+    _selectedDateRange = _monthToDateRange(DateTime.now());
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
       _invoicesStream = FirebaseFirestore.instance
@@ -78,7 +75,6 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
           .collection('invoices')
           .orderBy('createdAt', descending: true)
           .snapshots();
-      _loadReceivedInvoicesStream(user);
       _loadTaxDocumentEligibility(user.uid);
     }
     _searchController.addListener(_handleSearchChanged);
@@ -115,54 +111,6 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
       });
     } catch (_) {
       // Tax-document actions stay hidden until the business type is known.
-    }
-  }
-
-  Future<void> _loadReceivedInvoicesStream(User user) async {
-    final rawPhones = <String>{user.phoneNumber ?? ''};
-
-    try {
-      final userData = await ProfileDocumentService.load(user.uid);
-      rawPhones
-        ..add((userData['phone'] ?? '').toString())
-        ..add((userData['phoneNumber'] ?? '').toString());
-    } catch (_) {
-      // The auth phone is enough for the common path; profile loading is a
-      // best-effort expansion for older data formats.
-    }
-
-    final phoneCandidates = <String>{};
-    for (final phone in rawPhones) {
-      phoneCandidates.addAll(_phoneCandidates(phone));
-    }
-
-    if (phoneCandidates.isNotEmpty) {
-      await _syncReceivedInvoices();
-    }
-
-    if (!mounted) return;
-    setState(() {
-      _hasReceivedInvoicePhone = phoneCandidates.isNotEmpty;
-      _isLoadingReceivedInvoices = false;
-      _receivedInvoicesStream = phoneCandidates.isEmpty
-          ? null
-          : FirebaseFirestore.instance
-                .collection('users')
-                .doc(user.uid)
-                .collection('receivedInvoices')
-                .orderBy('createdAt', descending: true)
-                .snapshots();
-    });
-  }
-
-  Future<void> _syncReceivedInvoices() async {
-    try {
-      await FirebaseFunctions.instanceFor(
-        region: 'us-central1',
-      ).httpsCallable('syncReceivedInvoices').call();
-    } catch (_) {
-      // Sync is best effort. The stream below still shows anything already
-      // mirrored by the backend trigger.
     }
   }
 
@@ -417,7 +365,17 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
       case 'invoice_receipt':
         return isRtl ? 'חשבונית / קבלה' : 'Invoice / Receipt';
       case 'credit_note':
-        return isRtl ? 'זיכוי' : 'Credit Note';
+        final languageCode = Provider.of<LanguageProvider>(
+          context,
+          listen: false,
+        ).locale.languageCode;
+        return switch (languageCode) {
+          'he' => 'חשבונית מס זיכוי',
+          'ar' => 'فاتورة ضريبية دائنة',
+          'ru' => 'Кредитовый налоговый счёт',
+          'am' => 'የግብር ደረሰኝ ክሬዲት',
+          _ => 'Tax Invoice Credit',
+        };
       case 'receipt':
         return isRtl ? 'קבלה' : 'Receipt';
       default:
@@ -954,6 +912,7 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
           59,
           59,
           999,
+          999,
         ),
       );
     });
@@ -1032,8 +991,8 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
       final label = _docTypeLabel(originalDocType, isRtl);
       final originalDateFormatted = _formatOriginalInvoiceDate(sourceDate);
       final autoReason = isRtl
-          ? 'זיכוי עבור $label מספר $invoiceNumber'
-          : 'Credit for $label #$invoiceNumber';
+          ? 'חשבונית מס זיכוי עבור $label מספר $invoiceNumber'
+          : 'Tax Invoice Credit for $label #$invoiceNumber';
       final autoReceiptConfirmation = isRtl
           ? 'נוצר אוטומטית ממסמך שמור #$invoiceNumber. יש לעדכן אסמכתא למסירה בפועל לפני שימוש משפטי.'
           : 'Auto-created from saved document #$invoiceNumber. Update with the actual delivery proof before legal use.';
@@ -1082,8 +1041,8 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
         SnackBar(
           content: Text(
             isRtl
-                ? 'לא הצלחנו לפתוח הודעת זיכוי אוטומטית למסמך הזה.'
-                : 'Could not open an automatic credit note for this document.',
+                ? 'לא הצלחנו לפתוח חשבונית מס זיכוי אוטומטית למסמך הזה.'
+                : 'Could not open an automatic Tax Invoice Credit for this document.',
           ),
         ),
       );
@@ -1682,6 +1641,22 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
     });
   }
 
+  DateTimeRange _monthToDateRange(DateTime date) {
+    return DateTimeRange(
+      start: DateTime(date.year, date.month),
+      end: DateTime(date.year, date.month, date.day, 23, 59, 59, 999, 999),
+    );
+  }
+
+  double _summaryAmount(Map<String, dynamic> data) {
+    final amount = (data['amount'] as num?)?.toDouble() ?? 0;
+    final docType = (data['docType'] ?? '').toString();
+    final isNegativeDocument =
+        docType == 'credit_note' ||
+        (docType == 'receipt' && data['isCancellationDocument'] == true);
+    return isNegativeDocument ? -amount.abs() : amount;
+  }
+
   String _dateRangeLabel(bool isRtl) {
     if (_selectedDateRange == null) {
       return isRtl ? 'סנן לפי תאריך' : 'Filter by date';
@@ -1703,38 +1678,6 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
     final normalized = _normalizeSearchText(query);
     if (normalized.isEmpty) return const [];
     return normalized.split(' ').where((term) => term.isNotEmpty).toList();
-  }
-
-  List<String> _phoneCandidates(String input) {
-    final normalized = input.trim().replaceAll(RegExp(r'[\s\-\(\)]'), '');
-    final digits = normalized.replaceAll(RegExp(r'\D'), '');
-    final candidates = <String>{};
-
-    if (normalized.isNotEmpty) candidates.add(normalized);
-    if (digits.isNotEmpty) candidates.add(digits);
-
-    if (digits.startsWith('0') && digits.length == 10) {
-      candidates.add('+972${digits.substring(1)}');
-    }
-    if (digits.length == 9) {
-      candidates
-        ..add('0$digits')
-        ..add('+972$digits');
-    }
-    if (digits.startsWith('972')) {
-      candidates.add('+$digits');
-      if (digits.length == 12) {
-        candidates.add('0${digits.substring(3)}');
-      }
-      if (digits.length > 4 && digits[3] == '0') {
-        candidates.add('+972${digits.substring(4)}');
-      }
-    }
-    if (normalized.startsWith('+9720') && normalized.length > 5) {
-      candidates.add('+972${normalized.substring(5)}');
-    }
-
-    return candidates.toList();
   }
 
   bool _matchesSearch(
@@ -1802,53 +1745,18 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
           elevation: 0,
         ),
         body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-          stream: _selectedScope == _InvoiceScope.createdByMe
-              ? _invoicesStream
-              : _receivedInvoicesStream,
+          stream: _invoicesStream,
           builder: (context, snapshot) {
-            final isReceivedScope = _selectedScope == _InvoiceScope.sentToMe;
-            if (isReceivedScope &&
-                _isLoadingReceivedInvoices &&
-                _receivedInvoicesStream == null) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            if (isReceivedScope && !_hasReceivedInvoicePhone) {
-              return Column(
-                children: [
-                  _buildScopeSwitcher(isRtl),
-                  Expanded(child: _buildNoPhoneState(isRtl)),
-                ],
-              );
-            }
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const Center(child: CircularProgressIndicator());
             }
             if (snapshot.hasError) {
-              return Column(
-                children: [
-                  _buildScopeSwitcher(isRtl),
-                  Expanded(child: _buildLoadErrorState(isRtl)),
-                ],
-              );
+              return _buildLoadErrorState(isRtl);
             }
 
             final docs = [...(snapshot.data?.docs ?? const [])];
-            if (isReceivedScope) {
-              docs.sort((a, b) {
-                final aDate = a.data()['createdAt'] as Timestamp?;
-                final bDate = b.data()['createdAt'] as Timestamp?;
-                return (bDate?.toDate() ?? DateTime(0)).compareTo(
-                  aDate?.toDate() ?? DateTime(0),
-                );
-              });
-            }
             if (docs.isEmpty) {
-              return Column(
-                children: [
-                  _buildScopeSwitcher(isRtl),
-                  Expanded(child: _buildEmptyState(isRtl, isReceivedScope)),
-                ],
-              );
+              return _buildEmptyState(isRtl);
             }
 
             final query = _searchQuery.trim();
@@ -1873,19 +1781,20 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
               return _matchesSearch(data, searchTerms, isRtl);
             }).toList();
 
-            final totalAmount = docs.fold<double>(0, (runningTotal, doc) {
+            final totalAmount = filteredDocs.fold<double>(0, (
+              runningTotal,
+              doc,
+            ) {
               final data = doc.data();
               if (data['taxAuthorityAllocationRequest'] is Map &&
                   data['documentStatus'] != 'finalized') {
                 return runningTotal;
               }
-              final amount = (data['amount'] as num?)?.toDouble() ?? 0;
-              return runningTotal + amount;
+              return runningTotal + _summaryAmount(data);
             });
 
             return Column(
               children: [
-                _buildScopeSwitcher(isRtl),
                 Container(
                   padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
                   decoration: const BoxDecoration(
@@ -1935,9 +1844,8 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                           const SizedBox(width: 10),
                           _buildSummaryBadge(
                             isRtl: isRtl,
-                            count: docs.length,
+                            count: filteredDocs.length,
                             totalAmount: totalAmount,
-                            isReceivedScope: isReceivedScope,
                           ),
                         ],
                       ),
@@ -2061,6 +1969,8 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                             final data = invoiceDoc.data();
                             final invoiceNumber = (data['invoiceNumber'] ?? '')
                                 .toString();
+                            final displayInvoiceNumber = invoiceNumber
+                                .replaceFirst(RegExp(r'^\d{4}-'), '');
                             final docType = (data['docType'] ?? '').toString();
                             final clientName = (data['clientName'] ?? '')
                                 .toString()
@@ -2070,6 +1980,8 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                 : '${_docTypeLabel(docType, isRtl)}${invoiceNumber.isNotEmpty ? ' #$invoiceNumber' : ''}';
                             final name = (data['name'] ?? fallbackName)
                                 .toString();
+                            final documentTitle =
+                                '${_docTypeLabel(docType, isRtl)}${displayInvoiceNumber.isNotEmpty ? ' #$displayInvoiceNumber' : ''}';
                             final fileName = (data['fileName'] ?? '$name.pdf')
                                 .toString();
                             final url = (data['url'] ?? '').toString();
@@ -2129,16 +2041,12 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                 ? 'needs_reconciliation'
                                 : documentStatus;
                             final canRetryGeneration =
-                                !isReceivedScope &&
                                 _canRetryDocumentGeneration(data);
                             final canRetryTaxAuthorityAllocation =
-                                !isReceivedScope &&
                                 documentStatus == 'hearing_requested';
                             final canChooseTaxAuthorityDecision =
-                                !isReceivedScope &&
                                 documentStatus == 'decision_required';
                             final requiresGenerationReview =
-                                !isReceivedScope &&
                                 hasServerWorkflow &&
                                 documentStatus == 'needs_reconciliation';
                             final isRetryingGeneration = _retryingDocuments
@@ -2155,42 +2063,34 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                             final isPartiallyCancelled =
                                 cancellationStatus == 'partially_cancelled';
                             final canCreateCreditNote =
-                                !isReceivedScope &&
                                 isFinalizedTaxDocument &&
                                 !isCancelled &&
                                 (docType == 'invoice' ||
                                     docType == 'invoice_receipt');
                             final canCreateReceipt =
-                                !isReceivedScope &&
                                 isFinalizedTaxDocument &&
                                 !isCancelled &&
                                 docType == 'invoice';
                             final canCancelReceipt =
-                                !isReceivedScope &&
                                 isFinalizedTaxDocument &&
                                 docType == 'receipt' &&
                                 data['isCancellationDocument'] != true &&
                                 !isCancelled;
                             final isProformaInvoice =
-                                !isReceivedScope &&
                                 isFinalizedTaxDocument &&
                                 docType == 'transaction_account';
                             final canCreateTaxDocuments =
                                 isProformaInvoice && _canCreateTaxDocuments;
                             final isWorkOrder =
-                                !isReceivedScope &&
                                 isFinalizedTaxDocument &&
                                 docType == 'work_order';
                             final canCreateTaxDocumentsFromWorkOrder =
                                 isWorkOrder && _canCreateTaxDocuments;
                             final isQuote =
-                                !isReceivedScope &&
-                                isFinalizedTaxDocument &&
-                                docType == 'quote';
+                                isFinalizedTaxDocument && docType == 'quote';
                             final canCreateTaxDocumentsFromQuote =
                                 isQuote && _canCreateTaxDocuments;
                             final canBeSigned =
-                                !isReceivedScope &&
                                 isFinalizedTaxDocument &&
                                 (docType == 'quote' || docType == 'work_order');
                             final isLinkingLocked =
@@ -2271,9 +2171,7 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                       name: openingFileName,
                                       url: openingUrl,
                                       invoiceDocId: invoiceDoc.id,
-                                      canReportMissing:
-                                          !isReceivedScope &&
-                                          isFinalizedTaxDocument,
+                                      canReportMissing: isFinalizedTaxDocument,
                                       storagePath: openingStoragePath,
                                       previewOnly: opensFallbackPreview,
                                     ),
@@ -2303,23 +2201,6 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                       crossAxisAlignment:
                                           CrossAxisAlignment.start,
                                       children: [
-                                        Container(
-                                          width: 46,
-                                          height: 46,
-                                          decoration: BoxDecoration(
-                                            color: accent.withValues(
-                                              alpha: 0.12,
-                                            ),
-                                            borderRadius: BorderRadius.circular(
-                                              14,
-                                            ),
-                                          ),
-                                          child: Icon(
-                                            Icons.picture_as_pdf_rounded,
-                                            color: accent,
-                                          ),
-                                        ),
-                                        const SizedBox(width: 12),
                                         Expanded(
                                           child: Column(
                                             crossAxisAlignment:
@@ -2329,62 +2210,6 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                                 spacing: 8,
                                                 runSpacing: 6,
                                                 children: [
-                                                  Container(
-                                                    padding:
-                                                        const EdgeInsets.symmetric(
-                                                          horizontal: 10,
-                                                          vertical: 5,
-                                                        ),
-                                                    decoration: BoxDecoration(
-                                                      color: accent.withValues(
-                                                        alpha: 0.12,
-                                                      ),
-                                                      borderRadius:
-                                                          BorderRadius.circular(
-                                                            999,
-                                                          ),
-                                                    ),
-                                                    child: Text(
-                                                      _docTypeLabel(
-                                                        docType,
-                                                        isRtl,
-                                                      ),
-                                                      style: TextStyle(
-                                                        color: accent,
-                                                        fontSize: 11,
-                                                        fontWeight:
-                                                            FontWeight.w700,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                  if (invoiceNumber.isNotEmpty)
-                                                    Container(
-                                                      padding:
-                                                          const EdgeInsets.symmetric(
-                                                            horizontal: 8,
-                                                            vertical: 5,
-                                                          ),
-                                                      decoration: BoxDecoration(
-                                                        color: const Color(
-                                                          0xFFF8FAFC,
-                                                        ),
-                                                        borderRadius:
-                                                            BorderRadius.circular(
-                                                              999,
-                                                            ),
-                                                      ),
-                                                      child: Text(
-                                                        '#$invoiceNumber',
-                                                        style: const TextStyle(
-                                                          fontSize: 11,
-                                                          fontWeight:
-                                                              FontWeight.w700,
-                                                          color: Color(
-                                                            0xFF475569,
-                                                          ),
-                                                        ),
-                                                      ),
-                                                    ),
                                                   if ((hasTaxWorkflow ||
                                                           hasServerWorkflow) &&
                                                       displayedDocumentStatus !=
@@ -2566,7 +2391,7 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                               ),
                                               const SizedBox(height: 8),
                                               Text(
-                                                name,
+                                                documentTitle,
                                                 maxLines: 1,
                                                 overflow: TextOverflow.ellipsis,
                                                 style: const TextStyle(
@@ -2588,8 +2413,8 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                             ],
                                           ),
                                         ),
-                                        const SizedBox(width: 8),
-                                        if (!isReceivedScope)
+                                        if (docType != 'credit_note') ...[
+                                          const SizedBox(width: 8),
                                           IconButton(
                                             tooltip: isLinkingLocked
                                                 ? (isCancelled
@@ -2635,10 +2460,7 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                                           ),
                                                   ),
                                           ),
-                                        const Icon(
-                                          Icons.chevron_right_rounded,
-                                          color: Color(0xFF94A3B8),
-                                        ),
+                                        ],
                                       ],
                                     ),
                                     const SizedBox(height: 12),
@@ -3367,62 +3189,10 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
     );
   }
 
-  Widget _buildScopeSwitcher(bool isRtl) {
-    return Container(
-      width: double.infinity,
-      color: Colors.white,
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-      child: SegmentedButton<_InvoiceScope>(
-        showSelectedIcon: false,
-        style: ButtonStyle(
-          backgroundColor: WidgetStateProperty.resolveWith((states) {
-            if (states.contains(WidgetState.selected)) {
-              return const Color(0xFFEFF6FF);
-            }
-            return const Color(0xFFF8FAFC);
-          }),
-          foregroundColor: WidgetStateProperty.resolveWith((states) {
-            if (states.contains(WidgetState.selected)) {
-              return const Color(0xFF1976D2);
-            }
-            return const Color(0xFF475569);
-          }),
-          side: WidgetStateProperty.all(
-            const BorderSide(color: Color(0xFFD6E4F5)),
-          ),
-          textStyle: WidgetStateProperty.all(
-            const TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
-          ),
-        ),
-        segments: [
-          ButtonSegment(
-            value: _InvoiceScope.createdByMe,
-            icon: const Icon(Icons.drive_file_rename_outline_rounded),
-            label: Text(isRtl ? 'שיצרתי' : 'Created by me'),
-          ),
-          ButtonSegment(
-            value: _InvoiceScope.sentToMe,
-            icon: const Icon(Icons.mark_email_read_outlined),
-            label: Text(isRtl ? 'נשלחו אליי' : 'Sent to me'),
-          ),
-        ],
-        selected: {_selectedScope},
-        onSelectionChanged: (selection) {
-          final nextScope = selection.first;
-          if (nextScope == _selectedScope) return;
-          setState(() {
-            _selectedScope = nextScope;
-          });
-        },
-      ),
-    );
-  }
-
   Widget _buildSummaryBadge({
     required bool isRtl,
     required int count,
     required double totalAmount,
-    required bool isReceivedScope,
   }) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -3443,9 +3213,7 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
           ),
           const SizedBox(height: 2),
           Text(
-            isReceivedScope
-                ? (isRtl ? 'אליי' : 'To me')
-                : (isRtl ? 'מסמכים' : 'Docs'),
+            isRtl ? 'מסמכים' : 'Docs',
             style: const TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w700,
@@ -3487,7 +3255,7 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
     );
   }
 
-  Widget _buildEmptyState(bool isRtl, bool isReceivedScope) {
+  Widget _buildEmptyState(bool isRtl) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -3509,13 +3277,7 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
             ),
             const SizedBox(height: 20),
             Text(
-              isReceivedScope
-                  ? (isRtl
-                        ? 'לא נמצאו מסמכים שנשלחו אליך'
-                        : 'No documents sent to you yet')
-                  : (isRtl
-                        ? 'עדיין אין מסמכים שמורים'
-                        : 'No saved documents yet'),
+              isRtl ? 'עדיין אין מסמכים שמורים' : 'No saved documents yet',
               style: const TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.w800,
@@ -3524,13 +3286,9 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
             ),
             const SizedBox(height: 8),
             Text(
-              isReceivedScope
-                  ? (isRtl
-                        ? 'כאן יופיעו חשבוניות ומסמכים שנוצרו למספר הטלפון שלך.'
-                        : 'Invoices and documents created for your phone number will appear here.')
-                  : (isRtl
-                        ? 'כשתשמור חשבונית, קבלה או זיכוי, הם יופיעו כאן לצפייה מהירה.'
-                        : 'When you save an invoice, receipt, or credit note, it will appear here for quick access.'),
+              isRtl
+                  ? 'כשתשמור חשבונית, קבלה או חשבונית מס זיכוי, הן יופיעו כאן לצפייה מהירה.'
+                  : 'When you save an invoice, receipt, or Tax Invoice Credit, it will appear here for quick access.',
               textAlign: TextAlign.center,
               style: const TextStyle(color: Color(0xFF64748B), height: 1.5),
             ),
@@ -3587,49 +3345,6 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
     );
   }
 
-  Widget _buildNoPhoneState(bool isRtl) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 84,
-              height: 84,
-              decoration: BoxDecoration(
-                color: const Color(0xFFE8F1FB),
-                borderRadius: BorderRadius.circular(28),
-              ),
-              child: const Icon(
-                Icons.phone_android_outlined,
-                size: 42,
-                color: Color(0xFF1976D2),
-              ),
-            ),
-            const SizedBox(height: 20),
-            Text(
-              isRtl ? 'לא נמצא מספר טלפון' : 'No phone number found',
-              style: const TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w800,
-                color: Color(0xFF0F172A),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              isRtl
-                  ? 'כדי להציג מסמכים שנוצרו עבורך, צריך מספר טלפון בפרופיל או בחשבון.'
-                  : 'Add a phone number to your account or profile to see documents created for you.',
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: Color(0xFF64748B), height: 1.5),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _buildLoadErrorState(bool isRtl) {
     return Center(
       child: Padding(
@@ -3673,8 +3388,6 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
     );
   }
 }
-
-enum _InvoiceScope { createdByMe, sentToMe }
 
 class _ReceiptPaymentDraft {
   final double amount;

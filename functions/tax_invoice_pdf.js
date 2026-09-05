@@ -218,7 +218,7 @@ function documentTitle(docType) {
     transaction_account: "חשבון עסקה",
     invoice: "חשבונית מס",
     invoice_receipt: "חשבונית מס / קבלה",
-    credit_note: "חשבונית זיכוי",
+    credit_note: "חשבונית מס זיכוי",
     receipt: "קבלה",
   }[docType] || "מסמך";
 }
