@@ -61,6 +61,7 @@ const {
   normalizeServerDocumentRequest,
   serverDocumentPdfPayload,
 } = require("./server_document");
+const {cancellationProgress} = require("./cancellation_progress");
 const {buildClientLedgerPosting} = require("./client_ledger");
 const {
   buildTaxInvoicePdf,
@@ -2497,11 +2498,24 @@ exports.createServerDocument = onCall(
             });
           }
           if (sourceRef && cancelsSource) {
+            const source = sourceSnap.data() || {};
+            const progress = cancellationProgress({
+              sourceAmount: source.amount,
+              previousCancelledAmount: source.cancelledAmount,
+              cancellationAmount: document.finalTotal,
+            });
             transaction.update(sourceRef, {
-              cancellationStatus: "cancelled",
-              cancelledByDocumentId: document.invoiceDocId,
-              cancelledByDocumentNumber: document.documentNumber,
-              cancelledAt: admin.firestore.FieldValue.serverTimestamp(),
+              cancelledAmount: progress.cancelledAmount,
+              cancellationStatus: progress.cancellationStatus,
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+              ...(progress.isFullyCancelled ? {
+                cancelledByDocumentId: document.invoiceDocId,
+                cancelledByDocumentNumber: document.documentNumber,
+                cancelledAt: admin.firestore.FieldValue.serverTimestamp(),
+                isLinkingLocked: true,
+                linkLockUpdatedAt:
+                  admin.firestore.FieldValue.serverTimestamp(),
+              } : {}),
             });
           }
         });
@@ -4561,9 +4575,13 @@ async function createAutomaticCancellationCreditNote({
       }, {merge: true});
       transaction.update(sourceInvoiceRef, {
         cancellationStatus: "cancelled",
+        cancelledAmount: Math.abs(Number(sourceSnap.data()?.amount) ||
+          document.finalTotal),
         cancelledByDocumentId: document.invoiceDocId,
         cancelledByDocumentNumber: document.documentNumber,
         cancelledAt: admin.firestore.FieldValue.serverTimestamp(),
+        isLinkingLocked: true,
+        linkLockUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
         "automaticCancellationCreditNote.status": "finalized",
         "automaticCancellationCreditNote.finalizedAt":
           admin.firestore.FieldValue.serverTimestamp(),

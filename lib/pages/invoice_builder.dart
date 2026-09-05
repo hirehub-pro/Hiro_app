@@ -331,6 +331,10 @@ class _LinkedDocumentsDialogState extends State<_LinkedDocumentsDialog> {
       if (!mounted) return;
       setState(() {
         _documents = documents;
+        final availableIds = documents.map((document) => document.id).toSet();
+        _selected.removeWhere(
+          (documentId, _) => !availableIds.contains(documentId),
+        );
         _isLoading = false;
       });
     } catch (error) {
@@ -8509,7 +8513,12 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         .get();
 
     final clientDocuments = snapshot.docs
-        .where((document) => _documentBelongsToSelectedClient(document.data()))
+        .where(
+          (document) =>
+              document.data()['isLinkingLocked'] != true &&
+              document.data()['cancellationStatus'] != 'cancelled' &&
+              _documentBelongsToSelectedClient(document.data()),
+        )
         .toList();
     final proformasLinkedToInvoices = <String>{};
     if (_selectedDocType == 'receipt') {

@@ -39,6 +39,7 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
   final Set<String> _generatingSigningLinks = <String>{};
   final Set<String> _retryingDocuments = <String>{};
   final Set<String> _expandedCreateActions = <String>{};
+  final Set<String> _updatingDocumentLocks = <String>{};
 
   String _paymentStatusLabel(String? status, bool isRtl) {
     switch (status) {
@@ -179,6 +180,228 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
     _searchController.dispose();
     _searchFocusNode.dispose();
     super.dispose();
+  }
+
+  Future<void> _toggleDocumentLinkLock({
+    required String invoiceDocId,
+    required String documentName,
+    required bool isCurrentlyLocked,
+    required bool isRtl,
+  }) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || _updatingDocumentLocks.contains(invoiceDocId)) return;
+
+    final nextIsLocked = !isCurrentlyLocked;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => Directionality(
+        textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
+        child: Dialog(
+          backgroundColor: Colors.white,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 20),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(28),
+          ),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Align(
+                    alignment: AlignmentDirectional.centerEnd,
+                    child: IconButton(
+                      tooltip: isRtl ? 'סגירה' : 'Close',
+                      onPressed: () => Navigator.pop(dialogContext, false),
+                      style: IconButton.styleFrom(
+                        backgroundColor: const Color(0xFFF1F5F9),
+                        foregroundColor: const Color(0xFF64748B),
+                      ),
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+                  ),
+                  Center(
+                    child: Container(
+                      width: 72,
+                      height: 72,
+                      decoration: BoxDecoration(
+                        color: nextIsLocked
+                            ? const Color(0xFFF1F5F9)
+                            : const Color(0xFFEFF6FF),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        nextIsLocked
+                            ? Icons.lock_rounded
+                            : Icons.lock_open_rounded,
+                        color: nextIsLocked
+                            ? const Color(0xFF334155)
+                            : const Color(0xFF1976D2),
+                        size: 36,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  Text(
+                    nextIsLocked
+                        ? (isRtl ? 'לנעול את המסמך?' : 'Lock this document?')
+                        : (isRtl
+                              ? 'לפתוח את נעילת המסמך?'
+                              : 'Unlock this document?'),
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Color(0xFF0F172A),
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    nextIsLocked
+                        ? (isRtl
+                              ? 'המסמך יוסתר מרשימת המסמכים לקישור, ולא יהיה ניתן ליצור ממנו מסמכים נוספים.'
+                              : 'This document will be hidden from linked documents and you will not be able to create another document from it.')
+                        : (isRtl
+                              ? 'המסמך יהיה זמין שוב לקישור וליצירת מסמכים נוספים.'
+                              : 'This document will be available again for linking and creating related documents.'),
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Color(0xFF64748B),
+                      fontSize: 14,
+                      height: 1.45,
+                    ),
+                  ),
+                  if (documentName.trim().isNotEmpty) ...[
+                    const SizedBox(height: 18),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 12,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.description_outlined,
+                            color: Color(0xFF64748B),
+                            size: 22,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              documentName,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Color(0xFF334155),
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 24),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => Navigator.pop(dialogContext, false),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF475569),
+                            side: const BorderSide(color: Color(0xFFCBD5E1)),
+                            minimumSize: const Size.fromHeight(50),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(15),
+                            ),
+                          ),
+                          child: Text(isRtl ? 'ביטול' : 'Cancel'),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: () => Navigator.pop(dialogContext, true),
+                          style: ElevatedButton.styleFrom(
+                            elevation: 0,
+                            backgroundColor: nextIsLocked
+                                ? const Color(0xFF334155)
+                                : const Color(0xFF1976D2),
+                            foregroundColor: Colors.white,
+                            minimumSize: const Size.fromHeight(50),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(15),
+                            ),
+                          ),
+                          icon: Icon(
+                            nextIsLocked
+                                ? Icons.lock_rounded
+                                : Icons.lock_open_rounded,
+                            size: 19,
+                          ),
+                          label: Text(
+                            nextIsLocked
+                                ? (isRtl ? 'נעילת מסמך' : 'Lock Document')
+                                : (isRtl ? 'פתיחת נעילה' : 'Unlock Document'),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    final wasExpanded = _expandedCreateActions.contains(invoiceDocId);
+    setState(() {
+      _updatingDocumentLocks.add(invoiceDocId);
+      if (nextIsLocked) {
+        _expandedCreateActions.remove(invoiceDocId);
+      }
+    });
+    try {
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('invoices')
+          .doc(invoiceDocId)
+          .update({
+            'isLinkingLocked': nextIsLocked,
+            'linkLockUpdatedAt': FieldValue.serverTimestamp(),
+          });
+    } on FirebaseException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        if (wasExpanded) _expandedCreateActions.add(invoiceDocId);
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            isRtl
+                ? 'לא ניתן לעדכן את נעילת המסמך. נסו שוב.'
+                : 'Could not update the document lock. Please try again.',
+          ),
+          backgroundColor: const Color(0xFFB91C1C),
+        ),
+      );
+      debugPrint('Document link lock update failed: ${error.code}');
+    } finally {
+      if (mounted) {
+        setState(() => _updatingDocumentLocks.remove(invoiceDocId));
+      }
+    }
   }
 
   String _docTypeLabel(String? docType, bool isRtl) {
@@ -881,9 +1104,15 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
         .trim();
     if (invoiceNumber.isEmpty) return;
 
-    final invoiceAmount = (savedData['amount'] as num?)?.toDouble() ?? 0.0;
+    final invoiceAmount = ((savedData['amount'] as num?)?.toDouble() ?? 0.0)
+        .abs();
     final paidAmount = (savedData['paidAmount'] as num?)?.toDouble() ?? 0.0;
-    final remainingAmount = (invoiceAmount - paidAmount).clamp(
+    final creditedAmount =
+        ((savedData['cancelledAmount'] as num?)?.toDouble() ?? 0.0).abs().clamp(
+          0.0,
+          invoiceAmount,
+        );
+    final remainingAmount = (invoiceAmount - paidAmount - creditedAmount).clamp(
       0.0,
       invoiceAmount,
     );
@@ -893,8 +1122,8 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
         SnackBar(
           content: Text(
             isRtl
-                ? 'החשבונית הזו כבר סומנה כששולמה במלואה.'
-                : 'This invoice is already marked as fully paid.',
+                ? 'לא נותרה יתרה לתשלום בחשבונית הזו.'
+                : 'This invoice has no remaining balance to pay.',
           ),
         ),
       );
@@ -1622,42 +1851,6 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
               );
             }
 
-            final cancelledSourceDocumentIds = <String>{};
-            for (final document in docs) {
-              final documentData = document.data();
-              final documentStatus = (documentData['documentStatus'] ?? '')
-                  .toString()
-                  .trim();
-              final isCompleted =
-                  documentStatus.isEmpty || documentStatus == 'finalized';
-              if (!isCompleted) continue;
-              final documentType = (documentData['docType'] ?? '')
-                  .toString()
-                  .trim();
-              final isCancellationDocument =
-                  documentData['isCancellationDocument'] == true ||
-                  documentType == 'credit_note';
-              if (!isCancellationDocument) continue;
-
-              for (final field in [
-                'cancellationSourceDocumentId',
-                'sourceInvoiceDocId',
-              ]) {
-                final sourceId = (documentData[field] ?? '').toString().trim();
-                if (sourceId.isNotEmpty) {
-                  cancelledSourceDocumentIds.add(sourceId);
-                }
-              }
-              final linkedIds = documentData['linkedDocumentIds'];
-              if (linkedIds is List) {
-                cancelledSourceDocumentIds.addAll(
-                  linkedIds
-                      .map((value) => value.toString().trim())
-                      .where((value) => value.isNotEmpty),
-                );
-              }
-            }
-
             final query = _searchQuery.trim();
             final searchTerms = _searchTerms(query);
             final filteredDocs = docs.where((doc) {
@@ -1952,20 +2145,15 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                 .contains(invoiceDoc.id);
                             final createdAt = data['createdAt'] as Timestamp?;
                             final amount = (data['amount'] as num?)?.toDouble();
-                            final isCancelled =
+                            final cancellationStatus =
                                 (data['cancellationStatus'] ?? '')
-                                        .toString()
-                                        .trim()
-                                        .toLowerCase() ==
-                                    'cancelled' ||
-                                cancelledSourceDocumentIds.contains(
-                                  invoiceDoc.id,
-                                ) ||
-                                cancelledSourceDocumentIds.contains(
-                                  (data['invoiceDocId'] ?? '')
-                                      .toString()
-                                      .trim(),
-                                );
+                                    .toString()
+                                    .trim()
+                                    .toLowerCase();
+                            final isCancelled =
+                                cancellationStatus == 'cancelled';
+                            final isPartiallyCancelled =
+                                cancellationStatus == 'partially_cancelled';
                             final canCreateCreditNote =
                                 !isReceivedScope &&
                                 isFinalizedTaxDocument &&
@@ -2005,14 +2193,20 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                 !isReceivedScope &&
                                 isFinalizedTaxDocument &&
                                 (docType == 'quote' || docType == 'work_order');
+                            final isLinkingLocked =
+                                isCancelled || data['isLinkingLocked'] == true;
+                            final isUpdatingDocumentLock =
+                                _updatingDocumentLocks.contains(invoiceDoc.id);
                             final hasCreateDocumentActions =
-                                canCreateCreditNote ||
-                                canCancelReceipt ||
-                                isProformaInvoice ||
-                                isWorkOrder ||
-                                isQuote;
-                            final createActionsExpanded = _expandedCreateActions
-                                .contains(invoiceDoc.id);
+                                !isLinkingLocked &&
+                                (canCreateCreditNote ||
+                                    canCancelReceipt ||
+                                    isProformaInvoice ||
+                                    isWorkOrder ||
+                                    isQuote);
+                            final createActionsExpanded =
+                                !isLinkingLocked &&
+                                _expandedCreateActions.contains(invoiceDoc.id);
                             final signatureStatus =
                                 (data['signatureStatus'] ?? '')
                                     .toString()
@@ -2027,8 +2221,17 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                     ? ((amount ?? 0).abs())
                                     : 0.0);
                             final invoiceAmount = (amount ?? 0).abs();
-                            final remainingAmount = (invoiceAmount - paidAmount)
-                                .clamp(0.0, invoiceAmount);
+                            final creditedAmount =
+                                ((data['cancelledAmount'] as num?)
+                                            ?.toDouble() ??
+                                        0.0)
+                                    .abs()
+                                    .clamp(0.0, invoiceAmount);
+                            final remainingAmount =
+                                (invoiceAmount - paidAmount - creditedAmount)
+                                    .clamp(0.0, invoiceAmount);
+                            final canCreateReceiptWithBalance =
+                                canCreateReceipt && remainingAmount > 0.01;
                             final paymentStatus =
                                 (data['paymentStatus'] ?? '')
                                     .toString()
@@ -2253,8 +2456,43 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                                               FontWeight.w700,
                                                         ),
                                                       ),
-                                                    )
-                                                  else if (docType == 'invoice')
+                                                    ),
+                                                  if (!isCancelled &&
+                                                      isPartiallyCancelled)
+                                                    Container(
+                                                      padding:
+                                                          const EdgeInsets.symmetric(
+                                                            horizontal: 10,
+                                                            vertical: 5,
+                                                          ),
+                                                      decoration: BoxDecoration(
+                                                        color:
+                                                            const Color(
+                                                              0xFFD97706,
+                                                            ).withValues(
+                                                              alpha: 0.12,
+                                                            ),
+                                                        borderRadius:
+                                                            BorderRadius.circular(
+                                                              999,
+                                                            ),
+                                                      ),
+                                                      child: Text(
+                                                        isRtl
+                                                            ? 'בוטל חלקית'
+                                                            : 'Partially cancelled',
+                                                        style: const TextStyle(
+                                                          color: Color(
+                                                            0xFFB45309,
+                                                          ),
+                                                          fontSize: 11,
+                                                          fontWeight:
+                                                              FontWeight.w700,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  if (!isCancelled &&
+                                                      docType == 'invoice')
                                                     Container(
                                                       padding:
                                                           const EdgeInsets.symmetric(
@@ -2351,6 +2589,52 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                           ),
                                         ),
                                         const SizedBox(width: 8),
+                                        if (!isReceivedScope)
+                                          IconButton(
+                                            tooltip: isLinkingLocked
+                                                ? (isCancelled
+                                                      ? (isRtl
+                                                            ? 'מסמך שבוטל נעול לצמיתות'
+                                                            : 'Cancelled documents are permanently locked')
+                                                      : (isRtl
+                                                            ? 'פתח נעילה כדי לקשר או ליצור מסמך נוסף'
+                                                            : 'Unlock to link or create another document'))
+                                                : (isRtl
+                                                      ? 'נעל קישור ויצירת מסמכים נוספים'
+                                                      : 'Lock linking and document creation'),
+                                            onPressed:
+                                                isUpdatingDocumentLock ||
+                                                    isCancelled
+                                                ? null
+                                                : () => _toggleDocumentLinkLock(
+                                                    invoiceDocId: invoiceDoc.id,
+                                                    documentName: name,
+                                                    isCurrentlyLocked:
+                                                        isLinkingLocked,
+                                                    isRtl: isRtl,
+                                                  ),
+                                            icon: isUpdatingDocumentLock
+                                                ? const SizedBox.square(
+                                                    dimension: 20,
+                                                    child:
+                                                        CircularProgressIndicator(
+                                                          strokeWidth: 2,
+                                                        ),
+                                                  )
+                                                : Icon(
+                                                    isLinkingLocked
+                                                        ? Icons.lock
+                                                        : Icons
+                                                              .lock_open_rounded,
+                                                    color: isLinkingLocked
+                                                        ? const Color(
+                                                            0xFF475569,
+                                                          )
+                                                        : const Color(
+                                                            0xFF1976D2,
+                                                          ),
+                                                  ),
+                                          ),
                                         const Icon(
                                           Icons.chevron_right_rounded,
                                           color: Color(0xFF94A3B8),
@@ -2632,7 +2916,7 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                         spacing: 12,
                                         runSpacing: 4,
                                         children: [
-                                          if (canCreateReceipt)
+                                          if (canCreateReceiptWithBalance)
                                             TextButton.icon(
                                               onPressed: () =>
                                                   _openReceiptFromInvoice(
@@ -3040,6 +3324,7 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                         icon: Icons.payments_outlined,
                                         text:
                                             '${isRtl ? 'שולם' : 'Paid'}: ${paidAmount.toStringAsFixed(2)} ₪'
+                                            '${creditedAmount > 0.005 ? '  |  ${isRtl ? 'זוכה' : 'Credited'}: ${creditedAmount.toStringAsFixed(2)} ₪' : ''}'
                                             '  |  '
                                             '${isRtl ? 'נותר' : 'Remaining'}: ${remainingAmount.toStringAsFixed(2)} ₪',
                                       ),

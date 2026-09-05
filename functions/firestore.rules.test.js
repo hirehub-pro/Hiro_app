@@ -537,6 +537,65 @@ test("blocks cross-user invoices and protected allocation fields", {
   ));
 });
 
+test("allows only owners to change invoice link locks", {
+  skip: !emulatorAvailable,
+}, async () => {
+  const uid = "link-lock-owner-id-000001";
+  const otherUid = "link-lock-other-id-000001";
+  const invoiceId = "invoice_2026-linkable";
+  const owner = testEnv.authenticatedContext(uid).firestore();
+  const other = testEnv.authenticatedContext(otherUid).firestore();
+  const invoiceRef = doc(owner, `users/${uid}/invoices/${invoiceId}`);
+
+  await seed(`users/${uid}/invoices/${invoiceId}`, {
+    ...validInvoice(invoiceId),
+    documentStatus: "finalized",
+    serverDocument: {status: "finalized", generatedBy: "server"},
+  });
+  await assertSucceeds(updateDoc(invoiceRef, {
+    isLinkingLocked: true,
+    linkLockUpdatedAt: serverTimestamp(),
+  }));
+  await assertFails(updateDoc(
+      doc(other, `users/${uid}/invoices/${invoiceId}`),
+      {isLinkingLocked: false, linkLockUpdatedAt: serverTimestamp()},
+  ));
+  await assertFails(updateDoc(invoiceRef, {
+    isLinkingLocked: "false",
+    linkLockUpdatedAt: serverTimestamp(),
+  }));
+  await assertFails(updateDoc(invoiceRef, {
+    isLinkingLocked: false,
+    linkLockUpdatedAt: serverTimestamp(),
+    amount: 999999,
+  }));
+
+  const cancelledId = "invoice_2026-cancelled";
+  await seed(`users/${uid}/invoices/${cancelledId}`, {
+    ...validInvoice(cancelledId, 2),
+    cancellationStatus: "cancelled",
+    isLinkingLocked: true,
+    linkLockUpdatedAt: new Date(),
+  });
+  await assertFails(updateDoc(
+      doc(owner, `users/${uid}/invoices/${cancelledId}`),
+      {isLinkingLocked: false, linkLockUpdatedAt: serverTimestamp()},
+  ));
+
+  const partiallyCancelledId = "invoice_2026-partially-cancelled";
+  await seed(`users/${uid}/invoices/${partiallyCancelledId}`, {
+    ...validInvoice(partiallyCancelledId, 3),
+    cancellationStatus: "partially_cancelled",
+    cancelledAmount: 1000,
+    isLinkingLocked: true,
+    linkLockUpdatedAt: new Date(),
+  });
+  await assertSucceeds(updateDoc(
+      doc(owner, `users/${uid}/invoices/${partiallyCancelledId}`),
+      {isLinkingLocked: false, linkLockUpdatedAt: serverTimestamp()},
+  ));
+});
+
 test("rejects foreign invoice storage paths", {
   skip: !emulatorAvailable,
 }, async () => {

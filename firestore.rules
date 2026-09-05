@@ -328,6 +328,7 @@ service cloud.firestore {
         'sourceInvoiceTotalAmount', 'creditNoteLegal',
         'isCancellationDocument', 'cancellationSourceDocumentId',
         'cancellationSourceDocumentNumber', 'cancellationStatus',
+        'cancelledAmount',
         'cancelledByDocumentId', 'cancelledByDocumentNumber', 'cancelledAt',
         'paymentStatus', 'paidAmount', 'allocationNumber',
         'taxAuthorityAllocationNumber', 'taxAuthorityAllocation',
@@ -340,7 +341,7 @@ service cloud.firestore {
         'signingRequestId', 'signingRequestedAt', 'signingUrl', 'signedAt',
         'signerName', 'invoiceEmailStatus', 'invoiceEmailAttemptedAt',
         'invoiceEmailSentAt', 'invoiceEmailId', 'invoiceEmailIds',
-        'invoiceEmailError'
+        'invoiceEmailError', 'isLinkingLocked', 'linkLockUpdatedAt'
       ]) &&
       data.keys().hasAll(['type', 'docType', 'invoiceDocId', 'createdAt']) &&
       data.type is string && data.type.size() <= 40 &&
@@ -366,6 +367,7 @@ service cloud.firestore {
       optionalNumber(data, 'discountAmount', 0, 1000000000000) &&
       optionalNumber(data, 'roundingAmount', -1000000, 1000000) &&
       optionalNumber(data, 'paidAmount', 0, 1000000000000) &&
+      optionalNumber(data, 'cancelledAmount', 0, 1000000000000) &&
       optionalNumber(data, 'sequenceNumber', 1, 999999999) &&
       optionalList(data, 'items', 500) &&
       optionalList(data, 'linkedDocuments', 100) &&
@@ -375,7 +377,9 @@ service cloud.firestore {
       optionalMap(data, 'fallbackPreview', 20) &&
       optionalBool(data, 'hasDiscount') &&
       optionalBool(data, 'roundTotalEnabled') &&
-      optionalBool(data, 'isCancellationDocument');
+      optionalBool(data, 'isCancellationDocument') &&
+      optionalBool(data, 'isLinkingLocked') &&
+      optionalTimestamp(data, 'linkLockUpdatedAt');
     }
 
     function invoiceServerFields() {
@@ -400,12 +404,22 @@ service cloud.firestore {
     }
 
     function validClientInvoiceUpdate(userId) {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      let isLinkLockUpdate = changed.hasOnly([
+        'isLinkingLocked', 'linkLockUpdatedAt'
+      ]) && changed.hasAny(['isLinkingLocked']) &&
+        request.resource.data.isLinkingLocked is bool &&
+        recentTimestamp(request.resource.data, 'linkLockUpdatedAt');
+      let unlocksCancelledDocument =
+        resource.data.get('cancellationStatus', '') == 'cancelled' &&
+        request.resource.data.get('isLinkingLocked', false) != true;
       return validInvoice(request.resource.data, userId) &&
-        !(resource.data.get('documentStatus', '') == 'finalized' &&
-          ('taxAuthorityAllocationRequest' in resource.data ||
-            'serverDocument' in resource.data)) &&
-        !request.resource.data.diff(resource.data).affectedKeys()
-          .hasAny(invoiceServerFields()) &&
+        !changed.hasAny(invoiceServerFields()) &&
+        !unlocksCancelledDocument &&
+        (isLinkLockUpdate ||
+          !(resource.data.get('documentStatus', '') == 'finalized' &&
+            ('taxAuthorityAllocationRequest' in resource.data ||
+              'serverDocument' in resource.data))) &&
         request.resource.data.invoiceDocId == resource.data.invoiceDocId &&
         request.resource.data.docType == resource.data.docType &&
         request.resource.data.type == resource.data.type &&
