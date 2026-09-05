@@ -826,11 +826,16 @@ class InvoiceItem {
   final int quantity;
   final double price;
   final String priceTaxMode;
+  // Set only for rows copied from a linked document. This lets us remove them
+  // again if that document is unlinked before the current document is saved.
+  final String? sourceDocumentId;
+
   InvoiceItem({
     required this.description,
     this.quantity = 1,
     required this.price,
     this.priceTaxMode = 'after_tax',
+    this.sourceDocumentId,
   });
 
   bool get isPriceBeforeTax => priceTaxMode == 'before_tax';
@@ -1210,6 +1215,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   String? _selectedSavedClientId;
   String? _selectedSavedClientExternalNumber;
   final Map<String, _LinkedInvoiceDocument> _linkedDocuments = {};
+  String? _linkedDocumentsNote;
   bool _isAddingClient = false;
   bool _isReceiverPrefillActive = false;
 
@@ -1654,6 +1660,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         _linkedDocuments[document.id] = document;
       }
     }
+    _syncLinkedDocumentsNote(_linkedDocuments.values.toList());
     _prefillClientBusinessIdFromReceiver();
     _fetchWorkerInfo();
     _loadVatRate();
@@ -2794,6 +2801,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                 _licensedOnlyDocumentTypes.contains(_selectedDocType)) {
               _selectedDocType = 'quote';
               _linkedDocuments.clear();
+              _syncLinkedDocumentsNote(const []);
               _currentDocumentCounter = null;
               _invoiceNumber = '';
             } else if (widget.initialDocType == null ||
@@ -4817,13 +4825,16 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         0.0;
     final qty = int.tryParse(_itemQtyController.text) ?? 1;
     setState(() {
+      final editingIndex = _editingItemIndex;
       final newItem = InvoiceItem(
         description: _itemDescController.text,
         quantity: qty,
         price: price,
         priceTaxMode: _selectedPriceTaxMode,
+        sourceDocumentId: editingIndex != null && editingIndex < _items.length
+            ? _items[editingIndex].sourceDocumentId
+            : null,
       );
-      final editingIndex = _editingItemIndex;
       if (editingIndex != null && editingIndex < _items.length) {
         _items[editingIndex] = newItem;
       } else {
@@ -7110,6 +7121,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                           }
                                           _selectedDocType = val;
                                           _linkedDocuments.clear();
+                                          _syncLinkedDocumentsNote(const []);
                                           _currentDocumentCounter = null;
                                           _invoiceNumber = '';
                                         });
@@ -7162,6 +7174,48 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                                 Icons.location_on_outlined,
                                 enabled: false,
                               ),
+                            ],
+                          ),
+
+                          const SizedBox(height: 20),
+                          _buildSectionCard(
+                            title: strings['date']!,
+                            icon: Icons.event_outlined,
+                            children: [
+                              TextField(
+                                controller: _invoiceDateController,
+                                readOnly: true,
+                                onTap: _pickInvoiceDate,
+                                decoration:
+                                    _inputStyle(
+                                      strings['date']!,
+                                      Icons.event_outlined,
+                                      required: true,
+                                    ).copyWith(
+                                      suffixIcon: TextButton(
+                                        onPressed: _pickInvoiceDate,
+                                        child: Text(strings['pick_date']!),
+                                      ),
+                                    ),
+                              ),
+                              if (_showsDueDateSection) ...[
+                                const SizedBox(height: 12),
+                                TextField(
+                                  controller: _paymentDueDateController,
+                                  readOnly: true,
+                                  onTap: _pickPaymentDueDate,
+                                  decoration:
+                                      _inputStyle(
+                                        strings['payment_due_date']!,
+                                        Icons.schedule_outlined,
+                                      ).copyWith(
+                                        suffixIcon: TextButton(
+                                          onPressed: _pickPaymentDueDate,
+                                          child: Text(strings['pick_date']!),
+                                        ),
+                                      ),
+                                ),
+                              ],
                             ],
                           ),
 
@@ -7219,47 +7273,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                               ],
                             ),
                           ],
-                          const SizedBox(height: 20),
-                          _buildSectionCard(
-                            title: strings['date']!,
-                            icon: Icons.event_outlined,
-                            children: [
-                              TextField(
-                                controller: _invoiceDateController,
-                                readOnly: true,
-                                onTap: _pickInvoiceDate,
-                                decoration:
-                                    _inputStyle(
-                                      strings['date']!,
-                                      Icons.event_outlined,
-                                      required: true,
-                                    ).copyWith(
-                                      suffixIcon: TextButton(
-                                        onPressed: _pickInvoiceDate,
-                                        child: Text(strings['pick_date']!),
-                                      ),
-                                    ),
-                              ),
-                              if (_showsDueDateSection) ...[
-                                const SizedBox(height: 12),
-                                TextField(
-                                  controller: _paymentDueDateController,
-                                  readOnly: true,
-                                  onTap: _pickPaymentDueDate,
-                                  decoration:
-                                      _inputStyle(
-                                        strings['payment_due_date']!,
-                                        Icons.schedule_outlined,
-                                      ).copyWith(
-                                        suffixIcon: TextButton(
-                                          onPressed: _pickPaymentDueDate,
-                                          child: Text(strings['pick_date']!),
-                                        ),
-                                      ),
-                                ),
-                              ],
-                            ],
-                          ),
 
                           if (_selectedDocType != 'receipt') ...[
                             const SizedBox(height: 20),
@@ -8556,7 +8569,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   Future<void> _showLinkedDocumentsPopup(Map<String, String> strings) async {
     if (_selectedSavedClientId == null || !mounted) return;
 
-    _clientNameFocusNode.unfocus();
+    FocusManager.instance.primaryFocus?.unfocus();
     final selected = await showDialog<List<_LinkedInvoiceDocument>>(
       context: context,
       builder: (dialogContext) => _LinkedDocumentsDialog(
@@ -8567,14 +8580,172 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
             _documentTypeDisplayName(strings, docType),
       ),
     );
+    // Dialog dismissal restores the field that was focused before opening it.
+    // Clear that focus so transferring items never reopens the keyboard.
+    FocusManager.instance.primaryFocus?.unfocus();
     if (selected == null || !mounted) return;
+
+    final selectedIds = selected.map((document) => document.id).toSet();
+    final newlyLinkedDocuments = selected
+        .where((document) => !_linkedDocuments.containsKey(document.id))
+        .toList(growable: false);
+    final unlinkedDocumentIds = _linkedDocuments.keys
+        .where((id) => !selectedIds.contains(id))
+        .toSet();
+    List<InvoiceItem> transferredItems = const [];
+    try {
+      transferredItems = await _loadLinkedDocumentItems(newlyLinkedDocuments);
+    } catch (error, stackTrace) {
+      // Keep the document link even if its item rows cannot be read right now.
+      dev.log(
+        'Unable to load items from linked documents',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+    if (!mounted) return;
+
     setState(() {
       _linkedDocuments
         ..clear()
         ..addEntries(
           selected.map((document) => MapEntry(document.id, document)),
         );
+      _syncLinkedDocumentsNote(selected);
+      _items.removeWhere(
+        (item) =>
+            item.sourceDocumentId != null &&
+            unlinkedDocumentIds.contains(item.sourceDocumentId),
+      );
+      _items.addAll(transferredItems);
+      _prefillReceiptPaymentFromLinkedDocuments(selected);
     });
+    FocusManager.instance.primaryFocus?.unfocus();
+  }
+
+  /// A receipt records payment for its linked document. Keep this as a draft:
+  /// the user must still choose/confirm the payment method and tap Add Payment
+  /// Method before it is included in the receipt.
+  void _prefillReceiptPaymentFromLinkedDocuments(
+    List<_LinkedInvoiceDocument> documents,
+  ) {
+    if (_selectedDocType != 'receipt' || documents.isEmpty) return;
+
+    final draft = _draftPaymentMethod;
+    if (draft == null) return;
+
+    final linkedDocumentsTotal = documents.fold<double>(
+      0,
+      (total, document) => total + document.amount,
+    );
+    draft
+      ..amountController.text = linkedDocumentsTotal.toStringAsFixed(2)
+      ..isCommitted = false
+      ..isExpanded = true;
+  }
+
+  /// Loads the line items from newly linked documents so the current document
+  /// can be generated from the same services/products as its source document.
+  Future<List<InvoiceItem>> _loadLinkedDocumentItems(
+    List<_LinkedInvoiceDocument> documents,
+  ) async {
+    if (!_documentTypeShowsServiceItems(_selectedDocType) ||
+        documents.isEmpty) {
+      return const [];
+    }
+
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return const [];
+
+    final snapshots = await Future.wait(
+      documents.map(
+        (document) => FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .collection('invoices')
+            .doc(document.id)
+            .get(),
+      ),
+    );
+
+    final items = <InvoiceItem>[];
+    for (var index = 0; index < snapshots.length; index++) {
+      final sourceItems = snapshots[index].data()?['items'];
+      if (sourceItems is! Iterable) continue;
+
+      for (final sourceItem in sourceItems) {
+        if (sourceItem is! Map) continue;
+        final item = Map<String, dynamic>.from(sourceItem);
+        final description = (item['description'] ?? '').toString().trim();
+        if (description.isEmpty) continue;
+
+        final rawQuantity = item['quantity'];
+        final quantity = rawQuantity is num
+            ? rawQuantity.toInt()
+            : int.tryParse(rawQuantity?.toString() ?? '') ?? 1;
+        final rawPrice = item['price'];
+        final price = rawPrice is num
+            ? rawPrice.toDouble()
+            : double.tryParse(
+                    rawPrice?.toString().replaceAll(',', '.') ?? '',
+                  ) ??
+                  0.0;
+        items.add(
+          InvoiceItem(
+            description: description,
+            quantity: quantity < 1 ? 1 : quantity,
+            price: price,
+            priceTaxMode: _normalizePriceTaxMode(
+              item['priceTaxMode']?.toString(),
+            ),
+            sourceDocumentId: documents[index].id,
+          ),
+        );
+      }
+    }
+    return items;
+  }
+
+  void _syncLinkedDocumentsNote(List<_LinkedInvoiceDocument> documents) {
+    final previousNote = _linkedDocumentsNote;
+    final remainingLines = _notesController.text
+        .split('\n')
+        .where((line) => line.trim() != previousNote)
+        .toList();
+    final linkedDocumentsNote = documents.isEmpty
+        ? null
+        : _hebrewLinkedDocumentsDescription(documents);
+    if (linkedDocumentsNote != null) {
+      remainingLines.add(linkedDocumentsNote);
+    }
+    _notesController.text = remainingLines.join('\n').trim();
+    _linkedDocumentsNote = linkedDocumentsNote;
+  }
+
+  String _hebrewLinkedDocumentsDescription(
+    List<_LinkedInvoiceDocument> documents,
+  ) {
+    final labels = documents
+        .map((document) {
+          final type = switch (document.docType) {
+            'quote' => 'הצעת מחיר',
+            'work_order' => 'הזמנת עבודה',
+            'transaction_account' => 'חשבון עסקה',
+            'invoice' => 'חשבונית מס',
+            'invoice_receipt' => 'חשבונית מס קבלה',
+            'credit_note' => 'חשבונית מס זיכוי',
+            'receipt' => 'קבלה',
+            _ => 'מסמך',
+          };
+          return document.documentNumber.isEmpty
+              ? type
+              : '$type מספר ${document.documentNumber}';
+        })
+        .toList(growable: false);
+
+    if (labels.length == 1) return 'מקושר ל${labels.single}';
+    final lastLabel = labels.last;
+    return 'מקושר ל${labels.sublist(0, labels.length - 1).join(', ')} ו$lastLabel';
   }
 
   void _applySavedClient(_InvoiceClient client) {
@@ -8582,6 +8753,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       _isReceiverPrefillActive = false;
       if (_selectedSavedClientId != client.id) {
         _linkedDocuments.clear();
+        _syncLinkedDocumentsNote(const []);
       }
       _selectedSavedClientId = client.id;
       _selectedSavedClientExternalNumber = client.externalClientNumber;
@@ -8651,6 +8823,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       _selectedSavedClientId = null;
       _selectedSavedClientExternalNumber = null;
       _linkedDocuments.clear();
+      _syncLinkedDocumentsNote(const []);
       _clientIdController.clear();
       _clientPhoneController.clear();
       _clientEmailController.clear();
@@ -8669,6 +8842,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
 
     setState(() {
       _linkedDocuments.clear();
+      _syncLinkedDocumentsNote(const []);
       _clientNameController.clear();
       _clientIdController.clear();
       _clientPhoneController.clear();
