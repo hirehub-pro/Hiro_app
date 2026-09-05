@@ -63,9 +63,10 @@ function validateTaxInvoiceAllocation({payload, invoiceDocId, currentYear}) {
   }
 
   const reference = String(invoice.invoice_reference_number || "");
-  const referenceMatch = reference.match(/^(\d{4})-(\d{4,})$/);
-  if (!referenceMatch || Number(referenceMatch[1]) !== currentYear) {
-    throw new Error("The invoice number is not a current-year document number.");
+  const referenceMatch = reference.match(/^(?:(\d{4})-)?(\d{4,})$/);
+  if (!referenceMatch ||
+      (referenceMatch[1] && Number(referenceMatch[1]) !== currentYear)) {
+    throw new Error("The invoice number is invalid.");
   }
   const sequenceNumber = Number.parseInt(referenceMatch[2], 10);
   if (!Number.isSafeInteger(sequenceNumber) || sequenceNumber < 1) {

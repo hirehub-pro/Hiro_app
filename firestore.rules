@@ -413,13 +413,7 @@ service cloud.firestore {
       let unlocksCancelledDocument =
         resource.data.get('cancellationStatus', '') == 'cancelled' &&
         request.resource.data.get('isLinkingLocked', false) != true;
-      return validInvoice(request.resource.data, userId) &&
-        !changed.hasAny(invoiceServerFields()) &&
-        !unlocksCancelledDocument &&
-        (isLinkLockUpdate ||
-          !(resource.data.get('documentStatus', '') == 'finalized' &&
-            ('taxAuthorityAllocationRequest' in resource.data ||
-              'serverDocument' in resource.data))) &&
+      return !unlocksCancelledDocument &&
         request.resource.data.invoiceDocId == resource.data.invoiceDocId &&
         request.resource.data.docType == resource.data.docType &&
         request.resource.data.type == resource.data.type &&
@@ -427,7 +421,13 @@ service cloud.firestore {
         request.resource.data.get('invoiceNumber', '') ==
           resource.data.get('invoiceNumber', '') &&
         request.resource.data.get('sequenceNumber', 0) ==
-          resource.data.get('sequenceNumber', 0);
+          resource.data.get('sequenceNumber', 0) &&
+        (isLinkLockUpdate ||
+          (validInvoice(request.resource.data, userId) &&
+            !changed.hasAny(invoiceServerFields()) &&
+            !(resource.data.get('documentStatus', '') == 'finalized' &&
+              ('taxAuthorityAllocationRequest' in resource.data ||
+                'serverDocument' in resource.data))));
     }
 
     function validCounter(data) {

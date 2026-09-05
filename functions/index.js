@@ -3977,8 +3977,7 @@ async function reserveReverseChargeInvoice({
           "The invoice numbering series is not configured.",
       );
     }
-    const documentNumber = `${issueDate.slice(0, 4)}-` +
-      String(sequenceNumber).padStart(4, "0");
+    const documentNumber = String(sequenceNumber).padStart(4, "0");
     const replacementId = `${sourceReservation.docType}_${documentNumber}`;
     const replacementRef = userRef.collection("invoices").doc(replacementId);
     const replacementSnap = await transaction.get(replacementRef);
@@ -4341,8 +4340,7 @@ async function createAutomaticCancellationCreditNote({
           "Set the starting Tax Invoice Credit number before cancelling an invoice.",
       );
     }
-    const documentNumber = `${issueDate.slice(0, 4)}-` +
-      String(sequenceNumber).padStart(4, "0");
+    const documentNumber = String(sequenceNumber).padStart(4, "0");
     const sourceNumber = normalizeString(source.invoiceNumber).trim();
     const sourceDate = storedDocumentIsoDate(source.date, issueDate);
     let document;

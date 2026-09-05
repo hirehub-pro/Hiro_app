@@ -1162,8 +1162,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
   }
 
   String _formatDocumentNumber(int counter) {
-    final year = intl.DateFormat('yyyy').format(DateTime.now());
-    return '$year-${counter.toString().padLeft(4, '0')}';
+    return counter.toString().padLeft(4, '0');
   }
 
   String _invoiceDocIdFor(String docType, String documentNumber) {

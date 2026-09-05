@@ -212,12 +212,13 @@ function normalizeServerDocumentRequest(raw, {dealerType, vatPercent}) {
   const sequenceNumber = sequential ?
     Math.trunc(finite(data.sequenceNumber, "sequenceNumber")) : null;
   const documentNumber = sequential ? string(data.documentNumber, 40) : "";
-  if (sequential && (sequenceNumber < 1 ||
-      !/^\d{4}-\d{4,}$/.test(documentNumber))) {
+  const documentNumberMatch = documentNumber.match(
+      /^(?:(\d{4})-)?(\d{4,})$/,
+  );
+  if (sequential && (sequenceNumber < 1 || !documentNumberMatch)) {
     throw new Error("The reserved document number is invalid.");
   }
-  if (sequential && Number(documentNumber.split("-").at(-1)) !==
-      sequenceNumber) {
+  if (sequential && Number(documentNumberMatch[2]) !== sequenceNumber) {
     throw new Error("The reserved document number does not match its sequence.");
   }
   const invoiceDocId = sequential ?

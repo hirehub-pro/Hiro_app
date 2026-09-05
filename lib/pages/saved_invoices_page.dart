@@ -1401,256 +1401,256 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
     required bool isRtl,
     required double remainingAmount,
   }) async {
-    final amountController = TextEditingController(
-      text: remainingAmount.toStringAsFixed(2),
-    );
-    String? validationMessage;
-
-    try {
-      return await showDialog<_ReceiptPaymentDraft>(
-        context: context,
-        builder: (dialogContext) => StatefulBuilder(
-          builder: (context, setDialogState) => Directionality(
-            textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
-            child: Dialog(
-              backgroundColor: Colors.white,
-              insetPadding: const EdgeInsets.symmetric(horizontal: 20),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(28),
-              ),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 430),
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Align(
-                        alignment: AlignmentDirectional.centerEnd,
-                        child: IconButton(
-                          tooltip: isRtl ? 'סגירה' : 'Close',
-                          onPressed: () => Navigator.pop(dialogContext),
-                          style: IconButton.styleFrom(
-                            backgroundColor: const Color(0xFFF1F5F9),
-                            foregroundColor: const Color(0xFF64748B),
-                          ),
-                          icon: const Icon(Icons.close_rounded),
-                        ),
-                      ),
-                      Center(
-                        child: Container(
-                          width: 64,
-                          height: 64,
-                          decoration: const BoxDecoration(
-                            color: Color(0xFFEFF6FF),
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(
-                            Icons.receipt_long_rounded,
-                            color: Color(0xFF1976D2),
-                            size: 32,
+    return showDialog<_ReceiptPaymentDraft>(
+      context: context,
+      builder: (dialogContext) => _ReceiptAmountControllerScope(
+        initialText: remainingAmount.toStringAsFixed(2),
+        builder:
+            (
+              context,
+              amountController,
+              validationMessage,
+              setValidationMessage,
+            ) => Directionality(
+              textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
+              child: Dialog(
+                backgroundColor: Colors.white,
+                insetPadding: const EdgeInsets.symmetric(horizontal: 20),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(28),
+                ),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 430),
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Align(
+                          alignment: AlignmentDirectional.centerEnd,
+                          child: IconButton(
+                            tooltip: isRtl ? 'סגירה' : 'Close',
+                            onPressed: () => Navigator.pop(dialogContext),
+                            style: IconButton.styleFrom(
+                              backgroundColor: const Color(0xFFF1F5F9),
+                              foregroundColor: const Color(0xFF64748B),
+                            ),
+                            icon: const Icon(Icons.close_rounded),
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        isRtl ? 'יצירת קבלה' : 'Create Receipt',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: Color(0xFF0F172A),
-                          fontSize: 24,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        isRtl
-                            ? 'הזינו את הסכום שהתקבל מהלקוח.'
-                            : 'Enter the amount received from the client.',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: Color(0xFF64748B),
-                          fontSize: 14,
-                          height: 1.4,
-                        ),
-                      ),
-                      const SizedBox(height: 22),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 14,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF8FAFC),
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: const Color(0xFFE2E8F0)),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(
-                              Icons.account_balance_wallet_outlined,
+                        Center(
+                          child: Container(
+                            width: 64,
+                            height: 64,
+                            decoration: const BoxDecoration(
+                              color: Color(0xFFEFF6FF),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.receipt_long_rounded,
                               color: Color(0xFF1976D2),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                isRtl ? 'יתרה לתשלום' : 'Remaining due',
-                                style: const TextStyle(
-                                  color: Color(0xFF475569),
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                            Text(
-                              '${remainingAmount.toStringAsFixed(2)} ₪',
-                              textDirection: TextDirection.ltr,
-                              style: const TextStyle(
-                                color: Color(0xFF0F172A),
-                                fontSize: 18,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 18),
-                      TextField(
-                        controller: amountController,
-                        autofocus: true,
-                        textInputAction: TextInputAction.done,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        onChanged: (_) {
-                          if (validationMessage == null) return;
-                          setDialogState(() => validationMessage = null);
-                        },
-                        onSubmitted: (_) => _submitReceiptAmount(
-                          dialogContext: dialogContext,
-                          amountController: amountController,
-                          remainingAmount: remainingAmount,
-                          isRtl: isRtl,
-                          setValidationMessage: (message) =>
-                              setDialogState(() => validationMessage = message),
-                        ),
-                        style: const TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.w700,
-                        ),
-                        decoration: InputDecoration(
-                          labelText: isRtl ? 'סכום הקבלה' : 'Receipt amount',
-                          prefixIcon: const Icon(Icons.payments_outlined),
-                          suffixText: '₪',
-                          filled: true,
-                          fillColor: const Color(0xFFFAFCFF),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(16),
-                            borderSide: const BorderSide(
-                              color: Color(0xFFCBD5E1),
-                            ),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(16),
-                            borderSide: const BorderSide(
-                              color: Color(0xFF1976D2),
-                              width: 2,
+                              size: 32,
                             ),
                           ),
                         ),
-                      ),
-                      if (validationMessage != null) ...[
-                        const SizedBox(height: 10),
+                        const SizedBox(height: 16),
+                        Text(
+                          isRtl ? 'יצירת קבלה' : 'Create Receipt',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: Color(0xFF0F172A),
+                            fontSize: 24,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          isRtl
+                              ? 'הזינו את הסכום שהתקבל מהלקוח.'
+                              : 'Enter the amount received from the client.',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: Color(0xFF64748B),
+                            fontSize: 14,
+                            height: 1.4,
+                          ),
+                        ),
+                        const SizedBox(height: 22),
                         Container(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 10,
+                            horizontal: 16,
+                            vertical: 14,
                           ),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFFEF2F2),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: const Color(0xFFFECACA)),
+                            color: const Color(0xFFF8FAFC),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: const Color(0xFFE2E8F0)),
                           ),
                           child: Row(
                             children: [
                               const Icon(
-                                Icons.error_outline_rounded,
-                                size: 19,
-                                color: Color(0xFFB91C1C),
+                                Icons.account_balance_wallet_outlined,
+                                color: Color(0xFF1976D2),
                               ),
-                              const SizedBox(width: 8),
+                              const SizedBox(width: 12),
                               Expanded(
                                 child: Text(
-                                  validationMessage!,
+                                  isRtl ? 'יתרה לתשלום' : 'Remaining due',
                                   style: const TextStyle(
-                                    color: Color(0xFFB91C1C),
-                                    fontSize: 13,
+                                    color: Color(0xFF475569),
+                                    fontSize: 14,
                                     fontWeight: FontWeight.w600,
                                   ),
+                                ),
+                              ),
+                              Text(
+                                '${remainingAmount.toStringAsFixed(2)} ₪',
+                                textDirection: TextDirection.ltr,
+                                style: const TextStyle(
+                                  color: Color(0xFF0F172A),
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w800,
                                 ),
                               ),
                             ],
                           ),
                         ),
+                        const SizedBox(height: 18),
+                        TextField(
+                          controller: amountController,
+                          autofocus: true,
+                          textInputAction: TextInputAction.done,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          onChanged: (_) {
+                            if (validationMessage == null) return;
+                            setValidationMessage(null);
+                          },
+                          onSubmitted: (_) => _submitReceiptAmount(
+                            dialogContext: dialogContext,
+                            amountController: amountController,
+                            remainingAmount: remainingAmount,
+                            isRtl: isRtl,
+                            setValidationMessage: (message) =>
+                                setValidationMessage(message),
+                          ),
+                          style: const TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w700,
+                          ),
+                          decoration: InputDecoration(
+                            labelText: isRtl ? 'סכום הקבלה' : 'Receipt amount',
+                            prefixIcon: const Icon(Icons.payments_outlined),
+                            suffixText: '₪',
+                            filled: true,
+                            fillColor: const Color(0xFFFAFCFF),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              borderSide: const BorderSide(
+                                color: Color(0xFFCBD5E1),
+                              ),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              borderSide: const BorderSide(
+                                color: Color(0xFF1976D2),
+                                width: 2,
+                              ),
+                            ),
+                          ),
+                        ),
+                        if (validationMessage != null) ...[
+                          const SizedBox(height: 10),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 10,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFEF2F2),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: const Color(0xFFFECACA),
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(
+                                  Icons.error_outline_rounded,
+                                  size: 19,
+                                  color: Color(0xFFB91C1C),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    validationMessage,
+                                    style: const TextStyle(
+                                      color: Color(0xFFB91C1C),
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 12),
+                        Text(
+                          isRtl
+                              ? 'את אמצעי התשלום ניתן לבחור במסך הבא.'
+                              : 'You can choose the payment method on the next screen.',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: Color(0xFF64748B),
+                            fontSize: 12,
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        FilledButton.icon(
+                          onPressed: () => _submitReceiptAmount(
+                            dialogContext: dialogContext,
+                            amountController: amountController,
+                            remainingAmount: remainingAmount,
+                            isRtl: isRtl,
+                            setValidationMessage: (message) =>
+                                setValidationMessage(message),
+                          ),
+                          icon: const Icon(Icons.arrow_forward_rounded),
+                          label: Text(
+                            isRtl ? 'המשך לקבלה' : 'Continue to Receipt',
+                          ),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: const Color(0xFF1976D2),
+                            foregroundColor: Colors.white,
+                            minimumSize: const Size.fromHeight(54),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            textStyle: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        TextButton(
+                          onPressed: () => Navigator.pop(dialogContext),
+                          child: Text(isRtl ? 'ביטול' : 'Cancel'),
+                        ),
                       ],
-                      const SizedBox(height: 12),
-                      Text(
-                        isRtl
-                            ? 'את אמצעי התשלום ניתן לבחור במסך הבא.'
-                            : 'You can choose the payment method on the next screen.',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: Color(0xFF64748B),
-                          fontSize: 12,
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      FilledButton.icon(
-                        onPressed: () => _submitReceiptAmount(
-                          dialogContext: dialogContext,
-                          amountController: amountController,
-                          remainingAmount: remainingAmount,
-                          isRtl: isRtl,
-                          setValidationMessage: (message) =>
-                              setDialogState(() => validationMessage = message),
-                        ),
-                        icon: const Icon(Icons.arrow_forward_rounded),
-                        label: Text(
-                          isRtl ? 'המשך לקבלה' : 'Continue to Receipt',
-                        ),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: const Color(0xFF1976D2),
-                          foregroundColor: Colors.white,
-                          minimumSize: const Size.fromHeight(54),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          textStyle: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      TextButton(
-                        onPressed: () => Navigator.pop(dialogContext),
-                        child: Text(isRtl ? 'ביטול' : 'Cancel'),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-        ),
-      );
-    } finally {
-      amountController.dispose();
-    }
+      ),
+    );
   }
 
   void _submitReceiptAmount({
@@ -3680,6 +3680,57 @@ class _ReceiptPaymentDraft {
   final double amount;
 
   const _ReceiptPaymentDraft({required this.amount});
+}
+
+class _ReceiptAmountControllerScope extends StatefulWidget {
+  const _ReceiptAmountControllerScope({
+    required this.initialText,
+    required this.builder,
+  });
+
+  final String initialText;
+  final Widget Function(
+    BuildContext context,
+    TextEditingController controller,
+    String? validationMessage,
+    ValueChanged<String?> setValidationMessage,
+  )
+  builder;
+
+  @override
+  State<_ReceiptAmountControllerScope> createState() =>
+      _ReceiptAmountControllerScopeState();
+}
+
+class _ReceiptAmountControllerScopeState
+    extends State<_ReceiptAmountControllerScope> {
+  late final TextEditingController _controller;
+  String? _validationMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialText);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _setValidationMessage(String? message) {
+    if (!mounted || message == _validationMessage) return;
+    setState(() => _validationMessage = message);
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.builder(
+    context,
+    _controller,
+    _validationMessage,
+    _setValidationMessage,
+  );
 }
 
 class SavedInvoicePreviewPage extends StatefulWidget {

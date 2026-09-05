@@ -551,6 +551,10 @@ test("allows only owners to change invoice link locks", {
     ...validInvoice(invoiceId),
     documentStatus: "finalized",
     serverDocument: {status: "finalized", generatedBy: "server"},
+    digitalSignature: {
+      format: "PAdES",
+      certificateFingerprintSha256: "server-managed-fingerprint",
+    },
   });
   await assertSucceeds(updateDoc(invoiceRef, {
     isLinkingLocked: true,

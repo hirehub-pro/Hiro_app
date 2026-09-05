@@ -56,6 +56,15 @@ test("calculates invoice totals on the server and ignores client totals", () => 
   assert.equal("discount" in document.items[0], false);
 });
 
+test("accepts document numbers without a year prefix", () => {
+  const document = normalize(base({
+    documentNumber: "0042",
+    sequenceNumber: 42,
+  }));
+  assert.equal(document.documentNumber, "0042");
+  assert.equal(document.invoiceDocId, "invoice_0042");
+});
+
 test("keeps VAT-exempt items at a zero VAT rate", () => {
   const document = normalize(base({
     items: [{

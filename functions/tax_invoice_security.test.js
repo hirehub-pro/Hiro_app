@@ -68,6 +68,23 @@ test("accepts a consistent invoice and derives its reservation", () => {
   });
 });
 
+test("accepts an invoice number without a year prefix", () => {
+  const payload = validPayload();
+  payload.invoices_list[0].invoice_id = "invoice_0042";
+  payload.invoices_list[0].invoice_reference_number = "0042";
+  const reservation = validateTaxInvoiceAllocation({
+    payload,
+    invoiceDocId: "invoice_0042",
+    currentYear: 2026,
+  });
+  assert.deepEqual(reservation, {
+    docType: "invoice",
+    documentNumber: "0042",
+    sequenceNumber: 42,
+    invoiceDocId: "invoice_0042",
+  });
+});
+
 test("rejects a fabricated document ID or unsupported document type", () => {
   assert.throws(() => validateTaxInvoiceAllocation({
     payload: validPayload(),
