@@ -292,9 +292,13 @@ class _LinkedDocumentsDialog extends StatefulWidget {
 }
 
 class _LinkedDocumentsDialogState extends State<_LinkedDocumentsDialog> {
-  late final Map<String, _LinkedInvoiceDocument> _selected = Map.from(
-    widget.initiallySelected,
-  );
+  late final Map<String, _LinkedInvoiceDocument> _selected =
+      widget.initiallySelected.isEmpty
+      ? <String, _LinkedInvoiceDocument>{}
+      : {
+          widget.initiallySelected.values.first.id:
+              widget.initiallySelected.values.first,
+        };
   final TextEditingController _searchController = TextEditingController();
   List<_LinkedInvoiceDocument> _documents = const [];
   bool _isLoading = true;
@@ -425,7 +429,9 @@ class _LinkedDocumentsDialogState extends State<_LinkedDocumentsDialog> {
       if (_selected.containsKey(document.id)) {
         _selected.remove(document.id);
       } else {
-        _selected[document.id] = document;
+        _selected
+          ..clear()
+          ..[document.id] = document;
       }
     });
   }
@@ -1313,6 +1319,13 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       .map((document) => document.toReferenceMap())
       .toList(growable: false);
 
+  _LinkedInvoiceDocument? get _sourceDocument =>
+      _linkedDocuments.isEmpty ? null : _linkedDocuments.values.first;
+
+  String? get _sourceDocumentId => _sourceDocument?.id;
+
+  String? get _sourceDocumentNumber => _sourceDocument?.documentNumber;
+
   String _linkedDocumentTitle(
     Map<String, String> strings,
     _LinkedInvoiceDocument document,
@@ -1655,6 +1668,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     for (final data in widget.initialLinkedDocuments) {
       final document = _LinkedInvoiceDocument.fromMap(data);
       if (document.id.isNotEmpty &&
+          _linkedDocuments.isEmpty &&
           (compatibleLinkedTypes.contains(document.docType) ||
               (_isNegativeReceipt && document.docType == 'receipt'))) {
         _linkedDocuments[document.id] = document;
@@ -3694,8 +3708,8 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                 .toList(growable: false)
           : const <Map<String, dynamic>>[],
       'linkedDocuments': _linkedDocumentReferences,
-      'sourceInvoiceNumber': widget.sourceInvoiceNumber,
-      'sourceInvoiceDocId': widget.sourceInvoiceDocId,
+      'sourceInvoiceNumber': _sourceDocumentNumber,
+      'sourceInvoiceDocId': _sourceDocumentId,
       'isNegativeReceipt': _isNegativeReceipt,
       'cancellationSourceDocumentId': widget.cancellationSourceDocumentId,
       'cancellationSourceDocumentNumber':
@@ -4519,7 +4533,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'linked_documents_load_failed': 'Could not load the documents.',
           'link_documents_action': 'Link document',
           'linked_documents_helper':
-              'Choose one or more documents to connect to this document.',
+              'Choose one document to use as this document\'s source.',
           'linked_documents_search': 'Search by type, number, date, or amount',
           'linked_documents_count': '{count} selected',
           'linked_documents_no_results': 'No documents match your search.',
@@ -4691,7 +4705,7 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       'linked_documents_load_failed': 'Could not load the documents.',
       'link_documents_action': 'Link document',
       'linked_documents_helper':
-          'Choose one or more documents to connect to this document.',
+          'Choose one document to use as this document\'s source.',
       'linked_documents_search': 'Search by type, number, date, or amount',
       'linked_documents_count': '{count} selected',
       'linked_documents_no_results': 'No documents match your search.',
