@@ -4,7 +4,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' as intl;
-import 'package:untitled1/pages/saved_invoices_page.dart';
 import 'package:untitled1/services/linked_document_action_service.dart';
 import 'package:untitled1/utils/document_chain_cancellation.dart';
 
@@ -642,9 +641,7 @@ class _ChainDetailPage extends StatelessWidget {
               availableWidth: constraints.maxWidth - 32,
               locale: locale,
               strings: strings,
-              onOpen: (document) =>
-                  _openLinkedDocument(context, userId, document, strings),
-              onLongPress: (document) => LinkedDocumentActionService.show(
+              onOpen: (document) => LinkedDocumentActionService.show(
                 context: context,
                 userId: userId,
                 documentId: document.id,
@@ -794,7 +791,6 @@ class _DocumentTree extends StatelessWidget {
     required this.locale,
     required this.strings,
     required this.onOpen,
-    required this.onLongPress,
   });
 
   final _DocumentChain chain;
@@ -802,23 +798,69 @@ class _DocumentTree extends StatelessWidget {
   final String locale;
   final _LinkedDocumentStrings strings;
   final ValueChanged<_LinkedDocument> onOpen;
-  final ValueChanged<_LinkedDocument> onLongPress;
 
   @override
   Widget build(BuildContext context) {
     const cardWidth = 184.0;
-    const cardHeight = 126.0;
+    // Two independent status pills can wrap onto separate lines.
+    const cardHeight = 140.0;
     const horizontalGap = 22.0;
     const verticalGap = 64.0;
     final levels = chain.levels;
-    final widest = levels.fold<int>(
-      1,
-      (value, level) => math.max(value, level.length),
-    );
-    final canvasWidth = math.max(
-      availableWidth,
-      widest * cardWidth + math.max(0, widest - 1) * horizontalGap,
-    );
+    final centers = <String, double>{};
+    var nextLeafSlot = 0.0;
+    late double Function(_LinkedDocument document) placeSubtree;
+    placeSubtree = (document) {
+      final existing = centers[document.id];
+      if (existing != null) return existing;
+      final children =
+          <_LinkedDocument>[
+            ...(chain.childrenById[document.id] ?? const <_LinkedDocument>[]),
+          ]..sort((a, b) {
+            final dateComparison = a.date.compareTo(b.date);
+            return dateComparison != 0
+                ? dateComparison
+                : a.number.compareTo(b.number);
+          });
+      if (children.isEmpty) {
+        final slot = nextLeafSlot++;
+        centers[document.id] = slot;
+        return slot;
+      }
+      final childCenters = children.map(placeSubtree).toList(growable: false);
+      final center = childCenters.reduce((a, b) => a + b) / childCenters.length;
+      centers[document.id] = center;
+      return center;
+    };
+    for (final root in levels.first) {
+      placeSubtree(root);
+    }
+    for (final document in chain.documents) {
+      placeSubtree(document);
+    }
+
+    // A document can legally reference more than one source. Keep cards on
+    // the same row from overlapping in that less-common graph shape.
+    for (final level in levels) {
+      final ordered = [...level]
+        ..sort((a, b) => centers[a.id]!.compareTo(centers[b.id]!));
+      double? previous;
+      for (final document in ordered) {
+        final desired = centers[document.id]!;
+        final resolved = previous == null
+            ? desired
+            : math.max(desired, previous + 1);
+        centers[document.id] = resolved;
+        previous = resolved;
+      }
+    }
+
+    final minimumCenter = centers.values.reduce(math.min);
+    final maximumCenter = centers.values.reduce(math.max);
+    final slotWidth = cardWidth + horizontalGap;
+    final contentWidth =
+        (maximumCenter - minimumCenter) * slotWidth + cardWidth;
+    final canvasWidth = math.max(availableWidth, contentWidth);
     final canvasHeight =
         levels.length * cardHeight +
         math.max(0, levels.length - 1) * verticalGap;
@@ -826,14 +868,13 @@ class _DocumentTree extends StatelessWidget {
     final isRtl = Directionality.of(context) == TextDirection.rtl;
     for (var levelIndex = 0; levelIndex < levels.length; levelIndex++) {
       final level = levels[levelIndex];
-      final rowWidth =
-          level.length * cardWidth +
-          math.max(0, level.length - 1) * horizontalGap;
-      final rowStart = (canvasWidth - rowWidth) / 2;
-      for (var index = 0; index < level.length; index++) {
-        final visualIndex = isRtl ? level.length - 1 - index : index;
-        rects[level[index].id] = Rect.fromLTWH(
-          rowStart + visualIndex * (cardWidth + horizontalGap),
+      for (final document in level) {
+        final logicalX =
+            (canvasWidth - contentWidth) / 2 +
+            (centers[document.id]! - minimumCenter) * slotWidth;
+        final visualX = isRtl ? canvasWidth - logicalX - cardWidth : logicalX;
+        rects[document.id] = Rect.fromLTWH(
+          visualX,
           levelIndex * (cardHeight + verticalGap),
           cardWidth,
           cardHeight,
@@ -862,10 +903,10 @@ class _DocumentTree extends StatelessWidget {
                   rect: rect,
                   child: _TreeDocumentCard(
                     document: document,
+                    displayStatuses: chain.displayStatusesFor(document),
                     locale: locale,
                     strings: strings,
                     onTap: () => onOpen(document),
-                    onLongPress: () => onLongPress(document),
                   ),
                 ),
           ],
@@ -893,30 +934,60 @@ class _TreeConnectorPainter extends CustomPainter {
     for (final entry in childrenById.entries) {
       final parent = rects[entry.key];
       if (parent == null) continue;
-      for (final childDocument in entry.value) {
-        final child = rects[childDocument.id];
-        if (child == null) continue;
-        final start = Offset(parent.center.dx, parent.bottom);
+      final children = entry.value
+          .map((document) => rects[document.id])
+          .whereType<Rect>()
+          .toList(growable: false);
+      if (children.isEmpty) continue;
+      final start = Offset(parent.center.dx, parent.bottom);
+      final branchY = (parent.bottom + children.first.top) / 2;
+      if (children.length == 1) {
+        final child = children.single;
         final end = Offset(child.center.dx, child.top);
-        final middleY = (start.dy + end.dy) / 2;
-        final path = Path()
-          ..moveTo(start.dx, start.dy)
-          ..lineTo(start.dx, middleY)
-          ..lineTo(end.dx, middleY)
-          ..lineTo(end.dx, end.dy - 7);
-        canvas.drawPath(path, paint);
+        if ((start.dx - end.dx).abs() < 0.5) {
+          canvas.drawLine(start, Offset(end.dx, end.dy - 7), paint);
+        } else {
+          canvas.drawPath(
+            Path()
+              ..moveTo(start.dx, start.dy)
+              ..lineTo(start.dx, branchY)
+              ..lineTo(end.dx, branchY)
+              ..lineTo(end.dx, end.dy - 7),
+            paint,
+          );
+        }
+        _drawArrow(canvas, paint, end);
+        continue;
+      }
+
+      final childCenters = children.map((child) => child.center.dx);
+      final left = childCenters.reduce(math.min);
+      final right = childCenters.reduce(math.max);
+      canvas.drawLine(start, Offset(start.dx, branchY), paint);
+      canvas.drawLine(Offset(left, branchY), Offset(right, branchY), paint);
+      for (final child in children) {
+        final end = Offset(child.center.dx, child.top);
         canvas.drawLine(
-          Offset(end.dx - 4, end.dy - 12),
+          Offset(end.dx, branchY),
           Offset(end.dx, end.dy - 7),
           paint,
         );
-        canvas.drawLine(
-          Offset(end.dx + 4, end.dy - 12),
-          Offset(end.dx, end.dy - 7),
-          paint,
-        );
+        _drawArrow(canvas, paint, end);
       }
     }
+  }
+
+  void _drawArrow(Canvas canvas, Paint paint, Offset end) {
+    canvas.drawLine(
+      Offset(end.dx - 4, end.dy - 12),
+      Offset(end.dx, end.dy - 7),
+      paint,
+    );
+    canvas.drawLine(
+      Offset(end.dx + 4, end.dy - 12),
+      Offset(end.dx, end.dy - 7),
+      paint,
+    );
   }
 
   @override
@@ -927,25 +998,33 @@ class _TreeConnectorPainter extends CustomPainter {
 class _TreeDocumentCard extends StatelessWidget {
   const _TreeDocumentCard({
     required this.document,
+    required this.displayStatuses,
     required this.locale,
     required this.strings,
     required this.onTap,
-    required this.onLongPress,
   });
 
   final _LinkedDocument document;
+  final List<_DocumentDisplayStatus> displayStatuses;
   final String locale;
   final _LinkedDocumentStrings strings;
   final VoidCallback onTap;
-  final VoidCallback onLongPress;
 
   @override
   Widget build(BuildContext context) {
+    final visibleStatuses = document.isCancellationReceipt || document.isCredit
+        ? const <_DocumentDisplayStatus>[]
+        : displayStatuses
+              .where(
+                (status) =>
+                    !(document.isReceipt &&
+                        status == _DocumentDisplayStatus.paid),
+              )
+              .toList(growable: false);
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        onLongPress: onLongPress,
         borderRadius: BorderRadius.circular(16),
         child: Ink(
           padding: const EdgeInsets.all(12),
@@ -954,48 +1033,62 @@ class _TreeDocumentCard extends StatelessWidget {
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: const Color(0xFFCAE2F7), width: 1.2),
           ),
-          child: Row(
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _DocumentIcon(document: document, size: 40),
-              const SizedBox(width: 9),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      document.title(strings),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Color(0xFF172033),
-                        fontSize: 13,
-                        fontWeight: FontWeight.w900,
-                      ),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _DocumentIcon(document: document, size: 40),
+                  const SizedBox(width: 9),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          document.title(strings),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Color(0xFF172033),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          _formatDate(document.date),
+                          style: const TextStyle(
+                            color: Color(0xFF64748B),
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 3),
-                    Text(
-                      _formatDate(document.date),
-                      style: const TextStyle(
-                        color: Color(0xFF64748B),
-                        fontSize: 11,
-                      ),
-                    ),
-                    const Spacer(),
-                    Text(
-                      _formatMoney(document.amount.abs(), locale),
-                      style: const TextStyle(
-                        color: Color(0xFF0F172A),
-                        fontSize: 13,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    _DocumentStatusPill(document: document, strings: strings),
-                  ],
+                  ),
+                  const Icon(Icons.chevron_right_rounded, size: 18),
+                ],
+              ),
+              const Spacer(),
+              Text(
+                _formatMoney(document.amount.abs(), locale),
+                style: const TextStyle(
+                  color: Color(0xFF0F172A),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
                 ),
               ),
-              const Icon(Icons.chevron_right_rounded, size: 18),
+              if (visibleStatuses.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Wrap(
+                  spacing: 4,
+                  runSpacing: 3,
+                  children: [
+                    for (final status in visibleStatuses)
+                      _DocumentStatusPill(status: status, strings: strings),
+                  ],
+                ),
+              ],
             ],
           ),
         ),
@@ -1105,9 +1198,7 @@ class _StandaloneDocumentsPage extends StatelessWidget {
             document: document,
             locale: locale,
             strings: strings,
-            onTap: () =>
-                _openLinkedDocument(context, userId, document, strings),
-            onLongPress: () => LinkedDocumentActionService.show(
+            onTap: () => LinkedDocumentActionService.show(
               context: context,
               userId: userId,
               documentId: document.id,
@@ -1127,14 +1218,12 @@ class _StandaloneDocumentTile extends StatelessWidget {
     required this.locale,
     required this.strings,
     required this.onTap,
-    required this.onLongPress,
   });
 
   final _LinkedDocument document;
   final String locale;
   final _LinkedDocumentStrings strings;
   final VoidCallback onTap;
-  final VoidCallback onLongPress;
 
   @override
   Widget build(BuildContext context) => Card(
@@ -1146,7 +1235,6 @@ class _StandaloneDocumentTile extends StatelessWidget {
     ),
     child: ListTile(
       onTap: onTap,
-      onLongPress: onLongPress,
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
       leading: _DocumentIcon(document: document, size: 44),
       title: Text(
@@ -1223,14 +1311,13 @@ class _StatusPill extends StatelessWidget {
 }
 
 class _DocumentStatusPill extends StatelessWidget {
-  const _DocumentStatusPill({required this.document, required this.strings});
+  const _DocumentStatusPill({required this.status, required this.strings});
 
-  final _LinkedDocument document;
+  final _DocumentDisplayStatus status;
   final _LinkedDocumentStrings strings;
 
   @override
   Widget build(BuildContext context) {
-    final status = document.displayStatus;
     final (label, color, background) = switch (status) {
       _DocumentDisplayStatus.paid => (
         strings.paid,
@@ -1241,6 +1328,11 @@ class _DocumentStatusPill extends StatelessWidget {
         strings.partiallyPaid,
         const Color(0xFF1976D2),
         const Color(0xFFDBEAFE),
+      ),
+      _DocumentDisplayStatus.partiallyCancelled => (
+        strings.partiallyCancelled,
+        const Color(0xFFB45309),
+        const Color(0xFFFFEDD5),
       ),
       _DocumentDisplayStatus.cancelled => (
         strings.cancelled,
@@ -1258,23 +1350,20 @@ class _DocumentStatusPill extends StatelessWidget {
         const Color(0xFFFFEDD5),
       ),
     };
-    return Align(
-      alignment: AlignmentDirectional.centerStart,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-        decoration: BoxDecoration(
-          color: background,
-          borderRadius: BorderRadius.circular(999),
-        ),
-        child: Text(
-          label,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            color: color,
-            fontSize: 10,
-            fontWeight: FontWeight.w900,
-          ),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          color: color,
+          fontSize: 10,
+          fontWeight: FontWeight.w900,
         ),
       ),
     );
@@ -1289,33 +1378,35 @@ class _DocumentIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final (icon, foreground, background) = switch (document.type) {
-      'quote' => (
-        Icons.description_outlined,
-        const Color(0xFF1687F8),
-        const Color(0xFFDBEAFE),
-      ),
-      'work_order' => (
-        Icons.build_outlined,
-        const Color(0xFFF97316),
-        const Color(0xFFFFE7D6),
-      ),
-      'receipt' => (
-        Icons.receipt_outlined,
-        const Color(0xFF059669),
-        const Color(0xFFD1FAE5),
-      ),
-      'credit_note' => (
-        Icons.undo_rounded,
-        const Color(0xFFDC2626),
-        const Color(0xFFFEE2E2),
-      ),
-      _ => (
-        Icons.receipt_long_outlined,
-        const Color(0xFF7C3AED),
-        const Color(0xFFEDE9FE),
-      ),
-    };
+    final (icon, foreground, background) = document.isCancellationReceipt
+        ? (Icons.undo_rounded, const Color(0xFFDC2626), const Color(0xFFFEE2E2))
+        : switch (document.type) {
+            'quote' => (
+              Icons.description_outlined,
+              const Color(0xFF1687F8),
+              const Color(0xFFDBEAFE),
+            ),
+            'work_order' => (
+              Icons.build_outlined,
+              const Color(0xFFF97316),
+              const Color(0xFFFFE7D6),
+            ),
+            'receipt' => (
+              Icons.receipt_outlined,
+              const Color(0xFF059669),
+              const Color(0xFFD1FAE5),
+            ),
+            'credit_note' => (
+              Icons.undo_rounded,
+              const Color(0xFFDC2626),
+              const Color(0xFFFEE2E2),
+            ),
+            _ => (
+              Icons.receipt_long_outlined,
+              const Color(0xFF7C3AED),
+              const Color(0xFFEDE9FE),
+            ),
+          };
     return Container(
       width: size,
       height: size,
@@ -1369,7 +1460,14 @@ class _EmptyState extends StatelessWidget {
   );
 }
 
-enum _DocumentDisplayStatus { open, partial, paid, accepted, cancelled }
+enum _DocumentDisplayStatus {
+  open,
+  partial,
+  paid,
+  accepted,
+  partiallyCancelled,
+  cancelled,
+}
 
 class _LinkedDocument {
   const _LinkedDocument({
@@ -1442,6 +1540,8 @@ class _LinkedDocument {
 
   bool get isCredit => type == 'credit_note';
   bool get isReceipt => type == 'receipt';
+  bool get isCancellationReceipt =>
+      isReceipt && data['isCancellationDocument'] == true;
   bool get isInvoice => type == 'invoice' || type == 'invoice_receipt';
   bool get isCancelled =>
       isCredit ||
@@ -1465,7 +1565,8 @@ class _LinkedDocument {
   }
 
   String title(_LinkedDocumentStrings strings) =>
-      '${strings.typeName(type)}${number.isEmpty ? '' : ' #$number'}';
+      '${isCancellationReceipt ? strings.cancelledReceipt : strings.typeName(type)}'
+      '${number.isEmpty ? '' : ' #$number'}';
 }
 
 class _DocumentGraph {
@@ -1550,6 +1651,86 @@ class _DocumentChain {
   final List<_LinkedDocument> documents;
   final Map<String, List<_LinkedDocument>> childrenById;
 
+  List<_DocumentDisplayStatus> displayStatusesFor(_LinkedDocument document) {
+    if (document.isReceipt && !document.isCancellationReceipt) {
+      final cancelledAmount =
+          (childrenById[document.id] ?? const <_LinkedDocument>[])
+              .where((child) => child.isCancellationReceipt)
+              .fold<double>(
+                0,
+                (cancelledTotal, child) => cancelledTotal + child.amount.abs(),
+              );
+      final receiptAmount = document.amount.abs();
+      if (receiptAmount > 0 && cancelledAmount >= receiptAmount - 0.005) {
+        return const [_DocumentDisplayStatus.cancelled];
+      }
+      if (cancelledAmount > 0.005) {
+        return const [_DocumentDisplayStatus.partiallyCancelled];
+      }
+    }
+    if (document.isInvoice) {
+      final descendants = _descendantsOf(document);
+      final creditDocumentsTotal = descendants
+          .where((child) => child.isCredit)
+          .fold<double>(
+            0,
+            (creditTotal, child) => creditTotal + child.amount.abs(),
+          );
+      final recordedCredit =
+          (document.data['cancelledAmount'] as num?)?.toDouble().abs() ?? 0;
+      final creditedAmount = math.max(creditDocumentsTotal, recordedCredit);
+      final invoiceAmount = document.amount.abs();
+      final netInvoiceAmount = math.max(0, invoiceAmount - creditedAmount);
+      final cancellationStatus =
+          invoiceAmount > 0 && creditedAmount >= invoiceAmount - 0.005
+          ? _DocumentDisplayStatus.cancelled
+          : creditedAmount > 0.005
+          ? _DocumentDisplayStatus.partiallyCancelled
+          : null;
+
+      final linkedReceipts = descendants
+          .where((child) => child.isReceipt)
+          .toList(growable: false);
+      final linkedReceiptTotal = linkedReceipts.fold<double>(
+        0,
+        (receiptTotal, child) => receiptTotal + child.amount,
+      );
+      final recordedPaidAmount = document.paidAmount.abs();
+      final paidAmount = math.max(
+        0,
+        document.type == 'invoice_receipt'
+            ? invoiceAmount + linkedReceiptTotal
+            : linkedReceipts.isNotEmpty
+            ? linkedReceiptTotal
+            : recordedPaidAmount,
+      );
+      final paymentStatus = netInvoiceAmount <= 0.005
+          ? null
+          : paidAmount >= netInvoiceAmount - 0.005
+          ? _DocumentDisplayStatus.paid
+          : paidAmount > 0.005
+          ? _DocumentDisplayStatus.partial
+          : _DocumentDisplayStatus.open;
+      return [?cancellationStatus, ?paymentStatus];
+    }
+    return [document.displayStatus];
+  }
+
+  List<_LinkedDocument> _descendantsOf(_LinkedDocument document) {
+    final descendants = <_LinkedDocument>[];
+    final seen = <String>{document.id};
+    final pending = <_LinkedDocument>[
+      ...(childrenById[document.id] ?? const <_LinkedDocument>[]),
+    ];
+    while (pending.isNotEmpty) {
+      final child = pending.removeLast();
+      if (!seen.add(child.id)) continue;
+      descendants.add(child);
+      pending.addAll(childrenById[child.id] ?? const <_LinkedDocument>[]);
+    }
+    return descendants;
+  }
+
   DateTime get date => documents
       .map((document) => document.date)
       .reduce((a, b) => a.isAfter(b) ? a : b);
@@ -1557,7 +1738,7 @@ class _DocumentChain {
       .map((document) => document.date)
       .reduce((a, b) => a.isBefore(b) ? a : b);
 
-  double get total {
+  double get _grossTotal {
     final billable = documents.where((document) => document.isInvoice).toList();
     if (billable.isNotEmpty) {
       return billable.fold(
@@ -1570,6 +1751,8 @@ class _DocumentChain {
         .map((document) => document.amount.abs());
     return candidates.isEmpty ? 0 : candidates.reduce(math.max);
   }
+
+  double get total => cancellation.netInvoiceAmount(_grossTotal);
 
   double get paid {
     final receipts = documents
@@ -1600,7 +1783,7 @@ class _DocumentChain {
 
   DocumentChainCancellation get cancellation =>
       DocumentChainCancellation.calculate(
-        invoiceTotal: total,
+        invoiceTotal: _grossTotal,
         creditNoteAmounts: documents
             .where((document) => document.isCredit)
             .map((document) => document.amount),
@@ -1612,8 +1795,7 @@ class _DocumentChain {
             ),
       );
 
-  double get remaining =>
-      math.max(0, total - cancellation.creditedAmount - paid);
+  double get remaining => math.max(0, total - paid);
 
   _ChainStatus get status {
     if (cancellation.status == DocumentChainCancellationStatus.full) {
@@ -1827,6 +2009,7 @@ class _LinkedDocumentStrings {
   String get cancelled => values['cancelled']!;
   String get partiallyPaid => values['partiallyPaid']!;
   String get partiallyCancelled => values['partiallyCancelled']!;
+  String get cancelledReceipt => values['cancelledReceipt']!;
   String get completed => values['completed']!;
   String get accepted => values['accepted']!;
   String get sort => values['sort']!;
@@ -1878,6 +2061,7 @@ class _LinkedDocumentStrings {
       'cancelled': 'Cancelled',
       'partiallyPaid': 'Partially paid',
       'partiallyCancelled': 'Partially cancelled',
+      'cancelledReceipt': 'Cancelled receipt',
       'completed': 'Completed',
       'accepted': 'Accepted',
       'sort': 'Sort and filter',
@@ -1925,6 +2109,7 @@ class _LinkedDocumentStrings {
       'cancelled': 'בוטל',
       'partiallyPaid': 'שולם חלקית',
       'partiallyCancelled': 'בוטל חלקית',
+      'cancelledReceipt': 'קבלה מבטלת',
       'completed': 'הושלם',
       'accepted': 'אושר',
       'sort': 'מיון וסינון',
@@ -1971,6 +2156,7 @@ class _LinkedDocumentStrings {
       'cancelled': 'ملغى',
       'partiallyPaid': 'مدفوع جزئياً',
       'partiallyCancelled': 'ملغى جزئياً',
+      'cancelledReceipt': 'إيصال إلغاء',
       'completed': 'مكتمل',
       'accepted': 'مقبول',
       'sort': 'ترتيب وتصفية',
@@ -2017,6 +2203,7 @@ class _LinkedDocumentStrings {
       'cancelled': 'Отменено',
       'partiallyPaid': 'Частично оплачено',
       'partiallyCancelled': 'Частично отменено',
+      'cancelledReceipt': 'Отменяющая квитанция',
       'completed': 'Завершено',
       'accepted': 'Принято',
       'sort': 'Сортировка и фильтр',
@@ -2063,6 +2250,7 @@ class _LinkedDocumentStrings {
       'cancelled': 'ተሰርዟል',
       'partiallyPaid': 'በከፊል ተከፍሏል',
       'partiallyCancelled': 'በከፊል ተሰርዟል',
+      'cancelledReceipt': 'የተሰረዘ ደረሰኝ',
       'completed': 'ተጠናቋል',
       'accepted': 'ጸድቋል',
       'sort': 'ደርድር እና አጣራ',

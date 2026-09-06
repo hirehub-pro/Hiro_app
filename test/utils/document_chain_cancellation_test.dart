@@ -11,6 +11,7 @@ void main() {
 
     expect(progress.creditedAmount, 3000);
     expect(progress.status, DocumentChainCancellationStatus.partial);
+    expect(progress.netInvoiceAmount(6900), 3900);
   });
 
   test(
@@ -24,6 +25,7 @@ void main() {
 
       expect(progress.creditedAmount, 6900);
       expect(progress.status, DocumentChainCancellationStatus.full);
+      expect(progress.netInvoiceAmount(6900), 0);
     },
   );
 

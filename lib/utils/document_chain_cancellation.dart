@@ -36,4 +36,7 @@ class DocumentChainCancellation {
 
   final double creditedAmount;
   final DocumentChainCancellationStatus status;
+
+  double netInvoiceAmount(double invoiceTotal) =>
+      math.max(0, invoiceTotal.abs() - creditedAmount);
 }
