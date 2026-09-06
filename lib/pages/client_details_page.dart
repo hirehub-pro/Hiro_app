@@ -7,6 +7,7 @@ import 'package:intl/intl.dart' as intl;
 import 'package:provider/provider.dart';
 import 'package:untitled1/pages/chat_page.dart';
 import 'package:untitled1/pages/invoice_builder.dart';
+import 'package:untitled1/pages/linked_documents_page.dart';
 import 'package:untitled1/pages/saved_invoices_page.dart';
 import 'package:untitled1/pages/verify_business.dart';
 import 'package:untitled1/services/language_provider.dart';
@@ -46,10 +47,19 @@ Map<String, List<_ClientBankBranch>> _parseClientBankBranches(String xmlText) {
 
 enum ClientDetailsAction { edit }
 
-class ClientDetailsPage extends StatelessWidget {
+class ClientDetailsPage extends StatefulWidget {
   const ClientDetailsPage({super.key, required this.clientId});
 
   final String clientId;
+
+  @override
+  State<ClientDetailsPage> createState() => _ClientDetailsPageState();
+}
+
+class _ClientDetailsPageState extends State<ClientDetailsPage> {
+  bool _showLinkedDocumentsInHistory = false;
+
+  String get clientId => widget.clientId;
 
   Future<void> _createDocument(
     BuildContext context,
@@ -138,10 +148,45 @@ class ClientDetailsPage extends StatelessWidget {
             ),
           ),
           actions: [
-            IconButton(
-              tooltip: strings.edit,
-              onPressed: () => Navigator.pop(context, ClientDetailsAction.edit),
-              icon: const Icon(Icons.edit_outlined),
+            Builder(
+              builder: (actionContext) {
+                final tabController = DefaultTabController.of(actionContext);
+                return AnimatedBuilder(
+                  animation: tabController,
+                  builder: (context, _) {
+                    if (tabController.index != 2) {
+                      return IconButton(
+                        tooltip: strings.edit,
+                        onPressed: () async {
+                          FocusManager.instance.primaryFocus?.unfocus();
+                          await WidgetsBinding.instance.endOfFrame;
+                          if (!context.mounted) return;
+                          Navigator.pop(context, ClientDetailsAction.edit);
+                        },
+                        icon: const Icon(Icons.edit_outlined),
+                      );
+                    }
+
+                    return IconButton(
+                      tooltip: _showLinkedDocumentsInHistory
+                          ? strings.historyTab
+                          : strings.linkedDocuments,
+                      onPressed: () {
+                        FocusManager.instance.primaryFocus?.unfocus();
+                        setState(
+                          () => _showLinkedDocumentsInHistory =
+                              !_showLinkedDocumentsInHistory,
+                        );
+                      },
+                      icon: Icon(
+                        _showLinkedDocumentsInHistory
+                            ? Icons.history_rounded
+                            : Icons.account_tree_outlined,
+                      ),
+                    );
+                  },
+                );
+              },
             ),
             const SizedBox(width: 8),
           ],
@@ -467,12 +512,20 @@ class ClientDetailsPage extends StatelessWidget {
                         client: client,
                         strings: strings,
                       ),
-                      _ClientHistoryTab(
-                        clientId: clientId,
-                        userId: user.uid,
-                        locale: locale,
-                        strings: strings,
-                      ),
+                      _showLinkedDocumentsInHistory
+                          ? LinkedDocumentsPage(
+                              clientId: clientId,
+                              clientName: client.name,
+                              externalClientNumber: client.externalClientNumber,
+                              locale: locale,
+                              embedded: true,
+                            )
+                          : _ClientHistoryTab(
+                              clientId: clientId,
+                              userId: user.uid,
+                              locale: locale,
+                              strings: strings,
+                            ),
                     ],
                   );
                 },
@@ -2318,6 +2371,7 @@ class _ClientDetailsStrings {
   String get title => values['title']!;
   String get client => values['client']!;
   String get edit => values['edit']!;
+  String get linkedDocuments => _value('linkedDocuments');
   String get openChat => values['openChat']!;
   String get createDocument => values['createDocument']!;
   String get savedInvoices => values['savedInvoices']!;
@@ -2395,6 +2449,8 @@ class _ClientDetailsStrings {
       'title': 'Client details',
       'client': 'Client',
       'edit': 'Edit',
+      'linkedDocuments': 'Linked documents',
+      'more': 'More',
       'openChat': 'Open chat',
       'createDocument': 'Create another document',
       'savedInvoices': 'Saved documents for this client',
@@ -2473,6 +2529,8 @@ class _ClientDetailsStrings {
       'title': 'פרטי לקוח',
       'client': 'לקוח',
       'edit': 'ערוך',
+      'linkedDocuments': 'מסמכים מקושרים',
+      'more': 'עוד',
       'openChat': 'פתח צ׳אט',
       'createDocument': 'צור מסמך נוסף',
       'savedInvoices': 'מסמכים שמורים של הלקוח',
@@ -2549,6 +2607,8 @@ class _ClientDetailsStrings {
       'title': 'تفاصيل العميل',
       'client': 'عميل',
       'edit': 'تعديل',
+      'linkedDocuments': 'المستندات المرتبطة',
+      'more': 'المزيد',
       'openChat': 'فتح المحادثة',
       'createDocument': 'إنشاء مستند آخر',
       'savedInvoices': 'مستندات العميل المحفوظة',
@@ -2626,6 +2686,8 @@ class _ClientDetailsStrings {
       'title': 'Данные клиента',
       'client': 'Клиент',
       'edit': 'Изменить',
+      'linkedDocuments': 'Связанные документы',
+      'more': 'Ещё',
       'openChat': 'Открыть чат',
       'createDocument': 'Создать другой документ',
       'savedInvoices': 'Сохраненные документы клиента',
@@ -2704,6 +2766,8 @@ class _ClientDetailsStrings {
       'title': 'የደንበኛ ዝርዝሮች',
       'client': 'ደንበኛ',
       'edit': 'አርትዕ',
+      'linkedDocuments': 'የተገናኙ ሰነዶች',
+      'more': 'ተጨማሪ',
       'openChat': 'ውይይት ክፈት',
       'createDocument': 'ሌላ ሰነድ ፍጠር',
       'savedInvoices': 'የደንበኛው የተቀመጡ ሰነዶች',
