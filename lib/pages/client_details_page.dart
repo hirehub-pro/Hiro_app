@@ -12,6 +12,7 @@ import 'package:untitled1/pages/saved_invoices_page.dart';
 import 'package:untitled1/pages/verify_business.dart';
 import 'package:untitled1/services/language_provider.dart';
 import 'package:untitled1/services/profile_document_service.dart';
+import 'package:untitled1/utils/client_ledger_summary.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:xml/xml.dart';
 
@@ -718,15 +719,17 @@ class _ClientHistoryTab extends StatelessWidget {
           );
         }
 
-        final totalDebits = entries.fold<int>(
-          0,
-          (total, entry) => total + entry.debitAgorot,
+        final summary = ClientLedgerSummary.fromEntries(
+          entries.map(
+            (entry) => (
+              documentKind: entry.documentKind,
+              debitAgorot: entry.debitAgorot,
+              creditAgorot: entry.creditAgorot,
+              reversalOf: entry.reversalOf,
+            ),
+          ),
         );
-        final totalCredits = entries.fold<int>(
-          0,
-          (total, entry) => total + entry.creditAgorot,
-        );
-        final balance = totalDebits - totalCredits;
+        final balance = summary.outstandingAgorot;
 
         return ListView.separated(
           padding: const EdgeInsets.fromLTRB(20, 20, 20, 42),
@@ -740,8 +743,8 @@ class _ClientHistoryTab extends StatelessWidget {
                   constraints: const BoxConstraints(maxWidth: 820),
                   child: _HistorySummaryCard(
                     balance: _formatBalance(balance),
-                    totalDebits: _formatAmount(totalDebits, sign: ''),
-                    totalCredits: _formatAmount(totalCredits, sign: ''),
+                    totalDebits: _formatBalance(summary.netDebtAgorot),
+                    totalCredits: _formatBalance(summary.netPaymentsAgorot),
                     balanceIsOutstanding: balance > 0,
                     strings: strings,
                   ),
@@ -2506,8 +2509,8 @@ class _ClientDetailsStrings {
           'Invoices, receipts, credits, and returned payments will appear here.',
       'transactionHistory': 'Transaction history',
       'currentBalance': 'Current outstanding balance',
-      'totalDebt': 'Total debt entries',
-      'totalPaidAndCredits': 'Payments & credits',
+      'totalDebt': 'Net debt',
+      'totalPaidAndCredits': 'Net payments',
       'documentNumber': 'Document',
       'taxInvoice': 'Tax invoice',
       'taxInvoiceReceipt': 'Tax invoice / receipt',
@@ -2585,8 +2588,8 @@ class _ClientDetailsStrings {
       'noHistoryMessage': 'חשבוניות, קבלות, זיכויים והחזרי תשלום יופיעו כאן.',
       'transactionHistory': 'היסטוריית עסקאות',
       'currentBalance': 'יתרת חוב נוכחית',
-      'totalDebt': 'סה״כ חיובים',
-      'totalPaidAndCredits': 'תשלומים וזיכויים',
+      'totalDebt': 'חוב נטו',
+      'totalPaidAndCredits': 'תשלומים נטו',
       'documentNumber': 'מסמך',
       'taxInvoice': 'חשבונית מס',
       'taxInvoiceReceipt': 'חשבונית מס / קבלה',
@@ -2664,8 +2667,8 @@ class _ClientDetailsStrings {
           'ستظهر هنا الفواتير والإيصالات والإشعارات الدائنة والمدفوعات المرتجعة.',
       'transactionHistory': 'سجل المعاملات',
       'currentBalance': 'الرصيد المستحق الحالي',
-      'totalDebt': 'إجمالي المديونية',
-      'totalPaidAndCredits': 'المدفوعات والأرصدة الدائنة',
+      'totalDebt': 'صافي الدين',
+      'totalPaidAndCredits': 'صافي المدفوعات',
       'documentNumber': 'المستند',
       'taxInvoice': 'فاتورة ضريبية',
       'taxInvoiceReceipt': 'فاتورة ضريبية / إيصال',
@@ -2743,8 +2746,8 @@ class _ClientDetailsStrings {
           'Здесь появятся счета, квитанции, кредиты и возвраты платежей.',
       'transactionHistory': 'История операций',
       'currentBalance': 'Текущая задолженность',
-      'totalDebt': 'Всего начислено',
-      'totalPaidAndCredits': 'Платежи и кредиты',
+      'totalDebt': 'Чистый долг',
+      'totalPaidAndCredits': 'Чистые платежи',
       'documentNumber': 'Документ',
       'taxInvoice': 'Налоговый счет',
       'taxInvoiceReceipt': 'Налоговый счет / квитанция',
@@ -2822,8 +2825,8 @@ class _ClientDetailsStrings {
       'noHistoryMessage': 'ደረሰኞች፣ ክፍያዎች፣ ቅናሾች እና የተመለሱ ክፍያዎች እዚህ ይታያሉ።',
       'transactionHistory': 'የግብይት ታሪክ',
       'currentBalance': 'የአሁኑ ቀሪ ዕዳ',
-      'totalDebt': 'ጠቅላላ ዕዳ',
-      'totalPaidAndCredits': 'ክፍያዎች እና ቅናሾች',
+      'totalDebt': 'የተጣራ ዕዳ',
+      'totalPaidAndCredits': 'የተጣራ ክፍያዎች',
       'documentNumber': 'ሰነድ',
       'taxInvoice': 'የግብር ደረሰኝ',
       'taxInvoiceReceipt': 'የግብር ደረሰኝ / የክፍያ ደረሰኝ',
