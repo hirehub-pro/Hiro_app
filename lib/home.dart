@@ -3305,7 +3305,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         _cachedName ?? user?.displayName?.split(' ').first ?? strings['guest'];
 
     return SliverAppBar(
-      expandedHeight: 250,
+      expandedHeight: 190,
       floating: false,
       pinned: true,
       elevation: 0,
@@ -3485,7 +3485,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 ),
               ),
               Padding(
-                padding: const EdgeInsets.fromLTRB(24, 70, 24, 20),
+                padding: const EdgeInsets.fromLTRB(24, 54, 24, 12),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -3549,7 +3549,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 4),
                     Text(
                       strings['find_pros'],
                       style: const TextStyle(
