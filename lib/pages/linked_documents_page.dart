@@ -784,7 +784,7 @@ class _VerticalDivider extends StatelessWidget {
   );
 }
 
-class _DocumentTree extends StatelessWidget {
+class _DocumentTree extends StatefulWidget {
   const _DocumentTree({
     required this.chain,
     required this.availableWidth,
@@ -800,7 +800,25 @@ class _DocumentTree extends StatelessWidget {
   final ValueChanged<_LinkedDocument> onOpen;
 
   @override
+  State<_DocumentTree> createState() => _DocumentTreeState();
+}
+
+class _DocumentTreeState extends State<_DocumentTree> {
+  String? _focusedDocumentId;
+
+  @override
   Widget build(BuildContext context) {
+    final fullChain = widget.chain;
+    final focusExists = fullChain.documents.any(
+      (document) => document.id == _focusedDocumentId,
+    );
+    final chain = focusExists
+        ? _subtreeChain(fullChain, _focusedDocumentId!)
+        : fullChain;
+    final availableWidth = widget.availableWidth;
+    final locale = widget.locale;
+    final strings = widget.strings;
+    final onOpen = widget.onOpen;
     const cardWidth = 184.0;
     // Two independent status pills can wrap onto separate lines.
     const cardHeight = 140.0;
@@ -882,38 +900,108 @@ class _DocumentTree extends StatelessWidget {
       }
     }
 
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: SizedBox(
-        width: canvasWidth,
-        height: canvasHeight,
-        child: Stack(
-          children: [
-            Positioned.fill(
-              child: CustomPaint(
-                painter: _TreeConnectorPainter(
-                  rects: rects,
-                  childrenById: chain.childrenById,
-                ),
-              ),
-            ),
-            for (final document in chain.documents)
-              if (rects[document.id] case final rect?)
-                Positioned.fromRect(
-                  rect: rect,
-                  child: _TreeDocumentCard(
-                    document: document,
-                    displayStatuses: chain.displayStatusesFor(document),
-                    locale: locale,
-                    strings: strings,
-                    onTap: () => onOpen(document),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (focusExists)
+          TextButton.icon(
+            onPressed: () => setState(() => _focusedDocumentId = null),
+            icon: const Icon(Icons.account_tree_outlined, size: 18),
+            label: Text(strings.fullChain),
+          ),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: SizedBox(
+            width: canvasWidth,
+            height: canvasHeight,
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: CustomPaint(
+                    painter: _TreeConnectorPainter(
+                      rects: rects,
+                      childrenById: chain.childrenById,
+                    ),
                   ),
                 ),
-          ],
+                for (final document in chain.documents)
+                  if (rects[document.id] case final rect?) ...[
+                    if (rect.top > 0 &&
+                        (chain.childrenById[document.id]?.isNotEmpty ?? false))
+                      Positioned(
+                        left: rect.center.dx - 14,
+                        top: rect.top - 27,
+                        width: 28,
+                        height: 28,
+                        child: _SubtreeArrowButton(
+                          onPressed: () =>
+                              setState(() => _focusedDocumentId = document.id),
+                        ),
+                      ),
+                    Positioned.fromRect(
+                      rect: rect,
+                      child: _TreeDocumentCard(
+                        document: document,
+                        displayStatuses: chain.displayStatusesFor(document),
+                        locale: locale,
+                        strings: strings,
+                        onTap: () => onOpen(document),
+                      ),
+                    ),
+                  ],
+              ],
+            ),
+          ),
         ),
-      ),
+      ],
     );
   }
+
+  _DocumentChain _subtreeChain(_DocumentChain chain, String rootId) {
+    final visibleIds = <String>{rootId};
+    final pending = <String>[rootId];
+    while (pending.isNotEmpty) {
+      final parentId = pending.removeLast();
+      for (final child
+          in chain.childrenById[parentId] ?? const <_LinkedDocument>[]) {
+        if (visibleIds.add(child.id)) pending.add(child.id);
+      }
+    }
+    return _DocumentChain(
+      documents: chain.documents
+          .where((document) => visibleIds.contains(document.id))
+          .toList(growable: false),
+      childrenById: {
+        for (final document in chain.documents)
+          if (visibleIds.contains(document.id))
+            document.id:
+                (chain.childrenById[document.id] ?? const <_LinkedDocument>[])
+                    .where((child) => visibleIds.contains(child.id))
+                    .toList(growable: false),
+      },
+    );
+  }
+}
+
+class _SubtreeArrowButton extends StatelessWidget {
+  const _SubtreeArrowButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: const Color(0xFFF7FBFF),
+    shape: const CircleBorder(),
+    child: InkResponse(
+      onTap: onPressed,
+      customBorder: const CircleBorder(),
+      child: const Icon(
+        Icons.keyboard_arrow_down_rounded,
+        size: 22,
+        color: Color(0xFF64748B),
+      ),
+    ),
+  );
 }
 
 class _TreeConnectorPainter extends CustomPainter {
@@ -1920,6 +2008,7 @@ class _LinkedDocumentStrings {
   String get oldest => values['oldest']!;
   String get highestAmount => values['highestAmount']!;
   String get chain => values['chain']!;
+  String get fullChain => values['fullChain']!;
   String get standalone => values['standalone']!;
   String get totalAmount => values['totalAmount']!;
   String get paidAmount => values['paidAmount']!;
@@ -1972,6 +2061,7 @@ class _LinkedDocumentStrings {
       'highestAmount': 'Highest amount',
       'groupByChains': 'Group by: Chains',
       'chain': 'Chain',
+      'fullChain': 'Full chain',
       'standalone': 'Standalone documents',
       'totalAmount': 'Total amount',
       'paidAmount': 'Paid',
@@ -2020,6 +2110,7 @@ class _LinkedDocumentStrings {
       'highestAmount': 'הסכום הגבוה',
       'groupByChains': 'קיבוץ: שרשראות',
       'chain': 'שרשרת',
+      'fullChain': 'השרשרת המלאה',
       'standalone': 'מסמכים עצמאיים',
       'totalAmount': 'סכום כולל',
       'paidAmount': 'שולם',
@@ -2067,6 +2158,7 @@ class _LinkedDocumentStrings {
       'highestAmount': 'أعلى مبلغ',
       'groupByChains': 'التجميع: سلاسل',
       'chain': 'سلسلة',
+      'fullChain': 'السلسلة الكاملة',
       'standalone': 'مستندات مستقلة',
       'totalAmount': 'المبلغ الكلي',
       'paidAmount': 'المدفوع',
@@ -2114,6 +2206,7 @@ class _LinkedDocumentStrings {
       'highestAmount': 'По сумме',
       'groupByChains': 'Группировка: цепочки',
       'chain': 'Цепочка',
+      'fullChain': 'Вся цепочка',
       'standalone': 'Отдельные документы',
       'totalAmount': 'Общая сумма',
       'paidAmount': 'Оплачено',
@@ -2161,6 +2254,7 @@ class _LinkedDocumentStrings {
       'highestAmount': 'ከፍተኛ መጠን',
       'groupByChains': 'ቡድን: ሰንሰለቶች',
       'chain': 'ሰንሰለት',
+      'fullChain': 'ሙሉ ሰንሰለት',
       'standalone': 'ብቻቸውን ያሉ ሰነዶች',
       'totalAmount': 'ጠቅላላ መጠን',
       'paidAmount': 'የተከፈለ',

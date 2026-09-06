@@ -44,13 +44,11 @@ class Profile extends StatefulWidget {
   final String? userId;
   final String? viewedProfession;
   final String? viewedProfessionBookingMode;
-  final bool beginWorkerSetup;
   const Profile({
     super.key,
     this.userId,
     this.viewedProfession,
     this.viewedProfessionBookingMode,
-    this.beginWorkerSetup = false,
   });
 
   @override
@@ -142,7 +140,6 @@ class _ProfileState extends State<Profile>
   bool _isSavingBiography = false;
   bool _isEditingContactInformation = false;
   bool _isSavingContactInformation = false;
-  bool _didBeginWorkerSetup = false;
   List<String> _editedProfessions = [];
   List<String> _editedSpokenLanguages = [];
   double _workRadius = 15000;
@@ -155,7 +152,6 @@ class _ProfileState extends State<Profile>
   String _distanceStr = "";
   double? _proLat;
   double? _proLng;
-  final ScrollController _aboutScrollController = ScrollController();
   final FirebaseFunctions _functions = FirebaseFunctions.instanceFor(
     region: 'me-west1',
   );
@@ -461,25 +457,7 @@ class _ProfileState extends State<Profile>
     _tabController!.addListener(() {
       if (!_tabController!.indexIsChanging) {
         setState(() {});
-        _maybeScrollAboutToTools();
       }
-    });
-  }
-
-  void _maybeScrollAboutToTools() {
-    final aboutIndex = (_userRole == 'worker' || _isOwnProfile)
-        ? (_shouldShowPublicScheduleSection ? 3 : 2)
-        : 0;
-    if (_tabController?.index != aboutIndex) return;
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      if (!_aboutScrollController.hasClients) return;
-      _aboutScrollController.animateTo(
-        _aboutScrollController.position.maxScrollExtent,
-        duration: const Duration(milliseconds: 600),
-        curve: Curves.easeInOut,
-      );
     });
   }
 
@@ -648,8 +626,6 @@ class _ProfileState extends State<Profile>
             oldShouldShowSchedule != _shouldShowPublicScheduleSection) {
           _initTabController();
         }
-
-        _beginWorkerSetupIfNeeded();
 
         // The primary profile is now ready to render. The remaining data is
         // useful, but should never delay the first meaningful paint.
@@ -1062,22 +1038,6 @@ class _ProfileState extends State<Profile>
     });
   }
 
-  void _beginWorkerSetupIfNeeded() {
-    if (!widget.beginWorkerSetup ||
-        _didBeginWorkerSetup ||
-        !_isOwnProfile ||
-        _userRole != 'worker') {
-      return;
-    }
-
-    _didBeginWorkerSetup = true;
-    final aboutIndex = _shouldShowPublicScheduleSection ? 3 : 2;
-    if (_tabController != null && aboutIndex < _tabController!.length) {
-      _tabController!.index = aboutIndex;
-    }
-    _startEditingContactInformation();
-  }
-
   void _cancelEditingContactInformation() {
     setState(() => _isEditingContactInformation = false);
   }
@@ -1133,12 +1093,6 @@ class _ProfileState extends State<Profile>
         _spokenLanguages = List<String>.from(_editedSpokenLanguages);
         _isEditingContactInformation = false;
       });
-      if (widget.beginWorkerSetup && mounted) {
-        await Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => SubscriptionPage(email: _email)),
-        );
-      }
     } catch (error) {
       debugPrint('Failed to save contact information: $error');
       if (mounted) {
@@ -3683,7 +3637,6 @@ class _ProfileState extends State<Profile>
     ];
     final hasBio = _bio.trim().isNotEmpty;
     return SingleChildScrollView(
-      controller: _aboutScrollController,
       padding: EdgeInsets.all(isDesktop ? 32 : 24),
       physics: const AlwaysScrollableScrollPhysics(),
       child: Column(
@@ -5221,7 +5174,6 @@ class _ProfileState extends State<Profile>
     _tabController?.dispose();
     _authSubscription?.cancel();
     _backgroundController?.dispose();
-    _aboutScrollController.dispose();
     _biographyEditController.dispose();
     _nameEditController.dispose();
     _phoneEditController.dispose();

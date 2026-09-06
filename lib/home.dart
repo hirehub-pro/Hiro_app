@@ -2118,9 +2118,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       );
       await Navigator.push(
         context,
-        MaterialPageRoute(
-          builder: (_) => Profile(userId: user.uid, beginWorkerSetup: true),
-        ),
+        MaterialPageRoute(builder: (_) => Profile(userId: user.uid)),
       );
       if (mounted) await _fetchCurrentUserName();
     } catch (e) {
