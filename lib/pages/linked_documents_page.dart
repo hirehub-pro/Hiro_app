@@ -1850,103 +1850,6 @@ class _DocumentChain {
   List<List<_LinkedDocument>> get stages => levels;
 }
 
-Future<void> _openLinkedDocument(
-  BuildContext context,
-  String userId,
-  _LinkedDocument document,
-  _LinkedDocumentStrings strings,
-) async {
-  final messenger = ScaffoldMessenger.of(context);
-  messenger
-    ..clearSnackBars()
-    ..showSnackBar(
-      SnackBar(
-        duration: const Duration(seconds: 20),
-        content: Row(
-          children: [
-            const SizedBox(
-              width: 18,
-              height: 18,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: Colors.white,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Text(strings.openingDocument),
-          ],
-        ),
-      ),
-    );
-  try {
-    final snapshot = await FirebaseFirestore.instance
-        .collection('users')
-        .doc(userId)
-        .collection('invoices')
-        .doc(document.id)
-        .get();
-    if (!snapshot.exists) throw StateError('Document not found');
-    final data = snapshot.data()!;
-    final name = (data['name'] ?? document.title(strings)).toString().trim();
-    final fileName = (data['fileName'] ?? '$name.pdf').toString().trim();
-    final url = (data['url'] ?? '').toString().trim();
-    final storagePath = (data['storagePath'] ?? '').toString().trim();
-    final documentStatus = (data['documentStatus'] ?? '').toString().trim();
-    final hasWorkflow =
-        data['taxAuthorityAllocationRequest'] is Map ||
-        data['serverDocument'] is Map;
-    final recovery = data['documentRecovery'];
-    final missingFinalPdf =
-        recovery is Map &&
-        recovery['status'] == 'needs_reconciliation' &&
-        recovery['reason'] == 'missing_final_pdf';
-    final fallback = data['fallbackPreview'];
-    final fallbackUrl = fallback is Map
-        ? (fallback['url'] ?? '').toString().trim()
-        : '';
-    final fallbackPath = fallback is Map
-        ? (fallback['storagePath'] ?? '').toString().trim()
-        : '';
-    final fallbackName = fallback is Map
-        ? (fallback['fileName'] ?? fileName).toString().trim()
-        : fileName;
-    final hasFallback =
-        fallback is Map &&
-        fallback['status'] == 'available' &&
-        fallback['previewOnly'] == true &&
-        fallbackUrl.isNotEmpty &&
-        fallbackPath.isNotEmpty;
-    final isFinalized =
-        (!hasWorkflow || documentStatus == 'finalized') && !missingFinalPdf;
-    final opensFallback = hasFallback && !isFinalized;
-    final openingUrl = opensFallback ? fallbackUrl : url;
-    final openingPath = opensFallback ? fallbackPath : storagePath;
-    if (openingUrl.isEmpty && openingPath.isEmpty) {
-      throw StateError('Document file unavailable');
-    }
-    if (!context.mounted) return;
-    messenger.clearSnackBars();
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => SavedInvoicePreviewPage(
-          name: opensFallback ? fallbackName : fileName,
-          url: openingUrl,
-          invoiceDocId: document.id,
-          canReportMissing: isFinalized,
-          storagePath: openingPath,
-          previewOnly: opensFallback,
-        ),
-      ),
-    );
-  } catch (_) {
-    if (!context.mounted) return;
-    messenger
-      ..clearSnackBars()
-      ..showSnackBar(SnackBar(content: Text(strings.openFailed)));
-  }
-}
-
 DateTime _parseDocumentDate(String raw) {
   final value = raw.trim();
   final compact = RegExp(r'^(\d{4})(\d{2})(\d{2})$').firstMatch(value);
@@ -2024,8 +1927,6 @@ class _LinkedDocumentStrings {
   String get created => values['created']!;
   String get more => values['more']!;
   String get clear => values['clear']!;
-  String get openingDocument => values['openingDocument']!;
-  String get openFailed => values['openFailed']!;
   String get signIn => values['signIn']!;
   String get signInMessage => values['signInMessage']!;
   String get loadFailed => values['loadFailed']!;
