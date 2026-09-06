@@ -111,11 +111,25 @@ const AWS_SES_SMTP_PASSWORD = defineSecret("AWS_SES_SMTP_PASSWORD");
 const AWS_SES_REGION = defineSecret("AWS_SES_REGION");
 const AWS_SES_FROM_EMAIL = defineSecret("AWS_SES_FROM_EMAIL");
 const PDF_SIGNING_MASTER_KEY = defineSecret("PDF_SIGNING_MASTER_KEY");
+const APPLE_SUBSCRIPTION_KEY_ID = defineSecret("APPLE_SUBSCRIPTION_KEY_ID");
+const APPLE_SUBSCRIPTION_ISSUER_ID = defineSecret(
+    "APPLE_SUBSCRIPTION_ISSUER_ID",
+);
+const APPLE_SUBSCRIPTION_PRIVATE_KEY = defineSecret(
+    "APPLE_SUBSCRIPTION_PRIVATE_KEY",
+);
+const APPLE_APPLE_ID = defineSecret("APPLE_APPLE_ID");
 const AWS_SES_SECRETS = [
   AWS_SES_SMTP_USERNAME,
   AWS_SES_SMTP_PASSWORD,
   AWS_SES_REGION,
   AWS_SES_FROM_EMAIL,
+];
+const APPLE_SUBSCRIPTION_SECRETS = [
+  APPLE_SUBSCRIPTION_KEY_ID,
+  APPLE_SUBSCRIPTION_ISSUER_ID,
+  APPLE_SUBSCRIPTION_PRIVATE_KEY,
+  APPLE_APPLE_ID,
 ];
 
 let cachedSesTransport;
@@ -7298,6 +7312,7 @@ exports.handleGooglePlaySubscriptionNotification = onMessagePublished(
 exports.handleAppStoreServerNotification = onRequest(
     {
       region: "us-central1",
+      secrets: APPLE_SUBSCRIPTION_SECRETS,
     },
     async (req, res) => {
       if (req.method !== "POST") {
@@ -7371,6 +7386,7 @@ exports.handleAppStoreServerNotification = onRequest(
 exports.verifySubscriptionPurchase = onCall(
     {
       region: "us-central1",
+      secrets: APPLE_SUBSCRIPTION_SECRETS,
     },
     async (request) => {
       const auth = request.auth;
@@ -7504,6 +7520,7 @@ exports.syncWorkerSubscriptionLifecycle = onSchedule(
       schedule: "every 15 minutes",
       region: "us-central1",
       timeZone: "UTC",
+      secrets: APPLE_SUBSCRIPTION_SECRETS,
     },
     async () => {
       const db = admin.firestore();
@@ -7659,10 +7676,10 @@ function normalizePurchaseProof(payload) {
 }
 
 function buildAppStoreApiClients() {
-  const keyId = process.env.APPLE_SUBSCRIPTION_KEY_ID?.trim();
-  const issuerId = process.env.APPLE_SUBSCRIPTION_ISSUER_ID?.trim();
+  const keyId = APPLE_SUBSCRIPTION_KEY_ID.value().trim();
+  const issuerId = APPLE_SUBSCRIPTION_ISSUER_ID.value().trim();
   const privateKey = normalizeApplePrivateKey(
-      process.env.APPLE_SUBSCRIPTION_PRIVATE_KEY,
+      APPLE_SUBSCRIPTION_PRIVATE_KEY.value(),
   );
 
   if (!keyId || !issuerId || !privateKey) {
@@ -8375,9 +8392,8 @@ async function decodeAppleStatusItem(item) {
 
 function buildAppleNotificationVerifiers() {
   const rootCertificates = loadAppleRootCertificates();
-  const appAppleId = process.env.APPLE_APPLE_ID ?
-    Number(process.env.APPLE_APPLE_ID) :
-    undefined;
+  const rawAppleId = APPLE_APPLE_ID.value().trim();
+  const appAppleId = rawAppleId ? Number(rawAppleId) : undefined;
   const verifiers = [
     new SignedDataVerifier(
         rootCertificates,
