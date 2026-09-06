@@ -294,6 +294,14 @@ class _SubscriptionPageState extends State<SubscriptionPage>
         combined.contains('duplicate');
   }
 
+  bool _isStoreSyncCancelled(Object error) {
+    final normalized = error.toString().toLowerCase();
+    return normalized.contains('usercancelled') ||
+        normalized.contains('user_cancelled') ||
+        normalized.contains('paymentcancelled') ||
+        normalized.contains('payment_cancelled');
+  }
+
   Future<void> _handleSubscriptionOwnedByAnotherAccount() async {
     if (!_isApplePlatform) {
       await _refreshLinkedAccountNotice();
@@ -581,9 +589,12 @@ class _SubscriptionPageState extends State<SubscriptionPage>
     } catch (e) {
       if (mounted) {
         setState(() => _isPurchasing = false);
+        final message = _isStoreSyncCancelled(e)
+            ? 'שחזור הרכישה בוטל. כדי לנסות שוב, לחצו על שחזור רכישה והשלימו את האימות מול App Store.'
+            : 'לא הצלחנו לשחזר את הרכישה כרגע. ודאו שאתם מחוברים ל-App Store ונסו שוב.';
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('שגיאה בשחזור רכישות: $e')));
+        ).showSnackBar(SnackBar(content: Text(message)));
       }
     }
   }
