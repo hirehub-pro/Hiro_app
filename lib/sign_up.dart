@@ -2367,6 +2367,42 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
       return true;
     } on FirebaseAuthException catch (error) {
       if (error.code == 'provider-already-linked') return true;
+
+      // The Apple credential is initially collected to populate the email
+      // field, so it can expire while the user completes the form and SMS
+      // verification. Retry once with a newly issued, nonce-bound credential.
+      if (error.code == 'invalid-credential' &&
+          credential.providerId == AppleAuthProvider.PROVIDER_ID) {
+        try {
+          final freshSelection = await FederatedAuthService.requestCredential();
+          final expectedEmail = _emailController.text.trim().toLowerCase();
+          if (freshSelection.providerId != AppleAuthProvider.PROVIDER_ID ||
+              freshSelection.email.trim().toLowerCase() != expectedEmail) {
+            throw FirebaseAuthException(
+              code: 'apple-account-mismatch',
+              message:
+                  'The selected Apple account does not match the signup email.',
+            );
+          }
+          await user.linkWithCredential(freshSelection.credential);
+          _pendingFederatedCredential = freshSelection.credential;
+          return true;
+        } on FirebaseAuthException catch (retryError) {
+          if (retryError.code == 'provider-already-linked') return true;
+          debugPrint(
+            'Could not link fresh Apple credential during signup: $retryError',
+          );
+        } catch (retryError) {
+          if (FederatedAuthService.isCancellation(retryError)) {
+            debugPrint('Apple credential refresh was cancelled during signup.');
+          } else {
+            debugPrint(
+              'Could not refresh Apple credential during signup: $retryError',
+            );
+          }
+        }
+      }
+
       debugPrint('Could not link federated provider during signup: $error');
       if (mounted) {
         setState(() => _loading = false);

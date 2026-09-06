@@ -828,6 +828,18 @@ service cloud.firestore {
         data.get('status', 'open') == 'open';
     }
 
+    function validBlockedUser(data, blockedUid) {
+      return blockedUid is string && blockedUid.size() >= 20 &&
+        blockedUid.size() <= 128 && blockedUid != request.auth.uid &&
+        data.keys().hasOnly([
+          'blockedAt', 'samplePostId', 'source', 'projectId'
+        ]) && data.keys().hasAll(['blockedAt']) &&
+        data.blockedAt is timestamp &&
+        optionalString(data, 'samplePostId', 180) &&
+        optionalString(data, 'source', 100) &&
+        optionalString(data, 'projectId', 180);
+    }
+
     function validPublicSchedule(data) {
       return data.keys().hasOnly([
         'allReminders', 'availableDates', 'dayNotes', 'defaultWorkingHours',
@@ -1159,6 +1171,13 @@ service cloud.firestore {
           optionalTimestamp(request.resource.data, 'lastSeenAt');
       }
 
+      match /blocked_users/{blockedUid} {
+        allow read, delete: if isOwner(userId);
+        allow create, update: if isOwner(userId) &&
+          validBlockedUser(request.resource.data, blockedUid) &&
+          recentTimestamp(request.resource.data, 'blockedAt');
+      }
+
       match /verification_info/{verificationId} {
         allow read: if isOwner(userId) || isAdmin();
         allow create, update, delete: if false;
@@ -1213,6 +1232,12 @@ service cloud.firestore {
       match /Schedule/{scheduleId} {
         allow read: if isOwner(userId) || isAdmin();
         allow create, update, delete: if false;
+      }
+
+      // Server-derived business analytics for the account dashboard.
+      match /metadata/financial_summary {
+        allow read: if isOwner(userId);
+        allow write: if false;
       }
 
       match /{ownerCollection}/{document=**} {

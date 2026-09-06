@@ -123,17 +123,14 @@ class NotificationService {
               .collection('deviceTokens')
               .doc(tokenId);
 
-          await firestore.runTransaction((transaction) async {
-            transaction.set(userRef, {
-              'fcmToken': FieldValue.delete(),
-              'lastTokenUpdate': FieldValue.delete(),
-            }, SetOptions(merge: true));
-            transaction.set(deviceTokenRef, {
-              'token': token,
-              'platform': platform,
-              'updatedAt': FieldValue.serverTimestamp(),
-            }, SetOptions(merge: true));
-          });
+          // Tokens live only in the deviceTokens subcollection. Updating the
+          // parent here also makes the otherwise-valid token write fail when
+          // secure rules reject changes to legacy token fields.
+          await deviceTokenRef.set({
+            'token': token,
+            'platform': platform,
+            'updatedAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
           debugPrint("Saved $platform FCM token for user ${user.uid}");
         } else {
           debugPrint(
@@ -185,13 +182,7 @@ class NotificationService {
           .collection('users')
           .doc(user.uid);
       final tokenId = sha256.convert(utf8.encode(token)).toString();
-      final batch = FirebaseFirestore.instance.batch();
-      batch.delete(userRef.collection('deviceTokens').doc(tokenId));
-      batch.set(userRef, {
-        'fcmToken': FieldValue.delete(),
-        'lastTokenUpdate': FieldValue.delete(),
-      }, SetOptions(merge: true));
-      await batch.commit();
+      await userRef.collection('deviceTokens').doc(tokenId).delete();
       debugPrint("Removed current FCM token for user ${user.uid}");
     } catch (e) {
       debugPrint("Error removing current FCM token: $e");

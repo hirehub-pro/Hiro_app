@@ -722,6 +722,72 @@ test("allows owners to read but not forge server uniform exports", {
   }));
 });
 
+test("allows only the owner to read the server financial summary", {
+  skip: !emulatorAvailable,
+}, async () => {
+  const uid = "analytics-owner-id-0001";
+  const otherUid = "analytics-other-id-0001";
+  const pathValue = `users/${uid}/metadata/financial_summary`;
+  await seed(pathValue, {
+    totalEarned: 1250,
+    updatedAt: new Date(),
+  });
+
+  const ownerDb = testEnv.authenticatedContext(uid).firestore();
+  const otherDb = testEnv.authenticatedContext(otherUid).firestore();
+  const guestDb = testEnv.unauthenticatedContext().firestore();
+
+  await assertSucceeds(getDoc(doc(ownerDb, pathValue)));
+  await assertFails(getDoc(doc(otherDb, pathValue)));
+  await assertFails(getDoc(doc(guestDb, pathValue)));
+  await assertFails(updateDoc(doc(ownerDb, pathValue), {
+    totalEarned: 999999,
+  }));
+  await assertFails(setDoc(doc(ownerDb, pathValue), {
+    totalEarned: 999999,
+  }));
+  await assertFails(deleteDoc(doc(ownerDb, pathValue)));
+});
+
+test("allows users to manage only their own validated block list", {
+  skip: !emulatorAvailable,
+}, async () => {
+  const uid = "block-list-owner-id-0001";
+  const blockedUid = "blocked-user-id-0000001";
+  const otherUid = "block-list-other-id-0001";
+  const blockPath = `users/${uid}/blocked_users/${blockedUid}`;
+  const ownerDb = testEnv.authenticatedContext(uid).firestore();
+  const otherDb = testEnv.authenticatedContext(otherUid).firestore();
+
+  await assertSucceeds(setDoc(doc(ownerDb, blockPath), {
+    blockedAt: serverTimestamp(),
+    source: "project_details",
+    projectId: "project-1",
+  }));
+  await assertSucceeds(getDocs(collection(
+      ownerDb,
+      `users/${uid}/blocked_users`,
+  )));
+  await assertFails(getDoc(doc(otherDb, blockPath)));
+  await assertFails(setDoc(doc(otherDb, blockPath), {
+    blockedAt: serverTimestamp(),
+  }));
+
+  await assertSucceeds(setDoc(doc(ownerDb, blockPath), {
+    blockedAt: serverTimestamp(),
+    samplePostId: "post-1",
+  }));
+  await assertFails(setDoc(
+      doc(ownerDb, `users/${uid}/blocked_users/${uid}`),
+      {blockedAt: serverTimestamp()},
+  ));
+  await assertFails(setDoc(doc(ownerDb, blockPath), {
+    blockedAt: serverTimestamp(),
+    injectedRole: "admin",
+  }));
+  await assertSucceeds(deleteDoc(doc(ownerDb, blockPath)));
+});
+
 test("allows owners to read but not mutate server-created client ledger entries", {
   skip: !emulatorAvailable,
 }, async () => {

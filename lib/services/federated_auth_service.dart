@@ -95,9 +95,14 @@ class FederatedAuthService {
     }
 
     return FederatedAuthSelection(
-      credential: OAuthProvider(
-        'apple.com',
-      ).credential(idToken: identityToken, rawNonce: rawNonce),
+      credential: AppleAuthProvider.credentialWithIDToken(
+        identityToken,
+        rawNonce,
+        AppleFullPersonName(
+          givenName: appleCredential.givenName,
+          familyName: appleCredential.familyName,
+        ),
+      ),
       email: email.trim(),
       providerId: AppleAuthProvider.PROVIDER_ID,
     );
