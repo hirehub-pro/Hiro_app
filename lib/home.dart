@@ -9,6 +9,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:untitled1/ptofile.dart';
 import 'package:untitled1/pages/admin_profile.dart';
 import 'package:untitled1/pages/analytics_page.dart';
+import 'package:untitled1/pages/clients_page.dart';
 import 'package:untitled1/pages/invoice_builder.dart';
 import 'package:untitled1/services/language_provider.dart';
 import 'package:untitled1/services/subscription_access_service.dart';
@@ -1233,6 +1234,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           'my_requests': 'הבקשות שלי',
           'business_tools': 'כלי עבודה',
           'analytics': 'אנליטיקה',
+          'clients': 'לקוחות',
           'invoice_builder': 'יצירת מסמך',
           'saved_invoices': 'מסמכים שמורים',
           'verify_business': 'אמת עסק',
@@ -1507,6 +1509,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           'my_requests': 'طلباتي',
           'business_tools': 'أدوات العمل',
           'analytics': 'التحليلات',
+          'clients': 'العملاء',
           'invoice_builder': 'إنشاء مستند',
           'saved_invoices': 'المستندات المحفوظة',
           'verify_business': 'توثيق العمل',
@@ -1796,6 +1799,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           'my_requests': 'My Requests',
           'business_tools': 'Business Tools',
           'analytics': 'Analytics',
+          'clients': 'Clients',
           'invoice_builder': 'Create Document',
           'saved_invoices': 'Saved Documents',
           'verify_business': 'Verify Business',
@@ -1876,6 +1880,13 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     await Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => const SavedInvoicesPage()),
+    );
+  }
+
+  Future<void> _openClientsPage() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const ClientsPage()),
     );
   }
 
@@ -2369,6 +2380,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
+                                if (_userRole == 'worker') ...[
+                                  _buildBusinessToolsSection(localized),
+                                  const SizedBox(height: 22),
+                                ],
                                 _buildCategories(context, localized, theme),
                                 if (_isUserRoleLoaded &&
                                     _userRole == 'customer' &&
@@ -2382,10 +2397,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                                 ],
                                 const SizedBox(height: 24),
                                 _buildRequestStatusTimeline(localized),
-                                if (_userRole == 'worker') ...[
-                                  const SizedBox(height: 16),
-                                  _buildBusinessToolsSection(localized),
-                                ],
                                 const SizedBox(height: 20),
                                 _buildProjectIdeasSection(localized),
                                 const SizedBox(height: 24),
@@ -2742,68 +2753,175 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     }
   }
 
+  String _businessToolText(String key) {
+    final locale = Provider.of<LanguageProvider>(
+      context,
+      listen: false,
+    ).locale.languageCode;
+    const values = <String, Map<String, String>>{
+      'en': {
+        'quick_actions': 'Quick Actions',
+        'clients': 'Clients',
+        'analytics': 'Analytics',
+      },
+      'he': {
+        'quick_actions': 'פעולות מהירות',
+        'clients': 'לקוחות',
+        'analytics': 'דשבורד',
+      },
+      'ar': {
+        'quick_actions': 'إجراءات سريعة',
+        'clients': 'العملاء',
+        'analytics': 'لوحة التحكم',
+      },
+      'ru': {
+        'quick_actions': 'Быстрые действия',
+        'clients': 'Клиенты',
+        'analytics': 'Аналитика',
+      },
+      'am': {
+        'quick_actions': 'ፈጣን ተግባራት',
+        'clients': 'ደንበኞች',
+        'analytics': 'ትንታኔ',
+      },
+    };
+    return (values[locale] ?? values['en']!)[key] ?? '';
+  }
+
+  String _quickActionsTitle() => _businessToolText('quick_actions');
+  String _clientsToolTitle() => _businessToolText('clients');
+  String _analyticsToolTitle() => _businessToolText('analytics');
+
   Widget _buildBusinessToolsSection(Map<String, dynamic> strings) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.92),
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: const Color(0xFFE2E8F0)),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFF000000).withValues(alpha: 0.1),
-              blurRadius: 24,
-              offset: const Offset(0, 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            _quickActionsTitle(),
+            style: const TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.w900,
+              letterSpacing: -0.5,
+              color: _kTextMain,
             ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              strings['business_tools'] ?? 'Business Tools',
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-                color: _kTextMain,
-              ),
-            ),
+          ),
+          const SizedBox(height: 18),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final availableCircleSize = (constraints.maxWidth - 42) / 4;
+              final circleSize = availableCircleSize.clamp(62.0, 88.0);
+              final iconSize = (circleSize * 0.43).clamp(27.0, 38.0);
 
-            GridView.count(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              crossAxisCount: 3,
-              crossAxisSpacing: 16,
-              mainAxisSpacing: 15,
-              childAspectRatio: MediaQuery.sizeOf(context).width >= 1100
-                  ? 1.95
-                  : 1,
-              children: [
-                _buildBusinessToolCard(
-                  icon: Icons.analytics_outlined,
-                  color: const Color(0xFF4F46E5),
-                  title: strings['analytics'] ?? 'Analytics',
-                  onTap: () => _openAnalyticsPage(strings),
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: _buildBusinessToolCard(
+                      icon: Icons.groups_2_rounded,
+                      colors: const [Color(0xFF34D399), Color(0xFF10B981)],
+                      title: _clientsToolTitle(),
+                      circleSize: circleSize,
+                      iconSize: iconSize,
+                      onTap: _openClientsPage,
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: _buildBusinessToolCard(
+                      icon: Icons.bar_chart_rounded,
+                      colors: const [Color(0xFF9B5CFA), Color(0xFF7C3AED)],
+                      title: _analyticsToolTitle(),
+                      circleSize: circleSize,
+                      iconSize: iconSize,
+                      onTap: () => _openAnalyticsPage(strings),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: _buildBusinessToolCard(
+                      icon: Icons.layers_rounded,
+                      colors: const [Color(0xFF38A7F8), Color(0xFF1479E8)],
+                      title: _documentToolTitle(saved: true),
+                      circleSize: circleSize,
+                      iconSize: iconSize,
+                      onTap: _openSavedInvoicesPage,
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: _buildBusinessToolCard(
+                      icon: Icons.note_add_rounded,
+                      colors: const [Color(0xFFFF9848), Color(0xFFFF6B24)],
+                      title: _documentToolTitle(saved: false),
+                      circleSize: circleSize,
+                      iconSize: iconSize,
+                      onTap: _openInvoiceBuilder,
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBusinessToolCard({
+    required IconData icon,
+    required List<Color> colors,
+    required String title,
+    required double circleSize,
+    required double iconSize,
+    required VoidCallback onTap,
+  }) {
+    return Semantics(
+      button: true,
+      label: title,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(circleSize / 2),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: circleSize,
+              height: circleSize,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: LinearGradient(
+                  colors: colors,
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
                 ),
-                _buildBusinessToolCard(
-                  icon: Icons.description_outlined,
-                  color: const Color(0xFF0F766E),
-                  title: _documentToolTitle(saved: false),
-                  onTap: _openInvoiceBuilder,
-                  badge: _isBusinessVerified
-                      ? null
-                      : (strings['verify_business'] ?? 'Verify Business'),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.72),
+                  width: 1.2,
                 ),
-                _buildBusinessToolCard(
-                  icon: Icons.folder_copy_outlined,
-                  color: const Color(0xFF0891B2),
-                  title: _documentToolTitle(saved: true),
-                  onTap: _openSavedInvoicesPage,
-                ),
-              ],
+                boxShadow: [
+                  BoxShadow(
+                    color: colors.last.withValues(alpha: 0.28),
+                    blurRadius: 16,
+                    offset: const Offset(0, 7),
+                  ),
+                ],
+              ),
+              child: Icon(icon, color: Colors.white, size: iconSize),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: _kTextMain,
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+                height: 1.18,
+              ),
             ),
           ],
         ),
@@ -2847,91 +2965,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             ),
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildBusinessToolCard({
-    required IconData icon,
-    required Color color,
-    required String title,
-    required VoidCallback onTap,
-    String? badge,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final isCompact = constraints.maxWidth < 110;
-          final iconBoxSize = isCompact ? 34.0 : 48.0;
-          final iconSize = isCompact ? 18.0 : 24.0;
-          final padding = isCompact ? 8.0 : 16.0;
-          final titleFontSize = isCompact ? 10.0 : 16.0;
-
-          return Container(
-            padding: EdgeInsets.all(padding),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [color.withValues(alpha: 0.1), Colors.white],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(isCompact ? 16 : 20),
-              border: Border.all(color: color.withValues(alpha: 0.18)),
-            ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Container(
-                  width: iconBoxSize,
-                  height: iconBoxSize,
-                  decoration: BoxDecoration(
-                    color: color.withValues(alpha: 0.14),
-                    borderRadius: BorderRadius.circular(isCompact ? 12 : 16),
-                  ),
-                  child: Icon(icon, color: color, size: iconSize),
-                ),
-                SizedBox(height: isCompact ? 6 : 12),
-                Text(
-                  title,
-                  maxLines: isCompact ? 3 : 2,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: titleFontSize,
-                    fontWeight: FontWeight.w800,
-                    height: 1.15,
-                    color: _kTextMain,
-                  ),
-                ),
-                if (badge != null && !isCompact) ...[
-                  const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: color.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: Text(
-                      badge,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: color,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          );
-        },
       ),
     );
   }
