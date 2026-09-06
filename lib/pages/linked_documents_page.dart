@@ -6,12 +6,19 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' as intl;
 import 'package:untitled1/pages/saved_invoices_page.dart';
 import 'package:untitled1/services/linked_document_action_service.dart';
+import 'package:untitled1/utils/document_chain_cancellation.dart';
 
 enum _ChainFilter { all, open, paid, cancelled }
 
 enum _ChainSort { newest, oldest, amount }
 
-enum _ChainStatus { open, partiallyPaid, completed, cancelled }
+enum _ChainStatus {
+  open,
+  partiallyPaid,
+  partiallyCancelled,
+  completed,
+  cancelled,
+}
 
 class LinkedDocumentsPage extends StatefulWidget {
   const LinkedDocumentsPage({
@@ -215,7 +222,8 @@ class _LinkedDocumentsPageState extends State<LinkedDocumentsPage> {
             _ChainFilter.all => true,
             _ChainFilter.open =>
               chain.status == _ChainStatus.open ||
-                  chain.status == _ChainStatus.partiallyPaid,
+                  chain.status == _ChainStatus.partiallyPaid ||
+                  chain.status == _ChainStatus.partiallyCancelled,
             _ChainFilter.paid => chain.status == _ChainStatus.completed,
             _ChainFilter.cancelled => chain.status == _ChainStatus.cancelled,
           };
@@ -1180,6 +1188,11 @@ class _StatusPill extends StatelessWidget {
         const Color(0xFF1976D2),
         const Color(0xFFDBEAFE),
       ),
+      _ChainStatus.partiallyCancelled => (
+        strings.partiallyCancelled,
+        const Color(0xFFB45309),
+        const Color(0xFFFFEDD5),
+      ),
       _ChainStatus.completed => (
         strings.completed,
         const Color(0xFF047857),
@@ -1521,7 +1534,8 @@ class _DocumentGraph {
       .where(
         (chain) =>
             chain.status == _ChainStatus.open ||
-            chain.status == _ChainStatus.partiallyPaid,
+            chain.status == _ChainStatus.partiallyPaid ||
+            chain.status == _ChainStatus.partiallyCancelled,
       )
       .length;
   int get paidCount =>
@@ -1584,11 +1598,29 @@ class _DocumentChain {
     return math.min(total, recorded);
   }
 
-  double get remaining => math.max(0, total - paid);
+  DocumentChainCancellation get cancellation =>
+      DocumentChainCancellation.calculate(
+        invoiceTotal: total,
+        creditNoteAmounts: documents
+            .where((document) => document.isCredit)
+            .map((document) => document.amount),
+        recordedCancelledAmounts: documents
+            .where((document) => document.isInvoice)
+            .map(
+              (document) =>
+                  (document.data['cancelledAmount'] as num?)?.toDouble() ?? 0,
+            ),
+      );
+
+  double get remaining =>
+      math.max(0, total - cancellation.creditedAmount - paid);
 
   _ChainStatus get status {
-    if (documents.any((document) => document.isCredit)) {
+    if (cancellation.status == DocumentChainCancellationStatus.full) {
       return _ChainStatus.cancelled;
+    }
+    if (cancellation.status == DocumentChainCancellationStatus.partial) {
+      return _ChainStatus.partiallyCancelled;
     }
     if (total > 0 && remaining <= 0.005) return _ChainStatus.completed;
     if (paid > 0) return _ChainStatus.partiallyPaid;
@@ -1794,6 +1826,7 @@ class _LinkedDocumentStrings {
   String get paid => values['paid']!;
   String get cancelled => values['cancelled']!;
   String get partiallyPaid => values['partiallyPaid']!;
+  String get partiallyCancelled => values['partiallyCancelled']!;
   String get completed => values['completed']!;
   String get accepted => values['accepted']!;
   String get sort => values['sort']!;
@@ -1844,6 +1877,7 @@ class _LinkedDocumentStrings {
       'paid': 'Paid',
       'cancelled': 'Cancelled',
       'partiallyPaid': 'Partially paid',
+      'partiallyCancelled': 'Partially cancelled',
       'completed': 'Completed',
       'accepted': 'Accepted',
       'sort': 'Sort and filter',
@@ -1890,6 +1924,7 @@ class _LinkedDocumentStrings {
       'paid': 'שולם',
       'cancelled': 'בוטל',
       'partiallyPaid': 'שולם חלקית',
+      'partiallyCancelled': 'בוטל חלקית',
       'completed': 'הושלם',
       'accepted': 'אושר',
       'sort': 'מיון וסינון',
@@ -1935,6 +1970,7 @@ class _LinkedDocumentStrings {
       'paid': 'مدفوع',
       'cancelled': 'ملغى',
       'partiallyPaid': 'مدفوع جزئياً',
+      'partiallyCancelled': 'ملغى جزئياً',
       'completed': 'مكتمل',
       'accepted': 'مقبول',
       'sort': 'ترتيب وتصفية',
@@ -1980,6 +2016,7 @@ class _LinkedDocumentStrings {
       'paid': 'Оплачено',
       'cancelled': 'Отменено',
       'partiallyPaid': 'Частично оплачено',
+      'partiallyCancelled': 'Частично отменено',
       'completed': 'Завершено',
       'accepted': 'Принято',
       'sort': 'Сортировка и фильтр',
@@ -2025,6 +2062,7 @@ class _LinkedDocumentStrings {
       'paid': 'ተከፍሏል',
       'cancelled': 'ተሰርዟል',
       'partiallyPaid': 'በከፊል ተከፍሏል',
+      'partiallyCancelled': 'በከፊል ተሰርዟል',
       'completed': 'ተጠናቋል',
       'accepted': 'ጸድቋል',
       'sort': 'ደርድር እና አጣራ',
