@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' as intl;
 import 'package:untitled1/pages/saved_invoices_page.dart';
+import 'package:untitled1/services/linked_document_action_service.dart';
 
 enum _ChainFilter { all, open, paid, cancelled }
 
@@ -635,6 +636,13 @@ class _ChainDetailPage extends StatelessWidget {
               strings: strings,
               onOpen: (document) =>
                   _openLinkedDocument(context, userId, document, strings),
+              onLongPress: (document) => LinkedDocumentActionService.show(
+                context: context,
+                userId: userId,
+                documentId: document.id,
+                documentData: document.data,
+                locale: locale,
+              ),
             ),
           ],
         ),
@@ -778,6 +786,7 @@ class _DocumentTree extends StatelessWidget {
     required this.locale,
     required this.strings,
     required this.onOpen,
+    required this.onLongPress,
   });
 
   final _DocumentChain chain;
@@ -785,6 +794,7 @@ class _DocumentTree extends StatelessWidget {
   final String locale;
   final _LinkedDocumentStrings strings;
   final ValueChanged<_LinkedDocument> onOpen;
+  final ValueChanged<_LinkedDocument> onLongPress;
 
   @override
   Widget build(BuildContext context) {
@@ -847,6 +857,7 @@ class _DocumentTree extends StatelessWidget {
                     locale: locale,
                     strings: strings,
                     onTap: () => onOpen(document),
+                    onLongPress: () => onLongPress(document),
                   ),
                 ),
           ],
@@ -911,12 +922,14 @@ class _TreeDocumentCard extends StatelessWidget {
     required this.locale,
     required this.strings,
     required this.onTap,
+    required this.onLongPress,
   });
 
   final _LinkedDocument document;
   final String locale;
   final _LinkedDocumentStrings strings;
   final VoidCallback onTap;
+  final VoidCallback onLongPress;
 
   @override
   Widget build(BuildContext context) {
@@ -924,6 +937,7 @@ class _TreeDocumentCard extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
+        onLongPress: onLongPress,
         borderRadius: BorderRadius.circular(16),
         child: Ink(
           padding: const EdgeInsets.all(12),
@@ -1085,6 +1099,13 @@ class _StandaloneDocumentsPage extends StatelessWidget {
             strings: strings,
             onTap: () =>
                 _openLinkedDocument(context, userId, document, strings),
+            onLongPress: () => LinkedDocumentActionService.show(
+              context: context,
+              userId: userId,
+              documentId: document.id,
+              documentData: document.data,
+              locale: locale,
+            ),
           );
         },
       ),
@@ -1098,12 +1119,14 @@ class _StandaloneDocumentTile extends StatelessWidget {
     required this.locale,
     required this.strings,
     required this.onTap,
+    required this.onLongPress,
   });
 
   final _LinkedDocument document;
   final String locale;
   final _LinkedDocumentStrings strings;
   final VoidCallback onTap;
+  final VoidCallback onLongPress;
 
   @override
   Widget build(BuildContext context) => Card(
@@ -1115,6 +1138,7 @@ class _StandaloneDocumentTile extends StatelessWidget {
     ),
     child: ListTile(
       onTap: onTap,
+      onLongPress: onLongPress,
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
       leading: _DocumentIcon(document: document, size: 44),
       title: Text(
@@ -1538,7 +1562,9 @@ class _DocumentChain {
         .where((document) => document.isReceipt)
         .fold<double>(
           0,
-          (totalPaid, document) => totalPaid + document.amount.abs(),
+          // Cancellation receipts are stored with a negative amount and must
+          // reduce the paid total instead of being counted as another payment.
+          (totalPaid, document) => totalPaid + document.amount,
         );
     final combined = documents
         .where((document) => document.type == 'invoice_receipt')
@@ -1546,7 +1572,9 @@ class _DocumentChain {
           0,
           (totalPaid, document) => totalPaid + document.amount.abs(),
         );
-    if (receipts + combined > 0) return math.min(total, receipts + combined);
+    if (receipts + combined != 0) {
+      return math.min(total, math.max(0, receipts + combined));
+    }
     final recorded = documents
         .where((document) => document.type == 'invoice')
         .fold<double>(
