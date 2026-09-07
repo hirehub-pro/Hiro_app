@@ -631,22 +631,33 @@ class _ChainDetailPage extends StatelessWidget {
         ],
       ),
       body: LayoutBuilder(
-        builder: (context, constraints) => ListView(
-          padding: const EdgeInsets.fromLTRB(16, 18, 16, 36),
+        builder: (context, constraints) => Column(
           children: [
-            _ChainTotalsCard(chain: chain, locale: locale, strings: strings),
-            const SizedBox(height: 22),
-            _DocumentTree(
-              chain: chain,
-              availableWidth: constraints.maxWidth - 32,
-              locale: locale,
-              strings: strings,
-              onOpen: (document) => LinkedDocumentActionService.show(
-                context: context,
-                userId: userId,
-                documentId: document.id,
-                documentData: document.data,
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 18, 16, 0),
+              child: _ChainTotalsCard(
+                chain: chain,
                 locale: locale,
+                strings: strings,
+              ),
+            ),
+            const SizedBox(height: 22),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                child: _DocumentTree(
+                  chain: chain,
+                  availableWidth: constraints.maxWidth - 32,
+                  locale: locale,
+                  strings: strings,
+                  onOpen: (document) => LinkedDocumentActionService.show(
+                    context: context,
+                    userId: userId,
+                    documentId: document.id,
+                    documentData: document.data,
+                    locale: locale,
+                  ),
+                ),
               ),
             ),
           ],
@@ -805,6 +816,115 @@ class _DocumentTree extends StatefulWidget {
 
 class _DocumentTreeState extends State<_DocumentTree> {
   String? _focusedDocumentId;
+  final _transformationController = TransformationController();
+  Size? _lastCanvasSize;
+  Size? _lastViewportSize;
+  TapDownDetails? _doubleTapDetails;
+  bool _isConstrainingMovement = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _transformationController.addListener(_constrainMovement);
+  }
+
+  @override
+  void dispose() {
+    _transformationController.removeListener(_constrainMovement);
+    _transformationController.dispose();
+    super.dispose();
+  }
+
+  void _constrainMovement() {
+    final viewportSize = _lastViewportSize;
+    final canvasSize = _lastCanvasSize;
+    if (_isConstrainingMovement ||
+        viewportSize == null ||
+        canvasSize == null) {
+      return;
+    }
+
+    final matrix = _transformationController.value;
+    final scale = matrix.getMaxScaleOnAxis();
+    final translation = matrix.getTranslation();
+    const edgePadding = 24.0;
+
+    double constrainedOffset(
+      double offset,
+      double viewportExtent,
+      double contentExtent,
+    ) {
+      final scaledExtent = contentExtent * scale;
+      final firstLimit = edgePadding;
+      final secondLimit = viewportExtent - scaledExtent - edgePadding;
+      return offset
+          .clamp(
+            math.min(firstLimit, secondLimit),
+            math.max(firstLimit, secondLimit),
+          )
+          .toDouble();
+    }
+
+    final constrainedX = constrainedOffset(
+      translation.x,
+      viewportSize.width,
+      canvasSize.width,
+    );
+    final constrainedY = constrainedOffset(
+      translation.y,
+      viewportSize.height,
+      canvasSize.height,
+    );
+    if ((constrainedX - translation.x).abs() < 0.01 &&
+        (constrainedY - translation.y).abs() < 0.01) {
+      return;
+    }
+
+    _isConstrainingMovement = true;
+    _transformationController.value = matrix.clone()
+      ..setTranslationRaw(constrainedX, constrainedY, 0);
+    _isConstrainingMovement = false;
+  }
+
+  void _setCenteredScale(double scale, Size viewportSize, Size canvasSize) {
+    _transformationController.value = Matrix4.identity()
+      ..setTranslationRaw(
+        (viewportSize.width - canvasSize.width * scale) / 2,
+        (viewportSize.height - canvasSize.height * scale) / 2,
+        0,
+      )
+      ..scaleByDouble(scale, scale, 1, 1);
+  }
+
+  double _fitScale(Size viewportSize, Size canvasSize) {
+    final horizontalScale = viewportSize.width / canvasSize.width;
+    final verticalScale = viewportSize.height / canvasSize.height;
+    return math
+        .min(1, math.min(horizontalScale, verticalScale))
+        .clamp(0.5, 1)
+        .toDouble();
+  }
+
+  void _handleDoubleTap(Size viewportSize, Size canvasSize) {
+    final currentScale = _transformationController.value.getMaxScaleOnAxis();
+    final fitScale = _fitScale(viewportSize, canvasSize);
+    if (currentScale > fitScale + 0.05) {
+      _setCenteredScale(fitScale, viewportSize, canvasSize);
+      return;
+    }
+
+    final tapPosition = _doubleTapDetails?.localPosition;
+    if (tapPosition == null) return;
+    final scenePoint = _transformationController.toScene(tapPosition);
+    const targetScale = 2.5;
+    _transformationController.value = Matrix4.identity()
+      ..setTranslationRaw(
+        tapPosition.dx - scenePoint.dx * targetScale,
+        tapPosition.dy - scenePoint.dy * targetScale,
+        0,
+      )
+      ..scaleByDouble(targetScale, targetScale, 1, 1);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -905,52 +1025,102 @@ class _DocumentTreeState extends State<_DocumentTree> {
       children: [
         if (focusExists)
           TextButton.icon(
-            onPressed: () => setState(() => _focusedDocumentId = null),
+            onPressed: () {
+              _transformationController.value = Matrix4.identity();
+              _lastCanvasSize = null;
+              setState(() => _focusedDocumentId = null);
+            },
             icon: const Icon(Icons.account_tree_outlined, size: 18),
             label: Text(strings.fullChain),
           ),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: SizedBox(
-            width: canvasWidth,
-            height: canvasHeight,
-            child: Stack(
-              children: [
-                Positioned.fill(
-                  child: CustomPaint(
-                    painter: _TreeConnectorPainter(
-                      rects: rects,
-                      childrenById: chain.childrenById,
+        Expanded(
+          child: LayoutBuilder(
+            builder: (context, viewportConstraints) {
+              final viewportSize = viewportConstraints.biggest;
+              final canvasSize = Size(canvasWidth, canvasHeight);
+              if (_lastViewportSize != viewportSize ||
+                  _lastCanvasSize != canvasSize) {
+                _lastViewportSize = viewportSize;
+                _lastCanvasSize = canvasSize;
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (!mounted ||
+                      _lastViewportSize != viewportSize ||
+                      _lastCanvasSize != canvasSize) {
+                    return;
+                  }
+                  _setCenteredScale(
+                    _fitScale(viewportSize, canvasSize),
+                    viewportSize,
+                    canvasSize,
+                  );
+                });
+              }
+
+              return GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onDoubleTapDown: (details) => _doubleTapDetails = details,
+                onDoubleTap: () => _handleDoubleTap(viewportSize, canvasSize),
+                child: InteractiveViewer(
+                  transformationController: _transformationController,
+                  constrained: false,
+                  alignment: Alignment.topLeft,
+                  boundaryMargin: const EdgeInsets.all(double.infinity),
+                  minScale: 0.4,
+                  maxScale: 2,
+                  interactionEndFrictionCoefficient: 0.00008,
+                  child: SizedBox(
+                    width: canvasWidth,
+                    height: canvasHeight,
+                    child: Stack(
+                      children: [
+                        Positioned.fill(
+                          child: CustomPaint(
+                            painter: _TreeConnectorPainter(
+                              rects: rects,
+                              childrenById: chain.childrenById,
+                            ),
+                          ),
+                        ),
+                        for (final document in chain.documents)
+                          if (rects[document.id] case final rect?) ...[
+                            if (rect.top > 0 &&
+                                (chain.childrenById[document.id]?.isNotEmpty ??
+                                    false))
+                              Positioned(
+                                left: rect.center.dx - 14,
+                                top: rect.top - 27,
+                                width: 28,
+                                height: 28,
+                                child: _SubtreeArrowButton(
+                                  onPressed: () {
+                                    _transformationController.value =
+                                        Matrix4.identity();
+                                    _lastCanvasSize = null;
+                                    setState(
+                                      () => _focusedDocumentId = document.id,
+                                    );
+                                  },
+                                ),
+                              ),
+                            Positioned.fromRect(
+                              rect: rect,
+                              child: _TreeDocumentCard(
+                                document: document,
+                                displayStatuses: chain.displayStatusesFor(
+                                  document,
+                                ),
+                                locale: locale,
+                                strings: strings,
+                                onTap: () => onOpen(document),
+                              ),
+                            ),
+                          ],
+                      ],
                     ),
                   ),
                 ),
-                for (final document in chain.documents)
-                  if (rects[document.id] case final rect?) ...[
-                    if (rect.top > 0 &&
-                        (chain.childrenById[document.id]?.isNotEmpty ?? false))
-                      Positioned(
-                        left: rect.center.dx - 14,
-                        top: rect.top - 27,
-                        width: 28,
-                        height: 28,
-                        child: _SubtreeArrowButton(
-                          onPressed: () =>
-                              setState(() => _focusedDocumentId = document.id),
-                        ),
-                      ),
-                    Positioned.fromRect(
-                      rect: rect,
-                      child: _TreeDocumentCard(
-                        document: document,
-                        displayStatuses: chain.displayStatusesFor(document),
-                        locale: locale,
-                        strings: strings,
-                        onTap: () => onOpen(document),
-                      ),
-                    ),
-                  ],
-              ],
-            ),
+              );
+            },
           ),
         ),
       ],
