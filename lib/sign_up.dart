@@ -2,7 +2,6 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -47,7 +46,8 @@ enum SignUpStep { profile, phone }
 
 enum UserType { normal, worker }
 
-class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
+class _SignUpPageState extends State<SignUpPage>
+    with SingleTickerProviderStateMixin {
   static final Uri _googlePlayWorkerAppUri = Uri.parse(
     'https://play.google.com/store/apps/details?id=com.hirehub.app',
   );
@@ -71,6 +71,7 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
   final _confirmPasswordController = TextEditingController();
   final _altPhoneController = TextEditingController();
   final _descriptionController = TextEditingController();
+  final _townController = TextEditingController();
   final ValueNotifier<bool> _smsVerificationLoading = ValueNotifier(false);
   final FirebaseFunctions _functions = FirebaseFunctions.instanceFor(
     region: 'me-west1',
@@ -100,7 +101,6 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
   final ImagePicker _picker = ImagePicker();
 
   AnimationController? _introController;
-  AnimationController? _backgroundController;
 
   AnimationController get _introAnimationController {
     final controller = _introController;
@@ -113,20 +113,8 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
     return created;
   }
 
-  AnimationController get _backgroundAnimationController {
-    final controller = _backgroundController;
-    if (controller != null) return controller;
-    final created = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 9),
-    )..repeat(reverse: true);
-    _backgroundController = created;
-    return created;
-  }
-
   void _ensureAnimationControllers() {
     _introAnimationController;
-    _backgroundAnimationController;
   }
 
   Future<void> _openDescriptionAssistant(Map<String, String> strings) async {
@@ -617,6 +605,7 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
       _nameController.text = widget.pendingWorkerData!['name'] ?? "";
       _emailController.text = widget.pendingWorkerData!['email'] ?? "";
       _selectedTown = widget.pendingWorkerData!['town'];
+      _townController.text = _selectedTown ?? '';
       _selectedProfessions = List<String>.from(
         widget.pendingWorkerData!['professions'] ?? [],
       ).map(ProfessionLocalization.toCanonical).toList();
@@ -1298,7 +1287,6 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
   @override
   void dispose() {
     _introController?.dispose();
-    _backgroundController?.dispose();
     _phoneController.dispose();
     _codeController.dispose();
     _nameController.dispose();
@@ -1307,6 +1295,7 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
     _confirmPasswordController.dispose();
     _altPhoneController.dispose();
     _descriptionController.dispose();
+    _townController.dispose();
     _smsVerificationLoading.dispose();
     super.dispose();
   }
@@ -2555,7 +2544,10 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
             placemark.subAdministrativeArea ??
             placemark.administrativeArea;
         if (town != null && town.isNotEmpty) {
-          setState(() => _selectedTown = town);
+          setState(() {
+            _selectedTown = town;
+            _townController.text = town;
+          });
         }
       }
     } catch (e) {
@@ -2751,6 +2743,8 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
     final picked = await _picker.pickImage(
       source: ImageSource.gallery,
       imageQuality: 70,
+      maxWidth: 1600,
+      maxHeight: 1600,
     );
     if (picked != null) setState(() => _image = File(picked.path));
   }
@@ -2789,7 +2783,6 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
     _ensureAnimationControllers();
     final locale = Provider.of<LanguageProvider>(context).locale.languageCode;
     final isRtl = locale == 'he' || locale == 'ar';
-    final backgroundController = _backgroundAnimationController;
 
     return Directionality(
       textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
@@ -2799,16 +2792,9 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
           builder: (context, constraints) {
             return Stack(
               children: [
-                Positioned.fill(
-                  child: AnimatedBuilder(
-                    animation: backgroundController,
-                    builder: (context, _) {
-                      return CustomPaint(
-                        painter: _SignUpBackgroundPainter(
-                          backgroundController.value,
-                        ),
-                      );
-                    },
+                const Positioned.fill(
+                  child: RepaintBoundary(
+                    child: CustomPaint(painter: _SignUpBackgroundPainter()),
                   ),
                 ),
                 SafeArea(child: _buildCurrentStep(isRtl, constraints)),
@@ -2928,18 +2914,9 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
       begin: isRtl ? const Offset(-0.05, 0) : const Offset(0.05, 0),
       child: SizedBox(
         width: compact ? double.infinity : formWidth,
-        child: AnimatedBuilder(
-          animation: _backgroundAnimationController,
-          builder: (context, child) {
-            final offset =
-                math.sin(_backgroundAnimationController.value * math.pi * 2) *
-                4;
-            return Transform.translate(offset: Offset(0, offset), child: child);
-          },
-          child: _currentStep == SignUpStep.profile
-              ? _buildProfileStep(strings, compact: compact)
-              : _buildPhoneStep(strings, isRtl, compact: compact),
-        ),
+        child: _currentStep == SignUpStep.profile
+            ? _buildProfileStep(strings, compact: compact)
+            : _buildPhoneStep(strings, isRtl, compact: compact),
       ),
     );
 
@@ -3631,7 +3608,9 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
             child: CircleAvatar(
               radius: 55,
               backgroundColor: Colors.grey[100],
-              backgroundImage: _image != null ? FileImage(_image!) : null,
+              backgroundImage: _image != null
+                  ? ResizeImage(FileImage(_image!), width: 330, height: 330)
+                  : null,
               child: _image == null
                   ? Icon(
                       Icons.person_rounded,
@@ -3690,38 +3669,46 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
               style: const TextStyle(fontSize: 13, color: Color(0xFF6B7280)),
               children: [
                 TextSpan(text: strings['agree_prefix']!),
-                TextSpan(
-                  text: strings['terms_link']!,
-                  style: const TextStyle(
-                    color: Color(0xFF1976D2),
-                    fontWeight: FontWeight.bold,
+                WidgetSpan(
+                  alignment: PlaceholderAlignment.baseline,
+                  baseline: TextBaseline.alphabetic,
+                  child: GestureDetector(
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const TermsOfServicePage(),
+                      ),
+                    ),
+                    child: Text(
+                      strings['terms_link']!,
+                      style: const TextStyle(
+                        color: Color(0xFF1976D2),
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
-                  recognizer: TapGestureRecognizer()
-                    ..onTap = () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const TermsOfServicePage(),
-                        ),
-                      );
-                    },
                 ),
                 TextSpan(text: strings['and']!),
-                TextSpan(
-                  text: strings['privacy_link']!,
-                  style: const TextStyle(
-                    color: Color(0xFF1976D2),
-                    fontWeight: FontWeight.bold,
+                WidgetSpan(
+                  alignment: PlaceholderAlignment.baseline,
+                  baseline: TextBaseline.alphabetic,
+                  child: GestureDetector(
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const PrivacyPolicyPage(),
+                      ),
+                    ),
+                    child: Text(
+                      strings['privacy_link']!,
+                      style: const TextStyle(
+                        color: Color(0xFF1976D2),
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
-                  recognizer: TapGestureRecognizer()
-                    ..onTap = () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const PrivacyPolicyPage(),
-                        ),
-                      );
-                    },
                 ),
               ],
             ),
@@ -3732,11 +3719,10 @@ class _SignUpPageState extends State<SignUpPage> with TickerProviderStateMixin {
   }
 
   Widget _buildLocationSelectionSection(Map<String, String> strings) {
-    final townController = TextEditingController(text: _selectedTown ?? '');
     return Column(
       children: [
         _buildStyledTextField(
-          controller: townController,
+          controller: _townController,
           labelText: strings['town_label']!,
           icon: Icons.location_on_outlined,
           required: true,
@@ -4553,54 +4539,43 @@ class _SignUpFeature {
 }
 
 class _SignUpBackgroundPainter extends CustomPainter {
-  const _SignUpBackgroundPainter(this.progress);
-
-  final double progress;
+  const _SignUpBackgroundPainter();
 
   @override
   void paint(Canvas canvas, Size size) {
     final rect = Offset.zero & size;
-    final eased = Curves.easeInOut.transform(progress);
-    final begin = Alignment.lerp(Alignment.topLeft, Alignment.topRight, eased)!;
-    final end = Alignment.lerp(
-      Alignment.bottomRight,
-      Alignment.bottomLeft,
-      eased,
-    )!;
 
     final basePaint = Paint()
-      ..shader = LinearGradient(
-        begin: begin,
-        end: end,
-        colors: const [
+      ..shader = const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [
           Color(0xFFFDFEFF),
           Color(0xFFEAF5FF),
           Color(0xFFF7FBFF),
           Color(0xFFE3F8FF),
         ],
-        stops: const [0, 0.38, 0.68, 1],
+        stops: [0, 0.38, 0.68, 1],
       ).createShader(rect);
     canvas.drawRect(rect, basePaint);
 
     final width = size.width;
     final height = size.height;
-    final phase = progress * math.pi * 2;
 
     final highlightPaint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round
       ..strokeWidth = math.max(120, size.shortestSide * 0.18)
-      ..color = const Color(0xFF1976D2).withValues(alpha: 0.055)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 54);
+      ..color = const Color(0xFF1976D2).withValues(alpha: 0.035);
     final path = Path()
-      ..moveTo(-width * 0.2, height * (0.22 + math.sin(phase) * 0.03))
+      ..moveTo(-width * 0.2, height * 0.22)
       ..cubicTo(
         width * 0.24,
-        height * (0.02 + math.cos(phase) * 0.04),
+        height * 0.02,
         width * 0.58,
-        height * (0.54 + math.sin(phase) * 0.03),
+        height * 0.54,
         width * 1.2,
-        height * (0.25 + math.cos(phase) * 0.03),
+        height * 0.25,
       );
     canvas.drawPath(path, highlightPaint);
 
@@ -4608,23 +4583,20 @@ class _SignUpBackgroundPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round
       ..strokeWidth = math.max(90, size.shortestSide * 0.13)
-      ..color = const Color(0xFF62D6E8).withValues(alpha: 0.05)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 46);
+      ..color = const Color(0xFF62D6E8).withValues(alpha: 0.035);
     final lowerPath = Path()
       ..moveTo(width * 0.36, height * 1.12)
       ..cubicTo(
-        width * (0.46 + math.sin(phase) * 0.04),
+        width * 0.46,
         height * 0.78,
-        width * (0.72 + math.cos(phase) * 0.03),
+        width * 0.72,
         height * 0.95,
         width * 1.16,
-        height * (0.65 + math.sin(phase) * 0.04),
+        height * 0.65,
       );
     canvas.drawPath(lowerPath, lowerPaint);
   }
 
   @override
-  bool shouldRepaint(covariant _SignUpBackgroundPainter oldDelegate) {
-    return oldDelegate.progress != progress;
-  }
+  bool shouldRepaint(covariant _SignUpBackgroundPainter oldDelegate) => false;
 }
