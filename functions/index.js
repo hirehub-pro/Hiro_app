@@ -4,7 +4,16 @@ const crypto = require("crypto");
 const fontkit = require("@pdf-lib/fontkit");
 const {PDFDocument, rgb} = require("pdf-lib");
 
-const admin = require("firebase-admin");
+const {initializeApp} = require("firebase-admin/app");
+const {getAuth} = require("firebase-admin/auth");
+const {
+  FieldPath,
+  FieldValue,
+  Timestamp,
+  getFirestore,
+} = require("firebase-admin/firestore");
+const {getMessaging} = require("firebase-admin/messaging");
+const {getStorage} = require("firebase-admin/storage");
 const {
   onDocumentCreated,
   onDocumentWritten,
@@ -122,7 +131,12 @@ const {
   isGooglePlayLookupNotFound,
 } = require("./subscription_product_validation");
 
-admin.initializeApp();
+initializeApp();
+
+const db = getFirestore();
+const auth = getAuth();
+const messaging = getMessaging();
+const storage = getStorage();
 
 const TAX_AUTH_CLIENT_ID = defineSecret("TAX_AUTH_CLIENT_ID");
 const TAX_AUTH_CLIENT_SECRET = defineSecret("TAX_AUTH_CLIENT_SECRET");
@@ -159,7 +173,7 @@ function documentSigningCredentialRef(userId, businessId) {
   if (!safeBusinessId) {
     throw new Error("A verified business ID is required for PDF signing.");
   }
-  return admin.firestore().collection("users").doc(userId)
+  return db.collection("users").doc(userId)
       .collection("documentSigningCredentials").doc(safeBusinessId);
 }
 
@@ -216,7 +230,7 @@ async function getOrCreateBusinessSigningCredential({userId, business}) {
       businessName: generated.metadata.businessName,
       encryptedCredential,
       certificate: generated.metadata,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdAt: FieldValue.serverTimestamp(),
     });
     return generated;
   } catch (error) {
@@ -315,9 +329,8 @@ exports.phoneAccountExists = onCall(
       }
 
       try {
-        const user = await admin.auth().getUserByPhoneNumber(phoneNumber);
-        const account = await admin
-            .firestore()
+        const user = await auth.getUserByPhoneNumber(phoneNumber);
+        const account = await db
             .collection("users")
             .doc(user.uid)
             .get();
@@ -418,8 +431,8 @@ exports.checkSignUpIdentifiersAvailable = onCall(
 
       try {
         const [emailExists, phoneExists] = await Promise.all([
-          identifierExists(() => admin.auth().getUserByEmail(email)),
-          identifierExists(() => admin.auth().getUserByPhoneNumber(phone)),
+          identifierExists(() => auth.getUserByEmail(email)),
+          identifierExists(() => auth.getUserByPhoneNumber(phone)),
         ]);
         return {
           emailAvailable: !emailExists,
@@ -452,9 +465,8 @@ exports.federatedAccountCanSignIn = onCall(
       }
 
       try {
-        const user = await admin.auth().getUserByEmail(email);
-        const profile = await admin
-            .firestore()
+        const user = await auth.getUserByEmail(email);
+        const profile = await db
             .collection("users")
             .doc(user.uid)
             .get();
@@ -602,7 +614,6 @@ function isPendingRequestExpired(request, now = new Date()) {
 exports.expireUnansweredRequests = onSchedule(
     {schedule: "every 15 minutes", timeZone: REQUEST_EXPIRY_TIME_ZONE},
     async () => {
-      const db = admin.firestore();
       const now = new Date();
       let expiredCount = 0;
 
@@ -622,7 +633,7 @@ exports.expireUnansweredRequests = onSchedule(
           for (const doc of expiredDocs.slice(index, index + 450)) {
             batch.update(doc.ref, {
               status: "expired",
-              expiredAt: admin.firestore.FieldValue.serverTimestamp(),
+              expiredAt: FieldValue.serverTimestamp(),
             });
           }
           await batch.commit();
@@ -652,7 +663,6 @@ exports.createDocumentSigningRequest = onCall(
         );
       }
 
-      const db = admin.firestore();
       const invoiceRef = db
           .collection("users")
           .doc(workerId)
@@ -711,14 +721,14 @@ exports.createDocumentSigningRequest = onCall(
         fileName: normalizeString(invoice.fileName) || "document.pdf",
         storagePath,
         status: "pending",
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        expiresAt: admin.firestore.Timestamp.fromDate(expiresAt),
+        createdAt: FieldValue.serverTimestamp(),
+        expiresAt: Timestamp.fromDate(expiresAt),
         signedAt: null,
       });
 
       await invoiceRef.set({
         signatureStatus: "pending",
-        signingRequestedAt: admin.firestore.FieldValue.serverTimestamp(),
+        signingRequestedAt: FieldValue.serverTimestamp(),
       }, {merge: true});
 
       return {
@@ -741,7 +751,7 @@ exports.publicDocumentSigning = onRequest(
           return;
         }
 
-        const requestRef = admin.firestore()
+        const requestRef = db
             .collection("documentSigningRequests")
             .doc(hashSigningToken(token));
         const requestSnap = await requestRef.get();
@@ -810,7 +820,6 @@ exports.publicDocumentSigning = onRequest(
           return;
         }
 
-        const db = admin.firestore();
         const signingAttemptId = crypto.randomUUID();
         const claim = await db.runTransaction(async (transaction) => {
           const latestSnap = await transaction.get(requestRef);
@@ -832,8 +841,8 @@ exports.publicDocumentSigning = onRequest(
           transaction.update(requestRef, {
             status: "signing",
             signingAttemptId,
-            signingStartedAt: admin.firestore.FieldValue.serverTimestamp(),
-            signingClaimExpiresAt: admin.firestore.Timestamp.fromMillis(
+            signingStartedAt: FieldValue.serverTimestamp(),
+            signingClaimExpiresAt: Timestamp.fromMillis(
                 Date.now() + SIGNING_CLAIM_LIFETIME_MS,
             ),
           });
@@ -860,7 +869,7 @@ exports.publicDocumentSigning = onRequest(
               signatureBytes,
               signerName,
           );
-          signedAt = admin.firestore.Timestamp.now();
+          signedAt = Timestamp.now();
           await db.runTransaction(async (transaction) => {
             const latestSnap = await transaction.get(requestRef);
             const latest = latestSnap.data() || {};
@@ -876,9 +885,9 @@ exports.publicDocumentSigning = onRequest(
               signerName,
               signedAt,
               signedUrl: signedResult.url,
-              signingAttemptId: admin.firestore.FieldValue.delete(),
-              signingStartedAt: admin.firestore.FieldValue.delete(),
-              signingClaimExpiresAt: admin.firestore.FieldValue.delete(),
+              signingAttemptId: FieldValue.delete(),
+              signingStartedAt: FieldValue.delete(),
+              signingClaimExpiresAt: FieldValue.delete(),
             }, {merge: true});
             transaction.set(invoiceRef, {
               url: signedResult.url,
@@ -897,9 +906,9 @@ exports.publicDocumentSigning = onRequest(
                 latest.signingAttemptId === signingAttemptId) {
               transaction.update(requestRef, {
                 status: "pending",
-                signingAttemptId: admin.firestore.FieldValue.delete(),
-                signingStartedAt: admin.firestore.FieldValue.delete(),
-                signingClaimExpiresAt: admin.firestore.FieldValue.delete(),
+                signingAttemptId: FieldValue.delete(),
+                signingStartedAt: FieldValue.delete(),
+                signingClaimExpiresAt: FieldValue.delete(),
               });
             }
           }).catch((releaseError) => {
@@ -956,7 +965,7 @@ exports.publicDocumentDownload = onRequest(
       }
 
       try {
-        const tokenSnap = await admin.firestore()
+        const tokenSnap = await db
             .collection(DOCUMENT_DOWNLOAD_COLLECTION)
             .doc(hashDocumentDownloadToken(token))
             .get();
@@ -974,7 +983,7 @@ exports.publicDocumentDownload = onRequest(
           return;
         }
 
-        const invoiceSnap = await admin.firestore()
+        const invoiceSnap = await db
             .collection("users")
             .doc(userId)
             .collection("invoices")
@@ -989,7 +998,7 @@ exports.publicDocumentDownload = onRequest(
 
         const fileName = downloadFileName(access.fileName || "document.pdf");
         const asciiFileName = safeHeaderFileName(fileName);
-        const file = admin.storage().bucket().file(storagePath);
+        const file = storage.bucket().file(storagePath);
         let bytes = null;
         let contentLength;
         if (req.method === "HEAD") {
@@ -1039,11 +1048,11 @@ exports.createTaxAuthorityAuthorizationUrl = onCall(
 
       const businessId = await getVerifiedTaxAuthorityBusinessId(userId);
       const state = crypto.randomUUID();
-      const now = admin.firestore.Timestamp.now();
-      const expiresAt = admin.firestore.Timestamp.fromDate(
+      const now = Timestamp.now();
+      const expiresAt = Timestamp.fromDate(
           addHours(now.toDate(), TAX_AUTH_OAUTH_CODE_RETENTION_HOURS),
       );
-      await admin.firestore()
+      await db
           .collection("taxAuthorityOAuthStates")
           .doc(state)
           .set({
@@ -1083,11 +1092,11 @@ exports.createUniformTaxAuthorityAuthorizationUrl = onCall(
 
       const businessId = await getVerifiedTaxAuthorityBusinessId(userId);
       const state = crypto.randomUUID();
-      const now = admin.firestore.Timestamp.now();
-      const expiresAt = admin.firestore.Timestamp.fromDate(
+      const now = Timestamp.now();
+      const expiresAt = Timestamp.fromDate(
           addHours(now.toDate(), TAX_AUTH_OAUTH_CODE_RETENTION_HOURS),
       );
-      await admin.firestore()
+      await db
           .collection("taxAuthorityOAuthStates")
           .doc(state)
           .set({
@@ -1158,9 +1167,8 @@ exports.taxesOAuthCallback = onRequest(
         return;
       }
 
-      const db = admin.firestore();
-      const now = admin.firestore.Timestamp.now();
-      const expiresAt = admin.firestore.Timestamp.fromDate(
+      const now = Timestamp.now();
+      const expiresAt = Timestamp.fromDate(
           addHours(now.toDate(), TAX_AUTH_OAUTH_CODE_RETENTION_HOURS),
       );
       if (!state) {
@@ -1279,10 +1287,10 @@ exports.taxesOAuthCallback = onRequest(
         updatedAt: now,
         environment: "sandbox",
         purpose,
-        disconnectedAt: admin.firestore.FieldValue.delete(),
-        disconnectReason: admin.firestore.FieldValue.delete(),
+        disconnectedAt: FieldValue.delete(),
+        disconnectReason: FieldValue.delete(),
         expiresAt: tokenResponse.expires_in ?
-          admin.firestore.Timestamp.fromDate(
+          Timestamp.fromDate(
               addSeconds(new Date(), Number(tokenResponse.expires_in)),
           ) :
           null,
@@ -1290,7 +1298,7 @@ exports.taxesOAuthCallback = onRequest(
       const tokenRef = purpose === "uniform-files" ?
         uniformTaxAuthorityTokenRef(userId) : taxAuthorityTokenRef(userId);
       await tokenRef.set(tokenRecord, {merge: true});
-      await docRef.update({consumedAt: admin.firestore.Timestamp.now()});
+      await docRef.update({consumedAt: Timestamp.now()});
 
       logger.info("Stored Tax Authority OAuth callback code", {
         userId,
@@ -1307,7 +1315,7 @@ exports.taxesOAuthCallback = onRequest(
 
 async function optionalStorageBytes(storagePath) {
   try {
-    const [bytes] = await admin.storage().bucket().file(storagePath).download();
+    const [bytes] = await storage.bucket().file(storagePath).download();
     return bytes;
   } catch (error) {
     return null;
@@ -1330,7 +1338,7 @@ async function persistServerDocumentLogo(userId, document) {
     );
   }
   const storagePath = serverDocumentLogoStoragePath(userId, document);
-  await admin.storage().bucket().file(storagePath).save(logoBytes, {
+  await storage.bucket().file(storagePath).save(logoBytes, {
     resumable: false,
     validation: "crc32c",
     metadata: {
@@ -1376,7 +1384,6 @@ async function serverDocumentContext(
     userId,
     {includeAppIcon = true} = {},
 ) {
-  const db = admin.firestore();
   const userRef = db.collection("users").doc(userId);
   const [userSnap, verificationSnap, systemSnap] = await Promise.all([
     userRef.get(),
@@ -1433,7 +1440,7 @@ async function serverDocumentContext(
 }
 
 async function assertActiveProUser(userId) {
-  const userRef = admin.firestore().collection("users").doc(userId);
+  const userRef = db.collection("users").doc(userId);
   const userSnap = await userRef.get();
   if (!userSnap.exists) {
     throw new HttpsError("not-found", "User account was not found.");
@@ -1600,7 +1607,7 @@ async function notifyAdminsOfServerDocumentFailure({
       failureStage: stage,
       error: normalizeString(error?.message).slice(0, 500),
       isRead: false,
-      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      timestamp: FieldValue.serverTimestamp(),
     });
   }
   await batch.commit();
@@ -1629,7 +1636,7 @@ async function recordServerDocumentGenerationFailure({
       terminal,
       stage,
     });
-    const failedAt = admin.firestore.FieldValue.serverTimestamp();
+    const failedAt = FieldValue.serverTimestamp();
     transaction.update(invoiceRef, {
       documentStatus: status,
       "serverDocument.status": terminal ? "needs_reconciliation" : "failed",
@@ -1683,7 +1690,7 @@ function createClientLedgerPosting(transaction, userRef, posting) {
       .collection("ledgerEntries").doc(posting.sourceDocumentId);
   transaction.create(postingRef, {
     ...posting,
-    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    createdAt: FieldValue.serverTimestamp(),
   });
 }
 
@@ -1734,7 +1741,7 @@ function writeServerDocumentCreatedNotification(transaction, userRef, {
     invoiceDocId,
     documentNumber: normalizedNumber || null,
     isRead: false,
-    timestamp: admin.firestore.FieldValue.serverTimestamp(),
+    timestamp: FieldValue.serverTimestamp(),
   });
 }
 
@@ -1763,7 +1770,7 @@ function storedDigitalSignature(value) {
     certificateType: normalizeString(value.certificateType).trim(),
     certificateFingerprintSha256:
       normalizeString(value.certificateFingerprintSha256).trim(),
-    signedAt: admin.firestore.Timestamp.fromDate(value.signedAt),
+    signedAt: Timestamp.fromDate(value.signedAt),
   };
 }
 
@@ -1860,10 +1867,10 @@ function serverDocumentStoredFields({
       payloadHash: document.payloadHash,
       status: "finalized",
       generatedBy: "server",
-      finalizedAt: admin.firestore.FieldValue.serverTimestamp(),
+      finalizedAt: FieldValue.serverTimestamp(),
     },
     documentStatus: "finalized",
-    finalizedAt: admin.firestore.FieldValue.serverTimestamp(),
+    finalizedAt: FieldValue.serverTimestamp(),
     finalPdf: {
       storagePath,
       size,
@@ -1872,7 +1879,7 @@ function serverDocumentStoredFields({
       generatedBy: "server",
       ...(storedSignature ? {digitalSignature: storedSignature} : {}),
     },
-    fallbackPreview: admin.firestore.FieldValue.delete(),
+    fallbackPreview: FieldValue.delete(),
   };
 }
 
@@ -1912,7 +1919,7 @@ function serverDocumentFallbackPreviewFields({
       contentType: "application/pdf",
       generation,
       generatedBy: "server-preview-fallback",
-      generatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      generatedAt: FieldValue.serverTimestamp(),
     },
   };
 }
@@ -1924,7 +1931,7 @@ async function saveFallbackPreviewPdf({
   storagePath,
   pdfBytes,
 }) {
-  const file = admin.storage().bucket().file(storagePath);
+  const file = storage.bucket().file(storagePath);
   let token = null;
   try {
     const [existingMetadata] = await file.getMetadata();
@@ -1954,7 +1961,7 @@ async function saveFallbackPreviewPdf({
   const [metadata] = await file.getMetadata();
   return {
     downloadUrl: taxInvoiceDownloadUrl(
-        admin.storage().bucket().name,
+        storage.bucket().name,
         storagePath,
         token,
     ),
@@ -1964,7 +1971,7 @@ async function saveFallbackPreviewPdf({
 }
 
 async function removeFallbackPreview(storagePath) {
-  await admin.storage().bucket().file(storagePath)
+  await storage.bucket().file(storagePath)
       .delete({ignoreNotFound: true})
       .catch((error) => {
         logger.warn("Unable to remove replaced fallback preview", {
@@ -1983,7 +1990,7 @@ async function hasAvailableFallbackPreview(data, userId) {
     return false;
   }
   try {
-    const [exists] = await admin.storage().bucket().file(storagePath).exists();
+    const [exists] = await storage.bucket().file(storagePath).exists();
     return exists;
   } catch (error) {
     return false;
@@ -2032,7 +2039,7 @@ async function persistServerDocumentFallbackPreview({
     size: artifact.size,
     generation: artifact.generation,
   });
-  return admin.firestore().runTransaction(async (transaction) => {
+  return db.runTransaction(async (transaction) => {
     const latestSnap = await transaction.get(invoiceRef);
     if (!latestSnap.exists ||
         (latestSnap.data()?.documentStatus === "finalized" &&
@@ -2120,7 +2127,7 @@ function serverDocumentLogFields({userId, document, business, stored, bucket}) {
     fileName: stored.fileName,
     storagePath: stored.storagePath,
     url: stored.url,
-    timestamp: admin.firestore.FieldValue.serverTimestamp(),
+    timestamp: FieldValue.serverTimestamp(),
     ...(document.isNegativeReceipt ? {
       isCancellationDocument: true,
       cancellationSourceDocumentId: document.cancellationSourceDocumentId,
@@ -2196,7 +2203,7 @@ exports.previewServerDocumentHttp = onRequest(
 
       let userId;
       try {
-        userId = (await admin.auth().verifyIdToken(firebaseToken)).uid;
+        userId = (await auth.verifyIdToken(firebaseToken)).uid;
       } catch (error) {
         response.status(401).json({error: "Authentication required."});
         return;
@@ -2249,7 +2256,6 @@ exports.createServerDocument = onCall(
       if (!retryInvoiceDocId) {
         await assertActiveProUser(userId);
       }
-      const db = admin.firestore();
       const userRef = db.collection("users").doc(userId);
       const context = await serverDocumentContext(userId);
       let document;
@@ -2304,7 +2310,7 @@ exports.createServerDocument = onCall(
           .doc(document.invoiceDocId);
       const counterRef = document.sequential ? userRef.collection("counters")
           .doc(`document_counter_${document.docType}`) : null;
-      const now = admin.firestore.Timestamp.now();
+      const now = Timestamp.now();
       const reservation = await db.runTransaction(async (transaction) => {
         const invoiceSnap = await transaction.get(invoiceRef);
         const counterSnap = counterRef ? await transaction.get(counterRef) : null;
@@ -2333,7 +2339,7 @@ exports.createServerDocument = onCall(
             "serverDocument.status": "processing",
             "serverDocument.startedAt": now,
             "serverDocument.attempts":
-              admin.firestore.FieldValue.increment(1),
+              FieldValue.increment(1),
           });
           return {cached: false};
         }
@@ -2404,7 +2410,7 @@ exports.createServerDocument = onCall(
         const safeId = document.invoiceDocId.replace(/[^A-Za-z0-9_-]/g, "_");
         const fileName = `server_document_${safeId}.pdf`;
         const storagePath = `invoices/${userId}/${fileName}`;
-        const file = admin.storage().bucket().file(storagePath);
+        const file = storage.bucket().file(storagePath);
         let token = null;
         try {
           const [existingMetadata] = await file.getMetadata();
@@ -2439,7 +2445,7 @@ exports.createServerDocument = onCall(
         generationStage = "storage_metadata";
         const [metadata] = await file.getMetadata();
         const downloadUrl = taxInvoiceDownloadUrl(
-            admin.storage().bucket().name,
+            storage.bucket().name,
             storagePath,
             token,
         );
@@ -2503,7 +2509,7 @@ exports.createServerDocument = onCall(
             const logCounter = Number(logBucketSnap?.data()?.value || 0) + 1;
             transaction.set(logBucketRef, {
               value: logCounter,
-              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+              updatedAt: FieldValue.serverTimestamp(),
               docType: bucket,
             }, {merge: true});
             transaction.set(
@@ -2522,8 +2528,8 @@ exports.createServerDocument = onCall(
           }
           if (!["quote", "work_order"].includes(document.docType)) {
             transaction.set(db.collection("metadata").doc("invoice_counts"), {
-              [document.docType]: admin.firestore.FieldValue.increment(1),
-              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+              [document.docType]: FieldValue.increment(1),
+              updatedAt: FieldValue.serverTimestamp(),
             }, {merge: true});
           }
           if (!["quote", "work_order", "transaction_account"].includes(
@@ -2534,8 +2540,8 @@ exports.createServerDocument = onCall(
               -document.finalTotal : document.finalTotal;
             transaction.set(userRef.collection("metadata")
                 .doc("financial_summary"), {
-              totalEarned: admin.firestore.FieldValue.increment(financialDelta),
-              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+              totalEarned: FieldValue.increment(financialDelta),
+              updatedAt: FieldValue.serverTimestamp(),
             }, {merge: true});
           }
           if (sourceRef && document.docType === "receipt" &&
@@ -2550,7 +2556,7 @@ exports.createServerDocument = onCall(
               paidAmount,
               paymentStatus: paidAmount + 0.01 >= sourceAmount ?
                 "paid" : "partial",
-              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+              updatedAt: FieldValue.serverTimestamp(),
             });
           }
           if (sourceRef && cancelsSource) {
@@ -2563,14 +2569,14 @@ exports.createServerDocument = onCall(
             transaction.update(sourceRef, {
               cancelledAmount: progress.cancelledAmount,
               cancellationStatus: progress.cancellationStatus,
-              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+              updatedAt: FieldValue.serverTimestamp(),
               ...(progress.isFullyCancelled ? {
                 cancelledByDocumentId: document.invoiceDocId,
                 cancelledByDocumentNumber: document.documentNumber,
-                cancelledAt: admin.firestore.FieldValue.serverTimestamp(),
+                cancelledAt: FieldValue.serverTimestamp(),
                 isLinkingLocked: true,
                 linkLockUpdatedAt:
-                  admin.firestore.FieldValue.serverTimestamp(),
+                  FieldValue.serverTimestamp(),
               } : {}),
             });
           }
@@ -2657,7 +2663,7 @@ async function notifyAdminsOfMissingFinalPdf({
       invoiceDocId,
       documentNumber: documentNumber || null,
       isRead: false,
-      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      timestamp: FieldValue.serverTimestamp(),
     });
   }
   await batch.commit();
@@ -2684,7 +2690,6 @@ exports.reportMissingFinalDocumentPdf = onCall(
         );
       }
 
-      const db = admin.firestore();
       const userRef = db.collection("users").doc(userId);
       const invoiceRef = userRef.collection("invoices").doc(invoiceDocId);
       const snapshot = await invoiceRef.get();
@@ -2704,7 +2709,7 @@ exports.reportMissingFinalDocumentPdf = onCall(
       );
       let exists;
       try {
-        [exists] = await admin.storage().bucket().file(storagePath).exists();
+        [exists] = await storage.bucket().file(storagePath).exists();
       } catch (error) {
         logger.error("Unable to verify finalized PDF availability", {
           userId,
@@ -2733,7 +2738,7 @@ exports.reportMissingFinalDocumentPdf = onCall(
             latest.documentRecovery?.reason === "missing_final_pdf") {
           return {newlyReported: false};
         }
-        const reportedAt = admin.firestore.FieldValue.serverTimestamp();
+        const reportedAt = FieldValue.serverTimestamp();
         const documentNumber = normalizeString(latest.invoiceNumber).trim();
         transaction.update(invoiceRef, {
           needsReconciliation: true,
@@ -2824,8 +2829,7 @@ exports.markStaleServerDocumentsFailed = onSchedule(
       memory: "1GiB",
     },
     async () => {
-      const db = admin.firestore();
-      const cutoff = admin.firestore.Timestamp.fromMillis(
+      const cutoff = Timestamp.fromMillis(
           Date.now() - 5 * 60 * 1000,
       );
       const snapshot = await db.collectionGroup("invoices")
@@ -2836,7 +2840,7 @@ exports.markStaleServerDocumentsFailed = onSchedule(
         const data = documentSnapshot.data() || {};
         const workflow = data.serverDocument;
         return workflow && workflow.status === "processing" &&
-          workflow.startedAt instanceof admin.firestore.Timestamp &&
+          workflow.startedAt instanceof Timestamp &&
           workflow.startedAt.toMillis() <= cutoff.toMillis();
       });
       if (staleDocuments.length === 0) return;
@@ -2868,7 +2872,7 @@ exports.markStaleServerDocumentsFailed = onSchedule(
           terminal,
           stage: "function_timeout",
         });
-        const failedAt = admin.firestore.FieldValue.serverTimestamp();
+        const failedAt = FieldValue.serverTimestamp();
         batch.update(documentSnapshot.ref, {
           documentStatus: status,
           "serverDocument.status": terminal ? "needs_reconciliation" : "failed",
@@ -2958,7 +2962,6 @@ exports.remindPendingTaxAuthorityHearings = onSchedule(
       timeoutSeconds: 120,
     },
     async () => {
-      const db = admin.firestore();
       const reminderDate = new Intl.DateTimeFormat("en-CA", {
         timeZone: "Asia/Jerusalem",
       }).format(new Date());
@@ -2979,13 +2982,13 @@ exports.remindPendingTaxAuthorityHearings = onSchedule(
         if (request.lastHearingReminderDate === reminderDate) continue;
 
         const documentNumber = normalizeString(invoice.invoiceNumber).trim();
-        const reminderAt = admin.firestore.FieldValue.serverTimestamp();
+        const reminderAt = FieldValue.serverTimestamp();
         const batch = db.batch();
         batch.update(invoiceSnapshot.ref, {
           "taxAuthorityAllocationRequest.lastHearingReminderDate": reminderDate,
           "taxAuthorityAllocationRequest.lastHearingReminderAt": reminderAt,
           "taxAuthorityAllocationRequest.hearingReminderCount":
-            admin.firestore.FieldValue.increment(1),
+            FieldValue.increment(1),
         });
         batch.set(userRef.collection("notifications").doc(), {
           type: "tax_authority_hearing_reminder",
@@ -3073,7 +3076,7 @@ exports.createTaxInvoiceDraft = onCall(
         }
         const logoStoragePath = `document-assets/${auth.uid}/` +
           `${invoiceDocId}_${presentation.documentLogoHash}`;
-        await admin.storage().bucket().file(logoStoragePath).save(
+        await storage.bucket().file(logoStoragePath).save(
             presentation.documentLogoBytes,
             {
               resumable: false,
@@ -3092,7 +3095,6 @@ exports.createTaxInvoiceDraft = onCall(
         presentation.documentLogoStoragePath = logoStoragePath;
       }
 
-      const db = admin.firestore();
       const userRef = db.collection("users").doc(auth.uid);
       const invoiceRef = userRef.collection("invoices").doc(invoiceDocId);
       const counterRef = userRef.collection("counters")
@@ -3107,7 +3109,7 @@ exports.createTaxInvoiceDraft = onCall(
       // Verify the OAuth connection before consuming an official document
       // number. The allocation callable will verify it again before use.
       await getTaxAuthorityTokenData(auth.uid, businessId);
-      const now = admin.firestore.Timestamp.now();
+      const now = Timestamp.now();
 
       const claim = await db.runTransaction(async (transaction) => {
         const [counterSnap, invoiceSnap] = await Promise.all([
@@ -3237,9 +3239,9 @@ exports.initializeDocumentCounter = onCall(
       const counterId = docType === "transaction_account" ?
         "document_counter_transaction_account" :
         `document_counter_${docType}`;
-      const counterRef = admin.firestore().collection("users").doc(userId)
+      const counterRef = db.collection("users").doc(userId)
           .collection("counters").doc(counterId);
-      const value = await admin.firestore().runTransaction(
+      const value = await db.runTransaction(
           async (transaction) => {
             const snap = await transaction.get(counterRef);
             const existingValue = Number(snap.data()?.value);
@@ -3250,8 +3252,8 @@ exports.initializeDocumentCounter = onCall(
             transaction.create(counterRef, {
               value: startNumber,
               docType,
-              initializedAt: admin.firestore.FieldValue.serverTimestamp(),
-              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+              initializedAt: FieldValue.serverTimestamp(),
+              updatedAt: FieldValue.serverTimestamp(),
             });
             return startNumber;
           },
@@ -3281,12 +3283,11 @@ exports.requestTaxInvoiceAllocation = onCall(
         throw new HttpsError("invalid-argument", "Invalid Tax Authority draft ID.");
       }
 
-      const db = admin.firestore();
       const invoiceRef = db.collection("users").doc(auth.uid)
           .collection("invoices").doc(draftId);
       const businessId = await getVerifiedTaxAuthorityBusinessId(auth.uid);
       const tokenData = await getTaxAuthorityTokenData(auth.uid, businessId);
-      const now = admin.firestore.Timestamp.now();
+      const now = Timestamp.now();
 
       const claim = await db.runTransaction(async (transaction) => {
         const invoiceSnap = await transaction.get(invoiceRef);
@@ -3349,22 +3350,22 @@ exports.requestTaxInvoiceAllocation = onCall(
         }
         const retryAudit = isHearingRetry ? {
           "taxAuthorityAllocationRequest.hearingRetryCount":
-            admin.firestore.FieldValue.increment(1),
+            FieldValue.increment(1),
           "taxAuthorityAllocationRequest.lastHearingRetryAt": now,
-          "taxAuthorityDecisionHistory": admin.firestore.FieldValue.arrayUnion({
+          "taxAuthorityDecisionHistory": FieldValue.arrayUnion({
             ...draft.taxAuthorityDecision,
             archivedAt: now,
             archiveReason: "allocation_retry_after_hearing",
           }),
           // A new material refusal must be allowed to collect a new choice.
-          taxAuthorityDecision: admin.firestore.FieldValue.delete(),
+          taxAuthorityDecision: FieldValue.delete(),
         } : {};
         transaction.update(invoiceRef, {
           documentStatus: "allocating",
           "taxAuthorityAllocationRequest.status": "allocating",
           "taxAuthorityAllocationRequest.lastAttemptAt": now,
           "taxAuthorityAllocationRequest.attempts":
-            admin.firestore.FieldValue.increment(1),
+            FieldValue.increment(1),
           ...retryAudit,
         });
         return {
@@ -3400,7 +3401,7 @@ exports.requestTaxInvoiceAllocation = onCall(
         });
         const approval = extractInvoiceApproval(response, claim.payload);
         if (approval.decisionRequired) {
-          const decisionRequiredAt = admin.firestore.Timestamp.now();
+          const decisionRequiredAt = Timestamp.now();
           await invoiceRef.update({
             documentStatus: "decision_required",
             "taxAuthorityAllocationRequest.status": "decision_required",
@@ -3428,7 +3429,7 @@ exports.requestTaxInvoiceAllocation = onCall(
         const storedAllocation = {
           ...approval,
           rawResponse: response,
-          requestedAt: admin.firestore.Timestamp.now(),
+          requestedAt: Timestamp.now(),
           environment: "sandbox",
         };
         await invoiceRef.update({
@@ -3436,7 +3437,7 @@ exports.requestTaxInvoiceAllocation = onCall(
           taxAuthorityAllocation: storedAllocation,
           "taxAuthorityAllocationRequest.status": "approved",
           "taxAuthorityAllocationRequest.completedAt":
-            admin.firestore.Timestamp.now(),
+            Timestamp.now(),
         });
 
         let document;
@@ -3454,7 +3455,7 @@ exports.requestTaxInvoiceAllocation = onCall(
             "taxAuthorityAllocationRequest.finalizationError":
               normalizeString(error?.message).slice(0, 500),
             "taxAuthorityAllocationRequest.finalizationFailedAt":
-              admin.firestore.Timestamp.now(),
+              Timestamp.now(),
           });
           throw new HttpsError(
               "internal",
@@ -3482,7 +3483,7 @@ exports.requestTaxInvoiceAllocation = onCall(
             "allocation_failed" : "needs_reconciliation",
           "taxAuthorityAllocationRequest.status": failureState,
           "taxAuthorityAllocationRequest.failedAt":
-            admin.firestore.Timestamp.now(),
+            Timestamp.now(),
           "taxAuthorityAllocationRequest.lastError":
             normalizeString(error?.message).slice(0, 500),
         });
@@ -3525,12 +3526,11 @@ exports.submitTaxInvoiceDecision = onCall(
         normalizeReverseChargeEvidence(request.data.reverseChargeEvidence) :
         null;
 
-      const db = admin.firestore();
       const invoiceRef = db.collection("users").doc(userId)
           .collection("invoices").doc(draftId);
       const businessId = await getVerifiedTaxAuthorityBusinessId(userId);
       const tokenData = await getTaxAuthorityTokenData(userId, businessId);
-      const now = admin.firestore.Timestamp.now();
+      const now = Timestamp.now();
 
       const claim = await db.runTransaction(async (transaction) => {
         const invoiceSnap = await transaction.get(invoiceRef);
@@ -3604,7 +3604,7 @@ exports.submitTaxInvoiceDecision = onCall(
           "taxAuthorityDecision.status": "submitting",
           "taxAuthorityDecision.requestedAt": now,
           "taxAuthorityDecision.attempts":
-            admin.firestore.FieldValue.increment(1),
+            FieldValue.increment(1),
           "taxAuthorityDecision.environment": "sandbox",
           ...(reverseChargeEvidence ? {
             "taxAuthorityDecision.reverseChargeEvidence": {
@@ -3691,7 +3691,7 @@ exports.submitTaxInvoiceDecision = onCall(
             "taxAuthorityDecision.status": "accepted",
             "taxAuthorityDecision.response": response,
             "taxAuthorityDecision.acceptedAt":
-              admin.firestore.FieldValue.serverTimestamp(),
+              FieldValue.serverTimestamp(),
           });
           let documents;
           try {
@@ -3726,7 +3726,7 @@ exports.submitTaxInvoiceDecision = onCall(
           "taxAuthorityDecision.status": "accepted",
           "taxAuthorityDecision.response": response,
           "taxAuthorityDecision.acceptedAt":
-            admin.firestore.FieldValue.serverTimestamp(),
+            FieldValue.serverTimestamp(),
         });
         let document = null;
         if (decision === "continue") {
@@ -3767,7 +3767,7 @@ exports.submitTaxInvoiceDecision = onCall(
           "taxAuthorityDecision.lastError":
             normalizeString(error?.message).slice(0, 500),
           "taxAuthorityDecision.failedAt":
-            admin.firestore.FieldValue.serverTimestamp(),
+            FieldValue.serverTimestamp(),
         });
         throw error;
       }
@@ -3790,7 +3790,7 @@ exports.finalizeTaxInvoiceDocument = onCall(
       if (draftId.includes("/") || draftId.length > 180) {
         throw new HttpsError("invalid-argument", "Invalid Tax Authority draft ID.");
       }
-      const invoiceRef = admin.firestore().collection("users").doc(userId)
+      const invoiceRef = db.collection("users").doc(userId)
           .collection("invoices").doc(draftId);
       const snap = await invoiceRef.get();
       if (!snap.exists) {
@@ -3842,7 +3842,6 @@ exports.finalizeTaxInvoiceDocument = onCall(
 );
 
 async function taxInvoiceBusinessProfile(userId, expectedBusinessId) {
-  const db = admin.firestore();
   const userRef = db.collection("users").doc(userId);
   const [userSnap, verificationSnap] = await Promise.all([
     userRef.get(),
@@ -3982,7 +3981,7 @@ async function reserveReverseChargeInvoice({
   const counterRef = userRef.collection("counters")
       .doc(`document_counter_${sourceReservation.docType}`);
   const issueDate = israelIsoDate();
-  const now = admin.firestore.Timestamp.now();
+  const now = Timestamp.now();
   return db.runTransaction(async (transaction) => {
     const [sourceSnap, counterSnap] = await Promise.all([
       transaction.get(invoiceRef),
@@ -4136,7 +4135,7 @@ async function ensureReverseChargeLogoCopy({
         "The reverse-charge document logo reference is invalid.",
     );
   }
-  const bucket = admin.storage().bucket();
+  const bucket = storage.bucket();
   const replacementFile = bucket.file(replacementLogoPath);
   const [replacementExists] = await replacementFile.exists();
   if (replacementExists) return;
@@ -4212,7 +4211,7 @@ async function finalizeReverseChargeTaxInvoice({
     allocation = {
       ...approval,
       rawResponse: response,
-      requestedAt: admin.firestore.Timestamp.now(),
+      requestedAt: Timestamp.now(),
       environment: "sandbox",
       reverseCharge: true,
     };
@@ -4222,7 +4221,7 @@ async function finalizeReverseChargeTaxInvoice({
         taxAuthorityAllocation: allocation,
         "taxAuthorityAllocationRequest.status": "approved",
         "taxAuthorityAllocationRequest.completedAt":
-          admin.firestore.FieldValue.serverTimestamp(),
+          FieldValue.serverTimestamp(),
         "reverseCharge.status": "approved",
         "reverseCharge.authorityResponse": response,
       }),
@@ -4232,7 +4231,7 @@ async function finalizeReverseChargeTaxInvoice({
         "taxAuthorityDecision.status": "accepted",
         "taxAuthorityDecision.response": response,
         "taxAuthorityDecision.acceptedAt":
-          admin.firestore.FieldValue.serverTimestamp(),
+          FieldValue.serverTimestamp(),
         "reverseChargeWorkflow.status": "approved",
         "reverseChargeWorkflow.authorityResponse": response,
       }),
@@ -4272,7 +4271,7 @@ async function finalizeReverseChargeTaxInvoice({
       "reverseChargeWorkflow.specialAllocationNumber":
         allocation.confirmationNumber,
       "reverseChargeWorkflow.finalizedAt":
-        admin.firestore.FieldValue.serverTimestamp(),
+        FieldValue.serverTimestamp(),
     }, {merge: true}),
     claim.replacementRef.set({
       reverseCharge: {
@@ -4281,7 +4280,7 @@ async function finalizeReverseChargeTaxInvoice({
         sourceInvoiceNumber: reservation.documentNumber,
         specialAllocationNumber: allocation.confirmationNumber,
         authorityResponse,
-        finalizedAt: admin.firestore.FieldValue.serverTimestamp(),
+        finalizedAt: FieldValue.serverTimestamp(),
       },
     }, {merge: true}),
   ]);
@@ -4346,13 +4345,12 @@ async function createAutomaticCancellationCreditNote({
   sourceInvoiceRef,
   creditReason,
 }) {
-  const db = admin.firestore();
   const userRef = db.collection("users").doc(userId);
   const counterRef = userRef.collection("counters")
       .doc("document_counter_credit_note");
   const context = await serverDocumentContext(userId);
   const issueDate = israelIsoDate();
-  const now = admin.firestore.Timestamp.now();
+  const now = Timestamp.now();
 
   const claim = await db.runTransaction(async (transaction) => {
     const [sourceSnap, counterSnap] = await Promise.all([
@@ -4524,7 +4522,7 @@ async function createAutomaticCancellationCreditNote({
     const safeId = document.invoiceDocId.replace(/[^A-Za-z0-9_-]/g, "_");
     const fileName = `server_document_${safeId}.pdf`;
     const storagePath = `invoices/${userId}/${fileName}`;
-    const file = admin.storage().bucket().file(storagePath);
+    const file = storage.bucket().file(storagePath);
     let token = null;
     try {
       const [existingMetadata] = await file.getMetadata();
@@ -4555,7 +4553,7 @@ async function createAutomaticCancellationCreditNote({
     });
     const [metadata] = await file.getMetadata();
     const downloadUrl = taxInvoiceDownloadUrl(
-        admin.storage().bucket().name,
+        storage.bucket().name,
         storagePath,
         token,
     );
@@ -4604,7 +4602,7 @@ async function createAutomaticCancellationCreditNote({
       createClientLedgerPosting(transaction, userRef, ledgerPosting);
       transaction.set(logBucketRef, {
         value: logCounter,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
         docType: "credit_notes",
       }, {merge: true});
       transaction.set(
@@ -4622,12 +4620,12 @@ async function createAutomaticCancellationCreditNote({
           },
       );
       transaction.set(db.collection("metadata").doc("invoice_counts"), {
-        credit_note: admin.firestore.FieldValue.increment(1),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        credit_note: FieldValue.increment(1),
+        updatedAt: FieldValue.serverTimestamp(),
       }, {merge: true});
       transaction.set(userRef.collection("metadata").doc("financial_summary"), {
-        totalEarned: admin.firestore.FieldValue.increment(-document.finalTotal),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        totalEarned: FieldValue.increment(-document.finalTotal),
+        updatedAt: FieldValue.serverTimestamp(),
       }, {merge: true});
       transaction.update(sourceInvoiceRef, {
         cancellationStatus: "cancelled",
@@ -4635,12 +4633,12 @@ async function createAutomaticCancellationCreditNote({
           document.finalTotal),
         cancelledByDocumentId: document.invoiceDocId,
         cancelledByDocumentNumber: document.documentNumber,
-        cancelledAt: admin.firestore.FieldValue.serverTimestamp(),
+        cancelledAt: FieldValue.serverTimestamp(),
         isLinkingLocked: true,
-        linkLockUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        linkLockUpdatedAt: FieldValue.serverTimestamp(),
         "automaticCancellationCreditNote.status": "finalized",
         "automaticCancellationCreditNote.finalizedAt":
-          admin.firestore.FieldValue.serverTimestamp(),
+          FieldValue.serverTimestamp(),
       });
     });
     await removeFallbackPreview(
@@ -4653,14 +4651,14 @@ async function createAutomaticCancellationCreditNote({
         documentStatus: "generation_failed",
         "serverDocument.status": "failed",
         "serverDocument.lastError": normalizeString(error?.message).slice(0, 500),
-        "serverDocument.failedAt": admin.firestore.FieldValue.serverTimestamp(),
+        "serverDocument.failedAt": FieldValue.serverTimestamp(),
       }, {merge: true}),
       sourceInvoiceRef.set({
         "automaticCancellationCreditNote.status": "failed",
         "automaticCancellationCreditNote.lastError":
           normalizeString(error?.message).slice(0, 500),
         "automaticCancellationCreditNote.failedAt":
-          admin.firestore.FieldValue.serverTimestamp(),
+          FieldValue.serverTimestamp(),
       }, {merge: true}),
     ]);
     try {
@@ -4788,11 +4786,11 @@ function taxInvoiceStorageFields({
       documentStatus: "finalized",
       taxAuthorityAllocationRequest: {
         status: workflowStatus,
-        finalizedAt: admin.firestore.FieldValue.serverTimestamp(),
-        finalizationError: admin.firestore.FieldValue.delete(),
-        finalizationFailedAt: admin.firestore.FieldValue.delete(),
+        finalizedAt: FieldValue.serverTimestamp(),
+        finalizationError: FieldValue.delete(),
+        finalizationFailedAt: FieldValue.delete(),
       },
-      finalizedAt: admin.firestore.FieldValue.serverTimestamp(),
+      finalizedAt: FieldValue.serverTimestamp(),
       finalPdf: {
         storagePath,
         size,
@@ -4801,7 +4799,7 @@ function taxInvoiceStorageFields({
         generatedBy: "server",
         ...(storedSignature ? {digitalSignature: storedSignature} : {}),
       },
-      fallbackPreview: admin.firestore.FieldValue.delete(),
+      fallbackPreview: FieldValue.delete(),
     },
     log: {
       userId: null,
@@ -4850,7 +4848,7 @@ function taxInvoiceStorageFields({
       fileName,
       storagePath,
       url: downloadUrl,
-      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      timestamp: FieldValue.serverTimestamp(),
       paymentStatus: reservation.docType === "invoice" ? "unpaid" : "paid",
       paidAmount: reservation.docType === "invoice" ? 0 : Math.abs(total),
       ...(allocation?.confirmationNumber ? {
@@ -4970,7 +4968,7 @@ async function persistTaxInvoiceFallbackPreview({
   delete displayFields.taxAuthorityAllocationNumber;
   delete displayFields.allocationCancelled;
   delete displayFields.continuedWithoutAllocation;
-  return admin.firestore().runTransaction(async (transaction) => {
+  return db.runTransaction(async (transaction) => {
     const latestSnap = await transaction.get(invoiceRef);
     if (!latestSnap.exists ||
         (latestSnap.data()?.documentStatus === "finalized" &&
@@ -4995,7 +4993,7 @@ async function persistTaxInvoiceFallbackPreview({
         contentType: "application/pdf",
         generation: artifact.generation,
         generatedBy: "server-preview-fallback",
-        generatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        generatedAt: FieldValue.serverTimestamp(),
       },
     }, {merge: true});
     return true;
@@ -5081,7 +5079,7 @@ async function finalizeAllocatedTaxInvoiceAttempt({
 
   const fileName = `tax_invoice_${reservation.documentNumber}.pdf`;
   const storagePath = `invoices/${userId}/${fileName}`;
-  const file = admin.storage().bucket().file(storagePath);
+  const file = storage.bucket().file(storagePath);
   let token = null;
   try {
     const [existingMetadata] = await file.getMetadata();
@@ -5112,7 +5110,7 @@ async function finalizeAllocatedTaxInvoiceAttempt({
   });
   const [metadata] = await file.getMetadata();
   const downloadUrl = taxInvoiceDownloadUrl(
-      admin.storage().bucket().name,
+      storage.bucket().name,
       storagePath,
       token,
   );
@@ -5131,7 +5129,7 @@ async function finalizeAllocatedTaxInvoiceAttempt({
     digitalSignature,
   });
   fields.log.userId = userId;
-  const userRef = admin.firestore().collection("users").doc(userId);
+  const userRef = db.collection("users").doc(userId);
   const ledgerPosting = buildClientLedgerPosting({
     userId,
     document: {
@@ -5148,7 +5146,6 @@ async function finalizeAllocatedTaxInvoiceAttempt({
     sourceDocumentPath: invoiceRef.path,
   });
 
-  const db = admin.firestore();
   await db.runTransaction(async (transaction) => {
     const logBucketRef = db.collection("users").doc(userId)
         .collection("logs").doc(fields.log.bucket);
@@ -5177,7 +5174,7 @@ async function finalizeAllocatedTaxInvoiceAttempt({
     createClientLedgerPosting(transaction, userRef, ledgerPosting);
     transaction.set(logBucketRef, {
       value: logCounter,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
       docType: fields.log.bucket,
     }, {merge: true});
     transaction.set(
@@ -5185,13 +5182,13 @@ async function finalizeAllocatedTaxInvoiceAttempt({
         {...fields.log, counter: logCounter},
     );
     transaction.set(db.collection("metadata").doc("invoice_counts"), {
-      [reservation.docType]: admin.firestore.FieldValue.increment(1),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      [reservation.docType]: FieldValue.increment(1),
+      updatedAt: FieldValue.serverTimestamp(),
     }, {merge: true});
     transaction.set(db.collection("users").doc(userId)
         .collection("metadata").doc("financial_summary"), {
-      totalEarned: admin.firestore.FieldValue.increment(fields.total),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      totalEarned: FieldValue.increment(fields.total),
+      updatedAt: FieldValue.serverTimestamp(),
     }, {merge: true});
   });
 
@@ -5201,7 +5198,7 @@ async function finalizeAllocatedTaxInvoiceAttempt({
   );
 
   if (presentation.documentLogoMode === "inline") {
-    await admin.storage().bucket()
+    await storage.bucket()
         .file(storedPresentation.documentLogoStoragePath)
         .delete({ignoreNotFound: true})
         .catch(() => {});
@@ -5266,7 +5263,7 @@ exports.getTaxAuthorityConnectionStatus = onCall(
       if (tokenSnap.exists && !connected && connectionFlagNeedsUpdate) {
         const disconnectedUpdate = {
           connected: false,
-          disconnectedAt: admin.firestore.FieldValue.serverTimestamp(),
+          disconnectedAt: FieldValue.serverTimestamp(),
           disconnectReason: expired ?
             "token-expired" :
             expiryMissing ?
@@ -5356,12 +5353,11 @@ exports.generateUniformExport = onCall(
         throw new HttpsError("invalid-argument", error.message);
       }
 
-      const db = admin.firestore();
-      const bucket = admin.storage().bucket();
+      const bucket = storage.bucket();
       const exportId = crypto.randomUUID();
       const exportRef = db.collection("users").doc(userId)
           .collection("uniformExports").doc(exportId);
-      const startedAt = admin.firestore.Timestamp.now();
+      const startedAt = Timestamp.now();
       await exportRef.set({
         userId,
         status: "generating",
@@ -5416,7 +5412,7 @@ exports.generateUniformExport = onCall(
           })),
         });
 
-        const completedAt = admin.firestore.Timestamp.now();
+        const completedAt = Timestamp.now();
         await exportRef.set({
           status: "ready",
           mainId: artifacts.generated.mainId,
@@ -5429,7 +5425,7 @@ exports.generateUniformExport = onCall(
           downloadUrl: saved.downloadUrl,
           emailId: emailData.id,
           emailedAt: completedAt,
-          expiresAt: admin.firestore.Timestamp.fromDate(saved.expiresAt),
+          expiresAt: Timestamp.fromDate(saved.expiresAt),
           completedAt,
           updatedAt: completedAt,
         }, {merge: true});
@@ -5447,13 +5443,13 @@ exports.generateUniformExport = onCall(
           exportId,
           error: normalizeString(error?.message).slice(0, 500),
         });
-        const failedAt = admin.firestore.Timestamp.now();
+        const failedAt = Timestamp.now();
         await exportRef.set({
           status: "failed",
           error: normalizeString(error?.message).slice(0, 500),
           failedAt,
           updatedAt: failedAt,
-          expiresAt: admin.firestore.Timestamp.fromMillis(
+          expiresAt: Timestamp.fromMillis(
               Date.now() + 24 * 60 * 60 * 1000,
           ),
         }, {merge: true});
@@ -5474,10 +5470,9 @@ exports.cleanupExpiredUniformExports = onSchedule(
       memory: "512MiB",
     },
     async () => {
-      const db = admin.firestore();
-      const bucket = admin.storage().bucket();
+      const bucket = storage.bucket();
       const expired = await db.collectionGroup("uniformExports")
-          .where("expiresAt", "<=", admin.firestore.Timestamp.now())
+          .where("expiresAt", "<=", Timestamp.now())
           .limit(100)
           .get();
       let removed = 0;
@@ -5491,10 +5486,10 @@ exports.cleanupExpiredUniformExports = onSchedule(
           await document.ref.set({
             status: "expired",
             artifactStatus: "deleted",
-            downloadUrl: admin.firestore.FieldValue.delete(),
-            expiresAt: admin.firestore.FieldValue.delete(),
-            expiredAt: admin.firestore.FieldValue.serverTimestamp(),
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            downloadUrl: FieldValue.delete(),
+            expiresAt: FieldValue.delete(),
+            expiredAt: FieldValue.serverTimestamp(),
+            updatedAt: FieldValue.serverTimestamp(),
           }, {merge: true});
           removed += 1;
         } catch (error) {
@@ -5530,7 +5525,7 @@ exports.submitUniformFilesToTaxAuthority = onCall(
       try {
         if (normalizeString(request.data?.exportId).trim()) {
           exportId = normalizeUniformExportId(request.data);
-          exportRef = admin.firestore().collection("users").doc(userId)
+          exportRef = db.collection("users").doc(userId)
               .collection("uniformExports").doc(exportId);
           const exportSnap = await exportRef.get();
           if (!exportSnap.exists) {
@@ -5558,7 +5553,7 @@ exports.submitUniformFilesToTaxAuthority = onCall(
       const {accessToken} = await getUniformTaxAuthorityTokenData(
           userId, businessId,
       );
-      const bucket = admin.storage().bucket();
+      const bucket = storage.bucket();
       const iniFile = bucket.file(input.iniPath);
       const bkmvFile = bucket.file(input.bkmvPath);
       const [iniExists, bkmvExists] = await Promise.all([
@@ -5637,10 +5632,10 @@ exports.submitUniformFilesToTaxAuthority = onCall(
         iniPath: input.iniPath,
         bkmvPath: input.bkmvPath,
       });
-      const submissionRef = admin.firestore()
+      const submissionRef = db
           .collection("users").doc(userId)
           .collection("uniformTaxSubmissions").doc();
-      const createdAt = admin.firestore.Timestamp.now();
+      const createdAt = Timestamp.now();
       const submissionFiles = uploads.map(({kind, target, bytes}) => ({
         kind,
         authorityFileName: target.fileName,
@@ -5678,15 +5673,15 @@ exports.submitUniformFilesToTaxAuthority = onCall(
             ...file,
             status: "Uploaded",
           })),
-          uploadedAt: admin.firestore.FieldValue.serverTimestamp(),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          uploadedAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
         });
         if (exportRef) {
           await exportRef.set({
             status: "submitted",
             submissionId: submissionRef.id,
-            submittedAt: admin.firestore.FieldValue.serverTimestamp(),
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            submittedAt: FieldValue.serverTimestamp(),
+            updatedAt: FieldValue.serverTimestamp(),
           }, {merge: true});
         } else {
           await Promise.all(uploads.map(({path}) =>
@@ -5701,7 +5696,7 @@ exports.submitUniformFilesToTaxAuthority = onCall(
         await submissionRef.update({
           status: "upload-failed",
           error: normalizeString(error.message).slice(0, 500),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
         });
         throw error;
       }
@@ -5725,7 +5720,7 @@ exports.getUniformTaxAuthoritySubmissionStatus = onCall(
       if (!/^[A-Za-z0-9_-]{10,80}$/.test(submissionId)) {
         throw new HttpsError("invalid-argument", "Invalid submission ID.");
       }
-      const submissionRef = admin.firestore()
+      const submissionRef = db
           .collection("users").doc(userId)
           .collection("uniformTaxSubmissions").doc(submissionId);
       const submissionSnap = await submissionRef.get();
@@ -5772,20 +5767,20 @@ exports.getUniformTaxAuthoritySubmissionStatus = onCall(
       await submissionRef.update({
         status,
         files,
-        checkedAt: admin.firestore.FieldValue.serverTimestamp(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        checkedAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
       });
       const exportId = normalizeString(submission.exportId).trim();
       if (exportId) {
         try {
           normalizeUniformExportId({exportId});
-          await admin.firestore().collection("users").doc(userId)
+          await db.collection("users").doc(userId)
               .collection("uniformExports").doc(exportId).set({
                 authorityStatus: status,
                 authorityFiles: files,
                 authorityCheckedAt:
-                  admin.firestore.FieldValue.serverTimestamp(),
-                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                  FieldValue.serverTimestamp(),
+                updatedAt: FieldValue.serverTimestamp(),
               }, {merge: true});
         } catch (error) {
           logger.warn("Could not update the linked uniform export status", {
@@ -5806,7 +5801,7 @@ exports.syncPublicWorkerProfile = onDocumentWritten(
     async (event) => {
       const userId = event.params.userId;
       const userData = event.data?.after?.data() || null;
-      const publicRef = admin.firestore()
+      const publicRef = db
           .collection(PUBLIC_WORKER_PROFILE_COLLECTION)
           .doc(userId);
       const existingPublicSnap = await publicRef.get();
@@ -5833,7 +5828,7 @@ exports.syncPublicWorkerProfile = onDocumentWritten(
 
       await publicRef.set({
         ...publicProfile,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
       });
     },
 );
@@ -5846,7 +5841,6 @@ exports.upgradeCurrentUserToWorker = onCall(
         throw new HttpsError("unauthenticated", "Sign in is required.");
       }
 
-      const db = admin.firestore();
       const userRef = db.collection("users").doc(userId);
       const publicProfileRef = db
           .collection(PUBLIC_WORKER_PROFILE_COLLECTION)
@@ -5898,14 +5892,14 @@ exports.upgradeCurrentUserToWorker = onCall(
         transaction.set(userRef, {role: "worker"}, {merge: true});
         transaction.set(publicProfileRef, {
           ...publicProfile,
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
         }, {merge: true});
 
         if (currentRole === "customer") {
           transaction.set(statsRef, {
-            totalCustomers: admin.firestore.FieldValue.increment(-1),
-            totalWorkers: admin.firestore.FieldValue.increment(1),
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            totalCustomers: FieldValue.increment(-1),
+            totalWorkers: FieldValue.increment(1),
+            updatedAt: FieldValue.serverTimestamp(),
           }, {merge: true});
         }
       });
@@ -5924,14 +5918,13 @@ exports.backfillPublicWorkerProfiles = onCall(
         throw new HttpsError("permission-denied", "Admin access required.");
       }
 
-      const db = admin.firestore();
       let lastDocument = null;
       let scanned = 0;
       let projected = 0;
 
       while (true) {
         let query = db.collection("users")
-            .orderBy(admin.firestore.FieldPath.documentId())
+            .orderBy(FieldPath.documentId())
             .limit(400);
         if (lastDocument) query = query.startAfter(lastDocument);
         const snapshot = await query.get();
@@ -5948,7 +5941,7 @@ exports.backfillPublicWorkerProfiles = onCall(
           if (publicProfile) {
             batch.set(publicRef, {
               ...publicProfile,
-              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+              updatedAt: FieldValue.serverTimestamp(),
             });
             projected += 1;
           } else {
@@ -5976,7 +5969,6 @@ exports.getPublicWorkerSchedule = onCall(
         throw new HttpsError("invalid-argument", "A valid worker ID is required.");
       }
 
-      const db = admin.firestore();
       const publicProfileRef = db
           .collection(PUBLIC_WORKER_PROFILE_COLLECTION)
           .doc(workerId);
@@ -6011,7 +6003,6 @@ exports.getPublicWorkerViewCount = onCall(
         throw new HttpsError("invalid-argument", "A valid worker ID is required.");
       }
 
-      const db = admin.firestore();
       const profileSnap = await db
           .collection(PUBLIC_WORKER_PROFILE_COLLECTION)
           .doc(workerId)
@@ -6050,7 +6041,6 @@ exports.getProfileContactDetails = onCall(
         throw new HttpsError("invalid-argument", "A valid user ID is required.");
       }
 
-      const db = admin.firestore();
       const targetRef = db.collection("users").doc(targetUserId);
       const publicProfileRef = db
           .collection(PUBLIC_WORKER_PROFILE_COLLECTION)
@@ -6114,7 +6104,6 @@ exports.ensureChatRoom = onCall(
         throw new HttpsError("invalid-argument", "A valid receiver is required.");
       }
 
-      const db = admin.firestore();
       const [senderSnap, receiverSnap, senderPublicSnap, receiverPublicSnap] =
         await Promise.all([
         db.collection("users").doc(userId).get(),
@@ -6160,7 +6149,7 @@ exports.ensureChatRoom = onCall(
         },
         lastMessage: normalizeString(roomData.lastMessage).slice(0, 4000),
         lastTimestamp: roomData.lastTimestamp ||
-          admin.firestore.FieldValue.serverTimestamp(),
+          FieldValue.serverTimestamp(),
       });
 
       return {roomId};
@@ -6174,7 +6163,6 @@ exports.syncWorkerReviewRatings = onDocumentWritten(
     },
     async (event) => {
       const targetUserId = event.params.targetUserId;
-      const db = admin.firestore();
       const reviewsSnap = await db.collection("publicWorkerProfiles")
           .doc(targetUserId)
           .collection("reviews")
@@ -6235,7 +6223,7 @@ exports.syncWorkerReviewRatings = onDocumentWritten(
           avgServiceRating: totals.service / divisor,
           avgTimingRating: totals.timing / divisor,
           avgWorkQualityRating: totals.workQuality / divisor,
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
         });
       }
 
@@ -6246,7 +6234,7 @@ exports.syncWorkerReviewRatings = onDocumentWritten(
         totalStars,
         avgRating: reviewCount === 0 ? 0 : totalStars / reviewCount,
         reviewCount,
-        ratingsUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        ratingsUpdatedAt: FieldValue.serverTimestamp(),
       }, {merge: true});
       await batch.commit();
     },
@@ -6254,7 +6242,6 @@ exports.syncWorkerReviewRatings = onDocumentWritten(
 
 async function syncPublicProjectCount(event, nestedCollection, countField) {
   const {userId, projectId} = event.params;
-  const db = admin.firestore();
   const projectRef = db.collection(PUBLIC_WORKER_PROFILE_COLLECTION)
       .doc(userId)
       .collection("projects")
@@ -6357,7 +6344,6 @@ exports.submitBusinessVerification = onCall(
         );
       }
 
-      const db = admin.firestore();
       const userRef = db.collection("users").doc(userId);
       const verificationRef = userRef
           .collection("verification_info").doc("latest");
@@ -6418,27 +6404,27 @@ exports.submitBusinessVerification = onCall(
           branchNumber,
           dealerType,
           businessVerificationStatus: "approved",
-          status: admin.firestore.FieldValue.delete(),
+          status: FieldValue.delete(),
           legalAccepted: true,
           termsAccepted: true,
           legalDeclarationAccepted: true,
           responsibilityAccepted: true,
-          timestamp: admin.firestore.FieldValue.serverTimestamp(),
-          approvedAt: admin.firestore.FieldValue.serverTimestamp(),
-          reviewedAt: admin.firestore.FieldValue.delete(),
-          reviewedBy: admin.firestore.FieldValue.delete(),
-          rejectedAt: admin.firestore.FieldValue.delete(),
-          rejectionReason: admin.firestore.FieldValue.delete(),
+          timestamp: FieldValue.serverTimestamp(),
+          approvedAt: FieldValue.serverTimestamp(),
+          reviewedAt: FieldValue.delete(),
+          reviewedBy: FieldValue.delete(),
+          rejectedAt: FieldValue.delete(),
+          rejectionReason: FieldValue.delete(),
           businessLogoUrl: businessLogoUrl || null,
           businessSignatureUrl: businessSignatureUrl || null,
         }, {merge: true});
         transaction.update(userRef, {
           isVerified: true,
-          verifiedAt: admin.firestore.FieldValue.serverTimestamp(),
-          businessId: admin.firestore.FieldValue.delete(),
-          businessLogoUrl: admin.firestore.FieldValue.delete(),
-          businessSignatureUrl: admin.firestore.FieldValue.delete(),
-          businessVerificationStatus: admin.firestore.FieldValue.delete(),
+          verifiedAt: FieldValue.serverTimestamp(),
+          businessId: FieldValue.delete(),
+          businessLogoUrl: FieldValue.delete(),
+          businessSignatureUrl: FieldValue.delete(),
+          businessVerificationStatus: FieldValue.delete(),
         });
       });
 
@@ -6456,7 +6442,6 @@ exports.reviewBusinessVerification = onCall(
         throw new HttpsError("unauthenticated", "Authentication required.");
       }
 
-      const db = admin.firestore();
       const hasAdminClaim = request.auth.token?.admin === true;
       if (!hasAdminClaim) {
         const adminSnapshot = await db.collection("users").doc(adminUid).get();
@@ -6523,45 +6508,45 @@ exports.reviewBusinessVerification = onCall(
           );
         }
 
-        const reviewedAt = admin.firestore.FieldValue.serverTimestamp();
+        const reviewedAt = FieldValue.serverTimestamp();
         const approved = decision === "approve";
         transaction.update(userRef, approved ? {
           isVerified: true,
           verifiedAt: reviewedAt,
-          businessId: admin.firestore.FieldValue.delete(),
-          businessLogoUrl: admin.firestore.FieldValue.delete(),
-          businessSignatureUrl: admin.firestore.FieldValue.delete(),
-          businessVerificationStatus: admin.firestore.FieldValue.delete(),
+          businessId: FieldValue.delete(),
+          businessLogoUrl: FieldValue.delete(),
+          businessSignatureUrl: FieldValue.delete(),
+          businessVerificationStatus: FieldValue.delete(),
         } : {
           isVerified: false,
-          verifiedAt: admin.firestore.FieldValue.delete(),
-          businessId: admin.firestore.FieldValue.delete(),
-          businessLogoUrl: admin.firestore.FieldValue.delete(),
-          businessSignatureUrl: admin.firestore.FieldValue.delete(),
-          businessVerificationStatus: admin.firestore.FieldValue.delete(),
+          verifiedAt: FieldValue.delete(),
+          businessId: FieldValue.delete(),
+          businessLogoUrl: FieldValue.delete(),
+          businessSignatureUrl: FieldValue.delete(),
+          businessVerificationStatus: FieldValue.delete(),
         });
         transaction.set(verificationRef, approved ? {
           businessVerificationStatus: "approved",
-          status: admin.firestore.FieldValue.delete(),
+          status: FieldValue.delete(),
           approvedAt: reviewedAt,
           reviewedAt,
           reviewedBy: adminUid,
-          rejectedAt: admin.firestore.FieldValue.delete(),
-          rejectionReason: admin.firestore.FieldValue.delete(),
+          rejectedAt: FieldValue.delete(),
+          rejectionReason: FieldValue.delete(),
         } : {
           businessVerificationStatus: "rejected",
-          status: admin.firestore.FieldValue.delete(),
+          status: FieldValue.delete(),
           rejectedAt: reviewedAt,
           rejectionReason: reason,
           reviewedAt,
           reviewedBy: adminUid,
-          approvedAt: admin.firestore.FieldValue.delete(),
+          approvedAt: FieldValue.delete(),
         }, {merge: true});
         if (publicProfileSnapshot.exists) {
           transaction.update(publicProfileRef, {
             isBusinessVerified: approved,
-            hideSchedule: admin.firestore.FieldValue.delete(),
-            isInsured: admin.firestore.FieldValue.delete(),
+            hideSchedule: FieldValue.delete(),
+            isInsured: FieldValue.delete(),
             updatedAt: reviewedAt,
           });
         }
@@ -6622,7 +6607,7 @@ exports.sendNotificationPush = onDocumentCreated(
         return;
       }
 
-      const userDoc = await admin.firestore().collection("users").doc(userId).get();
+      const userDoc = await db.collection("users").doc(userId).get();
       if (!userDoc.exists) {
         logger.warn("Target user doc not found", {userId});
         return;
@@ -6682,7 +6667,7 @@ exports.sendNotificationPush = onDocumentCreated(
       };
 
       try {
-        const response = await admin.messaging().sendEachForMulticast(message);
+        const response = await messaging.sendEachForMulticast(message);
         await cleanupInvalidFcmTokens(userDoc.ref, fcmTokens, response.responses);
         const failureCodes = summarizeMessagingFailures(response.responses);
         const failureSamples = summarizeTokenFailures(fcmTokens, response.responses);
@@ -6730,12 +6715,12 @@ async function sendInvoiceBuilderEmailVerification({db, userId, email}) {
     }
     transaction.set(verificationRef, {
       requestId,
-      sentAt: admin.firestore.Timestamp.fromMillis(now),
+      sentAt: Timestamp.fromMillis(now),
     });
   });
 
   try {
-    const link = await admin.auth().generateEmailVerificationLink(email);
+    const link = await auth.generateEmailVerificationLink(email);
     const safeLink = escapeHtml(link);
     await sendEmailWithSes({
       to: [email],
@@ -6784,9 +6769,8 @@ exports.sendInvoiceBuilderEmailCode = onCall(
       }
       await assertActiveProUser(userId);
 
-      const authUser = await admin.auth().getUser(userId);
+      const authUser = await auth.getUser(userId);
       const email = normalizeEmail(authUser.email);
-      const db = admin.firestore();
       if (!email) {
         logger.warn("Invoice builder email code precondition failed", {
           userId,
@@ -6835,8 +6819,8 @@ exports.sendInvoiceBuilderEmailCode = onCall(
           codeHash: invoiceBuilderEmailCodeHash(code),
           requestId,
           attempts: 0,
-          sentAt: admin.firestore.Timestamp.fromMillis(now),
-          expiresAt: admin.firestore.Timestamp.fromDate(expiresAt),
+          sentAt: Timestamp.fromMillis(now),
+          expiresAt: Timestamp.fromDate(expiresAt),
         });
       });
 
@@ -6885,7 +6869,6 @@ exports.verifyInvoiceBuilderEmailCode = onCall(
         throw new HttpsError("invalid-argument", "Enter the six-digit code.");
       }
 
-      const db = admin.firestore();
       const verificationRef = db.collection("users").doc(userId)
           .collection("invoiceBuilderVerifications").doc("emailCode");
       const result = await db.runTransaction(async (transaction) => {
@@ -6907,7 +6890,7 @@ exports.verifyInvoiceBuilderEmailCode = onCall(
           crypto.timingSafeEqual(expected, actual);
         if (!matches) {
           transaction.update(verificationRef, {
-            attempts: admin.firestore.FieldValue.increment(1),
+            attempts: FieldValue.increment(1),
           });
           return "incorrect";
         }
@@ -6944,7 +6927,6 @@ exports.emailSavedInvoice = onDocumentWritten(
       const rawStoragePath = normalizeString(invoice.storagePath).trim();
       if (!rawStoragePath) return;
 
-      const db = admin.firestore();
       const invoiceRef = event.data.after.ref;
       const userId = event.params.userId;
       const storagePath = ownedInvoicePdfPath(rawStoragePath, userId);
@@ -6971,7 +6953,7 @@ exports.emailSavedInvoice = onDocumentWritten(
         }
         transaction.update(invoiceRef, {
           invoiceEmailStatus: "sending",
-          invoiceEmailAttemptedAt: admin.firestore.FieldValue.serverTimestamp(),
+          invoiceEmailAttemptedAt: FieldValue.serverTimestamp(),
         });
         return true;
       });
@@ -7016,7 +6998,7 @@ exports.emailSavedInvoice = onDocumentWritten(
           return;
         }
 
-        const bucket = admin.storage().bucket();
+        const bucket = storage.bucket();
         const fileName = normalizeString(invoice.fileName).trim() || "invoice.pdf";
         const downloadToken = createDocumentDownloadToken();
         downloadTokenRef = db.collection(DOCUMENT_DOWNLOAD_COLLECTION)
@@ -7027,7 +7009,7 @@ exports.emailSavedInvoice = onDocumentWritten(
           invoicePath: invoiceRef.path,
           storagePath,
           fileName,
-          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          createdAt: FieldValue.serverTimestamp(),
           revokedAt: null,
         });
         const downloadUrl = documentDownloadUrl(
@@ -7081,8 +7063,8 @@ exports.emailSavedInvoice = onDocumentWritten(
 
         await invoiceRef.update(buildSentInvoiceEmailUpdate(
             emailIds,
-            admin.firestore.FieldValue.serverTimestamp(),
-            admin.firestore.FieldValue.delete(),
+            FieldValue.serverTimestamp(),
+            FieldValue.delete(),
         ));
         logger.info("Invoice email sent", {
           invoiceId: event.params.invoiceId,
@@ -7131,7 +7113,7 @@ exports.sendAccountingExportEmailHttp = onRequest(
           response.status(401).json({error: "Authentication required."});
           return;
         }
-        const decodedToken = await admin.auth().verifyIdToken(firebaseToken);
+        const decodedToken = await auth.verifyIdToken(firebaseToken);
         const userId = decodedToken.uid;
 
         const recipientEmail = normalizeEmail(request.body?.recipientEmail);
@@ -7173,7 +7155,7 @@ exports.sendAccountingExportEmailHttp = onRequest(
           return;
         }
 
-        const bucket = admin.storage().bucket();
+        const bucket = storage.bucket();
         const files = paths.map((filePath) => bucket.file(filePath));
         const metadata = await Promise.all(files.map(async (file) => {
           const [exists] = await file.exists();
@@ -7454,7 +7436,7 @@ exports.prepareSubscriptionPurchase = onCall(
         throw new HttpsError("unauthenticated", "Authentication required.");
       }
 
-      const userRef = admin.firestore().collection("users").doc(uid);
+      const userRef = db.collection("users").doc(uid);
       const accountToken = subscriptionAccountTokenForUid(uid);
       await claimSubscriptionOwnership({
         userRef,
@@ -7482,7 +7464,7 @@ exports.verifySubscriptionPurchase = onCall(
       }
 
       const payload = request.data || {};
-      const userRef = admin.firestore().collection("users").doc(auth.uid);
+      const userRef = db.collection("users").doc(auth.uid);
       const userSnap = await userRef.get();
       const userData = userSnap.data() || {};
 
@@ -7664,7 +7646,6 @@ exports.syncWorkerSubscriptionLifecycle = onSchedule(
       secrets: APPLE_SUBSCRIPTION_SECRETS,
     },
     async () => {
-      const db = admin.firestore();
       const pageSize = 300;
 
       let lastDoc = null;
@@ -7681,7 +7662,7 @@ exports.syncWorkerSubscriptionLifecycle = onSchedule(
         let query = db
             .collection("users")
             .where("role", "==", "worker")
-            .orderBy(admin.firestore.FieldPath.documentId())
+            .orderBy(FieldPath.documentId())
             .limit(pageSize);
 
         if (lastDoc) {
@@ -7785,8 +7766,7 @@ exports.cleanupSubscriptionNotificationEvents = onSchedule(
       timeZone: "UTC",
     },
     async () => {
-      const db = admin.firestore();
-      const now = admin.firestore.Timestamp.now();
+      const now = Timestamp.now();
       const pageSize = 300;
       let deleted = 0;
 
@@ -7971,7 +7951,7 @@ async function assertNoConflictingSubscriptionOwner({
     if (seen.has(signature)) continue;
     seen.add(signature);
 
-    const snap = await admin.firestore()
+    const snap = await db
         .collection("users")
         .where(field, "==", value)
         .limit(1)
@@ -8005,7 +7985,7 @@ function subscriptionOwnershipRef(kind, value) {
   const id = crypto.createHash("sha256")
       .update(`${kind}:${value}`)
       .digest("hex");
-  return admin.firestore().collection(SUBSCRIPTION_OWNERSHIP_COLLECTION).doc(id);
+  return db.collection(SUBSCRIPTION_OWNERSHIP_COLLECTION).doc(id);
 }
 
 function googlePlayOwnershipIdentifiers({purchaseToken, accountToken}) {
@@ -8035,7 +8015,6 @@ async function claimSubscriptionOwnership({
   identifiers,
   userUpdates = {},
 }) {
-  const db = admin.firestore();
   const normalized = normalizedOwnershipIdentifiers(identifiers);
   await db.runTransaction(async (transaction) => {
     const userSnap = await transaction.get(userRef);
@@ -8063,7 +8042,7 @@ async function claimSubscriptionOwnership({
       }
     }
 
-    const timestamp = admin.firestore.FieldValue.serverTimestamp();
+    const timestamp = FieldValue.serverTimestamp();
     for (const record of ownershipRecords) {
       transaction.set(record.ref, {
         uid: userRef.id,
@@ -8096,7 +8075,6 @@ async function applyProviderSubscriptionUpdates({
   providerUpdates,
   ownershipIdentifiers = [],
 }) {
-  const db = admin.firestore();
   const normalizedOwnership = normalizedOwnershipIdentifiers(
       ownershipIdentifiers,
   );
@@ -8151,8 +8129,8 @@ async function applyProviderSubscriptionUpdates({
         entitlements,
         new Date(),
     );
-    const timestamp = admin.firestore.FieldValue.serverTimestamp();
-    const freshUntil = admin.firestore.Timestamp.fromDate(
+    const timestamp = FieldValue.serverTimestamp();
+    const freshUntil = Timestamp.fromDate(
         addHours(new Date(), SUBSCRIPTION_VERIFICATION_RETENTION_HOURS),
     );
 
@@ -8193,7 +8171,7 @@ async function findUserByOwnershipIdentifier(kind, rawValue) {
   const ownershipSnap = await subscriptionOwnershipRef(kind, value).get();
   const uid = normalizeString(ownershipSnap.data()?.uid).trim();
   if (!ownershipSnap.exists || !uid) return null;
-  const userSnap = await admin.firestore().collection("users").doc(uid).get();
+  const userSnap = await db.collection("users").doc(uid).get();
   return userSnap.exists ? userSnap : null;
 }
 
@@ -8327,7 +8305,7 @@ function createPlaySubscriptionUpdates(playState, userData, options = {}) {
     subscriptionStatus: status,
     subscriptionCanceled: !autoRenewEnabled,
     subscriptionExpiresAt: expiry ?
-      admin.firestore.Timestamp.fromDate(expiry) :
+      Timestamp.fromDate(expiry) :
       null,
     subscriptionProductId:
       latestLineItem?.productId || userData.subscriptionProductId || null,
@@ -8384,7 +8362,7 @@ function createAppleSubscriptionUpdates({
     subscriptionStatus: mappedStatus,
     subscriptionCanceled: !willRenew,
     subscriptionExpiresAt: expiry ?
-      admin.firestore.Timestamp.fromDate(expiry) :
+      Timestamp.fromDate(expiry) :
       null,
     subscriptionProductId:
       transaction?.productId ||
@@ -8432,7 +8410,7 @@ function createAppleApiSubscriptionUpdates(appleState, userData) {
     subscriptionStatus: mappedStatus,
     subscriptionCanceled: !willRenew,
     subscriptionExpiresAt: expiry ?
-      admin.firestore.Timestamp.fromDate(expiry) :
+      Timestamp.fromDate(expiry) :
       null,
     subscriptionProductId:
       transaction?.productId ||
@@ -8469,9 +8447,9 @@ function createAppleApiSubscriptionUpdates(appleState, userData) {
 function withCommonSubscriptionFields(userData, nextValues) {
   const updates = {
     ...nextValues,
-    subscriptionUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    subscriptionVerifiedAt: admin.firestore.FieldValue.serverTimestamp(),
-    subscriptionVerificationFreshUntil: admin.firestore.Timestamp.fromDate(
+    subscriptionUpdatedAt: FieldValue.serverTimestamp(),
+    subscriptionVerifiedAt: FieldValue.serverTimestamp(),
+    subscriptionVerificationFreshUntil: Timestamp.fromDate(
         addHours(new Date(), SUBSCRIPTION_VERIFICATION_RETENTION_HOURS),
     ),
   };
@@ -8561,7 +8539,7 @@ async function findUserBySubscriptionAccountToken(accountToken) {
   );
   if (indexed) return indexed;
 
-  const snap = await admin.firestore()
+  const snap = await db
       .collection("users")
       .where("subscriptionAccountToken", "==", accountToken)
       .limit(1)
@@ -8578,7 +8556,7 @@ async function findUserByPurchaseToken(purchaseToken) {
   );
   if (indexed) return indexed;
 
-  const snap = await admin.firestore()
+  const snap = await db
       .collection("users")
       .where("subscriptionPurchaseToken", "==", purchaseToken)
       .limit(1)
@@ -8593,14 +8571,14 @@ async function storeNotificationAudit(provider, eventId, payload) {
   const expiresAt = new Date(now);
   expiresAt.setUTCDate(expiresAt.getUTCDate() + SUBSCRIPTION_NOTIFICATION_RETENTION_DAYS);
 
-  await admin.firestore()
+  await db
       .collection("subscriptionNotificationEvents")
       .doc(`${provider}_${eventId}`)
       .set({
         provider,
         payload,
-        receivedAt: admin.firestore.FieldValue.serverTimestamp(),
-        expiresAt: admin.firestore.Timestamp.fromDate(expiresAt),
+        receivedAt: FieldValue.serverTimestamp(),
+        expiresAt: Timestamp.fromDate(expiresAt),
       }, {merge: true});
 }
 
@@ -8721,7 +8699,7 @@ function loadAppleRootCertificates() {
 
 function toDate(value) {
   if (!value) return null;
-  if (value instanceof admin.firestore.Timestamp) {
+  if (value instanceof Timestamp) {
     return value.toDate();
   }
   if (value instanceof Date) {
@@ -9021,7 +8999,6 @@ function maskBusinessId(value) {
 }
 
 async function getVerifiedTaxAuthorityBusinessId(userId) {
-  const db = admin.firestore();
   const userRef = db.collection("users").doc(userId);
   const verificationRef = userRef
       .collection("verification_info")
@@ -9152,7 +9129,7 @@ async function getTaxAuthorityTokenData(userId, businessId) {
   if (!expiresAt || expiresAt.getTime() <= Date.now()) {
     const disconnectedUpdate = {
       connected: false,
-      disconnectedAt: admin.firestore.FieldValue.serverTimestamp(),
+      disconnectedAt: FieldValue.serverTimestamp(),
       disconnectReason: expiresAt ?
         "token-expired" :
         "token-expiry-missing",
@@ -9169,11 +9146,11 @@ async function getTaxAuthorityTokenData(userId, businessId) {
 }
 
 function taxAuthorityTokenRef(userId) {
-  return admin.firestore().doc(taxAuthorityTokenDocumentPath(userId));
+  return db.doc(taxAuthorityTokenDocumentPath(userId));
 }
 
 function uniformTaxAuthorityTokenRef(userId) {
-  return admin.firestore().doc(`taxAuthorityUniformOAuthTokens/${userId}`);
+  return db.doc(`taxAuthorityUniformOAuthTokens/${userId}`);
 }
 
 async function getUniformTaxAuthorityTokenData(userId, businessId) {
@@ -9192,7 +9169,7 @@ async function getUniformTaxAuthorityTokenData(userId, businessId) {
   if (!accessToken || !expiresAt || expiresAt.getTime() <= Date.now()) {
     await tokenRef.set({
       connected: false,
-      disconnectedAt: admin.firestore.FieldValue.serverTimestamp(),
+      disconnectedAt: FieldValue.serverTimestamp(),
       disconnectReason: !accessToken ? "access-token-missing" : "token-expired",
     }, {merge: true});
     throw new HttpsError(
@@ -9797,7 +9774,7 @@ async function streamSigningPdf(res, signingRequest) {
       signingRequest.storagePath,
       normalizeString(signingRequest.workerId).trim(),
   );
-  const [bytes] = await admin.storage().bucket().file(storagePath).download();
+  const [bytes] = await storage.bucket().file(storagePath).download();
   res.set({
     "Content-Type": "application/pdf",
     "Content-Disposition": `inline; filename="${
@@ -9809,7 +9786,7 @@ async function streamSigningPdf(res, signingRequest) {
 }
 
 async function signAndReplacePdf(signingRequest, signatureBytes, signerName) {
-  const bucket = admin.storage().bucket();
+  const bucket = storage.bucket();
   const storagePath = assertOwnedInvoicePdfPath(
       signingRequest.storagePath,
       normalizeString(signingRequest.workerId).trim(),
@@ -9875,7 +9852,6 @@ async function signAndReplacePdf(signingRequest, signatureBytes, signerName) {
 }
 
 async function publishSignedDocument(signingRequest, signed) {
-  const db = admin.firestore();
   const workerId = normalizeString(signingRequest.workerId);
   const receiverId = normalizeString(signingRequest.receiverId);
   const documentName =
@@ -9931,7 +9907,7 @@ async function publishSignedDocument(signingRequest, signed) {
       lastTimestamp: signed.signedAt,
       users: [workerId, receiverId],
       unreadCount: {
-        [workerId]: admin.firestore.FieldValue.increment(1),
+        [workerId]: FieldValue.increment(1),
       },
     }, {merge: true});
   }
