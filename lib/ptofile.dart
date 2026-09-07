@@ -3839,17 +3839,20 @@ class _ProfileState extends State<Profile>
                       );
                     },
                   ),
-                  _buildModernToolCard(
-                    Icons.groups_2_outlined,
-                    strings['clients']!,
-                    Colors.blue,
-                    () async {
-                      await Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const ClientsPage()),
-                      );
-                    },
-                  ),
+                  if (_hasActiveWorkerSubscription)
+                    _buildModernToolCard(
+                      Icons.groups_2_outlined,
+                      strings['clients']!,
+                      Colors.blue,
+                      () async {
+                        await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const ClientsPage(),
+                          ),
+                        );
+                      },
+                    ),
                 ],
               )
             else

@@ -101,6 +101,26 @@ const {
   SignedDataVerifier,
   Status,
 } = require("@apple/app-store-server-library");
+const {
+  APP_STORE_PROVIDER,
+  GOOGLE_PLAY_PROVIDER,
+  SUBSCRIPTION_PROVIDERS,
+  aggregateSubscriptionEntitlements,
+  hasActiveProAccess,
+  isAppleSubscriptionEntitled,
+  isVerifiedAppleNotificationEntitlement,
+  legacyEntitlements,
+  resolveAppleSubscriptionExpiry,
+  subscriptionAccountTokenForUid,
+} = require("./subscription_entitlements");
+const {
+  APPLE_SUBSCRIPTION_PRODUCT_ID,
+  GOOGLE_PLAY_LOOKUP_NOT_FOUND,
+  GOOGLE_PLAY_SUBSCRIPTION_PRODUCT_IDS,
+  hasAllowedAppleProduct,
+  hasAllowedGooglePlayProduct,
+  isGooglePlayLookupNotFound,
+} = require("./subscription_product_validation");
 
 admin.initializeApp();
 
@@ -272,6 +292,8 @@ const PLAY_ANDROID_PUBLISHER_SCOPE =
   "https://www.googleapis.com/auth/androidpublisher";
 const SUBSCRIPTION_NOTIFICATION_RETENTION_DAYS = 30;
 const SUBSCRIPTION_VERIFICATION_RETENTION_HOURS = 36;
+const SUBSCRIPTION_ENTITLEMENTS_COLLECTION = "subscriptionEntitlements";
+const SUBSCRIPTION_OWNERSHIP_COLLECTION = "subscriptionOwnership";
 const DEVICE_TOKEN_RETENTION_DAYS = 90;
 const TAX_AUTH_OAUTH_CODE_RETENTION_HOURS = 2;
 const SERVER_DOCUMENT_MAX_ATTEMPTS = 3;
@@ -479,12 +501,6 @@ const TAX_AUTH_APP_RETURN_URI = "hiro://tax-authority-connected";
 const TAX_AUTH_SCOPE = "scope";
 const TAX_AUTH_UNIFORM_SCOPE =
   "UniStructFileUploadLinks_scope FilesStatus_scope";
-const APPLE_SUBSCRIPTION_PRODUCT_ID = "HIRO_SUBSCRIPTION";
-const GOOGLE_PLAY_SUBSCRIPTION_PRODUCT_IDS = new Set([
-  "pro_worker_monthly",
-  "com-hiro-app-pro-worker-monthly",
-]);
-
 async function loadCanonicalUserProfile(db, userId, accountSnap = null) {
   const resolvedAccountSnap = accountSnap ||
     await db.collection("users").doc(userId).get();
@@ -624,6 +640,7 @@ exports.createDocumentSigningRequest = onCall(
       if (!workerId) {
         throw new HttpsError("unauthenticated", "Authentication required.");
       }
+      await assertActiveProUser(workerId);
 
       const invoiceDocId =
         normalizeString(request.data?.invoiceDocId).trim();
@@ -1018,6 +1035,7 @@ exports.createTaxAuthorityAuthorizationUrl = onCall(
       if (!userId) {
         throw new HttpsError("unauthenticated", "Authentication required.");
       }
+      await assertActiveProUser(userId);
 
       const businessId = await getVerifiedTaxAuthorityBusinessId(userId);
       const state = crypto.randomUUID();
@@ -1061,6 +1079,7 @@ exports.createUniformTaxAuthorityAuthorizationUrl = onCall(
       if (!userId) {
         throw new HttpsError("unauthenticated", "Authentication required.");
       }
+      await assertActiveProUser(userId);
 
       const businessId = await getVerifiedTaxAuthorityBusinessId(userId);
       const state = crypto.randomUUID();
@@ -1411,6 +1430,24 @@ async function serverDocumentContext(
       appIconBytes,
     },
   };
+}
+
+async function assertActiveProUser(userId) {
+  const userRef = admin.firestore().collection("users").doc(userId);
+  const userSnap = await userRef.get();
+  if (!userSnap.exists) {
+    throw new HttpsError("not-found", "User account was not found.");
+  }
+  const userData = userSnap.data() || {};
+  const entitlements = await loadSubscriptionEntitlements(userRef, userData);
+  if (!hasActiveProAccess({userData, entitlements})) {
+    throw new HttpsError(
+        "permission-denied",
+        "An active Pro subscription is required for this feature.",
+        {reason: "active-pro-subscription-required"},
+    );
+  }
+  return {userRef, userData};
 }
 
 function serverDocumentPresentation(document) {
@@ -2114,6 +2151,7 @@ exports.previewServerDocument = onCall(
       if (!userId) {
         throw new HttpsError("unauthenticated", "Authentication required.");
       }
+      await assertActiveProUser(userId);
       const {document, pdfBytes} = await createServerDocumentPreviewPdf(
           userId,
           request.data,
@@ -2165,6 +2203,7 @@ exports.previewServerDocumentHttp = onRequest(
       }
 
       try {
+        await assertActiveProUser(userId);
         const {document, pdfBytes} = await createServerDocumentPreviewPdf(
             userId,
             request.body,
@@ -2204,13 +2243,16 @@ exports.createServerDocument = onCall(
       if (!userId) {
         throw new HttpsError("unauthenticated", "Authentication required.");
       }
+      const retryInvoiceDocId = normalizeString(
+          request.data?.retryInvoiceDocId,
+      ).trim();
+      if (!retryInvoiceDocId) {
+        await assertActiveProUser(userId);
+      }
       const db = admin.firestore();
       const userRef = db.collection("users").doc(userId);
       const context = await serverDocumentContext(userId);
       let document;
-      const retryInvoiceDocId = normalizeString(
-          request.data?.retryInvoiceDocId,
-      ).trim();
       if (retryInvoiceDocId) {
         if (!/^[A-Za-z0-9_-]{12,180}$/.test(retryInvoiceDocId)) {
           throw new HttpsError(
@@ -2978,6 +3020,7 @@ exports.createTaxInvoiceDraft = onCall(
       if (!auth?.uid) {
         throw new HttpsError("unauthenticated", "Authentication required.");
       }
+      await assertActiveProUser(auth.uid);
 
       const payload = normalizeTaxInvoiceAllocationPayload(request.data || {});
       let presentation;
@@ -3169,6 +3212,7 @@ exports.initializeDocumentCounter = onCall(
       if (!userId) {
         throw new HttpsError("unauthenticated", "Authentication required.");
       }
+      await assertActiveProUser(userId);
       const docType = requiredString(request.data?.docType, "docType");
       const allowedDocTypes = new Set([
         "invoice",
@@ -5303,6 +5347,7 @@ exports.generateUniformExport = onCall(
       if (!userId) {
         throw new HttpsError("unauthenticated", "Authentication required.");
       }
+      await assertActiveProUser(userId);
 
       let input;
       try {
@@ -6737,6 +6782,7 @@ exports.sendInvoiceBuilderEmailCode = onCall(
       if (!userId) {
         throw new HttpsError("unauthenticated", "Authentication required.");
       }
+      await assertActiveProUser(userId);
 
       const authUser = await admin.auth().getUser(userId);
       const email = normalizeEmail(authUser.email);
@@ -7284,6 +7330,7 @@ exports.handleGooglePlaySubscriptionNotification = onMessagePublished(
     {
       topic: GOOGLE_PLAY_RTDN_TOPIC,
       region: "us-central1",
+      retry: true,
     },
     async (event) => {
       const payload = parsePubSubMessage(event?.data?.message);
@@ -7341,6 +7388,8 @@ exports.handleAppStoreServerNotification = onRequest(
           throw new Error("Apple notification is missing appAccountToken");
         }
 
+        assertAllowedAppleProduct({transaction, renewalInfo});
+
         const userDoc = await findUserBySubscriptionAccountToken(accountToken);
         if (!userDoc) {
           throw new Error(
@@ -7348,15 +7397,29 @@ exports.handleAppStoreServerNotification = onRequest(
           );
         }
 
+        const entitlements = await loadSubscriptionEntitlements(
+            userDoc.ref,
+            userDoc.data(),
+        );
+        const previousApple = entitlements[APP_STORE_PROVIDER] || {};
         const updates = createAppleSubscriptionUpdates({
           notification,
           transaction,
           renewalInfo,
-          userData: userDoc.data(),
+          userData: previousApple,
           accountToken,
         });
 
-        await applyUserSubscriptionUpdates(userDoc.ref, userDoc.data(), updates);
+        await applyProviderSubscriptionUpdates({
+          userRef: userDoc.ref,
+          providerUpdates: {[APP_STORE_PROVIDER]: updates},
+          ownershipIdentifiers: appleOwnershipIdentifiers({
+            accountToken,
+            originalTransactionId:
+              transaction?.originalTransactionId ||
+              renewalInfo?.originalTransactionId,
+          }),
+        });
         await storeNotificationAudit("apple", notification.notificationUUID, {
           accountToken,
           notificationType: notification.notificationType || null,
@@ -7383,6 +7446,30 @@ exports.handleAppStoreServerNotification = onRequest(
     },
 );
 
+exports.prepareSubscriptionPurchase = onCall(
+    {region: "us-central1"},
+    async (request) => {
+      const uid = request.auth?.uid;
+      if (!uid) {
+        throw new HttpsError("unauthenticated", "Authentication required.");
+      }
+
+      const userRef = admin.firestore().collection("users").doc(uid);
+      const accountToken = subscriptionAccountTokenForUid(uid);
+      await claimSubscriptionOwnership({
+        userRef,
+        identifiers: [{
+          kind: "account_token",
+          value: accountToken,
+          provider: "account",
+        }],
+        userUpdates: {subscriptionAccountToken: accountToken},
+      });
+
+      return {accountToken};
+    },
+);
+
 exports.verifySubscriptionPurchase = onCall(
     {
       region: "us-central1",
@@ -7405,6 +7492,8 @@ exports.verifySubscriptionPurchase = onCall(
       }
 
       let updates;
+      let provider;
+      let ownershipIdentifiers = [];
       if (GOOGLE_PLAY_SUBSCRIPTION_PRODUCT_IDS.has(purchaseProof.productId)) {
         if (!purchaseProof.verificationToken) {
           throw new HttpsError(
@@ -7425,19 +7514,51 @@ exports.verifySubscriptionPurchase = onCall(
           );
         }
 
-        await assertNoConflictingSubscriptionOwner({
-          currentUid: auth.uid,
-          subscriptionOwnershipKey:
-            purchaseProof.ownershipKey || `google_play:${purchaseProof.verificationToken}`,
-          purchaseToken: purchaseProof.verificationToken,
-          accountToken:
-            playState.externalAccountIdentifiers?.obfuscatedExternalAccountId ||
-            purchaseProof.applicationAccountToken,
-        });
+        const entitlements = await loadSubscriptionEntitlements(userRef, userData);
+        const previousPlay = entitlements[GOOGLE_PLAY_PROVIDER] || {};
+        if (isGooglePlayLookupNotFound(playState)) {
+          // A missing provider response may only deactivate an entitlement that
+          // this user already owns. It must never establish ownership from the
+          // product ID or purchase token supplied by a new client request.
+          const storedPurchaseToken = normalizeString(
+              previousPlay.subscriptionPurchaseToken,
+          ).trim();
+          if (!storedPurchaseToken ||
+              storedPurchaseToken !== purchaseProof.verificationToken) {
+            throw new HttpsError(
+                "not-found",
+                "Google Play subscription could not be verified.",
+            );
+          }
 
-        updates = createPlaySubscriptionUpdates(playState, userData, {
-          purchaseToken: purchaseProof.verificationToken,
-        });
+          updates = createPlaySubscriptionUpdates(playState, previousPlay, {
+            purchaseToken: storedPurchaseToken,
+          });
+          provider = GOOGLE_PLAY_PROVIDER;
+        } else {
+          assertAllowedGooglePlayProduct(playState);
+
+          await assertNoConflictingSubscriptionOwner({
+            currentUid: auth.uid,
+            subscriptionOwnershipKey:
+              purchaseProof.ownershipKey || `google_play:${purchaseProof.verificationToken}`,
+            purchaseToken: purchaseProof.verificationToken,
+            accountToken:
+              playState.externalAccountIdentifiers?.obfuscatedExternalAccountId ||
+              purchaseProof.applicationAccountToken,
+          });
+
+          updates = createPlaySubscriptionUpdates(playState, previousPlay, {
+            purchaseToken: purchaseProof.verificationToken,
+          });
+          provider = GOOGLE_PLAY_PROVIDER;
+          ownershipIdentifiers = googlePlayOwnershipIdentifiers({
+            purchaseToken: purchaseProof.verificationToken,
+            accountToken:
+              playState.externalAccountIdentifiers?.obfuscatedExternalAccountId ||
+              purchaseProof.applicationAccountToken,
+          });
+        }
       } else if (purchaseProof.productId === APPLE_SUBSCRIPTION_PRODUCT_ID) {
         let appStoreState = null;
         try {
@@ -7460,6 +7581,7 @@ exports.verifySubscriptionPurchase = onCall(
           const fallbackUserData = await waitForVerifiedAppleEntitlement(
               userRef,
               userData,
+              purchaseProof.originalTransactionId,
           );
           if (fallbackUserData) {
             logger.info(
@@ -7478,6 +7600,8 @@ exports.verifySubscriptionPurchase = onCall(
               "App Store subscription could not be verified.",
           );
         }
+
+        assertAllowedAppleProduct(appStoreState);
 
         const originalTransactionId =
           appStoreState.transaction?.originalTransactionId ||
@@ -7498,7 +7622,20 @@ exports.verifySubscriptionPurchase = onCall(
             purchaseProof.applicationAccountToken,
         });
 
-        updates = createAppleApiSubscriptionUpdates(appStoreState, userData);
+        const entitlements = await loadSubscriptionEntitlements(userRef, userData);
+        const previousApple = entitlements[APP_STORE_PROVIDER] || {};
+        updates = createAppleApiSubscriptionUpdates(
+            appStoreState,
+            previousApple,
+        );
+        provider = APP_STORE_PROVIDER;
+        ownershipIdentifiers = appleOwnershipIdentifiers({
+          accountToken:
+            appStoreState.transaction?.appAccountToken ||
+            appStoreState.renewalInfo?.appAccountToken ||
+            purchaseProof.applicationAccountToken,
+          originalTransactionId,
+        });
       } else {
         throw new HttpsError(
             "invalid-argument",
@@ -7506,8 +7643,12 @@ exports.verifySubscriptionPurchase = onCall(
         );
       }
 
-      await applyUserSubscriptionUpdates(userRef, userData, updates);
-      if (updates.isSubscribed === true && userData.role !== "worker") {
+      const aggregate = await applyProviderSubscriptionUpdates({
+        userRef,
+        providerUpdates: {[provider]: updates},
+        ownershipIdentifiers,
+      });
+      if (aggregate.isSubscribed === true && userData.role !== "worker") {
         await userRef.update({role: "worker"});
       }
       const refreshed = (await userRef.get()).data() || {};
@@ -7550,38 +7691,65 @@ exports.syncWorkerSubscriptionLifecycle = onSchedule(
         const snap = await query.get();
         if (snap.empty) break;
 
-        const updates = [];
-
         for (const doc of snap.docs) {
           scanned += 1;
 
           const data = doc.data() || {};
-          if (!shouldSyncWorkerSubscription(data)) {
-            continue;
-          }
-
           try {
-            const result = await buildSubscriptionUpdate({
-              androidPublisher,
-              appStoreClients,
-              userData: data,
+            const entitlements = await loadSubscriptionEntitlements(
+                doc.ref,
+                data,
+            );
+            const providerUpdates = {};
+
+            const playData = entitlements[GOOGLE_PLAY_PROVIDER];
+            const purchaseToken = normalizeString(
+                playData?.subscriptionPurchaseToken,
+            ).trim();
+            if (purchaseToken) {
+              const playState = await fetchGooglePlaySubscription({
+                androidPublisher,
+                purchaseToken,
+              });
+              if (playState) {
+                if (!isGooglePlayLookupNotFound(playState)) {
+                  assertAllowedGooglePlayProduct(playState);
+                }
+                providerUpdates[GOOGLE_PLAY_PROVIDER] =
+                  createPlaySubscriptionUpdates(playState, playData, {
+                    purchaseToken,
+                  });
+                playVerified += 1;
+              }
+            }
+
+            const appleData = entitlements[APP_STORE_PROVIDER];
+            const originalTransactionId = normalizeString(
+                appleData?.subscriptionOriginalTransactionId,
+            ).trim();
+            if (originalTransactionId) {
+              const appleState = await fetchAppStoreSubscription({
+                appStoreClients,
+                originalTransactionId,
+              });
+              if (appleState) {
+                assertAllowedAppleProduct(appleState);
+                providerUpdates[APP_STORE_PROVIDER] =
+                  createAppleApiSubscriptionUpdates(appleState, appleData);
+              }
+            }
+
+            if (Object.keys(providerUpdates).length === 0) {
+              continue;
+            }
+
+            const wasSubscribed = data.isSubscribed === true;
+            const aggregate = await applyProviderSubscriptionUpdates({
+              userRef: doc.ref,
+              providerUpdates,
             });
-
-            if (!result) {
-              continue;
-            }
-
-            if (result.source === "google_play") {
-              playVerified += 1;
-            }
-
-            if (!shouldApplySubscriptionUpdate(data, result.updates)) {
-              continue;
-            }
-
-            updates.push({ref: doc.ref, data: result.updates});
             updated += 1;
-            if (result.updates.isSubscribed === false) {
+            if (wasSubscribed && aggregate.isSubscribed === false) {
               deactivated += 1;
             }
           } catch (error) {
@@ -7593,7 +7761,6 @@ exports.syncWorkerSubscriptionLifecycle = onSchedule(
           }
         }
 
-        await commitSubscriptionUpdates(db, updates);
         lastDoc = snap.docs[snap.docs.length - 1];
 
         if (snap.size < pageSize) {
@@ -7744,10 +7911,25 @@ async function syncGooglePlayPurchaseToken({
     );
   }
 
-  const updates = createPlaySubscriptionUpdates(playState, userDoc.data(), {
+  const entitlements = await loadSubscriptionEntitlements(
+      userDoc.ref,
+      userDoc.data(),
+  );
+  const previousPlay = entitlements[GOOGLE_PLAY_PROVIDER] || {};
+  if (!isGooglePlayLookupNotFound(playState)) {
+    assertAllowedGooglePlayProduct(playState);
+  }
+  const updates = createPlaySubscriptionUpdates(playState, previousPlay, {
     purchaseToken,
   });
-  await applyUserSubscriptionUpdates(userDoc.ref, userDoc.data(), updates);
+  await applyProviderSubscriptionUpdates({
+    userRef: userDoc.ref,
+    providerUpdates: {[GOOGLE_PLAY_PROVIDER]: updates},
+    ownershipIdentifiers: googlePlayOwnershipIdentifiers({
+      purchaseToken,
+      accountToken,
+    }),
+  });
 
   await storeNotificationAudit("google_play", eventId || purchaseToken, {
     userId: userDoc.id,
@@ -7803,65 +7985,216 @@ async function assertNoConflictingSubscriptionOwner({
   }
 }
 
-function shouldSyncWorkerSubscription(data) {
-  if ((data.role || "").toString().toLowerCase() !== "worker") {
-    return false;
+function normalizedOwnershipIdentifiers(identifiers) {
+  const unique = new Map();
+  for (const identifier of identifiers || []) {
+    const kind = normalizeString(identifier?.kind).trim();
+    const value = normalizeString(identifier?.value).trim();
+    if (!kind || !value) continue;
+    const key = `${kind}:${value}`;
+    unique.set(key, {
+      kind,
+      value,
+      provider: normalizeString(identifier?.provider).trim() || null,
+    });
   }
-
-  const hasToken = typeof data.subscriptionPurchaseToken === "string" &&
-    data.subscriptionPurchaseToken.trim().length > 0;
-  const status = (data.subscriptionStatus || "").toString().toLowerCase();
-
-  if (hasToken) {
-    return true;
-  }
-
-  return data.isSubscribed === true || status === "active" ||
-    status === "active_canceled";
+  return [...unique.values()];
 }
 
-async function buildSubscriptionUpdate({
-  androidPublisher,
-  appStoreClients,
-  userData,
+function subscriptionOwnershipRef(kind, value) {
+  const id = crypto.createHash("sha256")
+      .update(`${kind}:${value}`)
+      .digest("hex");
+  return admin.firestore().collection(SUBSCRIPTION_OWNERSHIP_COLLECTION).doc(id);
+}
+
+function googlePlayOwnershipIdentifiers({purchaseToken, accountToken}) {
+  return normalizedOwnershipIdentifiers([
+    {
+      kind: "google_play_purchase_token",
+      value: purchaseToken,
+      provider: GOOGLE_PLAY_PROVIDER,
+    },
+    {kind: "account_token", value: accountToken, provider: "account"},
+  ]);
+}
+
+function appleOwnershipIdentifiers({accountToken, originalTransactionId}) {
+  return normalizedOwnershipIdentifiers([
+    {
+      kind: "apple_original_transaction_id",
+      value: originalTransactionId,
+      provider: APP_STORE_PROVIDER,
+    },
+    {kind: "account_token", value: accountToken, provider: "account"},
+  ]);
+}
+
+async function claimSubscriptionOwnership({
+  userRef,
+  identifiers,
+  userUpdates = {},
 }) {
-  const purchaseToken = userData.subscriptionPurchaseToken?.trim();
-  if (purchaseToken) {
-    const playState = await fetchGooglePlaySubscription({
-      androidPublisher,
-      purchaseToken,
-    });
-
-    if (playState) {
-      return {
-        source: "google_play",
-        updates: createPlaySubscriptionUpdates(playState, userData, {
-          purchaseToken,
-        }),
-      };
+  const db = admin.firestore();
+  const normalized = normalizedOwnershipIdentifiers(identifiers);
+  await db.runTransaction(async (transaction) => {
+    const userSnap = await transaction.get(userRef);
+    if (!userSnap.exists) {
+      throw new HttpsError(
+          "failed-precondition",
+          "Complete account setup before starting a subscription.",
+      );
     }
-  }
 
-  const originalTransactionId =
-    userData.subscriptionOriginalTransactionId?.trim();
-  if (originalTransactionId) {
-    const appleState = await fetchAppStoreSubscription({
-      appStoreClients,
-      originalTransactionId,
-    });
-
-    if (appleState) {
-      return {
-        source: "app_store",
-        updates: createAppleApiSubscriptionUpdates(appleState, userData),
-      };
+    const ownershipRecords = [];
+    for (const identifier of normalized) {
+      const ref = subscriptionOwnershipRef(identifier.kind, identifier.value);
+      const snap = await transaction.get(ref);
+      ownershipRecords.push({identifier, ref, snap});
     }
-  }
 
-  return {
-    source: "firestore",
-    updates: createFallbackSubscriptionUpdates(userData),
-  };
+    for (const record of ownershipRecords) {
+      const ownerUid = normalizeString(record.snap.data()?.uid).trim();
+      if (record.snap.exists && ownerUid && ownerUid !== userRef.id) {
+        throw new HttpsError(
+            "already-exists",
+            "This subscription is already linked to another account.",
+        );
+      }
+    }
+
+    const timestamp = admin.firestore.FieldValue.serverTimestamp();
+    for (const record of ownershipRecords) {
+      transaction.set(record.ref, {
+        uid: userRef.id,
+        kind: record.identifier.kind,
+        provider: record.identifier.provider,
+        updatedAt: timestamp,
+      }, {merge: true});
+    }
+    transaction.set(userRef, userUpdates, {merge: true});
+  });
+}
+
+async function loadSubscriptionEntitlements(userRef, userData = {}) {
+  const refs = SUBSCRIPTION_PROVIDERS.map((provider) =>
+    userRef.collection(SUBSCRIPTION_ENTITLEMENTS_COLLECTION).doc(provider));
+  const snapshots = await Promise.all(refs.map((ref) => ref.get()));
+  const entitlements = {};
+  snapshots.forEach((snapshot, index) => {
+    if (snapshot.exists) {
+      entitlements[SUBSCRIPTION_PROVIDERS[index]] = snapshot.data() || {};
+    }
+  });
+  return Object.keys(entitlements).length > 0 ?
+    entitlements :
+    legacyEntitlements(userData);
+}
+
+async function applyProviderSubscriptionUpdates({
+  userRef,
+  providerUpdates,
+  ownershipIdentifiers = [],
+}) {
+  const db = admin.firestore();
+  const normalizedOwnership = normalizedOwnershipIdentifiers(
+      ownershipIdentifiers,
+  );
+
+  return db.runTransaction(async (transaction) => {
+    const userSnap = await transaction.get(userRef);
+    if (!userSnap.exists) {
+      throw new HttpsError("not-found", "User account was not found.");
+    }
+
+    const entitlementRecords = [];
+    for (const provider of SUBSCRIPTION_PROVIDERS) {
+      const ref = userRef
+          .collection(SUBSCRIPTION_ENTITLEMENTS_COLLECTION)
+          .doc(provider);
+      const snap = await transaction.get(ref);
+      entitlementRecords.push({provider, ref, snap});
+    }
+
+    const ownershipRecords = [];
+    for (const identifier of normalizedOwnership) {
+      const ref = subscriptionOwnershipRef(identifier.kind, identifier.value);
+      const snap = await transaction.get(ref);
+      ownershipRecords.push({identifier, ref, snap});
+    }
+
+    for (const record of ownershipRecords) {
+      const ownerUid = normalizeString(record.snap.data()?.uid).trim();
+      if (record.snap.exists && ownerUid && ownerUid !== userRef.id) {
+        throw new HttpsError(
+            "already-exists",
+            "This subscription is already linked to another account.",
+        );
+      }
+    }
+
+    const entitlements = {};
+    for (const record of entitlementRecords) {
+      if (record.snap.exists) {
+        entitlements[record.provider] = record.snap.data() || {};
+      }
+    }
+    if (Object.keys(entitlements).length === 0) {
+      Object.assign(entitlements, legacyEntitlements(userSnap.data() || {}));
+    }
+    for (const [provider, updates] of Object.entries(providerUpdates || {})) {
+      if (!SUBSCRIPTION_PROVIDERS.includes(provider) || !updates) continue;
+      entitlements[provider] = {...(entitlements[provider] || {}), ...updates};
+    }
+
+    const aggregate = aggregateSubscriptionEntitlements(
+        entitlements,
+        new Date(),
+    );
+    const timestamp = admin.firestore.FieldValue.serverTimestamp();
+    const freshUntil = admin.firestore.Timestamp.fromDate(
+        addHours(new Date(), SUBSCRIPTION_VERIFICATION_RETENTION_HOURS),
+    );
+
+    for (const record of entitlementRecords) {
+      const updates = providerUpdates?.[record.provider];
+      if (!updates) continue;
+      transaction.set(record.ref, {
+        ...updates,
+        provider: record.provider,
+        subscriptionUpdatedAt: timestamp,
+        subscriptionVerifiedAt: timestamp,
+        subscriptionVerificationFreshUntil: freshUntil,
+      }, {merge: true});
+    }
+
+    for (const record of ownershipRecords) {
+      transaction.set(record.ref, {
+        uid: userRef.id,
+        kind: record.identifier.kind,
+        provider: record.identifier.provider,
+        updatedAt: timestamp,
+      }, {merge: true});
+    }
+
+    transaction.set(userRef, {
+      ...aggregate,
+      subscriptionUpdatedAt: timestamp,
+      subscriptionVerifiedAt: timestamp,
+      subscriptionVerificationFreshUntil: freshUntil,
+    }, {merge: true});
+    return aggregate;
+  });
+}
+
+async function findUserByOwnershipIdentifier(kind, rawValue) {
+  const value = normalizeString(rawValue).trim();
+  if (!value) return null;
+  const ownershipSnap = await subscriptionOwnershipRef(kind, value).get();
+  const uid = normalizeString(ownershipSnap.data()?.uid).trim();
+  if (!ownershipSnap.exists || !uid) return null;
+  const userSnap = await admin.firestore().collection("users").doc(uid).get();
+  return userSnap.exists ? userSnap : null;
 }
 
 async function fetchAppStoreSubscription({
@@ -7897,16 +8230,20 @@ async function fetchAppStoreSubscription({
       }
 
       decodedItems.sort((left, right) => {
-        const leftExpiry = firstValidDate(
-            left.transaction?.expiresDate,
-            left.renewalInfo?.gracePeriodExpiresDate,
-            left.renewalInfo?.renewalDate,
-        ) || new Date(0);
-        const rightExpiry = firstValidDate(
-            right.transaction?.expiresDate,
-            right.renewalInfo?.gracePeriodExpiresDate,
-            right.renewalInfo?.renewalDate,
-        ) || new Date(0);
+        const leftExpiry = resolveAppleSubscriptionExpiry({
+          transactionExpiresDate: left.transaction?.expiresDate,
+          gracePeriodExpiresDate: left.renewalInfo?.gracePeriodExpiresDate,
+          renewalDate: left.renewalInfo?.renewalDate,
+          isInBillingGracePeriod:
+            left.status === Status.BILLING_GRACE_PERIOD,
+        }) || new Date(0);
+        const rightExpiry = resolveAppleSubscriptionExpiry({
+          transactionExpiresDate: right.transaction?.expiresDate,
+          gracePeriodExpiresDate: right.renewalInfo?.gracePeriodExpiresDate,
+          renewalDate: right.renewalInfo?.renewalDate,
+          isInBillingGracePeriod:
+            right.status === Status.BILLING_GRACE_PERIOD,
+        }) || new Date(0);
         return rightExpiry - leftExpiry;
       });
 
@@ -7938,11 +8275,30 @@ async function fetchGooglePlaySubscription({androidPublisher, purchaseToken}) {
     const status = error?.response?.status;
     if (status === 404 || status === 410) {
       return {
+        purchaseLookupStatus: GOOGLE_PLAY_LOOKUP_NOT_FOUND,
         subscriptionState: "SUBSCRIPTION_STATE_EXPIRED",
         lineItems: [],
       };
     }
     throw error;
+  }
+}
+
+function assertAllowedGooglePlayProduct(playState) {
+  if (!hasAllowedGooglePlayProduct(playState)) {
+    throw new HttpsError(
+        "permission-denied",
+        "Google Play returned an unexpected subscription product.",
+    );
+  }
+}
+
+function assertAllowedAppleProduct({transaction, renewalInfo}) {
+  if (!hasAllowedAppleProduct({transaction, renewalInfo})) {
+    throw new HttpsError(
+        "permission-denied",
+        "App Store returned an unexpected subscription product.",
+    );
   }
 }
 
@@ -8002,19 +8358,17 @@ function createAppleSubscriptionUpdates({
 }) {
   const now = new Date();
   const statusValue = notification.data?.status;
-  const expiry = firstValidDate(
-      transaction?.expiresDate,
-      renewalInfo?.gracePeriodExpiresDate,
-      renewalInfo?.renewalDate,
-  );
+  const expiry = resolveAppleSubscriptionExpiry({
+    transactionExpiresDate: transaction?.expiresDate,
+    gracePeriodExpiresDate: renewalInfo?.gracePeriodExpiresDate,
+    renewalDate: renewalInfo?.renewalDate,
+    isInBillingGracePeriod: statusValue === Status.BILLING_GRACE_PERIOD,
+  });
   const autoRenewStatus = renewalInfo?.autoRenewStatus;
   const notificationType = String(notification.notificationType || "");
 
   const isEntitled = Boolean(
-      expiry &&
-      expiry > now &&
-      statusValue !== Status.EXPIRED &&
-      statusValue !== Status.REVOKED &&
+      isAppleSubscriptionEntitled(statusValue, expiry, now) &&
       notificationType !== "EXPIRED" &&
       notificationType !== "REVOKE" &&
       notificationType !== "REFUND",
@@ -8059,19 +8413,15 @@ function createAppleApiSubscriptionUpdates(appleState, userData) {
   const transaction = appleState.transaction;
   const renewalInfo = appleState.renewalInfo;
   const statusValue = appleState.status;
-  const expiry = firstValidDate(
-      transaction?.expiresDate,
-      renewalInfo?.gracePeriodExpiresDate,
-      renewalInfo?.renewalDate,
-  );
+  const expiry = resolveAppleSubscriptionExpiry({
+    transactionExpiresDate: transaction?.expiresDate,
+    gracePeriodExpiresDate: renewalInfo?.gracePeriodExpiresDate,
+    renewalDate: renewalInfo?.renewalDate,
+    isInBillingGracePeriod: statusValue === Status.BILLING_GRACE_PERIOD,
+  });
   const autoRenewStatus = renewalInfo?.autoRenewStatus;
 
-  const isEntitled = Boolean(
-      expiry &&
-      expiry > now &&
-      statusValue !== Status.EXPIRED &&
-      statusValue !== Status.REVOKED,
-  );
+  const isEntitled = isAppleSubscriptionEntitled(statusValue, expiry, now);
   const willRenew = autoRenewStatus === AutoRenewStatus.ON;
   const mappedStatus = isEntitled ?
     willRenew ? "active" : "active_canceled" :
@@ -8116,28 +8466,6 @@ function createAppleApiSubscriptionUpdates(appleState, userData) {
   });
 }
 
-function createFallbackSubscriptionUpdates(userData) {
-  const now = new Date();
-  const expiry = resolveFirestoreExpiry(userData);
-  const entitled = Boolean(expiry && expiry > now);
-  const currentStatus = (userData.subscriptionStatus || "")
-      .toString()
-      .toLowerCase();
-  const nextStatus = entitled && currentStatus === "active_canceled" ?
-    "active_canceled" :
-    entitled ? "active" : "inactive";
-
-  return withCommonSubscriptionFields(userData, {
-    isSubscribed: entitled,
-    subscriptionStatus: nextStatus,
-    subscriptionCanceled: entitled ? currentStatus === "active_canceled" : true,
-    subscriptionExpiresAt: expiry ?
-      admin.firestore.Timestamp.fromDate(expiry) :
-      null,
-    subscriptionSource: userData.subscriptionSource || null,
-  });
-}
-
 function withCommonSubscriptionFields(userData, nextValues) {
   const updates = {
     ...nextValues,
@@ -8179,105 +8507,59 @@ function buildSubscriptionVerificationResponse(userData) {
   };
 }
 
-async function waitForVerifiedAppleEntitlement(userRef, initialUserData) {
-  const firstSnapshot = await userRef.get();
-  let candidate = firstSnapshot.data() || initialUserData || {};
-  if (hasVerifiedActiveAppleEntitlement(candidate)) {
-    return candidate;
-  }
+async function waitForVerifiedAppleEntitlement(
+    userRef,
+    initialUserData,
+    expectedOriginalTransactionId,
+) {
+  const entitlementRef = userRef
+      .collection(SUBSCRIPTION_ENTITLEMENTS_COLLECTION)
+      .doc(APP_STORE_PROVIDER);
+
+  const readVerifiedEntitlement = async () => {
+    const entitlementSnapshot = await entitlementRef.get();
+    if (!entitlementSnapshot.exists) return null;
+
+    const entitlement = entitlementSnapshot.data() || {};
+    if (!isVerifiedAppleNotificationEntitlement(
+        entitlement,
+        APPLE_SUBSCRIPTION_PRODUCT_ID,
+    )) {
+      return null;
+    }
+
+    const expectedId = normalizeString(expectedOriginalTransactionId);
+    const verifiedId = normalizeString(
+        entitlement.subscriptionOriginalTransactionId,
+    );
+    if (expectedId && (!verifiedId || verifiedId !== expectedId)) {
+      return null;
+    }
+
+    const userSnapshot = await userRef.get();
+    return userSnapshot.data() || initialUserData || {};
+  };
+
+  let verifiedUserData = await readVerifiedEntitlement();
+  if (verifiedUserData) return verifiedUserData;
 
   for (let attempt = 0; attempt < 4; attempt += 1) {
     await sleep(1500);
-    const snap = await userRef.get();
-    candidate = snap.data() || {};
-    if (hasVerifiedActiveAppleEntitlement(candidate)) {
-      return candidate;
-    }
+    verifiedUserData = await readVerifiedEntitlement();
+    if (verifiedUserData) return verifiedUserData;
   }
 
   return null;
 }
 
-function hasVerifiedActiveAppleEntitlement(userData) {
-  if (!userData || userData.isSubscribed !== true) {
-    return false;
-  }
-
-  const source = normalizeString(userData.subscriptionSource).toLowerCase();
-  const platform = normalizeString(userData.subscriptionPlatform).toLowerCase();
-  const productId = normalizeString(userData.subscriptionProductId);
-  const status = normalizeString(userData.subscriptionStatus).toLowerCase();
-
-  const verifiedAt = toDate(userData.subscriptionVerifiedAt);
-  const freshUntil = toDate(userData.subscriptionVerificationFreshUntil);
-  const now = new Date();
-  const recentlyVerified = Boolean(
-      (freshUntil && freshUntil > now) ||
-      (verifiedAt && now.getTime() - verifiedAt.getTime() < 10 * 60 * 1000),
-  );
-
-  return (
-    recentlyVerified &&
-    (status === "active" || status === "active_canceled") &&
-    productId === APPLE_SUBSCRIPTION_PRODUCT_ID &&
-    (source === "app_store" || platform === "app_store")
-  );
-}
-
-function shouldApplySubscriptionUpdate(previous, nextValues) {
-  return (
-    previous.isSubscribed !== nextValues.isSubscribed ||
-    normalizeString(previous.subscriptionStatus) !==
-      normalizeString(nextValues.subscriptionStatus) ||
-    Boolean(previous.subscriptionCanceled) !==
-      Boolean(nextValues.subscriptionCanceled) ||
-    normalizeString(previous.subscriptionProviderState) !==
-      normalizeString(nextValues.subscriptionProviderState) ||
-    normalizeString(previous.subscriptionProductId) !==
-      normalizeString(nextValues.subscriptionProductId) ||
-    normalizeString(previous.subscriptionSource) !==
-      normalizeString(nextValues.subscriptionSource) ||
-    normalizeString(previous.subscriptionPurchaseOrderId) !==
-      normalizeString(nextValues.subscriptionPurchaseOrderId) ||
-    normalizeString(previous.subscriptionAccountToken) !==
-      normalizeString(nextValues.subscriptionAccountToken) ||
-    normalizeString(previous.subscriptionOriginalTransactionId) !==
-      normalizeString(nextValues.subscriptionOriginalTransactionId) ||
-    normalizeString(previous.subscriptionTransactionId) !==
-      normalizeString(nextValues.subscriptionTransactionId) ||
-    !datesEqual(
-        toDate(previous.subscriptionExpiresAt),
-        toDate(nextValues.subscriptionExpiresAt),
-    )
-  );
-}
-
-async function applyUserSubscriptionUpdates(userRef, previousData, updates) {
-  if (!shouldApplySubscriptionUpdate(previousData, updates)) {
-    return false;
-  }
-
-  await userRef.set(updates, {merge: true});
-  return true;
-}
-
-async function commitSubscriptionUpdates(db, updates) {
-  if (updates.length === 0) {
-    return;
-  }
-
-  for (let index = 0; index < updates.length; index += 450) {
-    const chunk = updates.slice(index, index + 450);
-    const batch = db.batch();
-    for (const item of chunk) {
-      batch.set(item.ref, item.data, {merge: true});
-    }
-    await batch.commit();
-  }
-}
-
 async function findUserBySubscriptionAccountToken(accountToken) {
   if (!accountToken) return null;
+
+  const indexed = await findUserByOwnershipIdentifier(
+      "account_token",
+      accountToken,
+  );
+  if (indexed) return indexed;
 
   const snap = await admin.firestore()
       .collection("users")
@@ -8289,6 +8571,12 @@ async function findUserBySubscriptionAccountToken(accountToken) {
 
 async function findUserByPurchaseToken(purchaseToken) {
   if (!purchaseToken) return null;
+
+  const indexed = await findUserByOwnershipIdentifier(
+      "google_play_purchase_token",
+      purchaseToken,
+  );
+  if (indexed) return indexed;
 
   const snap = await admin.firestore()
       .collection("users")
@@ -8463,20 +8751,6 @@ function firstValidDate(...values) {
     }
   }
   return null;
-}
-
-function resolveFirestoreExpiry(data) {
-  const directExpiry = toDate(data.subscriptionExpiresAt);
-  if (directExpiry) {
-    return directExpiry;
-  }
-
-  const subscriptionDate = toDate(data.subscriptionDate);
-  if (!subscriptionDate) {
-    return null;
-  }
-
-  return addDays(subscriptionDate, 30);
 }
 
 function addDays(date, days) {
@@ -9908,12 +10182,6 @@ function drawCenteredPdfParts(page, parts, options) {
     x: (options.centerX ?? page.getWidth() / 2) - totalWidth / 2,
     gap,
   });
-}
-
-function datesEqual(left, right) {
-  if (!left && !right) return true;
-  if (!left || !right) return false;
-  return left.getTime() === right.getTime();
 }
 
 function defaultTitleForType(type) {

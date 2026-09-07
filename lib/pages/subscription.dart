@@ -6,10 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 import 'package:in_app_purchase_android/in_app_purchase_android.dart';
 import 'package:in_app_purchase_storekit/in_app_purchase_storekit.dart';
-import 'package:in_app_purchase_storekit/store_kit_wrappers.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -17,7 +15,7 @@ import 'package:untitled1/sign_up.dart';
 import 'package:untitled1/main.dart';
 import 'package:untitled1/services/language_provider.dart';
 import 'package:untitled1/services/subscription_access_service.dart';
-import 'package:untitled1/services/subscription_verification_service.dart';
+import 'package:untitled1/services/subscription_purchase_coordinator.dart';
 import 'package:untitled1/utils/constants.dart';
 
 class SubscriptionPage extends StatefulWidget {
@@ -47,7 +45,7 @@ class _SubscriptionPageState extends State<SubscriptionPage>
     'https://apps.apple.com/us/app/hiro-%D7%94%D7%99%D7%A8%D7%95/id6763238120',
   );
   final InAppPurchase _inAppPurchase = InAppPurchase.instance;
-  late StreamSubscription<List<PurchaseDetails>> _subscription;
+  late StreamSubscription<SubscriptionPurchaseEvent> _purchaseUiSubscription;
   List<ProductDetails> _products = [];
   bool _isLoading = true;
   bool _storeAvailable = true;
@@ -133,14 +131,19 @@ class _SubscriptionPageState extends State<SubscriptionPage>
   void initState() {
     super.initState();
     _ensureAnimationControllers();
-    final Stream<List<PurchaseDetails>> purchaseUpdated =
-        _inAppPurchase.purchaseStream;
-    _subscription = purchaseUpdated.listen(
-      (purchaseDetailsList) => _listenToPurchaseUpdated(purchaseDetailsList),
-      onDone: () => _subscription.cancel(),
-      onError: (error) => debugPrint("Purchase Stream Error: $error"),
+    _purchaseUiSubscription = SubscriptionPurchaseCoordinator.instance.events
+        .listen(
+          (event) => unawaited(_handlePurchaseEvent(event)),
+          onError: (Object error) =>
+              debugPrint('Purchase UI event error: $error'),
+        );
+    unawaited(
+      SubscriptionPurchaseCoordinator.instance.start().catchError(
+        (Object error) => debugPrint(
+          'Could not start subscription purchase coordinator: $error',
+        ),
+      ),
     );
-    unawaited(_configureStoreKitIfNeeded());
     if (kIsWeb) {
       _isLoading = false;
       _storeAvailable = true;
@@ -155,27 +158,10 @@ class _SubscriptionPageState extends State<SubscriptionPage>
 
   @override
   void dispose() {
-    unawaited(_disposeStoreKitIfNeeded());
     _introController?.dispose();
     _backgroundController?.dispose();
-    _subscription.cancel();
+    _purchaseUiSubscription.cancel();
     super.dispose();
-  }
-
-  Future<void> _configureStoreKitIfNeeded() async {
-    if (!_isApplePlatform) return;
-
-    final iosPlatformAddition = _inAppPurchase
-        .getPlatformAddition<InAppPurchaseStoreKitPlatformAddition>();
-    await iosPlatformAddition.setDelegate(_AppStorePaymentQueueDelegate());
-  }
-
-  Future<void> _disposeStoreKitIfNeeded() async {
-    if (!_isApplePlatform) return;
-
-    final iosPlatformAddition = _inAppPurchase
-        .getPlatformAddition<InAppPurchaseStoreKitPlatformAddition>();
-    await iosPlatformAddition.setDelegate(null);
   }
 
   Future<void> _initStoreInfo() async {
@@ -223,45 +209,83 @@ class _SubscriptionPageState extends State<SubscriptionPage>
     });
   }
 
-  void _listenToPurchaseUpdated(List<PurchaseDetails> purchaseDetailsList) {
-    for (var purchaseDetails in purchaseDetailsList) {
-      if (purchaseDetails.status == PurchaseStatus.error) {
-        if (mounted) setState(() => _isPurchasing = false);
-        if (_isAlreadyOwnedError(purchaseDetails.error)) {
-          _handleSubscriptionOwnedByAnotherAccount();
-        } else {
+  Future<void> _handlePurchaseEvent(SubscriptionPurchaseEvent event) async {
+    if (!mounted) return;
+
+    switch (event.type) {
+      case SubscriptionPurchaseEventType.pending:
+        setState(() => _isPurchasing = true);
+        return;
+      case SubscriptionPurchaseEventType.canceled:
+        setState(() => _isPurchasing = false);
+        if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+          await _refreshLinkedAccountNotice();
+        }
+        return;
+      case SubscriptionPurchaseEventType.storeError:
+        setState(() => _isPurchasing = false);
+        if (_isAlreadyOwnedError(event.purchaseDetails.error)) {
+          await _handleSubscriptionOwnedByAnotherAccount();
+        } else if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text("הרכישה נכשלה: ${purchaseDetails.error?.message}"),
+              content: Text(
+                'הרכישה נכשלה: '
+                '${event.purchaseDetails.error?.message ?? 'נסו שוב.'}',
+              ),
             ),
           );
         }
-      } else if (purchaseDetails.status == PurchaseStatus.purchased ||
-          purchaseDetails.status == PurchaseStatus.restored) {
-        if (mounted) setState(() => _isPurchasing = false);
-
-        if (!_allowedSubscriptionIds.contains(purchaseDetails.productID)) {
-          debugPrint('Ignoring non-Pro purchase: ${purchaseDetails.productID}');
-        } else if (_isPurchaseDataInvalid(purchaseDetails)) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('אימות הרכישה נכשל. נסה שוב או בצע שחזור רכישה.'),
-              ),
-            );
-          }
-        } else {
-          _completeSubscription(purchaseDetails: purchaseDetails);
-        }
-      } else if (purchaseDetails.status == PurchaseStatus.canceled) {
-        if (mounted) setState(() => _isPurchasing = false);
-        if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
-          unawaited(_refreshLinkedAccountNotice());
-        }
-      }
-      if (purchaseDetails.pendingCompletePurchase) {
-        _inAppPurchase.completePurchase(purchaseDetails);
-      }
+        return;
+      case SubscriptionPurchaseEventType.verificationError:
+        setState(() {
+          _isPurchasing = false;
+          _isLoading = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'לא הצלחנו לאמת את המנוי כרגע. הרכישה לא אבדה; '
+              'ננסה שוב אוטומטית או שאפשר ללחוץ על שחזור רכישה.',
+            ),
+          ),
+        );
+        return;
+      case SubscriptionPurchaseEventType.completionError:
+        setState(() {
+          _isPurchasing = false;
+          _isLoading = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'המנוי אומת, אבל החנות עדיין מסיימת את הרכישה. '
+              'אין צורך לשלם שוב; נסו מאוחר יותר או שחזרו רכישה.',
+            ),
+          ),
+        );
+        return;
+      case SubscriptionPurchaseEventType.ownershipConflict:
+        setState(() {
+          _isPurchasing = false;
+          _isLoading = false;
+        });
+        await _handleSubscriptionOwnedByAnotherAccount();
+        return;
+      case SubscriptionPurchaseEventType.inactive:
+        setState(() {
+          _isPurchasing = false;
+          _isLoading = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('הרכישה אומתה אך המנוי אינו פעיל כרגע.'),
+          ),
+        );
+        return;
+      case SubscriptionPurchaseEventType.verified:
+        await _handleVerifiedSubscription(event);
+        return;
     }
   }
 
@@ -323,34 +347,27 @@ class _SubscriptionPageState extends State<SubscriptionPage>
     );
   }
 
-  bool _isPurchaseDataInvalid(PurchaseDetails details) {
-    final token = details.verificationData.serverVerificationData.trim();
-    return token.isEmpty;
-  }
-
-  Future<void> _completeSubscription({
-    required PurchaseDetails purchaseDetails,
-  }) async {
+  Future<void> _handleVerifiedSubscription(
+    SubscriptionPurchaseEvent event,
+  ) async {
     try {
-      if (mounted) setState(() => _isLoading = true);
+      if (!mounted) return;
+      setState(() {
+        _isPurchasing = false;
+        _isLoading = true;
+      });
 
-      final verification = await SubscriptionVerificationService.verifyPurchase(
-        purchaseDetails: purchaseDetails,
-        isNewRegistration: widget.isNewRegistration,
-      );
-
-      if (!verification.isSubscribed) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('הרכישה אומתה אך המנוי אינו פעיל כרגע.'),
-            ),
-          );
-        }
-        return;
+      // This is diagnostic history only. The trusted backend has already
+      // written entitlement, so a Firestore logging failure must not turn a
+      // successful purchase into a user-visible purchase failure.
+      try {
+        await _savePurchaseMetadata(event.purchaseDetails);
+      } catch (error) {
+        debugPrint('Could not save purchase metadata: $error');
       }
 
-      await _savePurchaseMetadata(purchaseDetails);
+      if (!mounted) return;
+      final verification = event.verification!;
 
       if (widget.isNewRegistration) {
         _newRegistrationSubscriptionData = verification.toPendingWorkerData();
@@ -368,19 +385,11 @@ class _SubscriptionPageState extends State<SubscriptionPage>
           );
         }
       }
-    } on FirebaseFunctionsException catch (e) {
-      if (e.code == 'already-exists') {
-        await _handleSubscriptionOwnedByAnotherAccount();
-      } else if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('אימות המנוי נכשל: ${e.message ?? e.code}')),
-        );
-      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('אימות המנוי נכשל: $e')));
+        ).showSnackBar(SnackBar(content: Text('השלמת פרופיל ה-Pro נכשלה: $e')));
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -2054,21 +2063,6 @@ class _SubscriptionPageState extends State<SubscriptionPage>
         'subtitle': s['cap_4_sub']!,
       },
     ];
-  }
-}
-
-class _AppStorePaymentQueueDelegate implements SKPaymentQueueDelegateWrapper {
-  @override
-  bool shouldContinueTransaction(
-    SKPaymentTransactionWrapper transaction,
-    SKStorefrontWrapper storefront,
-  ) {
-    return true;
-  }
-
-  @override
-  bool shouldShowPriceConsent() {
-    return true;
   }
 }
 

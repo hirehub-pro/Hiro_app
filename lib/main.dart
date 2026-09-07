@@ -21,6 +21,7 @@ import 'package:untitled1/services/analytics_service.dart';
 import 'package:untitled1/services/app_navigation_service.dart';
 import 'package:untitled1/services/notification_service.dart';
 import 'package:untitled1/services/subscription_access_service.dart';
+import 'package:untitled1/services/subscription_purchase_coordinator.dart';
 import 'package:untitled1/sign_in.dart';
 import 'services/firebase_options.dart';
 
@@ -69,6 +70,7 @@ class _MyAppState extends State<MyApp> {
   @override
   void dispose() {
     _notificationTapSubscription?.cancel();
+    unawaited(SubscriptionPurchaseCoordinator.instance.stop());
     super.dispose();
   }
 
@@ -124,6 +126,11 @@ class _MyAppState extends State<MyApp> {
           persistenceEnabled: true,
           cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
         );
+
+        // Start listening before any purchase UI is opened. Firestore settings
+        // must be applied first because verification can immediately replay a
+        // transaction from a previous application session.
+        await SubscriptionPurchaseCoordinator.instance.start();
 
         _attachNotificationTapListener();
         await NotificationService.init().timeout(

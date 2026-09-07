@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:crypto/crypto.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
@@ -69,14 +70,15 @@ class SubscriptionAccessService {
     'pro_worker_monthly',
     'com-hiro-app-pro-worker-monthly',
   };
-  static const String _subscriptionSourceField = 'subscriptionSource';
-
-  static bool hasActiveWorkerSubscriptionFromData(Map<String, dynamic>? data) {
+  static bool hasActiveWorkerSubscriptionFromData(
+    Map<String, dynamic>? data, {
+    DateTime? now,
+  }) {
     final role = (data?['role'] ?? 'customer').toString().toLowerCase();
     if (role != 'worker') return true;
     if (data?['isVIP'] == true) return true;
 
-    return _resolveSubscriptionStatusFromData(data) != 'inactive';
+    return _resolveSubscriptionStatusFromData(data, now: now) != 'inactive';
   }
 
   static bool isEntitledSubscriptionStatus(String? status) {
@@ -107,10 +109,21 @@ class SubscriptionAccessService {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return null;
 
-    // Entitlement identifiers are server-controlled. The deterministic token
-    // is sent to the store/callable and persisted only after server-side
-    // purchase verification succeeds.
-    return subscriptionAccountTokenForUid(user.uid);
+    // Claim the deterministic account token before checkout. This lets the
+    // first Apple/Google server notification find the correct Firebase user,
+    // even if it arrives before the client verifies the purchase.
+    final expectedToken = subscriptionAccountTokenForUid(user.uid);
+    final callable = FirebaseFunctions.instanceFor(
+      region: 'us-central1',
+    ).httpsCallable('prepareSubscriptionPurchase');
+    final result = await callable.call<Map<String, dynamic>>();
+    final accountToken = result.data['accountToken']?.toString().trim();
+    if (accountToken == null ||
+        accountToken.isEmpty ||
+        accountToken != expectedToken) {
+      throw StateError('Could not securely prepare the subscription account.');
+    }
+    return accountToken;
   }
 
   static Future<bool>
@@ -234,23 +247,6 @@ class SubscriptionAccessService {
     }
   }
 
-  static bool _hasGooglePlayHistory(Map<String, dynamic>? data) {
-    final source = (data?[_subscriptionSourceField] ?? '')
-        .toString()
-        .toLowerCase();
-    if (source == 'google_play') return true;
-
-    final platform = (data?['subscriptionPlatform'] ?? '')
-        .toString()
-        .toLowerCase();
-    if (platform.contains('google_play') || platform.contains('play')) {
-      return true;
-    }
-
-    final productId = (data?['subscriptionProductId'] ?? '').toString();
-    return _workerSubscriptionProductIds.contains(productId);
-  }
-
   static Future<GooglePlaySubscriptionSnapshot?> _queryGooglePlayState() async {
     if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
       return null;
@@ -281,36 +277,19 @@ class SubscriptionAccessService {
     }
   }
 
-  static String _resolveSubscriptionStatusFromData(Map<String, dynamic>? data) {
+  static String _resolveSubscriptionStatusFromData(
+    Map<String, dynamic>? data, {
+    DateTime? now,
+  }) {
     final status = (data?['subscriptionStatus'] ?? '').toString().toLowerCase();
     if (!isEntitledSubscriptionStatus(status)) {
       return 'inactive';
     }
 
-    if (_hasGooglePlayHistory(data)) {
-      return status;
-    }
+    final expiry = _toDate(data?['subscriptionExpiresAt']);
+    if (expiry == null) return 'inactive';
 
-    final expiry = _resolveExpiryDate(data);
-    if (expiry == null) {
-      return status;
-    }
-
-    return DateTime.now().isBefore(expiry) ? status : 'inactive';
-  }
-
-  static DateTime? _resolveExpiryDate(Map<String, dynamic>? data) {
-    final directExpiry = _toDate(data?['subscriptionExpiresAt']);
-    if (directExpiry != null) {
-      return directExpiry;
-    }
-
-    final subscriptionDate = _toDate(data?['subscriptionDate']);
-    if (subscriptionDate == null) {
-      return null;
-    }
-
-    return subscriptionDate.add(const Duration(days: 30));
+    return (now ?? DateTime.now()).isBefore(expiry) ? status : 'inactive';
   }
 
   static DateTime? _toDate(dynamic value) {

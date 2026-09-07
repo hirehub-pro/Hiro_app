@@ -72,6 +72,17 @@ function validInvoice(invoiceId, sequenceNumber = 1) {
   };
 }
 
+async function seedActiveWorker(uid) {
+  await seed(`users/${uid}`, {
+    uid,
+    role: "worker",
+    isSubscribed: true,
+    subscriptionStatus: "active",
+    subscriptionExpiresAt: new Date(Date.now() + 86400000),
+    createdAt: new Date(),
+  });
+}
+
 test("denies public and cross-user private account reads", {
   skip: !emulatorAvailable,
 }, async () => {
@@ -358,6 +369,42 @@ test("allows an owner account but blocks self-assigned privilege", {
       doc(attacker, `users/${attackerUid}`),
       validUser(attackerUid, "admin"),
   ));
+});
+
+test("keeps provider entitlements and ownership indexes server-only", {
+  skip: !emulatorAvailable,
+}, async () => {
+  const uid = "subscription-owner-000001";
+  await seed(`users/${uid}`, {
+    uid,
+    role: "worker",
+    createdAt: new Date(),
+  });
+  await seed(`users/${uid}/subscriptionEntitlements/app_store`, {
+    provider: "app_store",
+    isSubscribed: true,
+    subscriptionStatus: "active",
+    subscriptionExpiresAt: new Date(Date.now() + 86400000),
+  });
+  await seed(`subscriptionOwnership/${"a".repeat(64)}`, {
+    uid,
+    kind: "account_token",
+    provider: "account",
+  });
+
+  const owner = testEnv.authenticatedContext(uid).firestore();
+  const entitlementRef = doc(
+      owner,
+      `users/${uid}/subscriptionEntitlements/app_store`,
+  );
+  const ownershipRef = doc(
+      owner,
+      `subscriptionOwnership/${"a".repeat(64)}`,
+  );
+  await assertFails(getDoc(entitlementRef));
+  await assertFails(setDoc(entitlementRef, {isSubscribed: false}, {merge: true}));
+  await assertFails(getDoc(ownershipRef));
+  await assertFails(setDoc(ownershipRef, {uid}));
 });
 
 test("allows inactive worker registration but rejects forged entitlement", {
@@ -732,6 +779,7 @@ test("allows only the owner to read the server financial summary", {
     totalEarned: 1250,
     updatedAt: new Date(),
   });
+  await seedActiveWorker(uid);
 
   const ownerDb = testEnv.authenticatedContext(uid).firestore();
   const otherDb = testEnv.authenticatedContext(otherUid).firestore();
@@ -747,6 +795,47 @@ test("allows only the owner to read the server financial summary", {
     totalEarned: 999999,
   }));
   await assertFails(deleteDoc(doc(ownerDb, pathValue)));
+
+  await seed(`users/${uid}`, {
+    uid,
+    role: "worker",
+    isSubscribed: false,
+    subscriptionStatus: "inactive",
+    subscriptionExpiresAt: new Date(Date.now() - 1000),
+    createdAt: new Date(),
+  });
+  await assertFails(getDoc(doc(ownerDb, pathValue)));
+});
+
+test("requires Pro for client changes but preserves owner reads", {
+  skip: !emulatorAvailable,
+}, async () => {
+  const uid = "client-owner-id-0000001";
+  const owner = testEnv.authenticatedContext(uid).firestore();
+  const clientRef = doc(owner, `users/${uid}/clients/client-1`);
+  await seed(`users/${uid}`, {
+    uid,
+    role: "worker",
+    isSubscribed: false,
+    subscriptionStatus: "inactive",
+    createdAt: new Date(),
+  });
+  await seed(`users/${uid}/clients/client-1`, {
+    name: "Existing Client",
+    createdAt: new Date(),
+  });
+
+  await assertSucceeds(getDoc(clientRef));
+  await assertFails(updateDoc(clientRef, {
+    name: "Free edit",
+    updatedAt: serverTimestamp(),
+  }));
+
+  await seedActiveWorker(uid);
+  await assertSucceeds(updateDoc(clientRef, {
+    name: "Paid edit",
+    updatedAt: serverTimestamp(),
+  }));
 });
 
 test("allows users to manage only their own validated block list", {
@@ -1067,6 +1156,7 @@ test("allows only the assigned worker to attach a validated quote document", {
   await seed(`users/${customer}/requests/${requestId}`, requestData);
   await seed(`users/${worker}/RequestToMe/${incomingId}`, requestData);
   await seed(`users/${worker}/notifications/${notificationId}`, requestData);
+  await seedActiveWorker(worker);
 
   const workerDb = testEnv.authenticatedContext(worker).firestore();
   const quoteAttachment = {
@@ -1106,6 +1196,22 @@ test("allows only the assigned worker to attach a validated quote document", {
   await assertFails(updateDoc(
       doc(workerDb, `users/${customer}/requests/${requestId}`),
       {quoteDocType: "invoice"},
+  ));
+
+  await seed(`users/${worker}`, {
+    uid: worker,
+    role: "worker",
+    isSubscribed: false,
+    subscriptionStatus: "inactive",
+    createdAt: new Date(),
+  });
+  await assertSucceeds(updateDoc(
+      doc(workerDb, `users/${worker}/notifications/${notificationId}`),
+      {isRead: true},
+  ));
+  await assertFails(updateDoc(
+      doc(workerDb, `users/${worker}/notifications/${notificationId}`),
+      {quotePrice: "1"},
   ));
 });
 
@@ -1187,6 +1293,7 @@ test("validates community author identity and content size", {
 }, async () => {
   const uid = "blog-author-id-0000001";
   const db = testEnv.authenticatedContext(uid).firestore();
+  await seedActiveWorker(uid);
   await assertSucceeds(setDoc(doc(db, "blog_posts/post-1"), {
     authorUid: uid,
     title: "A valid post",
@@ -1259,6 +1366,51 @@ test("validates community author identity and content size", {
         text: "Valid numeric bid",
         bidPrice: 250,
         isBid: true,
+        timestamp: serverTimestamp(),
+      },
+  ));
+
+  const inactiveUid = "inactive-worker-id-00001";
+  const inactiveDb = testEnv.authenticatedContext(inactiveUid).firestore();
+  await seed(`users/${inactiveUid}`, {
+    uid: inactiveUid,
+    role: "worker",
+    isSubscribed: false,
+    subscriptionStatus: "inactive",
+    createdAt: new Date(),
+  });
+  await assertSucceeds(setDoc(
+      doc(inactiveDb, "blog_posts/post-1/blog_comments/community-comment"),
+      {
+        authorUid: inactiveUid,
+        text: "A normal community comment",
+        isBid: false,
+        timestamp: serverTimestamp(),
+      },
+  ));
+  await assertFails(setDoc(
+      doc(inactiveDb, "blog_posts/post-1/blog_comments/unpaid-bid"),
+      {
+        authorUid: inactiveUid,
+        text: "An unpaid bid",
+        bidPrice: 10,
+        isBid: true,
+        timestamp: serverTimestamp(),
+      },
+  ));
+
+  await assertSucceeds(setDoc(doc(db, "blog_posts/job-post"), {
+    authorUid: uid,
+    title: "A job request",
+    content: "Need help",
+    isJobRequest: true,
+    timestamp: serverTimestamp(),
+  }));
+  await assertFails(setDoc(
+      doc(inactiveDb, "blog_posts/job-post/blog_comments/unpaid-comment"),
+      {
+        authorUid: inactiveUid,
+        text: "Trying to bypass the paid lead gate",
         timestamp: serverTimestamp(),
       },
   ));

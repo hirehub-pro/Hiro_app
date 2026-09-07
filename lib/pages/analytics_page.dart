@@ -382,7 +382,18 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   void initState() {
     super.initState();
     _accessFuture = SubscriptionAccessService.getCurrentUserState();
-    _fetchAnalytics();
+    _fetchAnalyticsWhenAuthorized();
+  }
+
+  Future<void> _fetchAnalyticsWhenAuthorized() async {
+    try {
+      final access = await _accessFuture;
+      if (!access.isUnsubscribedWorker) {
+        await _fetchAnalytics();
+      }
+    } catch (_) {
+      // Do not query paid data unless authorization was established.
+    }
   }
 
   double _asDouble(dynamic value, {double fallback = 0.0}) {

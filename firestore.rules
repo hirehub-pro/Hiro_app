@@ -41,6 +41,31 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
+    // Subscription aggregates are written only by trusted backend code.
+    // A canceled subscription remains entitled until its verified expiry.
+    function hasActiveProAccess(userId) {
+      let userPath = /databases/$(database)/documents/users/$(userId);
+      let userData = get(userPath).data;
+      return isOwner(userId) && exists(userPath) &&
+        userData.get('role', '') == 'worker' &&
+        (userData.get('isVIP', false) == true ||
+          (userData.get('isSubscribed', false) == true &&
+            userData.get('subscriptionStatus', '') in [
+              'active', 'active_canceled'
+            ] &&
+            'subscriptionExpiresAt' in userData &&
+            userData.subscriptionExpiresAt is timestamp &&
+            userData.subscriptionExpiresAt > request.time));
+    }
+
+    function isPaidJobComment(postId, data) {
+      let postPath = /databases/$(database)/documents/blog_posts/$(postId);
+      return data.get('isBid', false) == true ||
+        'bidPrice' in data ||
+        (exists(postPath) &&
+          get(postPath).data.get('isJobRequest', false) == true);
+    }
+
     function isAdmin() {
       return isAuthenticated() && (
         request.auth.token.get('admin', false) == true ||
@@ -163,7 +188,8 @@ service cloud.firestore {
         'activeChatWith', 'activeChatUpdatedAt', 'isPro', 'isSubscribed', 'isVIP',
         'subscriptionAccountToken', 'subscriptionCanceled', 'subscriptionDate',
         'subscriptionExpiresAt', 'subscriptionOwnershipKey',
-        'subscriptionPlatform', 'subscriptionProductId',
+        'subscriptionPlatform', 'subscriptionPlatforms',
+        'subscriptionProductId',
         'subscriptionProviderState', 'subscriptionPurchaseId',
         'subscriptionPurchaseOrderId', 'subscriptionPurchaseToken',
         'subscriptionSource', 'subscriptionStatus',
@@ -200,6 +226,7 @@ service cloud.firestore {
       optionalList(data, 'professions', 50) &&
       optionalList(data, 'spokenLanguages', 30) &&
       optionalList(data, 'disabledDays', 31) &&
+      optionalList(data, 'subscriptionPlatforms', 2) &&
       optionalSocialLinks(data) &&
       optionalMap(data, 'accountingExportSettings', 30) &&
       optionalBool(data, 'emailVerified') &&
@@ -237,6 +264,7 @@ service cloud.firestore {
         data.get('subscriptionExpiresAt', null) == null &&
         data.get('subscriptionOwnershipKey', null) == null &&
         data.get('subscriptionPlatform', null) == null &&
+        data.get('subscriptionPlatforms', []).size() == 0 &&
         data.get('subscriptionProductId', null) == null &&
         data.get('subscriptionProviderState', null) == null &&
         data.get('subscriptionPurchaseId', null) == null &&
@@ -255,7 +283,8 @@ service cloud.firestore {
         'isSubscribed', 'isVIP',
         'subscriptionAccountToken', 'subscriptionCanceled', 'subscriptionDate',
         'subscriptionExpiresAt', 'subscriptionOwnershipKey',
-        'subscriptionPlatform', 'subscriptionProductId',
+        'subscriptionPlatform', 'subscriptionPlatforms',
+        'subscriptionProductId',
         'subscriptionProviderState', 'subscriptionPurchaseId',
         'subscriptionPurchaseOrderId', 'subscriptionPurchaseToken',
         'subscriptionSource', 'subscriptionStatus',
@@ -1061,7 +1090,8 @@ service cloud.firestore {
 
       match /clients/{clientId} {
         allow read, delete: if isOwner(userId);
-        allow create, update: if isOwner(userId) && validClient(request.resource.data);
+        allow create, update: if hasActiveProAccess(userId) &&
+          validClient(request.resource.data);
 
         match /ledgerEntries/{postingId} {
           allow read: if isOwner(userId);
@@ -1105,6 +1135,11 @@ service cloud.firestore {
             request.resource.data.get('fromId', request.auth.uid)) == request.auth.uid;
         allow update: if validNotification(request.resource.data) &&
           ((isOwner(userId) &&
+            (hasActiveProAccess(userId) ||
+              request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly([
+                  'isRead', 'read', 'seenAt', 'reviewedAt', 'reviewedBy'
+                ])) &&
             request.resource.data.diff(resource.data).affectedKeys()
               .hasOnly([
                 'isRead', 'read', 'status', 'seenAt', 'reviewedAt', 'reviewedBy',
@@ -1128,6 +1163,7 @@ service cloud.firestore {
               .affectedKeys().hasOnly(['status', 'cancelledAt', 'updatedAt'])) ||
             (isOwner(userId) && validPendingRequestEditBySender()) ||
             (isAuthenticated() && request.auth.uid == resource.data.workerId &&
+              hasActiveProAccess(request.auth.uid) &&
               request.resource.data.diff(resource.data).affectedKeys().hasOnly([
                 'status', 'acceptedWindow', 'quotePrice', 'quoteDescription',
                 'quoteSentAt', 'quoteUrl', 'quoteFileName', 'quoteDocType',
@@ -1141,6 +1177,7 @@ service cloud.firestore {
         allow update: if validWorkRequest(request.resource.data) &&
           workRequestIdentityUnchanged(request.resource.data) &&
           ((isOwner(userId) &&
+            hasActiveProAccess(userId) &&
             request.resource.data.diff(resource.data).affectedKeys().hasOnly([
               'status', 'acceptedWindow', 'quotePrice', 'quoteDescription',
               'quoteSentAt', 'quoteUrl', 'quoteFileName', 'quoteDocType',
@@ -1176,6 +1213,12 @@ service cloud.firestore {
         allow create, update: if isOwner(userId) &&
           validBlockedUser(request.resource.data, blockedUid) &&
           recentTimestamp(request.resource.data, 'blockedAt');
+      }
+
+      // Provider-specific purchase evidence is written only by trusted
+      // subscription functions. Clients consume the aggregate user fields.
+      match /subscriptionEntitlements/{provider} {
+        allow read, write: if false;
       }
 
       match /verification_info/{verificationId} {
@@ -1236,14 +1279,21 @@ service cloud.firestore {
 
       // Server-derived business analytics for the account dashboard.
       match /metadata/financial_summary {
-        allow read: if isOwner(userId);
+        allow read: if hasActiveProAccess(userId);
         allow write: if false;
+      }
+
+      match /ProRating/{document=**} {
+        allow read, write: if hasActiveProAccess(userId);
+      }
+
+      match /VPD/{document=**} {
+        allow read, write: if hasActiveProAccess(userId);
       }
 
       match /{ownerCollection}/{document=**} {
         allow read, write: if isOwner(userId) && ownerCollection in [
-          'ProRating', 'VPD', 'clientNumbers', 'clientTaxIds',
-          'logs', 'subscriptionPayments'
+          'clientNumbers', 'clientTaxIds', 'logs', 'subscriptionPayments'
         ];
       }
     }
@@ -1267,6 +1317,8 @@ service cloud.firestore {
         allow create: if isAuthenticated() && validBlogComment(request.resource.data) &&
           !('updatedAt' in request.resource.data) &&
           request.resource.data.authorUid == request.auth.uid &&
+          (!isPaidJobComment(postId, request.resource.data) ||
+            hasActiveProAccess(request.auth.uid)) &&
           recentTimestamp(request.resource.data, 'timestamp');
         allow update: if isAuthenticated() &&
           request.auth.uid == resource.data.authorUid &&
@@ -1360,6 +1412,9 @@ service cloud.firestore {
       allow read, write: if false;
     }
     match /subscriptionNotificationEvents/{document=**} {
+      allow read, write: if false;
+    }
+    match /subscriptionOwnership/{document=**} {
       allow read, write: if false;
     }
     match /documentSigningRequests/{document=**} {
