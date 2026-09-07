@@ -838,9 +838,7 @@ class _DocumentTreeState extends State<_DocumentTree> {
   void _constrainMovement() {
     final viewportSize = _lastViewportSize;
     final canvasSize = _lastCanvasSize;
-    if (_isConstrainingMovement ||
-        viewportSize == null ||
-        canvasSize == null) {
+    if (_isConstrainingMovement || viewportSize == null || canvasSize == null) {
       return;
     }
 
@@ -855,13 +853,12 @@ class _DocumentTreeState extends State<_DocumentTree> {
       double contentExtent,
     ) {
       final scaledExtent = contentExtent * scale;
-      final firstLimit = edgePadding;
-      final secondLimit = viewportExtent - scaledExtent - edgePadding;
+      if (scaledExtent <= viewportExtent) {
+        return offset.clamp(0, viewportExtent - scaledExtent).toDouble();
+      }
+
       return offset
-          .clamp(
-            math.min(firstLimit, secondLimit),
-            math.max(firstLimit, secondLimit),
-          )
+          .clamp(viewportExtent - scaledExtent - edgePadding, edgePadding)
           .toDouble();
     }
 
