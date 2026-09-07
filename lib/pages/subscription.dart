@@ -560,8 +560,32 @@ class _SubscriptionPageState extends State<SubscriptionPage>
   }
 
   Future<void> _restoreSubscription() async {
+    final restoreResult = Completer<SubscriptionPurchaseEvent>();
+    final restoreEvents = SubscriptionPurchaseCoordinator.instance.events
+        .listen((event) {
+          if (!_allowedSubscriptionIds.contains(
+            event.purchaseDetails.productID,
+          )) {
+            return;
+          }
+
+          switch (event.type) {
+            case SubscriptionPurchaseEventType.pending:
+              return;
+            case SubscriptionPurchaseEventType.verified:
+            case SubscriptionPurchaseEventType.inactive:
+            case SubscriptionPurchaseEventType.canceled:
+            case SubscriptionPurchaseEventType.storeError:
+            case SubscriptionPurchaseEventType.verificationError:
+            case SubscriptionPurchaseEventType.ownershipConflict:
+            case SubscriptionPurchaseEventType.completionError:
+              if (!restoreResult.isCompleted) restoreResult.complete(event);
+          }
+        });
+
     try {
       setState(() => _isPurchasing = true);
+      await SubscriptionPurchaseCoordinator.instance.start();
       final user = FirebaseAuth.instance.currentUser;
       final accountToken = user == null
           ? null
@@ -583,21 +607,26 @@ class _SubscriptionPageState extends State<SubscriptionPage>
         await iosPlatformAddition.sync();
       }
 
-      if (mounted) {
-        setState(() => _isPurchasing = false);
+      try {
+        await restoreResult.future.timeout(const Duration(seconds: 30));
+      } on TimeoutException {
+        // A completed restore request does not mean that the store found a
+        // transaction. Check the trusted cached entitlement before reporting
+        // that no restorable subscription was found.
+        final state = await SubscriptionAccessService.refreshCurrentUserState();
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              _isApplePlatform
-                  ? 'שחזור רכישות הופעל מול App Store. בודקים זכאות...'
-                  : 'שחזור רכישות הופעל. בודקים זכאות...',
+              state.isSubscribed
+                  ? 'המנוי שלך כבר פעיל בחשבון זה.'
+                  : 'לא נמצא מנוי קודם פעיל לשחזור בחשבון החנות הזה.',
             ),
           ),
         );
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _isPurchasing = false);
         final message = _isStoreSyncCancelled(e)
             ? 'שחזור הרכישה בוטל. כדי לנסות שוב, לחצו על שחזור רכישה והשלימו את האימות מול App Store.'
             : 'לא הצלחנו לשחזר את הרכישה כרגע. ודאו שאתם מחוברים ל-App Store ונסו שוב.';
@@ -605,6 +634,9 @@ class _SubscriptionPageState extends State<SubscriptionPage>
           context,
         ).showSnackBar(SnackBar(content: Text(message)));
       }
+    } finally {
+      await restoreEvents.cancel();
+      if (mounted) setState(() => _isPurchasing = false);
     }
   }
 
