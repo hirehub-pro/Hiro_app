@@ -1375,6 +1375,13 @@ class _TreeDocumentCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final borderColor = document.isCredit || document.isCancellationReceipt
+        ? const Color(0xFFDC2626)
+        : document.isReceipt
+        ? const Color(0xFF059669)
+        : document.isInvoice
+        ? const Color(0xFFF97316)
+        : const Color(0xFFCAE2F7);
     final visibleStatuses = document.isCancellationReceipt || document.isCredit
         ? const <_DocumentDisplayStatus>[]
         : displayStatuses
@@ -1394,7 +1401,7 @@ class _TreeDocumentCard extends StatelessWidget {
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: const Color(0xFFCAE2F7), width: 1.2),
+            border: Border.all(color: borderColor, width: 1.2),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
