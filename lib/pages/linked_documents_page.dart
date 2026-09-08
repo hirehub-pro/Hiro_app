@@ -65,41 +65,7 @@ class _LinkedDocumentsPageState extends State<LinkedDocumentsPage> {
     if (widget.embedded) {
       return ColoredBox(
         color: const Color(0xFFF7FBFF),
-        child: Column(
-          children: [
-            Container(
-              width: double.infinity,
-              color: Colors.white,
-              padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    strings.title,
-                    style: const TextStyle(
-                      color: Color(0xFF0F172A),
-                      fontSize: 20,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    widget.clientName.trim().isEmpty
-                        ? strings.subtitle
-                        : '${widget.clientName} • ${strings.subtitle}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Color(0xFF64748B),
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Expanded(child: content),
-          ],
-        ),
+        child: content,
       );
     }
 
@@ -457,17 +423,21 @@ class _ChainCard extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  Text(
-                    '${strings.chain} #$number',
-                    style: const TextStyle(
-                      color: Color(0xFF0F172A),
-                      fontSize: 17,
-                      fontWeight: FontWeight.w900,
+                  Expanded(
+                    child: Text(
+                      chain.displayTitle(strings, number),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF0F172A),
+                        fontSize: 17,
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
                   ),
                   const SizedBox(width: 10),
                   _StatusPill(status: chain.status, strings: strings),
-                  const Spacer(),
+                  const SizedBox(width: 10),
                   Text(
                     _formatDate(chain.date),
                     style: const TextStyle(
@@ -583,7 +553,7 @@ class _ChainStage extends StatelessWidget {
   }
 }
 
-class _ChainDetailPage extends StatelessWidget {
+class _ChainDetailPage extends StatefulWidget {
   const _ChainDetailPage({
     required this.chain,
     required this.number,
@@ -597,8 +567,52 @@ class _ChainDetailPage extends StatelessWidget {
   final String locale;
 
   @override
+  State<_ChainDetailPage> createState() => _ChainDetailPageState();
+}
+
+class _ChainDetailPageState extends State<_ChainDetailPage> {
+  late String _chainName;
+
+  @override
+  void initState() {
+    super.initState();
+    _chainName = widget.chain.name;
+  }
+
+  String get _title => _chainName.isEmpty
+      ? '${_LinkedDocumentStrings(widget.locale).chain} #${widget.number}'
+      : _chainName;
+
+  Future<void> _editName(_LinkedDocumentStrings strings) async {
+    final name = await showDialog<String>(
+      context: context,
+      builder: (_) => _EditChainNameDialog(
+        initialName: _chainName,
+        strings: strings,
+      ),
+    );
+    if (name == null || name.isEmpty || name == _chainName) return;
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.userId)
+          .collection('invoices')
+          .doc(widget.chain.nameDocument.id)
+          .update({'linkedChainName': name});
+      if (!mounted) return;
+      setState(() => _chainName = name);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(strings.chainNameSaveFailed)),
+      );
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final strings = _LinkedDocumentStrings(locale);
+    final strings = _LinkedDocumentStrings(widget.locale);
     return Scaffold(
       backgroundColor: const Color(0xFFF7FBFF),
       appBar: AppBar(
@@ -608,23 +622,30 @@ class _ChainDetailPage extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              '${strings.chain} #$number',
+              _title,
               style: const TextStyle(
                 color: Color(0xFF0F172A),
                 fontSize: 22,
                 fontWeight: FontWeight.w900,
               ),
             ),
-            _StatusPill(status: chain.status, strings: strings),
+            _StatusPill(status: widget.chain.status, strings: strings),
           ],
         ),
         actions: [
           PopupMenuButton<String>(
             tooltip: strings.more,
+            onSelected: (value) {
+              if (value == 'editName') _editName(strings);
+            },
             itemBuilder: (_) => [
               PopupMenuItem(
+                value: 'editName',
+                child: Text(strings.editChainName),
+              ),
+              PopupMenuItem(
                 enabled: false,
-                child: Text(strings.documentCount(chain.documents.length)),
+                child: Text(strings.documentCount(widget.chain.documents.length)),
               ),
             ],
           ),
@@ -636,8 +657,8 @@ class _ChainDetailPage extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 18, 16, 0),
               child: _ChainTotalsCard(
-                chain: chain,
-                locale: locale,
+                chain: widget.chain,
+                locale: widget.locale,
                 strings: strings,
               ),
             ),
@@ -646,16 +667,16 @@ class _ChainDetailPage extends StatelessWidget {
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                 child: _DocumentTree(
-                  chain: chain,
+                  chain: widget.chain,
                   availableWidth: constraints.maxWidth - 32,
-                  locale: locale,
+                  locale: widget.locale,
                   strings: strings,
                   onOpen: (document) => LinkedDocumentActionService.show(
                     context: context,
-                    userId: userId,
+                    userId: widget.userId,
                     documentId: document.id,
                     documentData: document.data,
-                    locale: locale,
+                    locale: widget.locale,
                   ),
                 ),
               ),
@@ -665,6 +686,54 @@ class _ChainDetailPage extends StatelessWidget {
       ),
     );
   }
+}
+
+class _EditChainNameDialog extends StatefulWidget {
+  const _EditChainNameDialog({required this.initialName, required this.strings});
+
+  final String initialName;
+  final _LinkedDocumentStrings strings;
+
+  @override
+  State<_EditChainNameDialog> createState() => _EditChainNameDialogState();
+}
+
+class _EditChainNameDialogState extends State<_EditChainNameDialog> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialName);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _save() => Navigator.pop(context, _controller.text.trim());
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: Text(widget.strings.editChainName),
+    content: TextField(
+      controller: _controller,
+      autofocus: true,
+      maxLength: 80,
+      textInputAction: TextInputAction.done,
+      onSubmitted: (_) => _save(),
+      decoration: InputDecoration(hintText: widget.strings.chainNameHint),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: Text(widget.strings.cancel),
+      ),
+      FilledButton(onPressed: _save, child: Text(widget.strings.save)),
+    ],
+  );
 }
 
 class _ChainTotalsCard extends StatelessWidget {
@@ -1906,6 +1975,25 @@ class _DocumentChain {
   final List<_LinkedDocument> documents;
   final Map<String, List<_LinkedDocument>> childrenById;
 
+  /// The first parent is the canonical owner of chain-level metadata.
+  _LinkedDocument get nameDocument {
+    final childIds = childrenById.values
+        .expand((children) => children)
+        .map((document) => document.id)
+        .toSet();
+    final parents = documents
+        .where((document) => !childIds.contains(document.id))
+        .toList()
+      ..sort((a, b) => a.date.compareTo(b.date));
+    return parents.isEmpty ? documents.first : parents.first;
+  }
+
+  String get name =>
+      (nameDocument.data['linkedChainName'] ?? '').toString().trim();
+
+  String displayTitle(_LinkedDocumentStrings strings, int number) =>
+      name.isEmpty ? '${strings.chain} #$number' : name;
+
   List<_DocumentDisplayStatus> displayStatusesFor(_LinkedDocument document) {
     if (document.isReceipt && !document.isCancellationReceipt) {
       final cancelledAmount =
@@ -2182,6 +2270,11 @@ class _LinkedDocumentStrings {
   String get remaining => values['remaining']!;
   String get created => values['created']!;
   String get more => values['more']!;
+  String get editChainName => values['editChainName']!;
+  String get chainNameHint => values['chainNameHint']!;
+  String get cancel => values['cancel']!;
+  String get save => values['save']!;
+  String get chainNameSaveFailed => values['chainNameSaveFailed']!;
   String get clear => values['clear']!;
   String get signIn => values['signIn']!;
   String get signInMessage => values['signInMessage']!;
@@ -2235,6 +2328,11 @@ class _LinkedDocumentStrings {
       'remaining': 'Remaining',
       'created': 'Created',
       'more': 'More',
+      'editChainName': 'Edit chain name',
+      'chainNameHint': 'Chain name',
+      'cancel': 'Cancel',
+      'save': 'Save',
+      'chainNameSaveFailed': 'Could not save the chain name.',
       'clear': 'Clear search',
       'openingDocument': 'Opening document...',
       'openFailed': 'Could not open this document.',
@@ -2284,6 +2382,11 @@ class _LinkedDocumentStrings {
       'remaining': 'נותר',
       'created': 'נוצר',
       'more': 'עוד',
+      'editChainName': 'עריכת שם השרשרת',
+      'chainNameHint': 'שם השרשרת',
+      'cancel': 'ביטול',
+      'save': 'שמירה',
+      'chainNameSaveFailed': 'לא ניתן לשמור את שם השרשרת.',
       'clear': 'נקה חיפוש',
       'openingDocument': 'פותח מסמך...',
       'openFailed': 'לא ניתן לפתוח את המסמך.',
@@ -2332,6 +2435,11 @@ class _LinkedDocumentStrings {
       'remaining': 'المتبقي',
       'created': 'تاريخ الإنشاء',
       'more': 'المزيد',
+      'editChainName': 'تعديل اسم السلسلة',
+      'chainNameHint': 'اسم السلسلة',
+      'cancel': 'إلغاء',
+      'save': 'حفظ',
+      'chainNameSaveFailed': 'تعذر حفظ اسم السلسلة.',
       'clear': 'مسح البحث',
       'openingDocument': 'جارٍ فتح المستند...',
       'openFailed': 'تعذر فتح المستند.',
@@ -2380,6 +2488,11 @@ class _LinkedDocumentStrings {
       'remaining': 'Остаток',
       'created': 'Создано',
       'more': 'Ещё',
+      'editChainName': 'Изменить название цепочки',
+      'chainNameHint': 'Название цепочки',
+      'cancel': 'Отмена',
+      'save': 'Сохранить',
+      'chainNameSaveFailed': 'Не удалось сохранить название цепочки.',
       'clear': 'Очистить поиск',
       'openingDocument': 'Открытие документа...',
       'openFailed': 'Не удалось открыть документ.',
@@ -2428,6 +2541,11 @@ class _LinkedDocumentStrings {
       'remaining': 'ቀሪ',
       'created': 'የተፈጠረ',
       'more': 'ተጨማሪ',
+      'editChainName': 'የሰንሰለት ስም ያስተካክሉ',
+      'chainNameHint': 'የሰንሰለት ስም',
+      'cancel': 'ሰርዝ',
+      'save': 'አስቀምጥ',
+      'chainNameSaveFailed': 'የሰንሰለት ስም ማስቀመጥ አልተቻለም።',
       'clear': 'ፍለጋ አጽዳ',
       'openingDocument': 'ሰነድ በመክፈት ላይ...',
       'openFailed': 'ሰነዱን መክፈት አልተቻለም።',

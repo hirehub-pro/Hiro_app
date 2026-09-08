@@ -59,10 +59,12 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
 
   List<FlSpot> _earningsSpots = [];
   List<BarChartGroupData> _viewGroups = [];
+  double _viewsChartMaxY = 1.0;
 
   Map<String, dynamic> _overallRatingStats = {};
   bool _analyticsAvailable = false;
   Map<String, dynamic> _workerData = {};
+  DateTime? _accountCreatedAt;
   Map<String, dynamic>? _growthProfile;
   List<Map<String, dynamic>>? _growthProjects;
   List<Map<String, dynamic>>? _growthRequests;
@@ -314,6 +316,13 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     return fallback;
   }
 
+  DateTime? _asDateTime(dynamic value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    if (value is String) return DateTime.tryParse(value);
+    return null;
+  }
+
   String _weekKey(DateTime date) {
     final start = _startOfWeek(date);
     return '${start.year.toString().padLeft(4, '0')}-${start.month.toString().padLeft(2, '0')}-${start.day.toString().padLeft(2, '0')}';
@@ -473,6 +482,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
       final userDoc = results[0];
       final publicWorkerDoc = results[1];
       _workerData = userDoc.data() ?? {};
+      _accountCreatedAt = _asDateTime(_workerData['createdAt']);
       _growthProfile = publicWorkerDoc.data();
       if (userDoc.exists) {
         final data = userDoc.data()!;
@@ -805,8 +815,16 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
       return FlSpot(i.toDouble(), y.toDouble());
     });
 
+    final highestViewCount = _weeklyViewCounts.fold<int>(
+      0,
+      (highest, viewCount) => viewCount > highest ? viewCount : highest,
+    );
+    _viewsChartMaxY = highestViewCount > 0 ? highestViewCount * 1.1 : 1.0;
+    final zeroViewLineHeight = _viewsChartMaxY * 0.035;
+
     _viewGroups = List.generate(7, (i) {
-      final toY = _weeklyViewCounts[i].toDouble();
+      final viewCount = _weeklyViewCounts[i];
+      final toY = viewCount == 0 ? zeroViewLineHeight : viewCount.toDouble();
       return BarChartGroupData(
         x: i,
         barRods: [
@@ -1099,7 +1117,14 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
 
   Widget _buildAnalyticsMonthSelector() {
     final now = DateTime.now();
-    final months = List<int>.generate(now.month, (index) => index + 1);
+    final joinedThisYear = _accountCreatedAt?.year == now.year;
+    final firstVisibleMonth = joinedThisYear
+        ? _accountCreatedAt!.month.clamp(1, now.month)
+        : 1;
+    final months = List<int>.generate(
+      now.month - firstVisibleMonth + 1,
+      (index) => firstVisibleMonth + index,
+    );
     final periods = <DropdownMenuItem<String>>[
       DropdownMenuItem(value: _analyticsPeriodTotal, child: Text(_t('total'))),
       DropdownMenuItem(
@@ -1514,6 +1539,28 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   Widget _buildViewsChart() {
     return BarChart(
       BarChartData(
+        maxY: _viewsChartMaxY,
+        barTouchData: BarTouchData(
+          touchTooltipData: BarTouchTooltipData(
+            fitInsideHorizontally: true,
+            fitInsideVertically: true,
+            getTooltipItem: (group, groupIndex, rod, rodIndex) {
+              final dayIndex = group.x;
+              final actualViews =
+                  dayIndex >= 0 && dayIndex < _weeklyViewCounts.length
+                  ? _weeklyViewCounts[dayIndex]
+                  : 0;
+              return BarTooltipItem(
+                actualViews.toString(),
+                const TextStyle(
+                  color: Color(0xFFF59E0B),
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
+              );
+            },
+          ),
+        ),
         gridData: const FlGridData(show: false),
         titlesData: FlTitlesData(
           topTitles: const AxisTitles(

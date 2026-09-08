@@ -691,6 +691,36 @@ test("allows only owners to change invoice link locks", {
   ));
 });
 
+test("allows owners to name a document chain without changing invoice data", {
+  skip: !emulatorAvailable,
+}, async () => {
+  const uid = "chain-name-owner-id-00001";
+  const otherUid = "chain-name-other-id-00001";
+  const invoiceId = "quote_2026-chain-name";
+  const owner = testEnv.authenticatedContext(uid).firestore();
+  const other = testEnv.authenticatedContext(otherUid).firestore();
+  const pathValue = `users/${uid}/invoices/${invoiceId}`;
+  await seed(pathValue, {
+    ...validInvoice(invoiceId),
+    type: "quote",
+    docType: "quote",
+  });
+
+  await assertSucceeds(updateDoc(doc(owner, pathValue), {
+    linkedChainName: "Kitchen renovation",
+  }));
+  await assertFails(updateDoc(doc(other, pathValue), {
+    linkedChainName: "Not allowed",
+  }));
+  await assertFails(updateDoc(doc(owner, pathValue), {
+    linkedChainName: "Kitchen renovation",
+    amount: 999999,
+  }));
+  await assertFails(updateDoc(doc(owner, pathValue), {
+    linkedChainName: "x".repeat(81),
+  }));
+});
+
 test("rejects foreign invoice storage paths", {
   skip: !emulatorAvailable,
 }, async () => {
