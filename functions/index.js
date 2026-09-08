@@ -85,6 +85,15 @@ const {
 const {cancellationProgress} = require("./cancellation_progress");
 const {buildClientLedgerPosting} = require("./client_ledger");
 const {
+  PAYMENT_ANALYTICS_ALL_TIME_ID,
+  PAYMENT_ANALYTICS_COLLECTION,
+  PAYMENT_ANALYTICS_CURRENT_YEAR_ID,
+  financialAnalyticsEntry,
+  paymentAnalyticsSnapshot,
+  paymentAnalyticsYearMode,
+  paymentMonthDocumentId,
+} = require("./payment_analytics");
+const {
   buildTaxInvoicePdf,
   normalizeTaxInvoicePresentation,
   validateTaxInvoicePresentation,
@@ -1706,6 +1715,147 @@ function createClientLedgerPosting(transaction, userRef, posting) {
   });
 }
 
+function paymentAnalyticsYearRef(userRef) {
+  return userRef.collection(PAYMENT_ANALYTICS_COLLECTION)
+      .doc(PAYMENT_ANALYTICS_CURRENT_YEAR_ID);
+}
+
+function writePaymentAnalytics(
+    transaction,
+    userRef,
+    entry,
+    currentYearSnapshot,
+) {
+  if (!entry) return;
+  const collection = userRef.collection(PAYMENT_ANALYTICS_COLLECTION);
+  const storedYear = currentYearSnapshot?.data()?.year;
+  const yearMode = paymentAnalyticsYearMode(entry.year, storedYear);
+  const updatedAt = FieldValue.serverTimestamp();
+
+  if (yearMode === "reset") {
+    for (let month = 1; month <= 12; month += 1) {
+      transaction.set(collection.doc(paymentMonthDocumentId(month)), {
+        periodType: "month",
+        year: entry.year,
+        month,
+        totalPayments: month === entry.month ? entry.paymentDelta : 0,
+        totalVat: month === entry.month ? entry.vatDelta : 0,
+        updatedAt,
+      });
+    }
+    transaction.set(collection.doc(PAYMENT_ANALYTICS_CURRENT_YEAR_ID), {
+      periodType: "current_year",
+      year: entry.year,
+      totalPayments: entry.paymentDelta,
+      totalVat: entry.vatDelta,
+      updatedAt,
+    });
+  } else if (yearMode === "current") {
+    transaction.set(collection.doc(paymentMonthDocumentId(entry.month)), {
+      periodType: "month",
+      year: entry.year,
+      month: entry.month,
+      totalPayments: FieldValue.increment(entry.paymentDelta),
+      totalVat: FieldValue.increment(entry.vatDelta),
+      updatedAt,
+    }, {merge: true});
+    transaction.set(collection.doc(PAYMENT_ANALYTICS_CURRENT_YEAR_ID), {
+      periodType: "current_year",
+      year: entry.year,
+      totalPayments: FieldValue.increment(entry.paymentDelta),
+      totalVat: FieldValue.increment(entry.vatDelta),
+      updatedAt,
+    }, {merge: true});
+  }
+
+  transaction.set(collection.doc(PAYMENT_ANALYTICS_ALL_TIME_ID), {
+    periodType: "all_time",
+    totalPayments: FieldValue.increment(entry.paymentDelta),
+    totalVat: FieldValue.increment(entry.vatDelta),
+    updatedAt,
+  }, {merge: true});
+}
+
+exports.initializePaymentAnalytics = onCall(
+    {
+      region: "me-west1",
+      timeoutSeconds: 120,
+      memory: "256MiB",
+    },
+    async (request) => {
+      const userId = request.auth?.uid;
+      if (!userId) {
+        throw new HttpsError("unauthenticated", "Authentication required.");
+      }
+      const {userRef} = await assertActiveProUser(userId);
+      const collection = userRef.collection(PAYMENT_ANALYTICS_COLLECTION);
+      const currentYearRef = paymentAnalyticsYearRef(userRef);
+      const allTimeRef = collection.doc(PAYMENT_ANALYTICS_ALL_TIME_ID);
+      const currentYear = Number(new Intl.DateTimeFormat("en", {
+        timeZone: "Asia/Jerusalem",
+        year: "numeric",
+      }).format(new Date()));
+
+      const [existingYear, existingAllTime] = await Promise.all([
+        currentYearRef.get(),
+        allTimeRef.get(),
+      ]);
+      if (existingYear.data()?.year === currentYear &&
+          Number.isFinite(existingYear.data()?.totalVat) &&
+          existingAllTime.exists &&
+          Number.isFinite(existingAllTime.data()?.totalVat)) {
+        return {initialized: false, year: currentYear};
+      }
+
+      const invoices = await userRef.collection("invoices")
+          .select("docType", "documentStatus", "date", "amount", "vatAmount")
+          .get();
+      const totals = paymentAnalyticsSnapshot(
+          invoices.docs.map((snapshot) => snapshot.data()),
+          currentYear,
+      );
+
+      const initialized = await db.runTransaction(async (transaction) => {
+        const [latestYear, latestAllTime] = await Promise.all([
+          transaction.get(currentYearRef),
+          transaction.get(allTimeRef),
+        ]);
+        if (latestYear.data()?.year === currentYear &&
+            Number.isFinite(latestYear.data()?.totalVat) &&
+            latestAllTime.exists &&
+            Number.isFinite(latestAllTime.data()?.totalVat)) {
+          return false;
+        }
+        const updatedAt = FieldValue.serverTimestamp();
+        for (let month = 1; month <= 12; month += 1) {
+          transaction.set(collection.doc(paymentMonthDocumentId(month)), {
+            periodType: "month",
+            year: currentYear,
+            month,
+            totalPayments: totals.months[month - 1],
+            totalVat: totals.vatMonths[month - 1],
+            updatedAt,
+          });
+        }
+        transaction.set(currentYearRef, {
+          periodType: "current_year",
+          year: currentYear,
+          totalPayments: totals.currentYearTotal,
+          totalVat: totals.currentYearVat,
+          updatedAt,
+        });
+        transaction.set(allTimeRef, {
+          periodType: "all_time",
+          totalPayments: totals.allTimeTotal,
+          totalVat: totals.allTimeVat,
+          updatedAt,
+        });
+        return true;
+      });
+      return {initialized, year: currentYear};
+    },
+);
+
 function serverDocumentDisplayType(docType) {
   return {
     quote: "Quote",
@@ -2478,6 +2628,9 @@ exports.createServerDocument = onCall(
         });
         const bucket = serverDocumentBucket(document.docType);
         const logBucketRef = bucket ? userRef.collection("logs").doc(bucket) : null;
+        const paymentEntry = financialAnalyticsEntry(document);
+        const paymentYearRef = paymentEntry ?
+          paymentAnalyticsYearRef(userRef) : null;
         const sourceId = document.isNegativeReceipt ?
           document.cancellationSourceDocumentId : document.sourceInvoiceDocId;
         const sourceRef = sourceId ? userRef.collection("invoices").doc(sourceId) : null;
@@ -2487,6 +2640,8 @@ exports.createServerDocument = onCall(
           const logBucketSnap = logBucketRef ?
             await transaction.get(logBucketRef) : null;
           const sourceSnap = sourceRef ? await transaction.get(sourceRef) : null;
+          const paymentYearSnap = paymentYearRef ?
+            await transaction.get(paymentYearRef) : null;
           const latest = latestSnap.data() || {};
           if (latest.documentStatus === "finalized") return;
           if (latest.serverDocument?.payloadHash !== document.payloadHash) {
@@ -2556,6 +2711,12 @@ exports.createServerDocument = onCall(
               updatedAt: FieldValue.serverTimestamp(),
             }, {merge: true});
           }
+          writePaymentAnalytics(
+              transaction,
+              userRef,
+              paymentEntry,
+              paymentYearSnap,
+          );
           if (sourceRef && document.docType === "receipt" &&
               !document.isNegativeReceipt) {
             const source = sourceSnap.data() || {};
@@ -4585,12 +4746,16 @@ async function createAutomaticCancellationCreditNote({
       sourceDocumentPath: creditRef.path,
     });
     const logBucketRef = userRef.collection("logs").doc("credit_notes");
+    const analyticsEntry = financialAnalyticsEntry(document);
+    const analyticsYearRef = paymentAnalyticsYearRef(userRef);
     await db.runTransaction(async (transaction) => {
-      const [latestSnap, logBucketSnap, sourceSnap] = await Promise.all([
-        transaction.get(creditRef),
-        transaction.get(logBucketRef),
-        transaction.get(sourceInvoiceRef),
-      ]);
+      const [latestSnap, logBucketSnap, sourceSnap, analyticsYearSnap] =
+        await Promise.all([
+          transaction.get(creditRef),
+          transaction.get(logBucketRef),
+          transaction.get(sourceInvoiceRef),
+          transaction.get(analyticsYearRef),
+        ]);
       const latest = latestSnap.data() || {};
       if (latest.documentStatus === "finalized") return;
       if (latest.serverDocument?.payloadHash !== document.payloadHash ||
@@ -4639,6 +4804,12 @@ async function createAutomaticCancellationCreditNote({
         totalEarned: FieldValue.increment(-document.finalTotal),
         updatedAt: FieldValue.serverTimestamp(),
       }, {merge: true});
+      writePaymentAnalytics(
+          transaction,
+          userRef,
+          analyticsEntry,
+          analyticsYearSnap,
+      );
       transaction.update(sourceInvoiceRef, {
         cancellationStatus: "cancelled",
         cancelledAmount: Math.abs(Number(sourceSnap.data()?.amount) ||
@@ -5157,13 +5328,21 @@ async function finalizeAllocatedTaxInvoiceAttempt({
     },
     sourceDocumentPath: invoiceRef.path,
   });
+  const paymentEntry = financialAnalyticsEntry({
+    docType: reservation.docType,
+    date: fields.invoice.date,
+    finalTotal: fields.total,
+    vatAmount: fields.invoice.vatAmount,
+  });
+  const paymentYearRef = paymentEntry ? paymentAnalyticsYearRef(userRef) : null;
 
   await db.runTransaction(async (transaction) => {
     const logBucketRef = db.collection("users").doc(userId)
         .collection("logs").doc(fields.log.bucket);
-    const [latestSnap, logBucketSnap] = await Promise.all([
+    const [latestSnap, logBucketSnap, paymentYearSnap] = await Promise.all([
       transaction.get(invoiceRef),
       transaction.get(logBucketRef),
+      paymentYearRef ? transaction.get(paymentYearRef) : Promise.resolve(null),
     ]);
     const latest = latestSnap.data() || {};
     if (latest.documentStatus === "finalized") return;
@@ -5202,6 +5381,12 @@ async function finalizeAllocatedTaxInvoiceAttempt({
       totalEarned: FieldValue.increment(fields.total),
       updatedAt: FieldValue.serverTimestamp(),
     }, {merge: true});
+    writePaymentAnalytics(
+        transaction,
+        userRef,
+        paymentEntry,
+        paymentYearSnap,
+    );
   });
 
   await removeFallbackPreview(

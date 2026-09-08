@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' as intl;
@@ -42,6 +43,12 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   int _allTimeViewsAcrossProfessions = 0;
   double _totalEarnings = 0.0;
   bool _hasTotalEarnedValue = false;
+  double _allTimePayments = 0.0;
+  bool _hasPaymentAnalytics = false;
+  final Map<String, double> _paymentTotals = {};
+  double _selectedVatAmount = 0.0;
+  bool _hasVatAnalytics = false;
+  final Map<String, double> _vatTotals = {};
   double _avgRating = 0.0;
   double _overallAvgRating = 0.0;
 
@@ -97,6 +104,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           'analytics_title': 'לוח בקרה עסקי',
           'all_professions': 'כל המקצועות',
           'total_earnings': 'תקבולים',
+          'vat_amount': 'סכום מע״מ',
           'no_earning_yet': 'אין הכנסות עדיין',
           'rating': 'דירוג',
           'views': 'צפיות',
@@ -129,6 +137,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           'analytics_title': 'لوحة تحكم الأعمال',
           'all_professions': 'كل المهن',
           'total_earnings': 'المدفوعات',
+          'vat_amount': 'مبلغ ضريبة القيمة المضافة',
           'no_earning_yet': 'لا توجد أرباح حتى الآن',
           'rating': 'التقييم',
           'views': 'المشاهدات',
@@ -161,6 +170,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           'analytics_title': 'Бизнес-аналитика',
           'all_professions': 'Все профессии',
           'total_earnings': 'Платежи',
+          'vat_amount': 'Сумма НДС',
           'no_earning_yet': 'Пока нет дохода',
           'rating': 'Рейтинг',
           'views': 'Просмотры',
@@ -193,6 +203,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           'analytics_title': 'የንግድ ትንታኔ',
           'all_professions': 'ሁሉም ሙያዎች',
           'total_earnings': 'ክፍያዎች',
+          'vat_amount': 'የተ.እ.ታ. መጠን',
           'no_earning_yet': 'እስካሁን ምንም ገቢ የለም',
           'rating': 'ደረጃ',
           'views': 'እይታዎች',
@@ -225,6 +236,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           'analytics_title': 'Business Dashboard',
           'all_professions': 'All professions',
           'total_earnings': 'Payments',
+          'vat_amount': 'VAT amount',
           'no_earning_yet': 'No earning yet',
           'rating': 'Rating',
           'views': 'Views',
@@ -401,7 +413,9 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
         (total, week) => total + _weekTotalFromMap(week),
       ),
       totalViews: _allTimeViewsAcrossProfessions,
-      totalEarnings: _hasTotalEarnedValue ? _totalEarnings : null,
+      totalEarnings: _hasPaymentAnalytics
+          ? _allTimePayments
+          : (_hasTotalEarnedValue ? _totalEarnings : null),
     );
   }
 
@@ -494,6 +508,46 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           _totalEarnings = _hasTotalEarnedValue ? (value as num).toDouble() : 0;
         }(),
         () async {
+          var snapshot = await workerRef.collection('paymentAnalytics').get();
+          final currentYear = DateTime.now().year;
+          final hasCurrentYear = snapshot.docs.any(
+            (doc) =>
+                doc.id == 'current_year' &&
+                doc.data()['year'] == currentYear &&
+                doc.data()['totalVat'] is num,
+          );
+          final hasAllTime = snapshot.docs.any(
+            (doc) => doc.id == 'all_time' && doc.data()['totalVat'] is num,
+          );
+          if (!hasCurrentYear || !hasAllTime) {
+            try {
+              await FirebaseFunctions.instanceFor(
+                region: 'me-west1',
+              ).httpsCallable('initializePaymentAnalytics').call<void>();
+              snapshot = await workerRef.collection('paymentAnalytics').get();
+            } catch (error) {
+              debugPrint('Payment analytics initialization failed: $error');
+            }
+          }
+          _paymentTotals.clear();
+          _vatTotals.clear();
+          for (final doc in snapshot.docs) {
+            final data = doc.data();
+            final periodType = data['periodType'];
+            final belongsToCurrentYear =
+                periodType == 'all_time' || data['year'] == currentYear;
+            if (belongsToCurrentYear && data['totalPayments'] is num) {
+              _paymentTotals[doc.id] = (data['totalPayments'] as num)
+                  .toDouble();
+            }
+            if (belongsToCurrentYear && data['totalVat'] is num) {
+              _vatTotals[doc.id] = (data['totalVat'] as num).toDouble();
+            }
+          }
+          _hasPaymentAnalytics = snapshot.docs.isNotEmpty;
+          _allTimePayments = _paymentTotals['all_time'] ?? 0;
+        }(),
+        () async {
           _growthProjects = await _readGrowthCollection(
             publicWorkerRef.collection('projects'),
             100,
@@ -521,6 +575,8 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           );
         }(),
       ]);
+
+      _applyPaymentPeriodSelection();
 
       final reviewStatsSnapshot = await publicWorkerRef
           .collection('ReviewStats')
@@ -826,9 +882,11 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                 children: [
                   _buildMainBalanceCard(),
                   const SizedBox(height: 24),
-                  _buildProfessionSelector(),
-                  const SizedBox(height: 24),
                   _buildMetricsGrid(),
+                  const SizedBox(height: 24),
+                  _buildProfessionSelector(),
+                  const SizedBox(height: 16),
+                  _buildViewsAndRatingCard(),
                   const SizedBox(height: 32),
                   _buildChartCard(_t('profile_reach'), _buildViewsChart()),
                   const SizedBox(height: 32),
@@ -943,34 +1001,65 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
             ),
           ),
           const SizedBox(height: 16),
+          Text(
+            _t('vat_amount'),
+            style: const TextStyle(
+              color: Colors.white60,
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '₪${intl.NumberFormat('#,##0.##').format(_selectedVatAmount)}',
+            style: TextStyle(
+              color: _hasVatAnalytics ? Colors.white : Colors.white54,
+              fontSize: 22,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 16),
           _buildAnalyticsMonthSelector(),
-          const SizedBox(height: 24),
-          const Divider(color: Colors.white10),
-          const SizedBox(height: 24),
-          Row(
-            children: [
-              Expanded(
-                child: _buildQuickStat(
-                  _t('total_views'),
-                  _viewsCount.toString(),
-                  Icons.bar_chart_rounded,
-                ),
-              ),
-              Expanded(
-                child: _buildQuickStat(
-                  _t('views_this_week'),
-                  _weeklyViewsTotalValue.toString(),
-                  Icons.visibility_rounded,
-                ),
-              ),
-              Expanded(
-                child: _buildQuickStat(
-                  _t('rating'),
-                  _avgRating.toStringAsFixed(1),
-                  Icons.star_border_rounded,
-                ),
-              ),
-            ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildViewsAndRatingCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        gradient: const LinearGradient(
+          colors: [Color(0xFF1E293B), Color(0xFF0F172A)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: _buildQuickStat(
+              _t('total_views'),
+              _viewsCount.toString(),
+              Icons.bar_chart_rounded,
+            ),
+          ),
+          Expanded(
+            child: _buildQuickStat(
+              _t('views_this_week'),
+              _weeklyViewsTotalValue.toString(),
+              Icons.visibility_rounded,
+            ),
+          ),
+          Expanded(
+            child: _buildQuickStat(
+              _t('rating'),
+              _avgRating.toStringAsFixed(1),
+              Icons.star_border_rounded,
+            ),
           ),
         ],
       ),
@@ -988,8 +1077,8 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
             Flexible(
               child: Text(
                 label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+                softWrap: true,
+                overflow: TextOverflow.visible,
                 style: const TextStyle(color: Colors.white54, fontSize: 11),
               ),
             ),
@@ -1055,7 +1144,11 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                 items: periods,
                 onChanged: (period) {
                   if (period == null) return;
-                  setState(() => _selectedAnalyticsPeriod = period);
+                  setState(() {
+                    _selectedAnalyticsPeriod = period;
+                    _applyPaymentPeriodSelection();
+                    _generateChartData();
+                  });
                 },
               ),
             ),
@@ -1066,6 +1159,23 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   }
 
   String _monthPeriod(int month) => 'month_$month';
+
+  String _paymentAnalyticsDocumentId(String period) {
+    if (period == _analyticsPeriodTotal) return 'all_time';
+    if (period == _analyticsPeriodCurrentYear) return 'current_year';
+    final month = int.tryParse(period.replaceFirst('month_', ''));
+    if (month == null || month < 1 || month > 12) return 'all_time';
+    return 'month_${month.toString().padLeft(2, '0')}';
+  }
+
+  void _applyPaymentPeriodSelection() {
+    final documentId = _paymentAnalyticsDocumentId(_selectedAnalyticsPeriod);
+    _selectedVatAmount = _vatTotals[documentId] ?? 0;
+    _hasVatAnalytics = _vatTotals.containsKey(documentId);
+    if (!_hasPaymentAnalytics) return;
+    _totalEarnings = _paymentTotals[documentId] ?? 0;
+    _hasTotalEarnedValue = _paymentTotals.containsKey(documentId);
+  }
 
   String _monthName(int month) {
     const monthNames = {

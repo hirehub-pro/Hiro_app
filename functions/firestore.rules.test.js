@@ -851,6 +851,48 @@ test("allows only the owner to read the server financial summary", {
   await assertFails(getDoc(doc(ownerDb, pathValue)));
 });
 
+test("keeps payment analytics server-written and Pro-owner-readable", {
+  skip: !emulatorAvailable,
+}, async () => {
+  const uid = "payment-analytics-owner-0001";
+  const otherUid = "payment-analytics-other-0001";
+  const pathValue = `users/${uid}/paymentAnalytics/month_09`;
+  await seed(pathValue, {
+    periodType: "month",
+    year: 2026,
+    month: 9,
+    totalPayments: 1250,
+    totalVat: 190,
+    updatedAt: new Date(),
+  });
+  await seedActiveWorker(uid);
+
+  const ownerDb = testEnv.authenticatedContext(uid).firestore();
+  const otherDb = testEnv.authenticatedContext(otherUid).firestore();
+  const guestDb = testEnv.unauthenticatedContext().firestore();
+
+  await assertSucceeds(getDoc(doc(ownerDb, pathValue)));
+  await assertSucceeds(getDocs(collection(
+      ownerDb,
+      `users/${uid}/paymentAnalytics`,
+  )));
+  await assertFails(getDoc(doc(otherDb, pathValue)));
+  await assertFails(getDocs(collection(
+      otherDb,
+      `users/${uid}/paymentAnalytics`,
+  )));
+  await assertFails(getDoc(doc(guestDb, pathValue)));
+  await assertFails(updateDoc(doc(ownerDb, pathValue), {
+    totalPayments: 999999,
+    totalVat: 999999,
+  }));
+  await assertFails(setDoc(
+      doc(ownerDb, `users/${uid}/paymentAnalytics/all_time`),
+      {periodType: "all_time", totalPayments: 999999},
+  ));
+  await assertFails(deleteDoc(doc(ownerDb, pathValue)));
+});
+
 test("requires Pro for client changes but preserves owner reads", {
   skip: !emulatorAvailable,
 }, async () => {
