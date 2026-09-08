@@ -26,10 +26,10 @@ class AddReviewPage extends StatefulWidget {
 class _AddReviewPageState extends State<AddReviewPage> {
   final _commentController = TextEditingController();
   String? _selectedProfession;
-  double _priceRating = 5.0;
-  double _serviceRating = 5.0;
-  double _timingRating = 5.0;
-  double _workQualityRating = 5.0;
+  double _priceRating = 10.0;
+  double _serviceRating = 10.0;
+  double _timingRating = 10.0;
+  double _workQualityRating = 10.0;
 
   final List<File> _newImages = [];
   List<String> _existingImageUrls = [];
@@ -41,15 +41,15 @@ class _AddReviewPageState extends State<AddReviewPage> {
     super.initState();
     if (widget.existingReview != null) {
       _commentController.text = widget.existingReview!['comment'] ?? '';
-      _priceRating = (widget.existingReview!['priceRating'] ?? 5.0).toDouble();
-      _serviceRating = (widget.existingReview!['serviceRating'] ?? 5.0)
+      _priceRating = (widget.existingReview!['priceRating'] ?? 10.0).toDouble();
+      _serviceRating = (widget.existingReview!['serviceRating'] ?? 10.0)
           .toDouble();
       _timingRating =
           (widget.existingReview!['timingRating'] ??
                   widget.existingReview!['rating'] ??
-                  5.0)
+                  10.0)
               .toDouble();
-      _workQualityRating = (widget.existingReview!['workQualityRating'] ?? 5.0)
+      _workQualityRating = (widget.existingReview!['workQualityRating'] ?? 10.0)
           .toDouble();
       _selectedProfession = widget.existingReview!['profession'];
       _existingImageUrls = List<String>.from(
@@ -263,7 +263,7 @@ class _AddReviewPageState extends State<AddReviewPage> {
     };
   }
 
-  Widget _buildRatingStars(
+  Widget _buildRatingSlider(
     String label,
     double rating,
     Color color,
@@ -279,7 +279,7 @@ class _AddReviewPageState extends State<AddReviewPage> {
               label,
               style: const TextStyle(
                 fontWeight: FontWeight.w700,
-                fontSize: 16,
+                fontSize: 14,
                 color: Color(0xFF111827),
               ),
             ),
@@ -287,30 +287,39 @@ class _AddReviewPageState extends State<AddReviewPage> {
               rating.toStringAsFixed(1),
               style: TextStyle(
                 color: color,
-                fontSize: 17,
+                fontSize: 15,
                 fontWeight: FontWeight.w800,
               ),
             ),
           ],
         ),
-        const SizedBox(height: 6),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.start,
-          children: List.generate(5, (index) {
-            return IconButton(
-              iconSize: 32,
-              visualDensity: VisualDensity.compact,
-              icon: Icon(
-                index < rating
-                    ? Icons.star_rounded
-                    : Icons.star_outline_rounded,
-                color: color,
-              ),
-              onPressed: () => onRatingChanged(index + 1.0),
-            );
-          }),
+        SliderTheme(
+          data: SliderTheme.of(context).copyWith(
+            activeTrackColor: color,
+            inactiveTrackColor: color.withValues(alpha: 0.14),
+            thumbColor: color,
+            overlayColor: color.withValues(alpha: 0.12),
+            trackHeight: 6,
+            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 9),
+            overlayShape: const RoundSliderOverlayShape(overlayRadius: 18),
+          ),
+          child: Slider(
+            value: rating.clamp(1.0, 10.0).toDouble(),
+            min: 1,
+            max: 10,
+            divisions: 90,
+            label: rating.toStringAsFixed(1),
+            onChanged: (value) => onRatingChanged((value * 10).round() / 10),
+          ),
         ),
-        const SizedBox(height: 12),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [Text('1'), Text('10')],
+          ),
+        ),
+        const SizedBox(height: 8),
       ],
     );
   }
@@ -330,6 +339,7 @@ class _AddReviewPageState extends State<AddReviewPage> {
             strings['title']!,
             style: const TextStyle(
               fontWeight: FontWeight.bold,
+              fontSize: 18,
               color: Colors.black,
             ),
           ),
@@ -343,30 +353,30 @@ class _AddReviewPageState extends State<AddReviewPage> {
           ),
         ),
         body: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
                 strings['rating_summary']!,
                 style: const TextStyle(
-                  fontSize: 22,
+                  fontSize: 20,
                   fontWeight: FontWeight.bold,
                   color: Colors.black,
                 ),
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 32),
+              const SizedBox(height: 24),
 
               if (widget.professions.length > 1) ...[
                 Text(
                   strings['profession_label']!,
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
-                    fontSize: 16,
+                    fontSize: 14,
                   ),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
                   initialValue: _selectedProfession,
                   items: widget.professions
@@ -382,27 +392,27 @@ class _AddReviewPageState extends State<AddReviewPage> {
                     ),
                     contentPadding: const EdgeInsets.symmetric(
                       horizontal: 16,
-                      vertical: 12,
+                      vertical: 10,
                     ),
                   ),
                 ),
-                const SizedBox(height: 32),
+                const SizedBox(height: 24),
               ],
 
               Text(
                 strings['rating_details']!,
                 style: const TextStyle(
-                  fontSize: 20,
+                  fontSize: 18,
                   fontWeight: FontWeight.w800,
                   color: Color(0xFF111827),
                 ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
               Container(
-                padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 6),
                 decoration: BoxDecoration(
                   color: Colors.white,
-                  borderRadius: BorderRadius.circular(24),
+                  borderRadius: BorderRadius.circular(20),
                   border: Border.all(color: const Color(0xFFF1F5F9)),
                   boxShadow: const [
                     BoxShadow(
@@ -414,31 +424,31 @@ class _AddReviewPageState extends State<AddReviewPage> {
                 ),
                 child: Column(
                   children: [
-                    _buildRatingStars(
+                    _buildRatingSlider(
                       strings['price_rating']!,
                       _priceRating,
                       const Color(0xFFFBBF24),
                       (val) => setState(() => _priceRating = val),
                     ),
                     const Divider(height: 1, color: Color(0xFFF1F5F9)),
-                    const SizedBox(height: 16),
-                    _buildRatingStars(
+                    const SizedBox(height: 12),
+                    _buildRatingSlider(
                       strings['service_rating']!,
                       _serviceRating,
                       const Color(0xFF3B82F6),
                       (val) => setState(() => _serviceRating = val),
                     ),
                     const Divider(height: 1, color: Color(0xFFF1F5F9)),
-                    const SizedBox(height: 16),
-                    _buildRatingStars(
+                    const SizedBox(height: 12),
+                    _buildRatingSlider(
                       strings['timing_rating']!,
                       _timingRating,
                       const Color(0xFF34D399),
                       (val) => setState(() => _timingRating = val),
                     ),
                     const Divider(height: 1, color: Color(0xFFF1F5F9)),
-                    const SizedBox(height: 16),
-                    _buildRatingStars(
+                    const SizedBox(height: 12),
+                    _buildRatingSlider(
                       strings['work_quality_rating']!,
                       _workQualityRating,
                       const Color(0xFF7C3AED),
@@ -448,11 +458,11 @@ class _AddReviewPageState extends State<AddReviewPage> {
                 ),
               ),
 
-              const SizedBox(height: 32),
+              const SizedBox(height: 24),
               TextField(
                 controller: _commentController,
-                maxLines: 5,
-                style: const TextStyle(fontSize: 16),
+                maxLines: 4,
+                style: const TextStyle(fontSize: 14),
                 decoration: InputDecoration(
                   hintText: strings['comment_hint'],
                   hintStyle: TextStyle(color: Colors.grey[400]),
@@ -462,11 +472,11 @@ class _AddReviewPageState extends State<AddReviewPage> {
                     borderRadius: BorderRadius.circular(16),
                     borderSide: BorderSide.none,
                   ),
-                  contentPadding: const EdgeInsets.all(16),
+                  contentPadding: const EdgeInsets.all(14),
                 ),
               ),
 
-              const SizedBox(height: 32),
+              const SizedBox(height: 24),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -474,7 +484,7 @@ class _AddReviewPageState extends State<AddReviewPage> {
                     strings['add_images']!,
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
-                      fontSize: 16,
+                      fontSize: 14,
                     ),
                   ),
                   Text(
@@ -483,9 +493,9 @@ class _AddReviewPageState extends State<AddReviewPage> {
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
               SizedBox(
-                height: 100,
+                height: 88,
                 child: ListView.builder(
                   scrollDirection: Axis.horizontal,
                   itemCount: _existingImageUrls.length + _newImages.length < 5
@@ -508,16 +518,16 @@ class _AddReviewPageState extends State<AddReviewPage> {
                       return GestureDetector(
                         onTap: _pickImages,
                         child: Container(
-                          width: 100,
+                          width: 88,
                           decoration: BoxDecoration(
                             color: Colors.grey[50],
-                            borderRadius: BorderRadius.circular(16),
+                            borderRadius: BorderRadius.circular(14),
                             border: Border.all(color: Colors.grey[200]!),
                           ),
                           child: Icon(
                             Icons.add_a_photo_outlined,
                             color: Colors.grey[400],
-                            size: 30,
+                            size: 26,
                           ),
                         ),
                       );
@@ -526,15 +536,15 @@ class _AddReviewPageState extends State<AddReviewPage> {
                 ),
               ),
 
-              const SizedBox(height: 48),
+              const SizedBox(height: 32),
               ElevatedButton(
                 onPressed: _isUploading ? null : _submitReview,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF1976D2),
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 18),
+                  padding: const EdgeInsets.symmetric(vertical: 15),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(14),
                   ),
                   elevation: 2,
                 ),
@@ -550,7 +560,7 @@ class _AddReviewPageState extends State<AddReviewPage> {
                     : Text(
                         strings['submit']!,
                         style: const TextStyle(
-                          fontSize: 18,
+                          fontSize: 16,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
@@ -565,13 +575,13 @@ class _AddReviewPageState extends State<AddReviewPage> {
 
   Widget _buildImageThumb(ImageProvider image, VoidCallback onRemove) {
     return Container(
-      width: 100,
-      margin: const EdgeInsets.only(right: 12),
+      width: 88,
+      margin: const EdgeInsets.only(right: 10),
       child: Stack(
         children: [
           Container(
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(14),
               image: DecorationImage(image: image, fit: BoxFit.cover),
             ),
           ),

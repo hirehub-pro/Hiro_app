@@ -1,4 +1,4 @@
-const double topSkillNeutralRating = 3.5;
+const double topSkillNeutralRating = 7.0;
 const int topSkillConfidenceReviews = 20;
 
 double calculateTopSkillScore({

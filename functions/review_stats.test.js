@@ -57,6 +57,19 @@ test("ignores incomplete rating records", () => {
   assert.equal(stats.professions.size, 0);
 });
 
+test("accepts ratings on the ten-point scale", () => {
+  const stats = buildReviewStats([{
+    profession: "Plumber",
+    rating: 9.5,
+    priceRating: 10,
+    serviceRating: 9.5,
+    timingRating: 9,
+    workQualityRating: 9.5,
+  }]);
+  assert.equal(stats.overall.reviewCount, 1);
+  assert.equal(stats.overall.avgOverallRating, 9.5);
+});
+
 test("creates complete zero statistics for professions without reviews", () => {
   const stats = emptyReviewStats("Painter");
   assert.equal(stats.profession, "Painter");

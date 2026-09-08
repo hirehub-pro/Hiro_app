@@ -111,7 +111,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
               'הביצועים יציבים {scope}. המשך להשלים עבודות באופן עקבי ואסוף יותר ביקורות כדי לצמוח מהר יותר.',
           'growth_focus_label': 'פוקוס לשבוע הקרוב:',
           'growth_target_visibility': 'יעד: להגיע ל-20+ צפיות בפרופיל.',
-          'growth_target_rating': 'יעד: להעלות את הדירוג ל-4.3 ומעלה.',
+          'growth_target_rating': 'יעד: להעלות את הדירוג ל-8.6 ומעלה.',
           'growth_target_reviews': 'יעד: להשיג לפחות 3 ביקורות חדשות.',
           'growth_positive_keep':
               'הביצועים טובים מאוד. שמור על עקביות בזמן תגובה ובאיכות השירות.',
@@ -158,7 +158,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
               'الأداء مستقر {scope}. استمر في إنجاز الأعمال بانتظام واجمع مزيداً من التقييمات للنمو أسرع.',
           'growth_focus_label': 'تركيز الأسبوع القادم:',
           'growth_target_visibility': 'الهدف: الوصول إلى 20+ مشاهدة للملف.',
-          'growth_target_rating': 'الهدف: رفع التقييم إلى 4.3 أو أكثر.',
+          'growth_target_rating': 'الهدف: رفع التقييم إلى 8.6 أو أكثر.',
           'growth_target_reviews':
               'الهدف: الحصول على 3 تقييمات جديدة على الأقل.',
           'growth_positive_keep':
@@ -206,7 +206,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
               'Показатели стабильны {scope}. Продолжайте регулярно выполнять заказы и собирайте больше отзывов для ускоренного роста.',
           'growth_focus_label': 'Фокус на следующую неделю:',
           'growth_target_visibility': 'Цель: получить 20+ просмотров профиля.',
-          'growth_target_rating': 'Цель: поднять рейтинг до 4.3 и выше.',
+          'growth_target_rating': 'Цель: поднять рейтинг до 8.6 и выше.',
           'growth_target_reviews': 'Цель: получить минимум 3 новых отзыва.',
           'growth_positive_keep':
               'Результаты очень хорошие. Сохраняйте стабильную скорость ответа и качество сервиса.',
@@ -253,7 +253,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
               'አፈፃፀሙ የተረጋጋ ነው {scope}። ስራ በመደበኛ ሁኔታ ይቀጥሉ እና ተጨማሪ ግምገማዎች ይሰብስቡ።',
           'growth_focus_label': 'የሚቀጥለው ሳምንት ትኩረት:',
           'growth_target_visibility': 'ግብ: 20+ የፕሮፋይል እይታዎች መድረስ።',
-          'growth_target_rating': 'ግብ: ደረጃን ወደ 4.3+ ማሳደግ።',
+          'growth_target_rating': 'ግብ: ደረጃን ወደ 8.6+ ማሳደግ።',
           'growth_target_reviews': 'ግብ: ቢያንስ 3 አዲስ ግምገማዎች ማግኘት።',
           'growth_positive_keep': 'አፈፃፀሙ በጣም ጥሩ ነው። ፈጣን ምላሽ እና ጥራት በቋሚነት ይጠብቁ።',
           'day_sun': 'እሑድ',
@@ -299,7 +299,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
               'Performance looks stable {scope}. Keep completing jobs consistently and collect more reviews to grow faster.',
           'growth_focus_label': 'Focus for next week:',
           'growth_target_visibility': 'Target: reach 20+ profile views.',
-          'growth_target_rating': 'Target: raise rating to 4.3+.',
+          'growth_target_rating': 'Target: raise rating to 8.6+.',
           'growth_target_reviews': 'Target: collect at least 3 new reviews.',
           'growth_positive_keep':
               'Performance is strong. Keep response time fast and service quality consistent.',
@@ -469,7 +469,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
         });
       }
 
-      if (_avgRating > 0 && _avgRating < 4.3) {
+      if (_avgRating > 0 && _avgRating < 8.6) {
         final weakestMetric = _getWeakestMetricLabel();
         advice.add({
           'score': 80,
@@ -480,7 +480,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     }
 
     if (advice.isEmpty) {
-      final strong = _avgRating >= 4.3 && _viewsCount >= 20;
+      final strong = _avgRating >= 8.6 && _viewsCount >= 20;
       return strong
           ? '${_t('growth_positive_keep')}\n$snapshotLine$topSkillLine\n${_t('growth_focus_label')} ${_t('growth_target_reviews')}'
           : '${_tp('growth_stable', {'scope': scope})}\n$snapshotLine$topSkillLine\n${_t('growth_focus_label')} ${_t('growth_target_reviews')}';
@@ -1203,7 +1203,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
         ClipRRect(
           borderRadius: BorderRadius.circular(10),
           child: LinearProgressIndicator(
-            value: (value / 5.0).clamp(0.0, 1.0),
+            value: (value / 10.0).clamp(0.0, 1.0),
             minHeight: 8,
             backgroundColor: color.withOpacity(0.1),
             valueColor: AlwaysStoppedAnimation<Color>(color),

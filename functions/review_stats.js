@@ -2,7 +2,7 @@
 
 function finiteRating(value) {
   const rating = Number(value);
-  return Number.isFinite(rating) && rating >= 1 && rating <= 5 ? rating : null;
+  return Number.isFinite(rating) && rating >= 1 && rating <= 10 ? rating : null;
 }
 
 function reviewStatsDocumentId(profession) {

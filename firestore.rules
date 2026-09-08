@@ -590,14 +590,14 @@ service cloud.firestore {
         'userId', 'profession', 'rating', 'priceRating', 'serviceRating',
         'timingRating', 'workQualityRating', 'comment', 'imageUrls', 'timestamp'
       ]) &&
-      data.rating is number && data.rating >= 1 && data.rating <= 5 &&
-      data.priceRating is number && data.priceRating >= 1 && data.priceRating <= 5 &&
+      data.rating is number && data.rating >= 1 && data.rating <= 10 &&
+      data.priceRating is number && data.priceRating >= 1 && data.priceRating <= 10 &&
       data.serviceRating is number &&
-        data.serviceRating >= 1 && data.serviceRating <= 5 &&
+        data.serviceRating >= 1 && data.serviceRating <= 10 &&
       data.timingRating is number &&
-        data.timingRating >= 1 && data.timingRating <= 5 &&
+        data.timingRating >= 1 && data.timingRating <= 10 &&
       data.workQualityRating is number &&
-        data.workQualityRating >= 1 && data.workQualityRating <= 5 &&
+        data.workQualityRating >= 1 && data.workQualityRating <= 10 &&
       optionalString(data, 'comment', 4000) && optionalString(data, 'text', 4000) &&
       optionalString(data, 'userName', 100) &&
       optionalString(data, 'reviewerName', 100) &&
