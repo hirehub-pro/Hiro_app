@@ -3369,39 +3369,23 @@ class _ProfileState extends State<Profile>
                             ),
                         ],
                       ),
-                      Row(
-                        children: [
-                          if (isMyReview)
-                            IconButton(
-                              icon: const Icon(
-                                Icons.edit,
-                                size: 20,
-                                color: Colors.orange,
-                              ),
-                              onPressed: () => _addReview(strings),
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(),
-                            ),
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.amber.withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(
-                              '${((review['rating'] as num?) ?? 0).toStringAsFixed(1)} / 10',
-                              style: const TextStyle(
-                                color: Color(0xFFB45309),
-                                fontSize: 12,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.amber.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          '${((review['rating'] as num?) ?? 0).toStringAsFixed(1)} / 10',
+                          style: const TextStyle(
+                            color: Color(0xFFB45309),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
                           ),
-                        ],
+                        ),
                       ),
                     ],
                   ),
