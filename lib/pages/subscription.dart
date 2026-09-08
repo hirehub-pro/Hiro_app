@@ -1865,9 +1865,11 @@ class _SubscriptionPageState extends State<SubscriptionPage>
           'cap_2_title': 'نظام حجوزات ذكي',
           'cap_2_sub': 'إدارة الطلبات والموافقة أو الرفض تلقائياً.',
           'cap_3_title': 'إدارة العملاء والفرص',
-          'cap_3_sub': 'متابعة كل فرصة من أول تواصل حتى الإغلاق.',
-          'cap_4_title': 'تحليلات متقدمة',
-          'cap_4_sub': 'تقارير عن نسبة الإغلاق وسرعة الرد.',
+          'cap_3_sub':
+              'نظّم ملفات العملاء وتابع الفرص والطلبات باحترافية من مكان واحد.',
+          'cap_4_title': 'مستندات العمل الاحترافية',
+          'cap_4_sub':
+              'أنشئ عروض أسعار وفواتير وإيصالات ومستندات رقم التخصيص بشكل منظّم.',
         };
       case 'ru':
         return {
@@ -1916,9 +1918,11 @@ class _SubscriptionPageState extends State<SubscriptionPage>
           'cap_2_title': 'Умные бронирования',
           'cap_2_sub': 'Управление заявками и авто-приоритизация.',
           'cap_3_title': 'Лиды и клиенты',
-          'cap_3_sub': 'Отслеживание каждого лида до закрытия.',
-          'cap_4_title': 'Продвинутая аналитика',
-          'cap_4_sub': 'Отчеты по конверсии и времени ответа.',
+          'cap_3_sub':
+              'Ведите карточки клиентов, лиды и заявки профессионально в одном месте.',
+          'cap_4_title': 'Профессиональные документы',
+          'cap_4_sub':
+              'Создавайте сметы, счета, квитанции и документы с номером выделения в одном месте.',
         };
       case 'am':
         return {
@@ -1963,9 +1967,10 @@ class _SubscriptionPageState extends State<SubscriptionPage>
           'cap_2_title': 'ብልህ የትዕዛዝ ስርዓት',
           'cap_2_sub': 'ጥያቄዎችን አስተዳድር እና ቅድሚያ አድርግ።',
           'cap_3_title': 'የሊድ እና ደንበኛ አስተዳደር',
-          'cap_3_sub': 'ከመጀመሪያ ግንኙነት እስከ መዝጊያ ተከታተል።',
-          'cap_4_title': 'የላቀ ትንታኔ',
-          'cap_4_sub': 'በመዝጊያ መጠን እና ምላሽ ፍጥነት ሪፖርቶች።',
+          'cap_3_sub': 'የደንበኛ መዝገቦችን፣ ሊዶችን እና ግብይቶችን በአንድ ቦታ በሙያያዊያ ያስተዳድሩ።',
+          'cap_4_title': 'የባለሙያ ሰነዶች',
+          'cap_4_sub':
+              'የዋጋ ዕውሶችን፣ ደረሰኞችን፣ ደረሰኝ-ደረሰኞችን እና የመመደብ ቁጥር ሰነዶችን በትእዛዝት ይፍጠሩ።',
         };
       case 'en':
         return {
@@ -2016,9 +2021,11 @@ class _SubscriptionPageState extends State<SubscriptionPage>
           'cap_2_sub':
               'Manage requests and auto-prioritize your daily pipeline.',
           'cap_3_title': 'Lead and client management',
-          'cap_3_sub': 'Track each lead from first contact to closed job.',
-          'cap_4_title': 'Advanced analytics',
-          'cap_4_sub': 'Reports on conversion rate and response speed.',
+          'cap_3_sub':
+              'Manage customer records, leads, and requests professionally in one place.',
+          'cap_4_title': 'Professional business documents',
+          'cap_4_sub':
+              'Create quotes, invoices, receipts, and allocation-number documents in one organized workflow.',
         };
       default:
         return {
@@ -2064,9 +2071,11 @@ class _SubscriptionPageState extends State<SubscriptionPage>
           'cap_2_title': 'מערכת הזמנות חכמה',
           'cap_2_sub': 'ניהול בקשות עבודה, אישור/דחייה ותיעדוף יומי אוטומטי.',
           'cap_3_title': 'ניהול לידים ולקוחות',
-          'cap_3_sub': 'מעקב אחרי כל ליד מהפנייה הראשונה ועד סגירת העבודה.',
-          'cap_4_title': 'ניתוח נתונים מתקדם',
-          'cap_4_sub': 'דוחות על שיעור סגירה, זמני תגובה ומקורות פניות.',
+          'cap_3_sub':
+              'נהל כרטיסי לקוחות, לידים ובקשות עבודה באופן מקצועי במקום אחד.',
+          'cap_4_title': 'מסמכים עסקיים מקצועיים',
+          'cap_4_sub':
+              'צור הצעות מחיר, חשבוניות, קבלות ומסמכים עם מספר הקצאה בתהליך מסודר אחד.',
         };
     }
   }

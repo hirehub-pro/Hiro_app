@@ -30,7 +30,6 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   ];
 
   bool _isLoading = true;
-  int _totalJobs = 0;
   int _viewsCount = 0;
   int _allTimeViewsAcrossProfessions = 0;
   double _totalEarnings = 0.0;
@@ -48,7 +47,6 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
 
   String _performanceOverview = '';
   String _topServices = '';
-  double _conversionRate = 0.0;
 
   List<String> _professionOptions = [];
   List<String> _userProfessions = [];
@@ -84,14 +82,10 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           'all_professions': 'כל המקצועות',
           'total_earnings': 'הכנסות משוערות',
           'no_earning_yet': 'אין הכנסות עדיין',
-          'total_jobs': 'עבודות',
           'rating': 'דירוג',
           'views': 'צפיות',
           'views_this_week': 'צפיות השבוע',
-          'conversion': 'המרה',
           'top_skill': 'מיומנות מובילה',
-          'conversion_help':
-              'המרה היא אחוז הצופים בפרופיל שהפכו לעבודות. נוסחה: עבודות חלקי צפיות כפול 100.',
           'earnings_trend': 'מגמת הכנסות (7 ימים אחרונים)',
           'profile_reach': 'חשיפה לפרופיל',
           'service_quality_breakdown': 'פירוט איכות השירות',
@@ -107,10 +101,6 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
               'אתה רק בתחילת הדרך. השלם את העבודות הראשונות ובקש מלקוחות ביקורות כדי לפתוח תובנות מדויקות יותר.',
           'growth_low_visibility':
               'החשיפה שלך עדיין נמוכה {scope}. עדכן תמונת פרופיל, כותרת ותיאור שירות כדי למשוך יותר צפיות.',
-          'growth_low_conversion':
-              'אתה מקבל צפיות אבל מעט סגירות {scope}. שפר כותרת פרופיל, הוסף מחירים ברורים והדגש תוצאות אחרונות.',
-          'growth_high_conversion':
-              'המרה מצוינת {scope}. שמור על זמן תגובה מהיר והמשך לבקש ביקורות מלקוחות מרוצים.',
           'growth_excellent_rating':
               'הדירוג שלך מצוין. השתמש בזה כהוכחה חברתית בראש הפרופיל כדי לזכות ביותר עבודות.',
           'growth_improve_rating':
@@ -121,7 +111,6 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
               'הביצועים יציבים {scope}. המשך להשלים עבודות באופן עקבי ואסוף יותר ביקורות כדי לצמוח מהר יותר.',
           'growth_focus_label': 'פוקוס לשבוע הקרוב:',
           'growth_target_visibility': 'יעד: להגיע ל-20+ צפיות בפרופיל.',
-          'growth_target_conversion': 'יעד: להגיע להמרה של 8% ומעלה.',
           'growth_target_rating': 'יעד: להעלות את הדירוג ל-4.3 ומעלה.',
           'growth_target_reviews': 'יעד: להשיג לפחות 3 ביקורות חדשות.',
           'growth_positive_keep':
@@ -140,14 +129,10 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           'all_professions': 'كل المهن',
           'total_earnings': 'الأرباح التقديرية',
           'no_earning_yet': 'لا توجد أرباح حتى الآن',
-          'total_jobs': 'الأعمال',
           'rating': 'التقييم',
           'views': 'المشاهدات',
           'views_this_week': 'مشاهدات هذا الأسبوع',
-          'conversion': 'التحويل',
           'top_skill': 'المهارة الأقوى',
-          'conversion_help':
-              'التحويل هو نسبة مشاهدي الملف الذين أصبحوا أعمالاً. المعادلة: الأعمال ÷ المشاهدات × 100.',
           'earnings_trend': 'اتجاه الأرباح (آخر 7 أيام)',
           'profile_reach': 'وصول الملف الشخصي',
           'service_quality_breakdown': 'تفصيل جودة الخدمة',
@@ -163,10 +148,6 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
               'أنت في البداية. أكمل أعمالك الأولى واطلب تقييمات من العملاء للحصول على رؤى أفضل.',
           'growth_low_visibility':
               'ظهورك ما زال منخفضاً {scope}. حدّث صورة الملف والعنوان ووصف الخدمة لجذب المزيد من المشاهدات.',
-          'growth_low_conversion':
-              'تحصل على مشاهدات لكن حجوزات قليلة {scope}. حسّن عنوان ملفك وأضف أسعاراً واضحة وأبرز نتائجك الأخيرة.',
-          'growth_high_conversion':
-              'معدل التحويل ممتاز {scope}. حافظ على سرعة الرد واستمر بطلب التقييمات من العملاء الراضين.',
           'growth_excellent_rating':
               'تقييمك ممتاز. استخدم ذلك كدليل اجتماعي في أعلى ملفك للفوز بمزيد من الأعمال.',
           'growth_improve_rating':
@@ -177,7 +158,6 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
               'الأداء مستقر {scope}. استمر في إنجاز الأعمال بانتظام واجمع مزيداً من التقييمات للنمو أسرع.',
           'growth_focus_label': 'تركيز الأسبوع القادم:',
           'growth_target_visibility': 'الهدف: الوصول إلى 20+ مشاهدة للملف.',
-          'growth_target_conversion': 'الهدف: الوصول إلى تحويل 8% أو أكثر.',
           'growth_target_rating': 'الهدف: رفع التقييم إلى 4.3 أو أكثر.',
           'growth_target_reviews':
               'الهدف: الحصول على 3 تقييمات جديدة على الأقل.',
@@ -197,14 +177,10 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           'all_professions': 'Все профессии',
           'total_earnings': 'Оценочный доход',
           'no_earning_yet': 'Пока нет дохода',
-          'total_jobs': 'Заказы',
           'rating': 'Рейтинг',
           'views': 'Просмотры',
           'views_this_week': 'Просмотры за неделю',
-          'conversion': 'Конверсия',
           'top_skill': 'Лучший навык',
-          'conversion_help':
-              'Конверсия — это процент просмотров профиля, которые стали заказами. Формула: заказы ÷ просмотры × 100.',
           'earnings_trend': 'Динамика дохода (последние 7 дней)',
           'profile_reach': 'Охват профиля',
           'service_quality_breakdown': 'Показатели качества сервиса',
@@ -220,10 +196,6 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
               'Вы только начинаете. Выполните первые заказы и попросите клиентов оставить отзывы, чтобы получить более точную аналитику.',
           'growth_low_visibility':
               'Ваша видимость пока низкая {scope}. Обновите фото профиля, заголовок и описание услуг, чтобы привлечь больше просмотров.',
-          'growth_low_conversion':
-              'У вас есть просмотры, но мало заказов {scope}. Улучшите заголовок профиля, добавьте понятные цены и покажите последние результаты.',
-          'growth_high_conversion':
-              'Отличная конверсия {scope}. Отвечайте быстро и продолжайте просить довольных клиентов оставлять отзывы.',
           'growth_excellent_rating':
               'Ваш рейтинг отличный. Используйте это как социальное доказательство вверху профиля, чтобы получать больше заказов.',
           'growth_improve_rating':
@@ -234,7 +206,6 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
               'Показатели стабильны {scope}. Продолжайте регулярно выполнять заказы и собирайте больше отзывов для ускоренного роста.',
           'growth_focus_label': 'Фокус на следующую неделю:',
           'growth_target_visibility': 'Цель: получить 20+ просмотров профиля.',
-          'growth_target_conversion': 'Цель: повысить конверсию до 8% и выше.',
           'growth_target_rating': 'Цель: поднять рейтинг до 4.3 и выше.',
           'growth_target_reviews': 'Цель: получить минимум 3 новых отзыва.',
           'growth_positive_keep':
@@ -253,14 +224,10 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           'all_professions': 'ሁሉም ሙያዎች',
           'total_earnings': 'የተገመተ ገቢ',
           'no_earning_yet': 'እስካሁን ምንም ገቢ የለም',
-          'total_jobs': 'ስራዎች',
           'rating': 'ደረጃ',
           'views': 'እይታዎች',
           'views_this_week': 'የዚህ ሳምንት እይታዎች',
-          'conversion': 'መቀየር',
           'top_skill': 'ከፍተኛ ችሎታ',
-          'conversion_help':
-              'መቀየር ማለት ፕሮፋይል እይታዎች ወደ ስራ የተቀየሩበት መጠን ነው። ፎርሙላ: ስራዎች ÷ እይታዎች × 100.',
           'earnings_trend': 'የገቢ አቅጣጫ (የመጨረሻ 7 ቀናት)',
           'profile_reach': 'የፕሮፋይል ድርሻ',
           'service_quality_breakdown': 'የአገልግሎት ጥራት ዝርዝር',
@@ -276,10 +243,6 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
               'አሁን ብቻ ጀምረዋል። የመጀመሪያ ስራዎችዎን ያጠናቀቁ እና የተሻለ ትንታኔ ለማግኘት ከደንበኞች ግምገማ ይጠይቁ።',
           'growth_low_visibility':
               'የእርስዎ ታይነት አሁንም ዝቅተኛ ነው {scope}። የፕሮፋይል ፎቶ፣ ርዕስ እና የአገልግሎት መግለጫ ያዘምኑ።',
-          'growth_low_conversion':
-              'እይታ አለዎት ነገር ግን ቦኪንግ ዝቅተኛ ነው {scope}። የፕሮፋይል ርዕስ ያሻሽሉ፣ ግልፅ ዋጋ ያክሉ እና የቅርብ ውጤቶችን ያሳዩ።',
-          'growth_high_conversion':
-              'በጣም ጥሩ መቀየር {scope}። ፈጣን ምላሽ ይቀጥሉ እና ከደስተኛ ደንበኞች ግምገማ መጠየቅ ይቀጥሉ።',
           'growth_excellent_rating':
               'ደረጃዎ በጣም ጥሩ ነው። ተጨማሪ ስራ ለማግኘት በፕሮፋይል ላይ እንደ ማስረጃ ያሳዩት።',
           'growth_improve_rating':
@@ -290,7 +253,6 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
               'አፈፃፀሙ የተረጋጋ ነው {scope}። ስራ በመደበኛ ሁኔታ ይቀጥሉ እና ተጨማሪ ግምገማዎች ይሰብስቡ።',
           'growth_focus_label': 'የሚቀጥለው ሳምንት ትኩረት:',
           'growth_target_visibility': 'ግብ: 20+ የፕሮፋይል እይታዎች መድረስ።',
-          'growth_target_conversion': 'ግብ: 8% ወይም ከዚያ በላይ መቀየር መድረስ።',
           'growth_target_rating': 'ግብ: ደረጃን ወደ 4.3+ ማሳደግ።',
           'growth_target_reviews': 'ግብ: ቢያንስ 3 አዲስ ግምገማዎች ማግኘት።',
           'growth_positive_keep': 'አፈፃፀሙ በጣም ጥሩ ነው። ፈጣን ምላሽ እና ጥራት በቋሚነት ይጠብቁ።',
@@ -308,14 +270,10 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           'all_professions': 'All professions',
           'total_earnings': 'Estimated Earnings',
           'no_earning_yet': 'No earning yet',
-          'total_jobs': 'Jobs',
           'rating': 'Rating',
           'views': 'Views',
           'views_this_week': 'Views This Week',
-          'conversion': 'Conversion',
           'top_skill': 'Top Skill',
-          'conversion_help':
-              'Conversion is the percentage of profile viewers who became jobs. Formula: jobs ÷ views × 100.',
           'earnings_trend': 'Earnings Trend (Last 7 Days)',
           'profile_reach': 'Profile Reach',
           'service_quality_breakdown': 'Service Quality Breakdown',
@@ -331,10 +289,6 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
               'You are just getting started. Complete your first jobs and ask clients for reviews to unlock better insights.',
           'growth_low_visibility':
               'Your visibility is still low {scope}. Update your profile photo, title, and service description to attract more views.',
-          'growth_low_conversion':
-              'You are getting views but few bookings {scope}. Improve your profile headline, add clear prices, and highlight recent results.',
-          'growth_high_conversion':
-              'Great conversion {scope}. Keep response time fast and continue asking happy clients for new reviews.',
           'growth_excellent_rating':
               'Your rating is excellent. Use this as social proof near the top of your profile to win more jobs.',
           'growth_improve_rating':
@@ -345,7 +299,6 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
               'Performance looks stable {scope}. Keep completing jobs consistently and collect more reviews to grow faster.',
           'growth_focus_label': 'Focus for next week:',
           'growth_target_visibility': 'Target: reach 20+ profile views.',
-          'growth_target_conversion': 'Target: reach 8%+ conversion rate.',
           'growth_target_rating': 'Target: raise rating to 4.3+.',
           'growth_target_reviews': 'Target: collect at least 3 new reviews.',
           'growth_positive_keep':
@@ -495,13 +448,13 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     final advice = <Map<String, dynamic>>[];
     final ratingText = _avgRating > 0 ? _avgRating.toStringAsFixed(1) : '-';
     final snapshotLine =
-        '${_t('views')}: $_viewsCount | ${_t('conversion')}: ${_conversionRate.toStringAsFixed(1)}% | ${_t('rating')}: $ratingText';
+        '${_t('views')}: $_viewsCount | ${_t('rating')}: $ratingText';
     final topSkillLine =
         _topServices.isNotEmpty && _topServices != _t('no_data')
         ? '\n${_t('top_skill')}: $_topServices'
         : '';
 
-    if (_viewsCount == 0 && _totalJobs == 0) {
+    if (_viewsCount == 0 && _avgRating == 0) {
       advice.add({
         'score': 100,
         'message':
@@ -516,14 +469,6 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
         });
       }
 
-      if (_conversionRate < 8 && _viewsCount >= 20) {
-        advice.add({
-          'score': 85,
-          'message':
-              '${_tp('growth_low_conversion', {'scope': scope})}\n$snapshotLine$topSkillLine\n${_t('growth_focus_label')} ${_t('growth_target_conversion')}',
-        });
-      }
-
       if (_avgRating > 0 && _avgRating < 4.3) {
         final weakestMetric = _getWeakestMetricLabel();
         advice.add({
@@ -532,22 +477,13 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
               '${_tp('growth_improve_rating', {'metric': weakestMetric})}\n$snapshotLine\n${_t('growth_focus_label')} ${_t('growth_target_rating')}',
         });
       }
-
-      if (_totalJobs < 5) {
-        advice.add({
-          'score': 70,
-          'message':
-              '${_t('growth_getting_started')}\n$snapshotLine\n${_t('growth_focus_label')} ${_t('growth_target_reviews')}',
-        });
-      }
     }
 
     if (advice.isEmpty) {
-      final strong =
-          _conversionRate >= 8 && _avgRating >= 4.3 && _viewsCount >= 20;
+      final strong = _avgRating >= 4.3 && _viewsCount >= 20;
       return strong
           ? '${_t('growth_positive_keep')}\n$snapshotLine$topSkillLine\n${_t('growth_focus_label')} ${_t('growth_target_reviews')}'
-          : '${_tp('growth_stable', {'scope': scope})}\n$snapshotLine$topSkillLine\n${_t('growth_focus_label')} ${_t('growth_target_conversion')}';
+          : '${_tp('growth_stable', {'scope': scope})}\n$snapshotLine$topSkillLine\n${_t('growth_focus_label')} ${_t('growth_target_reviews')}';
     }
 
     advice.sort(
@@ -594,7 +530,6 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
       if (userDoc.exists) {
         final data = userDoc.data()!;
         final publicData = publicWorkerDoc.data() ?? <String, dynamic>{};
-        _totalJobs = data['totalJobs'] ?? 0;
         _viewsCount = 0;
         _totalEarnings = _asDouble(data['totalEarnings']);
         _hasTotalEarnedValue = _totalEarnings > 0;
@@ -635,9 +570,6 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
         final overallStats = statsDoc.data();
         _overallAvgRating = _asDouble(overallStats['avgOverallRating']);
         _avgRating = _overallAvgRating;
-        if (_totalJobs == 0) {
-          _totalJobs = _asInt(overallStats['reviewCount']);
-        }
         break;
       }
 
@@ -694,10 +626,6 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
       _professionWeeklyViews = _buildProfessionWeeklyViews(viewsSnapshot);
 
       _applyProfessionSelection();
-
-      _conversionRate = _viewsCount > 0
-          ? (_totalJobs / _viewsCount) * 100
-          : 0.0;
 
       _performanceOverview = _buildGrowthRecommendation();
 
@@ -903,7 +831,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           );
         }
 
-        if (_isLoading && _totalJobs == 0) {
+        if (_isLoading) {
           return const Scaffold(
             body: Center(child: CircularProgressIndicator()),
           );
@@ -987,9 +915,6 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
             setState(() {
               _selectedProfession = value;
               _applyProfessionSelection();
-              _conversionRate = _viewsCount > 0
-                  ? (_totalJobs / _viewsCount) * 100
-                  : 0.0;
               _performanceOverview = _buildGrowthRecommendation();
               _generateChartData();
             });
@@ -1080,11 +1005,6 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               _buildQuickStat(
-                _t('total_jobs'),
-                _totalJobs.toString(),
-                Icons.check_circle_outline,
-              ),
-              _buildQuickStat(
                 _t('rating'),
                 _avgRating.toStringAsFixed(1),
                 Icons.star_border_rounded,
@@ -1129,27 +1049,11 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   }
 
   Widget _buildMetricsGrid() {
-    return Row(
-      children: [
-        Expanded(
-          child: _buildInfoTile(
-            _t('conversion'),
-            '${_conversionRate.toStringAsFixed(1)}%',
-            Icons.swap_calls_rounded,
-            Colors.teal,
-            helpText: _t('conversion_help'),
-          ),
-        ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: _buildInfoTile(
-            _t('top_skill'),
-            _topServices,
-            Icons.auto_graph_rounded,
-            Colors.indigo,
-          ),
-        ),
-      ],
+    return _buildInfoTile(
+      _t('top_skill'),
+      _topServices,
+      Icons.auto_graph_rounded,
+      Colors.indigo,
     );
   }
 
