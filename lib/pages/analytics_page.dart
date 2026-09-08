@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:untitled1/services/language_provider.dart';
 import 'package:untitled1/services/subscription_access_service.dart';
 import 'package:untitled1/utils/top_skill_score.dart';
+import 'package:untitled1/utils/growth_recommendation.dart';
 
 class AnalyticsPage extends StatefulWidget {
   final String userId;
@@ -45,7 +46,8 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   List<FlSpot> _earningsSpots = [];
   List<BarChartGroupData> _viewGroups = [];
 
-  String _performanceOverview = '';
+  Map<String, dynamic> _overallRatingStats = {};
+  bool _analyticsAvailable = false;
   String _topServices = '';
 
   List<String> _professionOptions = [];
@@ -95,26 +97,6 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           'work_quality': 'איכות עבודה',
           'growth_recommendation': 'המלצת צמיחה',
           'no_data': 'אין נתונים',
-          'growth_scope_all': 'בכל המקצועות',
-          'growth_scope_for': 'עבור',
-          'growth_getting_started':
-              'אתה רק בתחילת הדרך. השלם את העבודות הראשונות ובקש מלקוחות ביקורות כדי לפתוח תובנות מדויקות יותר.',
-          'growth_low_visibility':
-              'החשיפה שלך עדיין נמוכה {scope}. עדכן תמונת פרופיל, כותרת ותיאור שירות כדי למשוך יותר צפיות.',
-          'growth_excellent_rating':
-              'הדירוג שלך מצוין. השתמש בזה כהוכחה חברתית בראש הפרופיל כדי לזכות ביותר עבודות.',
-          'growth_improve_rating':
-              'אפשר לשפר את הדירוג. התמקד בשיפור {metric} בעבודות הבאות ובקש משוב מפורט מלקוחות.',
-          'growth_top_service':
-              'המקצוע החזק ביותר שלך הוא {service}. הצג אותו ראשון בפרופיל ובפורטפוליו.',
-          'growth_stable':
-              'הביצועים יציבים {scope}. המשך להשלים עבודות באופן עקבי ואסוף יותר ביקורות כדי לצמוח מהר יותר.',
-          'growth_focus_label': 'פוקוס לשבוע הקרוב:',
-          'growth_target_visibility': 'יעד: להגיע ל-20+ צפיות בפרופיל.',
-          'growth_target_rating': 'יעד: להעלות את הדירוג ל-8.6 ומעלה.',
-          'growth_target_reviews': 'יעד: להשיג לפחות 3 ביקורות חדשות.',
-          'growth_positive_keep':
-              'הביצועים טובים מאוד. שמור על עקביות בזמן תגובה ובאיכות השירות.',
           'day_sun': 'א',
           'day_mon': 'ב',
           'day_tue': 'ג',
@@ -142,27 +124,6 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           'work_quality': 'جودة العمل',
           'growth_recommendation': 'توصية للنمو',
           'no_data': 'لا توجد بيانات',
-          'growth_scope_all': 'عبر جميع المهن',
-          'growth_scope_for': 'لـ',
-          'growth_getting_started':
-              'أنت في البداية. أكمل أعمالك الأولى واطلب تقييمات من العملاء للحصول على رؤى أفضل.',
-          'growth_low_visibility':
-              'ظهورك ما زال منخفضاً {scope}. حدّث صورة الملف والعنوان ووصف الخدمة لجذب المزيد من المشاهدات.',
-          'growth_excellent_rating':
-              'تقييمك ممتاز. استخدم ذلك كدليل اجتماعي في أعلى ملفك للفوز بمزيد من الأعمال.',
-          'growth_improve_rating':
-              'يمكن تحسين تقييمك. ركّز على تحسين {metric} في أعمالك القادمة واطلب ملاحظات تفصيلية من العملاء.',
-          'growth_top_service':
-              'أقوى خدمة لديك هي {service}. اعرضها أولاً في ملفك ومعرض أعمالك.',
-          'growth_stable':
-              'الأداء مستقر {scope}. استمر في إنجاز الأعمال بانتظام واجمع مزيداً من التقييمات للنمو أسرع.',
-          'growth_focus_label': 'تركيز الأسبوع القادم:',
-          'growth_target_visibility': 'الهدف: الوصول إلى 20+ مشاهدة للملف.',
-          'growth_target_rating': 'الهدف: رفع التقييم إلى 8.6 أو أكثر.',
-          'growth_target_reviews':
-              'الهدف: الحصول على 3 تقييمات جديدة على الأقل.',
-          'growth_positive_keep':
-              'الأداء ممتاز. حافظ على سرعة الرد وجودة الخدمة بشكل ثابت.',
           'day_sun': 'ح',
           'day_mon': 'ن',
           'day_tue': 'ث',
@@ -190,26 +151,6 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           'work_quality': 'Качество работы',
           'growth_recommendation': 'Рекомендация по росту',
           'no_data': 'Нет данных',
-          'growth_scope_all': 'по всем профессиям',
-          'growth_scope_for': 'для',
-          'growth_getting_started':
-              'Вы только начинаете. Выполните первые заказы и попросите клиентов оставить отзывы, чтобы получить более точную аналитику.',
-          'growth_low_visibility':
-              'Ваша видимость пока низкая {scope}. Обновите фото профиля, заголовок и описание услуг, чтобы привлечь больше просмотров.',
-          'growth_excellent_rating':
-              'Ваш рейтинг отличный. Используйте это как социальное доказательство вверху профиля, чтобы получать больше заказов.',
-          'growth_improve_rating':
-              'Рейтинг можно улучшить. Сфокусируйтесь на улучшении показателя {metric} в следующих заказах и просите подробную обратную связь.',
-          'growth_top_service':
-              'Ваша самая сильная услуга — {service}. Покажите её первой в профиле и портфолио.',
-          'growth_stable':
-              'Показатели стабильны {scope}. Продолжайте регулярно выполнять заказы и собирайте больше отзывов для ускоренного роста.',
-          'growth_focus_label': 'Фокус на следующую неделю:',
-          'growth_target_visibility': 'Цель: получить 20+ просмотров профиля.',
-          'growth_target_rating': 'Цель: поднять рейтинг до 8.6 и выше.',
-          'growth_target_reviews': 'Цель: получить минимум 3 новых отзыва.',
-          'growth_positive_keep':
-              'Результаты очень хорошие. Сохраняйте стабильную скорость ответа и качество сервиса.',
           'day_sun': 'Вс',
           'day_mon': 'Пн',
           'day_tue': 'Вт',
@@ -237,25 +178,6 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           'work_quality': 'የስራ ጥራት',
           'growth_recommendation': 'የእድገት ምክር',
           'no_data': 'መረጃ የለም',
-          'growth_scope_all': 'በሁሉም ሙያዎች',
-          'growth_scope_for': 'ለ',
-          'growth_getting_started':
-              'አሁን ብቻ ጀምረዋል። የመጀመሪያ ስራዎችዎን ያጠናቀቁ እና የተሻለ ትንታኔ ለማግኘት ከደንበኞች ግምገማ ይጠይቁ።',
-          'growth_low_visibility':
-              'የእርስዎ ታይነት አሁንም ዝቅተኛ ነው {scope}። የፕሮፋይል ፎቶ፣ ርዕስ እና የአገልግሎት መግለጫ ያዘምኑ።',
-          'growth_excellent_rating':
-              'ደረጃዎ በጣም ጥሩ ነው። ተጨማሪ ስራ ለማግኘት በፕሮፋይል ላይ እንደ ማስረጃ ያሳዩት።',
-          'growth_improve_rating':
-              'ደረጃዎን ማሻሻል ይቻላል። በሚቀጥሉት ስራዎች {metric} ላይ ትኩረት ያድርጉ እና ዝርዝር አስተያየት ይጠይቁ።',
-          'growth_top_service':
-              'ከፍተኛ ጠንካራ አገልግሎትዎ {service} ነው። በፕሮፋይልና በፖርትፎሊዮ መጀመሪያ ያሳዩ።',
-          'growth_stable':
-              'አፈፃፀሙ የተረጋጋ ነው {scope}። ስራ በመደበኛ ሁኔታ ይቀጥሉ እና ተጨማሪ ግምገማዎች ይሰብስቡ።',
-          'growth_focus_label': 'የሚቀጥለው ሳምንት ትኩረት:',
-          'growth_target_visibility': 'ግብ: 20+ የፕሮፋይል እይታዎች መድረስ።',
-          'growth_target_rating': 'ግብ: ደረጃን ወደ 8.6+ ማሳደግ።',
-          'growth_target_reviews': 'ግብ: ቢያንስ 3 አዲስ ግምገማዎች ማግኘት።',
-          'growth_positive_keep': 'አፈፃፀሙ በጣም ጥሩ ነው። ፈጣን ምላሽ እና ጥራት በቋሚነት ይጠብቁ።',
           'day_sun': 'እሑድ',
           'day_mon': 'ሰኞ',
           'day_tue': 'ማክ',
@@ -283,26 +205,6 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           'work_quality': 'Work Quality',
           'growth_recommendation': 'Growth Recommendation',
           'no_data': 'No data',
-          'growth_scope_all': 'across all professions',
-          'growth_scope_for': 'for',
-          'growth_getting_started':
-              'You are just getting started. Complete your first jobs and ask clients for reviews to unlock better insights.',
-          'growth_low_visibility':
-              'Your visibility is still low {scope}. Update your profile photo, title, and service description to attract more views.',
-          'growth_excellent_rating':
-              'Your rating is excellent. Use this as social proof near the top of your profile to win more jobs.',
-          'growth_improve_rating':
-              'Your rating can improve. Focus on better {metric} in your next jobs and ask clients for detailed feedback.',
-          'growth_top_service':
-              'Your strongest profession is {service}. Feature it first in your profile and portfolio.',
-          'growth_stable':
-              'Performance looks stable {scope}. Keep completing jobs consistently and collect more reviews to grow faster.',
-          'growth_focus_label': 'Focus for next week:',
-          'growth_target_visibility': 'Target: reach 20+ profile views.',
-          'growth_target_rating': 'Target: raise rating to 8.6+.',
-          'growth_target_reviews': 'Target: collect at least 3 new reviews.',
-          'growth_positive_keep':
-              'Performance is strong. Keep response time fast and service quality consistent.',
           'day_sun': 'Sun',
           'day_mon': 'Mon',
           'day_tue': 'Tue',
@@ -322,14 +224,6 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     if (fromParent != null && fromParent.isNotEmpty) return fromParent;
 
     return _localStrings('en')[key] ?? key;
-  }
-
-  String _tp(String key, Map<String, String> params) {
-    String value = _t(key);
-    params.forEach((param, replacement) {
-      value = value.replaceAll('{$param}', replacement);
-    });
-    return value;
   }
 
   @override
@@ -440,79 +334,26 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     return result;
   }
 
-  String _buildGrowthRecommendation() {
-    final scope = _selectedProfession == _allProfessionsKey
-        ? _t('growth_scope_all')
-        : '${_t('growth_scope_for')} $_selectedProfession';
-
-    final advice = <Map<String, dynamic>>[];
-    final ratingText = _avgRating > 0 ? _avgRating.toStringAsFixed(1) : '-';
-    final snapshotLine =
-        '${_t('views')}: $_viewsCount | ${_t('rating')}: $ratingText';
-    final topSkillLine =
-        _topServices.isNotEmpty && _topServices != _t('no_data')
-        ? '\n${_t('top_skill')}: $_topServices'
-        : '';
-
-    if (_viewsCount == 0 && _avgRating == 0) {
-      advice.add({
-        'score': 100,
-        'message':
-            '${_t('growth_getting_started')}\n$snapshotLine$topSkillLine\n${_t('growth_focus_label')} ${_t('growth_target_reviews')}',
-      });
-    } else {
-      if (_viewsCount < 20) {
-        advice.add({
-          'score': 90,
-          'message':
-              '${_tp('growth_low_visibility', {'scope': scope})}\n$snapshotLine\n${_t('growth_focus_label')} ${_t('growth_target_visibility')}',
-        });
-      }
-
-      if (_avgRating > 0 && _avgRating < 8.6) {
-        final weakestMetric = _getWeakestMetricLabel();
-        advice.add({
-          'score': 80,
-          'message':
-              '${_tp('growth_improve_rating', {'metric': weakestMetric})}\n$snapshotLine\n${_t('growth_focus_label')} ${_t('growth_target_rating')}',
-        });
-      }
-    }
-
-    if (advice.isEmpty) {
-      final strong = _avgRating >= 8.6 && _viewsCount >= 20;
-      return strong
-          ? '${_t('growth_positive_keep')}\n$snapshotLine$topSkillLine\n${_t('growth_focus_label')} ${_t('growth_target_reviews')}'
-          : '${_tp('growth_stable', {'scope': scope})}\n$snapshotLine$topSkillLine\n${_t('growth_focus_label')} ${_t('growth_target_reviews')}';
-    }
-
-    advice.sort(
-      (a, b) =>
-          ((b['score'] as int?) ?? 0).compareTo((a['score'] as int?) ?? 0),
+  GrowthRecommendation _buildGrowthRecommendation() {
+    return buildGrowthRecommendation(
+      locale: _localeCode,
+      professions: _userProfessions,
+      overallRatings: _overallRatingStats,
+      weeklyViews: _professionWeeklyViews.values.fold<int>(
+        0,
+        (total, week) => total + _weekTotalFromMap(week),
+      ),
+      totalViews: _allTimeViewsAcrossProfessions,
+      totalEarnings: _hasTotalEarnedValue ? _totalEarnings : null,
     );
-    final top = advice
-        .take(2)
-        .map((a) => (a['message'] ?? '').toString())
-        .where((m) => m.isNotEmpty)
-        .toList();
-    return top.join('\n\n');
-  }
-
-  String _getWeakestMetricLabel() {
-    final metrics = <MapEntry<String, double>>[
-      MapEntry(_t('price'), _avgPrice),
-      MapEntry(_t('service'), _avgService),
-      MapEntry(_t('timing'), _avgTiming),
-      MapEntry(_t('work_quality'), _avgWorkQuality),
-    ];
-
-    metrics.sort((a, b) => a.value.compareTo(b.value));
-    return metrics.first.key;
   }
 
   Future<void> _fetchAnalytics() async {
     if (!mounted) return;
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _analyticsAvailable = false;
+    });
 
     try {
       final firestore = FirebaseFirestore.instance;
@@ -565,9 +406,11 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           .get();
       final viewsSnapshot = await publicWorkerRef.collection('Views').get();
 
+      _overallRatingStats = {};
       for (final statsDoc in reviewStatsSnapshot.docs) {
         if (statsDoc.id != 'overall') continue;
         final overallStats = statsDoc.data();
+        _overallRatingStats = overallStats;
         _overallAvgRating = _asDouble(overallStats['avgOverallRating']);
         _avgRating = _overallAvgRating;
         break;
@@ -627,7 +470,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
 
       _applyProfessionSelection();
 
-      _performanceOverview = _buildGrowthRecommendation();
+      _analyticsAvailable = true;
 
       _generateChartData();
     } catch (e) {
@@ -872,7 +715,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                   const SizedBox(height: 16),
                   _buildRatingsSection(),
                   const SizedBox(height: 32),
-                  _buildAITipCard(),
+                  if (_analyticsAvailable) _buildGrowthTipCard(),
                   const SizedBox(height: 40),
                 ],
               ),
@@ -915,7 +758,6 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
             setState(() {
               _selectedProfession = value;
               _applyProfessionSelection();
-              _performanceOverview = _buildGrowthRecommendation();
               _generateChartData();
             });
           },
@@ -1213,55 +1055,89 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     );
   }
 
-  Widget _buildAITipCard() {
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF3B82F6), Color(0xFF2563EB)],
+  Widget _buildGrowthTipCard() {
+    final tip = _buildGrowthRecommendation();
+    return Directionality(
+      textDirection: _localeCode == 'he' || _localeCode == 'ar'
+          ? TextDirection.rtl
+          : TextDirection.ltr,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [Color(0xFF2563EB), Color(0xFF1D4ED8)],
+          ),
+          borderRadius: BorderRadius.circular(28),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.blue.withValues(alpha: 0.2),
+              blurRadius: 15,
+              offset: const Offset(0, 5),
+            ),
+          ],
         ),
-        borderRadius: BorderRadius.circular(28),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.blue.withOpacity(0.3),
-            blurRadius: 15,
-            offset: const Offset(0, 5),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          const Icon(
-            Icons.tips_and_updates_rounded,
-            color: Colors.white,
-            size: 32,
-          ),
-          const SizedBox(width: 20),
-          Expanded(
-            child: Column(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  _t('growth_recommendation'),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                  ),
+                const Icon(
+                  Icons.tips_and_updates_rounded,
+                  color: Colors.white,
+                  size: 24,
                 ),
-                const SizedBox(height: 6),
-                Text(
-                  _performanceOverview,
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 14,
-                    height: 1.4,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    _t('growth_recommendation'),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 17,
+                    ),
                   ),
                 ),
               ],
             ),
-          ),
-        ],
+            const SizedBox(height: 8),
+            Text(
+              tip.scope,
+              style: const TextStyle(color: Colors.white, fontSize: 12),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              tip.summary,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 14,
+                height: 1.6,
+              ),
+            ),
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: Divider(color: Colors.white30, height: 1),
+            ),
+            Text(
+              tip.actionLabel,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              tip.action,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 14,
+                height: 1.6,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
