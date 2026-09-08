@@ -453,11 +453,104 @@ void main() {
     expect(tip.destination, GrowthDestination.requests);
   });
 
+  test('all healthy core signals produce the positive fallback', () {
+    final tip = insight(
+      perProfession: {
+        'Plumbing': ratings(count: 18, overall: 9.4),
+        'Painting': ratings(count: 12, overall: 9.1),
+      },
+      projects: List.generate(
+        3,
+        (_) => {
+          'imageUrls': ['photo'],
+          'timestamp': now.subtract(const Duration(days: 30)),
+        },
+      ),
+      requests: List.generate(5, (_) => request(status: 'accepted')),
+      schedule: {
+        'availableDates': ['2026-9-14', '2026-9-16'],
+      },
+    );
+
+    expect(tip.reason, 'healthy_performance');
+    expect(visible(tip.summary), contains('9.6/10 across 20 reviews'));
+    expect(visible(tip.summary), contains('3 projects'));
+    expect(visible(tip.summary), contains('2 work dates'));
+    expect(visible(tip.summary), contains('5 of 5'));
+    expect(tip.action, contains('next 5 work requests'));
+    expect(tip.destination, GrowthDestination.requests);
+  });
+
+  test('positive fallback requires every healthy signal to be available', () {
+    final professionRatings = {
+      'Plumbing': ratings(count: 18),
+      'Painting': ratings(count: 12),
+    };
+    final projects = List.generate(
+      3,
+      (_) => {
+        'imageUrls': ['photo'],
+        'timestamp': now.subtract(const Duration(days: 30)),
+      },
+    );
+    final requests = List.generate(5, (_) => request(status: 'accepted'));
+
+    expect(
+      insight(
+        perProfession: professionRatings,
+        projects: projects,
+        requests: requests,
+        schedule: null,
+      ).reason,
+      'data_building',
+    );
+    expect(
+      insight(
+        perProfession: professionRatings,
+        projects: null,
+        requests: requests,
+        schedule: {
+          'availableDates': ['2026-9-14', '2026-9-16'],
+        },
+      ).reason,
+      'data_building',
+    );
+    expect(
+      insight(
+        perProfession: const {},
+        projects: projects,
+        requests: requests,
+        schedule: {
+          'availableDates': ['2026-9-14', '2026-9-16'],
+        },
+      ).reason,
+      'data_building',
+    );
+  });
+
   test(
     'all languages resolve every decision and action without placeholders',
     () {
       for (final locale in ['en', 'he', 'ar', 'ru', 'am', 'unknown']) {
         final scenarios = [
+          insight(
+            locale: locale,
+            perProfession: {
+              'Plumbing': ratings(count: 18),
+              'Painting': ratings(count: 12),
+            },
+            projects: List.generate(
+              3,
+              (_) => {
+                'imageUrls': ['photo'],
+                'timestamp': now.subtract(const Duration(days: 30)),
+              },
+            ),
+            requests: List.generate(5, (_) => request(status: 'accepted')),
+            schedule: {
+              'availableDates': ['2026-9-14', '2026-9-16'],
+            },
+          ),
           insight(
             locale: locale,
             projects: [],

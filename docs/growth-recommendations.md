@@ -38,6 +38,15 @@ Highest priority wins. Ties resolve deterministically. All thresholds are editor
 8. Specific portfolio, review-recency, feedback or profile-field opportunities.
 9. Repeat inquiry interest; otherwise a useful request-outcome tracking action.
 
+When no higher-priority opportunity exists, a positive fallback is shown only
+when all core sources are available and healthy: at least 10 overall reviews
+with a 9.0+ average, every rating category at 8.5+, at least 5 reviews and an
+8.5+ average for every listed profession, at least 3 portfolio projects with a
+project from the last 180 days, at least 2 available work dates in the next 14
+days, and at least 5 recent work requests with 3 accepted, no overdue pending
+requests, and no more than 20% cancelled/declined/rejected. These thresholds are
+product safeguards, not external benchmarks.
+
 The output includes only evidence needed for the chosen decision plus one focused action. Targets concern controllable actions (review requests today, add enough projects to show three useful examples) or explicit observation checkpoints. No promised revenue, inquiry or rating increase.
 
 ## Reads and navigation

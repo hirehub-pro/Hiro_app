@@ -470,6 +470,78 @@ GrowthRecommendation buildGrowthRecommendation({
     add('review_recency', 61, {}, 'feedback_action');
   }
 
+  // Show a positive fallback only when every source needed for the claim was
+  // loaded and each key business area has enough evidence. This describes
+  // agreement between current signals, not a historical growth trend.
+  final overallCategories = [
+    _rating(overallRatings['avgPriceRating']),
+    _rating(overallRatings['avgServiceRating']),
+    _rating(overallRatings['avgTimingRating']),
+    _rating(overallRatings['avgWorkQualityRating']),
+  ];
+  final professionEvidenceIsHealthy =
+      listed.isNotEmpty &&
+      listed.every((profession) {
+        final stats = professionRatings[profession];
+        return stats != null &&
+            _number(stats['reviewCount']) >= 5 &&
+            (_rating(stats['avgOverallRating']) ?? 0) >= 8.5;
+      });
+  final hasRecentProject =
+      projects != null &&
+      projects.any((project) {
+        final timestamp = _date(project['timestamp']);
+        return timestamp != null &&
+            !timestamp.isAfter(clock) &&
+            !timestamp.isBefore(clock.subtract(const Duration(days: 180)));
+      });
+  final recentWorkRequests = monthRequests
+      ?.where((request) => request['type'] == 'work_request')
+      .toList();
+  final acceptedWorkRequests = recentWorkRequests
+      ?.where((request) => request['status'] == 'accepted')
+      .length;
+  final lostRecentWorkRequests = recentWorkRequests
+      ?.where(
+        (request) =>
+            ['declined', 'rejected', 'cancelled'].contains(request['status']),
+      )
+      .length;
+  final requestsAreHealthy =
+      recentWorkRequests != null &&
+      recentWorkRequests.length >= 5 &&
+      (acceptedWorkRequests ?? 0) >= 3 &&
+      (lostRecentWorkRequests ?? 0) / recentWorkRequests.length <= 0.2 &&
+      waiting != null &&
+      waiting.isEmpty;
+  final allCoreSignalsAreHealthy =
+      count >= 10 &&
+      (overall ?? 0) >= 9 &&
+      overallCategories.every((rating) => rating != null && rating >= 8.5) &&
+      professionEvidenceIsHealthy &&
+      projectCount != null &&
+      projectCount >= 3 &&
+      hasRecentProject &&
+      availableDays != null &&
+      availableDays >= 2 &&
+      requestsAreHealthy;
+  if (allCoreSignalsAreHealthy) {
+    add(
+      'healthy_performance',
+      1,
+      {
+        'rating': ratingText(overall!),
+        'count': numeric(count),
+        'projects': numeric(projectCount),
+        'availability': numeric(availableDays),
+        'accepted': numeric(acceptedWorkRequests!),
+        'requests': numeric(recentWorkRequests.length),
+      },
+      'healthy_action',
+      GrowthDestination.requests,
+    );
+  }
+
   // Repeat senders indicate recurring inquiry interest, not completed repeat jobs.
   if (knownRequests != null && strongOverall) {
     final senderCounts = <String, int>{};
@@ -708,6 +780,10 @@ const _decisionCopy = <String, Map<String, String>>{
         'After your next completed job, ask the customer for one honest review about the work, service, timing and price.',
     'review_recency':
         'You have accepted work requests from the last 30 days, but no reviews dated in that period. Accepted requests do not confirm completed work; feedback after completion could strengthen your recent track record.',
+    'healthy_performance':
+        'Your key business signals are performing consistently: your overall rating is {rating} across {count} reviews, your portfolio has {projects} projects with media, {availability} work dates are available in the next 14 days, and {accepted} of {requests} recent work requests were accepted.',
+    'healthy_action':
+        'Keep your portfolio and availability current, continue reviewing new requests promptly, and maintain your service standard. Review this insight again after your next 5 work requests.',
     'data_building':
         'The available evidence does not identify a clear performance problem. It is too early to justify changing prices or a service that may already work well.',
     'data_action':
@@ -786,6 +862,10 @@ const _decisionCopy = <String, Map<String, String>>{
         'אחרי העבודה הבאה שתשלים, בקש מהלקוח ביקורת כנה אחת על העבודה, השירות, הזמנים והמחיר.',
     'review_recency':
         'יש לך בקשות עבודה שהתקבלו ואושרו ב-30 הימים האחרונים, אך אין ביקורות המתוארכות לתקופה הזו. אישור בקשה אינו אישור לסיום עבודה; משוב לאחר הסיום יכול לחזק את הניסיון העדכני שלך.',
+    'healthy_performance':
+        'המדדים המרכזיים של העסק שלך מציגים ביצועים עקביים: הדירוג הכללי הוא {rating} על בסיס {count} ביקורות, בתיק העבודות יש {projects} פרויקטים עם מדיה, יש {availability} ימי עבודה זמינים ב-14 הימים הקרובים, ו-{accepted} מתוך {requests} בקשות העבודה האחרונות אושרו.',
+    'healthy_action':
+        'המשך לעדכן את תיק העבודות והזמינות ושמור על אותה רמת מענה ושירות. בדוק שוב את ההמלצה לאחר 5 בקשות העבודה הבאות.',
     'data_building':
         'הנתונים הזמינים אינם מצביעים על בעיית ביצועים ברורה. עדיין אין בסיס לשינוי מחירים או שירות שעשוי כבר לעבוד היטב.',
     'data_action':
@@ -863,6 +943,10 @@ const _decisionCopy = <String, Map<String, String>>{
         'بعد العمل القادم الذي تنجزه، اطلب من العميل مراجعة صادقة واحدة عن العمل والخدمة والمواعيد والسعر.',
     'review_recency':
         'لديك طلبات عمل واردة ومقبولة خلال آخر 30 يوماً، لكن لا توجد مراجعات مؤرخة في هذه الفترة. قبول الطلب لا يثبت إنجاز العمل؛ الملاحظات بعد الإنجاز قد تعزز سجلك الحديث.',
+    'healthy_performance':
+        'تُظهر مؤشرات أعمالك الرئيسية أداءً ثابتاً: تقييمك العام {rating} من {count} مراجعات، ويضم معرضك {projects} مشاريع مع وسائط، ولديك {availability} أيام عمل متاحة خلال 14 يوماً، وتم قبول {accepted} من أصل {requests} طلبات عمل حديثة.',
+    'healthy_action':
+        'حافظ على تحديث معرضك وتوفرك وعلى مستوى الاستجابة والخدمة نفسه. راجع هذه التوصية بعد طلبات العمل الخمسة القادمة.',
     'data_building':
         'الأدلة المتاحة لا تحدد مشكلة أداء واضحة. لا يوجد أساس كافٍ لتغيير الأسعار أو خدمة قد تعمل جيداً بالفعل.',
     'data_action':
@@ -941,6 +1025,10 @@ const _decisionCopy = <String, Map<String, String>>{
         'После следующей выполненной работы попросите клиента оставить один честный отзыв о работе, сервисе, сроках и цене.',
     'review_recency':
         'У вас есть поступившие и принятые заявки на работу за последние 30 дней, но нет отзывов с датой этого периода. Принятая заявка не подтверждает завершение работы; отзыв после завершения может укрепить свежий послужной список.',
+    'healthy_performance':
+        'Основные показатели бизнеса демонстрируют стабильные результаты: общая оценка — {rating} по {count} отзывам, в портфолио {projects} проектов с медиа, на ближайшие 14 дней доступны {availability} рабочих дня, а из {requests} недавних заявок на работу принято {accepted}.',
+    'healthy_action':
+        'Поддерживайте портфолио и доступность в актуальном состоянии и сохраняйте тот же уровень ответа и сервиса. Вернитесь к рекомендации после следующих 5 заявок на работу.',
     'data_building':
         'Доступные данные не указывают на явную проблему. Пока нет оснований менять цены или услугу, которая, возможно, уже работает хорошо.',
     'data_action':
@@ -1017,6 +1105,10 @@ const _decisionCopy = <String, Map<String, String>>{
         'ከቀጣዩ የተጠናቀቀ ስራ በኋላ ስለ ስራው፣ አገልግሎቱ፣ ሰዓቱና ዋጋው አንድ ቅን ግምገማ ይጠይቁ።',
     'review_recency':
         'ባለፉት 30 ቀናት የመጡና የተቀበሉ የስራ ጥያቄዎች አሉዎት፣ ግን በዚያ ጊዜ የተመዘገቡ ግምገማዎች የሉም። ተቀባይነት ስራ መጠናቀቅን አያረጋግጥም፤ ከማጠናቀቅ በኋላ አስተያየት ይረዳል።',
+    'healthy_performance':
+        'ዋና የንግድ መለኪያዎችዎ የተረጋጋ አፈጻጸም ያሳያሉ፦ አጠቃላይ ደረጃዎ {rating} ነው ከ{count} ግምገማዎች፣ ፖርትፎሊዮዎ {projects} ሚዲያ ያላቸው ፕሮጀክቶች አሉት፣ በሚቀጥሉት 14 ቀናት {availability} የስራ ቀናት ክፍት ናቸው፣ እና ከ{requests} የቅርብ ጊዜ ጥያቄዎች {accepted} ተቀብለዋል።',
+    'healthy_action':
+        'ፖርትፎሊዮዎንና ዝግጁነትዎን ወቅታዊ ያድርጉ እና ተመሳሳይ የምላሽና የአገልግሎት ደረጃ ይጠብቁ። ከቀጣዮቹ 5 የስራ ጥያቄዎች በኋላ ምክሩን እንደገና ይመልከቱ።',
     'data_building':
         'ያለው መረጃ ግልጽ የአፈጻጸም ችግር አያሳይም። ዋጋ ወይም በጥሩ ሁኔታ የሚሰራ አገልግሎት ለመቀየር ገና መሠረት የለም።',
     'data_action':
