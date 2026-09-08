@@ -523,7 +523,7 @@ class _ProfileState extends State<Profile>
           _subscriptionExpiresAt = isOwnProfile
               ? _toDate(data['subscriptionExpiresAt'])
               : null;
-          _isVip = isOwnProfile && data['isVIP'] == true;
+          _isVip = data['isVIP'] == true;
 
           if (data['professions'] is List) {
             _userProfessions = List<String>.from(data['professions']);
@@ -2912,7 +2912,7 @@ class _ProfileState extends State<Profile>
           bottomNavigationBar:
               (!_isOwnProfile &&
                   _userRole == 'worker' &&
-                  _hasActiveWorkerSubscription)
+                  (_hasActiveWorkerSubscription || _isVip))
               ? _buildBottomBar(strings)
               : null,
         ),

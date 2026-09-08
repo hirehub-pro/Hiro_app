@@ -32,6 +32,7 @@ test("builds a bounded public worker profile with public contact fields", () => 
   assert.equal("hideSchedule" in profile, false);
   assert.equal("isInsured" in profile, false);
   assert.equal("subscriptionStatus" in profile, false);
+  assert.equal(profile.isVIP, false);
   assert.equal("subscriptionPurchaseToken" in profile, false);
   assert.equal("avgRating" in profile, false);
   assert.equal("reviewCount" in profile, false);
@@ -50,6 +51,15 @@ test("only active workers or VIP workers are visible", () => {
     subscriptionStatus: "active_canceled",
     subscriptionExpiresAt: "2026-08-21T00:00:00.000Z",
   }, now), true);
+});
+
+test("projects the VIP flag for public profile contact access", () => {
+  const profile = buildPublicWorkerProfile("vip-worker", {
+    role: "worker",
+    isVIP: true,
+  });
+
+  assert.equal(profile.isVIP, true);
 });
 
 test("does not project non-worker accounts", () => {

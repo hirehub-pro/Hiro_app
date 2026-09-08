@@ -89,6 +89,7 @@ function buildPublicWorkerProfile(userId, userData, now = new Date()) {
     isIdVerified: userData.isIdVerified === true,
     isBusinessVerified: userData.isVerified === true ||
       userData.isBusinessVerified === true,
+    isVIP: userData.isVIP === true,
     createdAt: userData.createdAt || null,
     isSearchVisible: hasSearchEntitlement(userData, now),
   };
