@@ -9,7 +9,9 @@ import 'package:untitled1/utils/profession_localization.dart';
 import 'package:untitled1/utils/request_expiration.dart';
 
 class MyRequestsPage extends StatefulWidget {
-  const MyRequestsPage({super.key});
+  final int initialTab;
+  const MyRequestsPage({super.key, this.initialTab = 0})
+    : assert(initialTab >= 0 && initialTab < 2);
 
   @override
   State<MyRequestsPage> createState() => _MyRequestsPageState();
@@ -860,6 +862,7 @@ class _MyRequestsPageState extends State<MyRequestsPage> {
       textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
       child: DefaultTabController(
         length: 2,
+        initialIndex: widget.initialTab,
         child: Scaffold(
           backgroundColor: const Color(0xFFF8FAFC),
           appBar: AppBar(

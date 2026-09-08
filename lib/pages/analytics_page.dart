@@ -7,6 +7,11 @@ import 'package:untitled1/services/language_provider.dart';
 import 'package:untitled1/services/subscription_access_service.dart';
 import 'package:untitled1/utils/top_skill_score.dart';
 import 'package:untitled1/utils/growth_recommendation.dart';
+import 'package:untitled1/pages/add_project.dart';
+import 'package:untitled1/pages/edit_profile.dart';
+import 'package:untitled1/pages/my_requests_page.dart';
+import 'package:untitled1/pages/schedule.dart';
+import 'package:untitled1/widgets/growth_recommendation_card.dart';
 
 class AnalyticsPage extends StatefulWidget {
   final String userId;
@@ -48,6 +53,12 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
 
   Map<String, dynamic> _overallRatingStats = {};
   bool _analyticsAvailable = false;
+  Map<String, dynamic> _workerData = {};
+  Map<String, dynamic>? _growthProfile;
+  List<Map<String, dynamic>>? _growthProjects;
+  List<Map<String, dynamic>>? _growthRequests;
+  List<Map<String, dynamic>>? _growthReviews;
+  Map<String, dynamic>? _growthSchedule;
   String _topServices = '';
 
   List<String> _professionOptions = [];
@@ -96,6 +107,8 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           'timing': 'עמידה בזמנים',
           'work_quality': 'איכות עבודה',
           'growth_recommendation': 'המלצת צמיחה',
+          'growth_unavailable': 'לא ניתן לטעון כעת את נתוני המלצת הצמיחה.',
+          'growth_retry': 'נסה שוב',
           'no_data': 'אין נתונים',
           'day_sun': 'א',
           'day_mon': 'ב',
@@ -123,6 +136,8 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           'timing': 'الالتزام بالوقت',
           'work_quality': 'جودة العمل',
           'growth_recommendation': 'توصية للنمو',
+          'growth_unavailable': 'تعذر تحميل بيانات توصية النمو حالياً.',
+          'growth_retry': 'حاول مجدداً',
           'no_data': 'لا توجد بيانات',
           'day_sun': 'ح',
           'day_mon': 'ن',
@@ -150,6 +165,8 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           'timing': 'Сроки',
           'work_quality': 'Качество работы',
           'growth_recommendation': 'Рекомендация по росту',
+          'growth_unavailable': 'Не удалось загрузить данные рекомендации.',
+          'growth_retry': 'Повторить',
           'no_data': 'Нет данных',
           'day_sun': 'Вс',
           'day_mon': 'Пн',
@@ -177,6 +194,8 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           'timing': 'ሰዓት',
           'work_quality': 'የስራ ጥራት',
           'growth_recommendation': 'የእድገት ምክር',
+          'growth_unavailable': 'የእድገት ምክር መረጃ መጫን አልተቻለም።',
+          'growth_retry': 'እንደገና ሞክር',
           'no_data': 'መረጃ የለም',
           'day_sun': 'እሑድ',
           'day_mon': 'ሰኞ',
@@ -204,6 +223,9 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           'timing': 'Timing',
           'work_quality': 'Work Quality',
           'growth_recommendation': 'Growth Recommendation',
+          'growth_unavailable':
+              'Growth insights could not be loaded right now.',
+          'growth_retry': 'Try again',
           'no_data': 'No data',
           'day_sun': 'Sun',
           'day_mon': 'Mon',
@@ -230,6 +252,13 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   void initState() {
     super.initState();
     _accessFuture = SubscriptionAccessService.getCurrentUserState();
+    _fetchAnalyticsWhenAuthorized();
+  }
+
+  @override
+  void reassemble() {
+    super.reassemble();
+    // New analytics state also needs fetching after a development hot reload.
     _fetchAnalyticsWhenAuthorized();
   }
 
@@ -338,6 +367,15 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     return buildGrowthRecommendation(
       locale: _localeCode,
       professions: _userProfessions,
+      professionRatings: _professionRatingStats,
+      professionWeeklyViews: _professionWeeklyViews.map(
+        (profession, week) => MapEntry(profession, _weekTotalFromMap(week)),
+      ),
+      profile: _growthProfile,
+      projects: _growthProjects,
+      requests: _growthRequests,
+      recentReviews: _growthReviews,
+      schedule: _growthSchedule,
       overallRatings: _overallRatingStats,
       weeklyViews: _professionWeeklyViews.values.fold<int>(
         0,
@@ -346,6 +384,39 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
       totalViews: _allTimeViewsAcrossProfessions,
       totalEarnings: _hasTotalEarnedValue ? _totalEarnings : null,
     );
+  }
+
+  // Failed or truncated reads remain unknown; never turn them into zero activity.
+  Future<List<Map<String, dynamic>>?> _readGrowthCollection(
+    Query<Map<String, dynamic>> query,
+    int limit,
+  ) async {
+    try {
+      final snapshot = await query.limit(limit + 1).get();
+      if (snapshot.docs.length > limit) return null;
+      return snapshot.docs
+          .map(
+            (doc) => doc.data().map(
+              (key, value) =>
+                  MapEntry(key, value is Timestamp ? value.toDate() : value),
+            ),
+          )
+          .toList();
+    } catch (error) {
+      debugPrint('Optional growth signal unavailable: $error');
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>?> _readGrowthDocument(
+    DocumentReference<Map<String, dynamic>> reference,
+  ) async {
+    try {
+      return (await reference.get()).data() ?? <String, dynamic>{};
+    } catch (error) {
+      debugPrint('Optional growth signal unavailable: $error');
+      return null;
+    }
   }
 
   Future<void> _fetchAnalytics() async {
@@ -368,6 +439,8 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
       ]);
       final userDoc = results[0];
       final publicWorkerDoc = results[1];
+      _workerData = userDoc.data() ?? {};
+      _growthProfile = publicWorkerDoc.data();
       if (userDoc.exists) {
         final data = userDoc.data()!;
         final publicData = publicWorkerDoc.data() ?? <String, dynamic>{};
@@ -388,18 +461,47 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
         }
       }
 
-      final totalEarnedDoc = await workerRef
-          .collection('metadata')
-          .doc('financial_summary')
-          .get();
-      final totalEarnedData = totalEarnedDoc.data();
-      final totalEarnedValue = totalEarnedData?['totalEarned'];
-      if (totalEarnedValue is num) {
-        _totalEarnings = totalEarnedValue.toDouble();
-        _hasTotalEarnedValue = true;
-      } else {
-        _hasTotalEarnedValue = false;
-      }
+      final cutoff = Timestamp.fromDate(
+        DateTime.now().subtract(const Duration(days: 60)),
+      );
+      // Independent reads share the existing authorized fetch, without new indexes.
+      await Future.wait<void>([
+        () async {
+          final financial = await _readGrowthDocument(
+            workerRef.collection('metadata').doc('financial_summary'),
+          );
+          final value = financial?['totalEarned'];
+          _hasTotalEarnedValue = value is num && value.isFinite;
+          _totalEarnings = _hasTotalEarnedValue ? (value as num).toDouble() : 0;
+        }(),
+        () async {
+          _growthProjects = await _readGrowthCollection(
+            publicWorkerRef.collection('projects'),
+            100,
+          );
+        }(),
+        () async {
+          _growthRequests = await _readGrowthCollection(
+            workerRef
+                .collection('RequestToMe')
+                .where('timestamp', isGreaterThanOrEqualTo: cutoff),
+            500,
+          );
+        }(),
+        () async {
+          _growthReviews = await _readGrowthCollection(
+            publicWorkerRef
+                .collection('reviews')
+                .where('timestamp', isGreaterThanOrEqualTo: cutoff),
+            500,
+          );
+        }(),
+        () async {
+          _growthSchedule = await _readGrowthDocument(
+            publicWorkerRef.collection('Schedule').doc('info'),
+          );
+        }(),
+      ]);
 
       final reviewStatsSnapshot = await publicWorkerRef
           .collection('ReviewStats')
@@ -695,7 +797,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
             foregroundColor: const Color(0xFF0F172A),
           ),
           body: RefreshIndicator(
-            onRefresh: _fetchAnalytics,
+            onRefresh: _fetchAnalyticsWhenAuthorized,
             color: const Color(0xFF1976D2),
             child: SingleChildScrollView(
               physics: const AlwaysScrollableScrollPhysics(),
@@ -715,7 +817,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                   const SizedBox(height: 16),
                   _buildRatingsSection(),
                   const SizedBox(height: 32),
-                  if (_analyticsAvailable) _buildGrowthTipCard(),
+                  _buildGrowthTipCard(),
                   const SizedBox(height: 40),
                 ],
               ),
@@ -1055,90 +1157,51 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     );
   }
 
-  Widget _buildGrowthTipCard() {
-    final tip = _buildGrowthRecommendation();
-    return Directionality(
-      textDirection: _localeCode == 'he' || _localeCode == 'ar'
-          ? TextDirection.rtl
-          : TextDirection.ltr,
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(24),
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [Color(0xFF2563EB), Color(0xFF1D4ED8)],
-          ),
-          borderRadius: BorderRadius.circular(28),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.blue.withValues(alpha: 0.2),
-              blurRadius: 15,
-              offset: const Offset(0, 5),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Icon(
-                  Icons.tips_and_updates_rounded,
-                  color: Colors.white,
-                  size: 24,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    _t('growth_recommendation'),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 17,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              tip.scope,
-              style: const TextStyle(color: Colors.white, fontSize: 12),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              tip.summary,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 14,
-                height: 1.6,
-              ),
-            ),
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 12),
-              child: Divider(color: Colors.white30, height: 1),
-            ),
-            Text(
-              tip.actionLabel,
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-                fontSize: 14,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              tip.action,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 14,
-                height: 1.6,
-              ),
-            ),
-          ],
-        ),
+  Future<void> _openGrowthAction(GrowthDestination destination) async {
+    final Widget page = switch (destination) {
+      GrowthDestination.profile => EditProfilePage(userData: _workerData),
+      GrowthDestination.portfolio => const AddProjectPage(),
+      GrowthDestination.availability => SchedulePage(
+        workerId: widget.userId,
+        workerName: (_workerData['name'] ?? '').toString(),
       ),
+      GrowthDestination.requests => const MyRequestsPage(initialTab: 1),
+    };
+    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
+    if (mounted) await _fetchAnalyticsWhenAuthorized();
+  }
+
+  Widget _buildGrowthTipCard() {
+    if (!_analyticsAvailable) {
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                _t('growth_recommendation'),
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Text(_t('growth_unavailable')),
+              TextButton(
+                onPressed: _fetchAnalyticsWhenAuthorized,
+                child: Text(_t('growth_retry')),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    final tip = _buildGrowthRecommendation();
+    return GrowthRecommendationCard(
+      title: _t('growth_recommendation'),
+      recommendation: tip,
+      isRtl: _localeCode == 'he' || _localeCode == 'ar',
+      onAction: tip.destination == null
+          ? null
+          : () => _openGrowthAction(tip.destination!),
     );
   }
 
