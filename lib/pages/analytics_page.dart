@@ -5,6 +5,7 @@ import 'package:intl/intl.dart' as intl;
 import 'package:provider/provider.dart';
 import 'package:untitled1/services/language_provider.dart';
 import 'package:untitled1/services/subscription_access_service.dart';
+import 'package:untitled1/utils/top_skill_score.dart';
 
 class AnalyticsPage extends StatefulWidget {
   final String userId;
@@ -805,6 +806,13 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
       _avgTiming = timingWeighted / totalCount;
       _avgWorkQuality = workQualityWeighted / totalCount;
       _topServices = _getHighestRatedProfession();
+    } else {
+      _avgRating = 0;
+      _avgPrice = 0;
+      _avgService = 0;
+      _avgTiming = 0;
+      _avgWorkQuality = 0;
+      _topServices = _t('no_data');
     }
   }
 
@@ -814,18 +822,24 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     }
 
     String bestProfession = '';
-    double bestRating = -1.0;
+    double bestScore = -1.0;
     int bestCount = -1;
 
     _professionRatingStats.forEach((profession, stats) {
       final rating = _asDouble(stats['avgOverallRating']);
       final count = (stats['reviewCount'] ?? 0) as int;
+      if (count <= 0) return;
 
-      final isBetterRating = rating > bestRating;
-      final isTieButMoreReviews = rating == bestRating && count > bestCount;
+      final score = calculateTopSkillScore(
+        averageRating: rating,
+        reviewCount: count,
+      );
 
-      if (isBetterRating || isTieButMoreReviews) {
-        bestRating = rating;
+      final isBetterScore = score > bestScore;
+      final isTieButMoreReviews = score == bestScore && count > bestCount;
+
+      if (isBetterScore || isTieButMoreReviews) {
+        bestScore = score;
         bestCount = count;
         bestProfession = profession;
       }
