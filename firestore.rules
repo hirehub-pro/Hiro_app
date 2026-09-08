@@ -375,7 +375,7 @@ service cloud.firestore {
       data.invoiceDocId is string && data.invoiceDocId.size() <= 180 &&
       data.createdAt is timestamp &&
       optionalString(data, 'name', 240) && optionalString(data, 'fileName', 240) &&
-      optionalString(data, 'linkedChainName', 80) &&
+      optionalString(data, 'linkedChainName', 20) &&
       optionalString(data, 'clientName', 200) &&
       optionalString(data, 'clientAddress', 500) &&
       optionalString(data, 'clientPhone', 32) &&
@@ -441,7 +441,7 @@ service cloud.firestore {
         changed.hasAny(['linkedChainName']) &&
         request.resource.data.linkedChainName is string &&
         request.resource.data.linkedChainName.size() >= 1 &&
-        request.resource.data.linkedChainName.size() <= 80;
+        request.resource.data.linkedChainName.size() <= 20;
       let unlocksCancelledDocument =
         resource.data.get('cancellationStatus', '') == 'cancelled' &&
         request.resource.data.get('isLinkingLocked', false) != true;

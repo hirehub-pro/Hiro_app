@@ -643,10 +643,6 @@ class _ChainDetailPageState extends State<_ChainDetailPage> {
                 value: 'editName',
                 child: Text(strings.editChainName),
               ),
-              PopupMenuItem(
-                enabled: false,
-                child: Text(strings.documentCount(widget.chain.documents.length)),
-              ),
             ],
           ),
         ],
@@ -721,7 +717,7 @@ class _EditChainNameDialogState extends State<_EditChainNameDialog> {
     content: TextField(
       controller: _controller,
       autofocus: true,
-      maxLength: 80,
+      maxLength: 20,
       textInputAction: TextInputAction.done,
       onSubmitted: (_) => _save(),
       decoration: InputDecoration(hintText: widget.strings.chainNameHint),
@@ -2152,12 +2148,14 @@ class _DocumentChain {
     return _ChainStatus.open;
   }
 
-  bool matches(String query, _LinkedDocumentStrings strings) => documents.any(
-    (document) =>
-        document.number.toLowerCase().contains(query) ||
-        document.name.toLowerCase().contains(query) ||
-        strings.typeName(document.type).toLowerCase().contains(query),
-  );
+  bool matches(String query, _LinkedDocumentStrings strings) =>
+      name.toLowerCase().contains(query) ||
+      documents.any(
+        (document) =>
+            document.number.toLowerCase().contains(query) ||
+            document.name.toLowerCase().contains(query) ||
+            strings.typeName(document.type).toLowerCase().contains(query),
+      );
 
   List<List<_LinkedDocument>> get levels {
     final childIds = childrenById.values

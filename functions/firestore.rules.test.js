@@ -717,7 +717,7 @@ test("allows owners to name a document chain without changing invoice data", {
     amount: 999999,
   }));
   await assertFails(updateDoc(doc(owner, pathValue), {
-    linkedChainName: "x".repeat(81),
+    linkedChainName: "x".repeat(21),
   }));
 });
 
