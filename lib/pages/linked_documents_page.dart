@@ -754,27 +754,70 @@ class _ChainTotalsCard extends StatelessWidget {
       ),
       child: Column(
         children: [
-          Row(
-            children: [
-              _TotalColumn(
-                label: strings.totalAmount,
-                value: _formatMoney(chain.total, locale),
-              ),
-              const _VerticalDivider(),
-              _TotalColumn(
-                label: strings.paidAmount,
-                value: _formatMoney(chain.paid, locale),
-              ),
-              const _VerticalDivider(),
-              _TotalColumn(
-                label: strings.remaining,
-                value: _formatMoney(chain.remaining, locale),
-                color: chain.remaining > 0
-                    ? const Color(0xFFDC2626)
-                    : const Color(0xFF059669),
-              ),
-            ],
-          ),
+          if (chain.hasInvoice)
+            Row(
+              children: [
+                _TotalColumn(
+                  label: strings.totalAmount,
+                  value: _formatMoney(chain.total, locale),
+                ),
+                const _VerticalDivider(),
+                _TotalColumn(
+                  label: strings.paidAmount,
+                  value: _formatMoney(chain.paid, locale),
+                ),
+                const _VerticalDivider(),
+                _TotalColumn(
+                  label: strings.remaining,
+                  value: _formatMoney(chain.remaining, locale),
+                  color: chain.remaining > 0
+                      ? const Color(0xFFDC2626)
+                      : const Color(0xFF059669),
+                ),
+              ],
+            )
+          else
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  strings.expectedAmount,
+                  style: const TextStyle(
+                    color: Color(0xFF64748B),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  _formatMoney(chain.total, locale),
+                  style: const TextStyle(
+                    color: Color(0xFF0F172A),
+                    fontSize: 24,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.receipt_long_outlined,
+                      size: 16,
+                      color: Color(0xFF64748B),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      strings.noInvoiceYet,
+                      style: const TextStyle(
+                        color: Color(0xFF64748B),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           const SizedBox(height: 14),
           Row(
             children: [
@@ -1971,6 +2014,8 @@ class _DocumentChain {
   final List<_LinkedDocument> documents;
   final Map<String, List<_LinkedDocument>> childrenById;
 
+  bool get hasInvoice => documents.any((document) => document.isInvoice);
+
   /// The first parent is the canonical owner of chain-level metadata.
   _LinkedDocument get nameDocument {
     final childIds = childrenById.values
@@ -2264,6 +2309,8 @@ class _LinkedDocumentStrings {
   String get fullChain => values['fullChain']!;
   String get standalone => values['standalone']!;
   String get totalAmount => values['totalAmount']!;
+  String get expectedAmount => values['expectedAmount']!;
+  String get noInvoiceYet => values['noInvoiceYet']!;
   String get paidAmount => values['paidAmount']!;
   String get remaining => values['remaining']!;
   String get created => values['created']!;
@@ -2322,6 +2369,8 @@ class _LinkedDocumentStrings {
       'fullChain': 'Full chain',
       'standalone': 'Standalone documents',
       'totalAmount': 'Total amount',
+      'expectedAmount': 'Expected amount',
+      'noInvoiceYet': 'No invoice issued yet',
       'paidAmount': 'Paid',
       'remaining': 'Remaining',
       'created': 'Created',
@@ -2376,6 +2425,8 @@ class _LinkedDocumentStrings {
       'fullChain': 'השרשרת המלאה',
       'standalone': 'מסמכים עצמאיים',
       'totalAmount': 'סכום כולל',
+      'expectedAmount': 'סכום צפוי',
+      'noInvoiceYet': 'טרם הופקה חשבונית',
       'paidAmount': 'שולם',
       'remaining': 'נותר',
       'created': 'נוצר',
@@ -2429,6 +2480,8 @@ class _LinkedDocumentStrings {
       'fullChain': 'السلسلة الكاملة',
       'standalone': 'مستندات مستقلة',
       'totalAmount': 'المبلغ الكلي',
+      'expectedAmount': 'المبلغ المتوقع',
+      'noInvoiceYet': 'لم يتم إصدار فاتورة بعد',
       'paidAmount': 'المدفوع',
       'remaining': 'المتبقي',
       'created': 'تاريخ الإنشاء',
@@ -2482,6 +2535,8 @@ class _LinkedDocumentStrings {
       'fullChain': 'Вся цепочка',
       'standalone': 'Отдельные документы',
       'totalAmount': 'Общая сумма',
+      'expectedAmount': 'Ожидаемая сумма',
+      'noInvoiceYet': 'Счёт ещё не выставлен',
       'paidAmount': 'Оплачено',
       'remaining': 'Остаток',
       'created': 'Создано',
@@ -2535,6 +2590,8 @@ class _LinkedDocumentStrings {
       'fullChain': 'ሙሉ ሰንሰለት',
       'standalone': 'ብቻቸውን ያሉ ሰነዶች',
       'totalAmount': 'ጠቅላላ መጠን',
+      'expectedAmount': 'የሚጠበቀው መጠን',
+      'noInvoiceYet': 'እስካሁን ደረሰኝ አልወጣም',
       'paidAmount': 'የተከፈለ',
       'remaining': 'ቀሪ',
       'created': 'የተፈጠረ',
