@@ -14,6 +14,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:video_player/video_player.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:untitled1/services/language_provider.dart';
 import 'package:untitled1/sign_in.dart';
@@ -57,6 +58,7 @@ class Profile extends StatefulWidget {
 
 class _ProfileState extends State<Profile>
     with TickerProviderStateMixin, WidgetsBindingObserver {
+  static const Duration _profileViewCacheDuration = Duration(hours: 24);
   static const Color _kPrimaryBlue = Color(0xFF1976D2);
   static const Color _kPageTint = Color(0xFFF7FBFF);
   static const Color _kTextMain = Color(0xFF070B18);
@@ -369,6 +371,33 @@ class _ProfileState extends State<Profile>
     return result.data['counted'] == true;
   }
 
+  String _profileViewCacheKey(String workerId) =>
+      'profile_view_last_counted_${Uri.encodeComponent(workerId)}';
+
+  /// Avoids counting repeated visits to the same worker profile on this device.
+  /// This is a client-side optimization; the backend remains the authority for
+  /// preventing intentional abuse.
+  Future<bool> _canCountProfileViewOnThisDevice(String workerId) async {
+    final preferences = await SharedPreferences.getInstance();
+    final lastCountedMilliseconds = preferences.getInt(
+      _profileViewCacheKey(workerId),
+    );
+    if (lastCountedMilliseconds == null) return true;
+
+    final lastCounted = DateTime.fromMillisecondsSinceEpoch(
+      lastCountedMilliseconds,
+    );
+    return DateTime.now().difference(lastCounted) >= _profileViewCacheDuration;
+  }
+
+  Future<void> _cacheProfileViewOnThisDevice(String workerId) async {
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setInt(
+      _profileViewCacheKey(workerId),
+      DateTime.now().millisecondsSinceEpoch,
+    );
+  }
+
   void _initTabController() {
     int tabCount;
     if (_userRole == 'worker' || _isOwnProfile) {
@@ -628,10 +657,18 @@ class _ProfileState extends State<Profile>
             ? viewedProfession
             : (fallbackProfession.isNotEmpty ? fallbackProfession : 'General');
 
+        final canCountOnThisDevice = await _canCountProfileViewOnThisDevice(
+          targetUid,
+        );
+        if (!canCountOnThisDevice) return;
+
         final counted = await _recordProfessionView(
           workerId: targetUid,
           profession: professionForViewCount,
         );
+        if (counted) {
+          await _cacheProfileViewOnThisDevice(targetUid);
+        }
         if (counted && mounted && loadGeneration == _profileLoadGeneration) {
           setState(() => _viewsCount += 1);
         }
