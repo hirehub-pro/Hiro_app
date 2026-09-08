@@ -156,10 +156,17 @@ class _ProfileState extends State<Profile>
     });
   }
 
+  /// Public worker profiles expose entitlement through `isSearchVisible`, not
+  /// subscription dates. Those dates remain private on the user's account.
+  bool get _hasWorkerProfileAccess {
+    if (_isOwnProfile) return _hasActiveWorkerSubscription;
+    return _userRole == 'worker' && (_subscriptionStatus == 'active' || _isVip);
+  }
+
   bool get _shouldShowPublicScheduleSection {
     if (_isOwnProfile) return true;
     if (_userRole != 'worker') return false;
-    if (!_hasActiveWorkerSubscription) return false;
+    if (!_hasWorkerProfileAccess) return false;
     return !_hideSchedule;
   }
 
@@ -2912,7 +2919,7 @@ class _ProfileState extends State<Profile>
           bottomNavigationBar:
               (!_isOwnProfile &&
                   _userRole == 'worker' &&
-                  (_hasActiveWorkerSubscription || _isVip))
+                  _hasWorkerProfileAccess)
               ? _buildBottomBar(strings)
               : null,
         ),
