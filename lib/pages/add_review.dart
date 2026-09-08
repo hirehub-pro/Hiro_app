@@ -27,8 +27,9 @@ class _AddReviewPageState extends State<AddReviewPage> {
   final _commentController = TextEditingController();
   String? _selectedProfession;
   double _priceRating = 5.0;
-  double _workRating = 5.0;
-  double _professionalismRating = 5.0;
+  double _serviceRating = 5.0;
+  double _timingRating = 5.0;
+  double _workQualityRating = 5.0;
 
   final List<File> _newImages = [];
   List<String> _existingImageUrls = [];
@@ -41,9 +42,21 @@ class _AddReviewPageState extends State<AddReviewPage> {
     if (widget.existingReview != null) {
       _commentController.text = widget.existingReview!['comment'] ?? '';
       _priceRating = (widget.existingReview!['priceRating'] ?? 5.0).toDouble();
-      _workRating = (widget.existingReview!['workRating'] ?? 5.0).toDouble();
-      _professionalismRating =
-          (widget.existingReview!['professionalismRating'] ?? 5.0).toDouble();
+      _serviceRating =
+          (widget.existingReview!['serviceRating'] ??
+                  widget.existingReview!['professionalismRating'] ??
+                  5.0)
+              .toDouble();
+      _timingRating =
+          (widget.existingReview!['timingRating'] ??
+                  widget.existingReview!['rating'] ??
+                  5.0)
+              .toDouble();
+      _workQualityRating =
+          (widget.existingReview!['workQualityRating'] ??
+                  widget.existingReview!['workRating'] ??
+                  5.0)
+              .toDouble();
       _selectedProfession = widget.existingReview!['profession'];
       _existingImageUrls = List<String>.from(
         widget.existingReview!['imageUrls'] ?? [],
@@ -105,8 +118,9 @@ class _AddReviewPageState extends State<AddReviewPage> {
         finalImageUrls.add(imageUrl);
       }
 
-      double overallRating =
-          (_priceRating + _workRating + _professionalismRating) / 3;
+      final overallRating =
+          (_priceRating + _serviceRating + _timingRating + _workQualityRating) /
+          4;
 
       final reviewData = {
         'userId': user.uid,
@@ -116,8 +130,12 @@ class _AddReviewPageState extends State<AddReviewPage> {
         'profession': _selectedProfession,
         'rating': overallRating,
         'priceRating': _priceRating,
-        'workRating': _workRating,
-        'professionalismRating': _professionalismRating,
+        'serviceRating': _serviceRating,
+        'timingRating': _timingRating,
+        'workQualityRating': _workQualityRating,
+        // Keep legacy aliases while older app versions still read them.
+        'workRating': _workQualityRating,
+        'professionalismRating': _serviceRating,
         'comment': _commentController.text.trim(),
         'imageUrls': finalImageUrls,
         'timestamp': FieldValue.serverTimestamp(),
@@ -158,9 +176,11 @@ class _AddReviewPageState extends State<AddReviewPage> {
       return {
         'title': widget.existingReview != null ? 'ערוך ביקורת' : 'כתוב ביקורת',
         'profession_label': 'בחר מקצוע:',
-        'price_rating': 'דירוג מחיר',
-        'work_rating': 'איכות העבודה',
-        'professionalism': 'מקצועיות',
+        'rating_details': 'פירוט איכות השירות',
+        'price_rating': 'מחיר',
+        'service_rating': 'שירות',
+        'timing_rating': 'עמידה בזמנים',
+        'work_quality_rating': 'איכות עבודה',
         'comment_hint': 'ספר לנו על החוויה שלך...',
         'add_images': 'הוסף תמונות',
         'submit': widget.existingReview != null ? 'עדכן ביקורת' : 'שלח ביקורת',
@@ -176,9 +196,11 @@ class _AddReviewPageState extends State<AddReviewPage> {
             ? 'تعديل التقييم'
             : 'كتابة تقييم',
         'profession_label': 'اختر المهنة:',
-        'price_rating': 'تقييم السعر',
-        'work_rating': 'جودة العمل',
-        'professionalism': 'الاحترافية',
+        'rating_details': 'تفاصيل جودة الخدمة',
+        'price_rating': 'السعر',
+        'service_rating': 'الخدمة',
+        'timing_rating': 'الالتزام بالمواعيد',
+        'work_quality_rating': 'جودة العمل',
         'comment_hint': 'أخبرنا عن تجربتك...',
         'add_images': 'إضافة صور',
         'submit': widget.existingReview != null
@@ -194,9 +216,11 @@ class _AddReviewPageState extends State<AddReviewPage> {
       return {
         'title': widget.existingReview != null ? 'ግምገማ አርትዕ' : 'ግምገማ ጻፍ',
         'profession_label': 'ሙያ ይምረጡ:',
-        'price_rating': 'የዋጋ ደረጃ',
-        'work_rating': 'የስራ ጥራት',
-        'professionalism': 'ሙያዊነት',
+        'rating_details': 'የአገልግሎት ጥራት ዝርዝር',
+        'price_rating': 'ዋጋ',
+        'service_rating': 'አገልግሎት',
+        'timing_rating': 'ሰዓት አክባሪነት',
+        'work_quality_rating': 'የስራ ጥራት',
         'comment_hint': 'ስለ ተሞክሮዎ ይንገሩን...',
         'add_images': 'ምስሎች ጨምር',
         'submit': widget.existingReview != null ? 'ግምገማ አዘምን' : 'ግምገማ ላክ',
@@ -212,9 +236,11 @@ class _AddReviewPageState extends State<AddReviewPage> {
             ? 'Изменить отзыв'
             : 'Написать отзыв',
         'profession_label': 'Выберите профессию:',
-        'price_rating': 'Оценка цены',
-        'work_rating': 'Качество работы',
-        'professionalism': 'Профессионализм',
+        'rating_details': 'Оценка качества услуги',
+        'price_rating': 'Цена',
+        'service_rating': 'Сервис',
+        'timing_rating': 'Соблюдение сроков',
+        'work_quality_rating': 'Качество работы',
         'comment_hint': 'Расскажите о вашем опыте...',
         'add_images': 'Добавить изображения',
         'submit': widget.existingReview != null
@@ -229,9 +255,11 @@ class _AddReviewPageState extends State<AddReviewPage> {
     return {
       'title': widget.existingReview != null ? 'Edit Review' : 'Write a Review',
       'profession_label': 'Select Profession:',
-      'price_rating': 'Price Rating',
-      'work_rating': 'Work Quality',
-      'professionalism': 'Professionalism',
+      'rating_details': 'Service Quality Details',
+      'price_rating': 'Price',
+      'service_rating': 'Service',
+      'timing_rating': 'Timeliness',
+      'work_quality_rating': 'Work Quality',
       'comment_hint': 'Tell us about your experience...',
       'add_images': 'Add Images',
       'submit': widget.existingReview != null
@@ -247,22 +275,34 @@ class _AddReviewPageState extends State<AddReviewPage> {
   Widget _buildRatingStars(
     String label,
     double rating,
+    Color color,
     Function(double) onRatingChanged,
   ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4.0),
-          child: Text(
-            label,
-            style: const TextStyle(
-              fontWeight: FontWeight.w600,
-              fontSize: 15,
-              color: Colors.black87,
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              label,
+              style: const TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 16,
+                color: Color(0xFF111827),
+              ),
             ),
-          ),
+            Text(
+              rating.toStringAsFixed(1),
+              style: TextStyle(
+                color: color,
+                fontSize: 17,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
         ),
+        const SizedBox(height: 6),
         Row(
           mainAxisAlignment: MainAxisAlignment.start,
           children: List.generate(5, (index) {
@@ -273,13 +313,13 @@ class _AddReviewPageState extends State<AddReviewPage> {
                 index < rating
                     ? Icons.star_rounded
                     : Icons.star_outline_rounded,
-                color: Colors.amber,
+                color: color,
               ),
               onPressed: () => onRatingChanged(index + 1.0),
             );
           }),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 12),
       ],
     );
   }
@@ -358,28 +398,60 @@ class _AddReviewPageState extends State<AddReviewPage> {
                 const SizedBox(height: 32),
               ],
 
+              Text(
+                strings['rating_details']!,
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF111827),
+                ),
+              ),
+              const SizedBox(height: 16),
               Container(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
                 decoration: BoxDecoration(
-                  color: Colors.blue[50]?.withOpacity(0.3),
-                  borderRadius: BorderRadius.circular(20),
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: const Color(0xFFF1F5F9)),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x0A0F172A),
+                      blurRadius: 18,
+                      offset: Offset(0, 6),
+                    ),
+                  ],
                 ),
                 child: Column(
                   children: [
                     _buildRatingStars(
                       strings['price_rating']!,
                       _priceRating,
+                      const Color(0xFFFBBF24),
                       (val) => setState(() => _priceRating = val),
                     ),
+                    const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                    const SizedBox(height: 16),
                     _buildRatingStars(
-                      strings['work_rating']!,
-                      _workRating,
-                      (val) => setState(() => _workRating = val),
+                      strings['service_rating']!,
+                      _serviceRating,
+                      const Color(0xFF3B82F6),
+                      (val) => setState(() => _serviceRating = val),
                     ),
+                    const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                    const SizedBox(height: 16),
                     _buildRatingStars(
-                      strings['professionalism']!,
-                      _professionalismRating,
-                      (val) => setState(() => _professionalismRating = val),
+                      strings['timing_rating']!,
+                      _timingRating,
+                      const Color(0xFF34D399),
+                      (val) => setState(() => _timingRating = val),
+                    ),
+                    const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                    const SizedBox(height: 16),
+                    _buildRatingStars(
+                      strings['work_quality_rating']!,
+                      _workQualityRating,
+                      const Color(0xFF7C3AED),
+                      (val) => setState(() => _workQualityRating = val),
                     ),
                   ],
                 ),
@@ -520,7 +592,7 @@ class _AddReviewPageState extends State<AddReviewPage> {
               child: Container(
                 padding: const EdgeInsets.all(4),
                 decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.5),
+                  color: Colors.black.withValues(alpha: 0.5),
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(Icons.close, size: 14, color: Colors.white),

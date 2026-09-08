@@ -1071,10 +1071,7 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
         .collection('publicWorkerProfiles')
         .doc(uid);
     while (true) {
-      final snap = await publicWorkerRef
-          .collection('ProRating')
-          .limit(100)
-          .get();
+      final snap = await publicWorkerRef.collection('Views').limit(100).get();
       if (snap.docs.isEmpty) break;
       final batch = firestore.batch();
       for (final doc in snap.docs) {

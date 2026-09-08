@@ -18,7 +18,6 @@ class AnalyticsPage extends StatefulWidget {
 
 class _AnalyticsPageState extends State<AnalyticsPage> {
   static const String _allProfessionsKey = '__all_professions__';
-  static const String _vpdDocId = 'currentWeek';
   static const List<String> _weekDayKeys = [
     'sunday',
     'monday',
@@ -32,6 +31,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   bool _isLoading = true;
   int _totalJobs = 0;
   int _viewsCount = 0;
+  int _allTimeViewsAcrossProfessions = 0;
   double _totalEarnings = 0.0;
   bool _hasTotalEarnedValue = false;
   double _avgRating = 0.0;
@@ -441,7 +441,6 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
       'thursday': 0,
       'friday': 0,
       'saturday': 0,
-      'TVTW': 0,
     };
   }
 
@@ -460,61 +459,28 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   Map<String, int> _normalizeWeekData(Map<String, dynamic> data) {
     final normalized = _emptyWeekMap();
 
-    if (_isCurrentWeek(data['weekStart'])) {
+    final isCurrent =
+        data['weekKey'] == _weekKey(DateTime.now()) ||
+        _isCurrentWeek(data['weekStart']);
+    if (isCurrent) {
       for (final day in _weekDayKeys) {
         normalized[day] = _asInt(data[day]);
       }
-      normalized['TVTW'] = _sumWeekCounts(_extractWeekCounts(normalized));
     }
 
     return normalized;
   }
 
-  Future<Map<String, int>> _readVpdWeekFromShards(
-    DocumentReference<Map<String, dynamic>> proRatingRef,
-  ) async {
-    final legacyDoc = await proRatingRef.collection('VPD').doc(_vpdDocId).get();
-
-    final shards = await proRatingRef
-        .collection('VPD')
-        .doc(_vpdDocId)
-        .collection('shards')
-        .get();
-
-    if (shards.docs.isEmpty) {
-      if (!legacyDoc.exists) return _emptyWeekMap();
-      return _normalizeWeekData(legacyDoc.data() ?? {});
-    }
-
-    final currentWeekKey = _weekKey(DateTime.now());
-    final summed = _emptyWeekMap();
-
-    for (final doc in shards.docs) {
-      final data = doc.data();
-      final weekKey = data['weekKey']?.toString();
-
-      if (weekKey != null && weekKey != currentWeekKey) continue;
-      if (weekKey == null && !_isCurrentWeek(data['weekStart'])) continue;
-
-      for (final day in _weekDayKeys) {
-        summed[day] = (summed[day] ?? 0) + _asInt(data[day]);
-      }
-    }
-
-    summed['TVTW'] = _sumWeekCounts(_extractWeekCounts(summed));
-
-    return summed;
-  }
-
-  Future<Map<String, Map<String, int>>> _fetchProfessionWeeklyViews(
-    QuerySnapshot<Map<String, dynamic>> proRatingSnapshot,
-  ) async {
+  Map<String, Map<String, int>> _buildProfessionWeeklyViews(
+    QuerySnapshot<Map<String, dynamic>> viewsSnapshot,
+  ) {
     final result = <String, Map<String, int>>{};
 
-    for (final proDoc in proRatingSnapshot.docs) {
-      final data = proDoc.data();
-      final profession = (data['profession'] ?? proDoc.id).toString();
-      result[profession] = await _readVpdWeekFromShards(proDoc.reference);
+    for (final viewDoc in viewsSnapshot.docs) {
+      final data = viewDoc.data();
+      if (data['active'] == false) continue;
+      final profession = (data['profession'] ?? viewDoc.id).toString();
+      result[profession] = _normalizeWeekData(data);
     }
 
     return result;
@@ -663,18 +629,33 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           .doc(widget.userId)
           .collection('reviews')
           .get();
-      final proRatingSnapshot = await publicWorkerRef
-          .collection('ProRating')
-          .get();
+      final viewsSnapshot = await publicWorkerRef.collection('Views').get();
 
       if (_totalJobs == 0) {
         _totalJobs = reviewsSnapshot.docs.length;
       }
 
-      _professionRatingStats = _buildProfessionStats(
-        proRatingSnapshot,
-        reviewsSnapshot,
-      );
+      _professionRatingStats = _buildProfessionStats(reviewsSnapshot);
+      _allTimeViewsAcrossProfessions = 0;
+      for (final viewDoc in viewsSnapshot.docs) {
+        final data = viewDoc.data();
+        _allTimeViewsAcrossProfessions += _asInt(data['totalViews']);
+        if (data['active'] == false) continue;
+        final profession = (data['profession'] ?? viewDoc.id).toString().trim();
+        if (profession.isEmpty) continue;
+        final stats = _professionRatingStats.putIfAbsent(profession, () {
+          return {
+            'totalViews': 0,
+            'reviewCount': 0,
+            'avgOverallRating': 0.0,
+            'avgPriceRating': 0.0,
+            'avgServiceRating': 0.0,
+            'avgTimingRating': 0.0,
+            'avgWorkQualityRating': 0.0,
+          };
+        });
+        stats['totalViews'] = _asInt(data['totalViews']);
+      }
 
       final optionSet = <String>{
         ..._professionRatingStats.keys
@@ -704,9 +685,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
         _selectedProfession = _allProfessionsKey;
       }
 
-      _professionWeeklyViews = await _fetchProfessionWeeklyViews(
-        proRatingSnapshot,
-      );
+      _professionWeeklyViews = _buildProfessionWeeklyViews(viewsSnapshot);
 
       _applyProfessionSelection();
 
@@ -725,27 +704,9 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   }
 
   Map<String, Map<String, dynamic>> _buildProfessionStats(
-    QuerySnapshot<Map<String, dynamic>> proRatingSnapshot,
     QuerySnapshot<Map<String, dynamic>> reviewsSnapshot,
   ) {
     final result = <String, Map<String, dynamic>>{};
-
-    if (proRatingSnapshot.docs.isNotEmpty) {
-      for (final doc in proRatingSnapshot.docs) {
-        final data = doc.data();
-        final profession = (data['profession'] ?? doc.id).toString();
-        result[profession] = {
-          'totalViews': _asInt(data['totalViews']),
-          'reviewCount': data['reviewCount'] ?? 0,
-          'avgOverallRating': _asDouble(data['avgOverallRating']),
-          'avgPriceRating': _asDouble(data['avgPriceRating']),
-          'avgServiceRating': _asDouble(data['avgServiceRating']),
-          'avgTimingRating': _asDouble(data['avgTimingRating']),
-          'avgWorkQualityRating': _asDouble(data['avgWorkQualityRating']),
-        };
-      }
-      return result;
-    }
 
     final grouped = <String, List<Map<String, dynamic>>>{};
     for (final doc in reviewsSnapshot.docs) {
@@ -830,13 +791,8 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
         _professionRatingStats.containsKey(_selectedProfession)) {
       final selected = _professionRatingStats[_selectedProfession]!;
       _viewsCount = _asInt(selected['totalViews']);
-    } else if (_professionRatingStats.isNotEmpty) {
-      _viewsCount = _professionRatingStats.values.fold<int>(
-        0,
-        (sum, stats) => sum + _asInt(stats['totalViews']),
-      );
     } else {
-      _viewsCount = 0;
+      _viewsCount = _allTimeViewsAcrossProfessions;
     }
 
     if (_professionRatingStats.isEmpty) {

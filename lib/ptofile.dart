@@ -281,16 +281,17 @@ class _ProfileState extends State<Profile>
     return bookingModeProviderTravels;
   }
 
-  Future<int> _readTotalViewsFromProRatings(String userId) async {
-    final proRatingSnapshot = await _firestore
+  Future<int> _readTotalViews(String userId) async {
+    final viewsSnapshot = await _firestore
         .collection('publicWorkerProfiles')
         .doc(userId)
-        .collection('ProRating')
+        .collection('Views')
         .get();
 
     int total = 0;
-    for (final doc in proRatingSnapshot.docs) {
-      final value = doc.data()['totalViews'];
+    for (final doc in viewsSnapshot.docs) {
+      final data = doc.data();
+      final value = data['totalViews'];
       if (value is num) total += value.toInt();
     }
     return total;
@@ -546,7 +547,7 @@ class _ProfileState extends State<Profile>
         _fetchSubcollection(targetUid, 'reviews'),
         _fetchSubcollection(targetUid, 'projects'),
         if (isOwnProfile)
-          _readTotalViewsFromProRatings(targetUid)
+          _readTotalViews(targetUid)
         else
           _readPublicViewCount(targetUid),
         if (currentUser != null && !currentUser.isAnonymous && !isOwnProfile)

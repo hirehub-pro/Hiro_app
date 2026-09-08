@@ -10,8 +10,9 @@ test("sums only valid positive public profile view totals", () => {
     {totalViews: 8.9},
     {totalViews: -4},
     {totalViews: "invalid"},
+    {totalViews: 100, active: false},
     {},
-  ]), 20);
+  ]), 120);
 });
 
 test("returns zero when profile view data is unavailable", () => {

@@ -1,7 +1,6 @@
 "use strict";
 
 const PROFILE_VIEW_TIME_ZONE = "Asia/Jerusalem";
-const PROFILE_VIEW_SHARD_COUNT = 20;
 const WEEKDAY_KEYS = [
   "sunday",
   "monday",
@@ -21,6 +20,10 @@ function normalizeProfileViewProfession(requestedProfession, professions) {
       (profession) => profession.toLowerCase() === requested,
   );
   return matching || available[0] || "General";
+}
+
+function profileViewDocumentId(profession) {
+  return encodeURIComponent(String(profession ?? "").trim());
 }
 
 function profileViewPeriod(date, timeZone = PROFILE_VIEW_TIME_ZONE) {
@@ -51,25 +54,27 @@ function profileViewPeriod(date, timeZone = PROFILE_VIEW_TIME_ZONE) {
   };
 }
 
-function incrementWeeklyViewShard(existing, period) {
-  const current = Object.fromEntries(WEEKDAY_KEYS.map((day) => [day, 0]));
-  current.TVTW = 0;
+function incrementProfessionViews(existing, period) {
+  const counters = Object.fromEntries(WEEKDAY_KEYS.map((day) => [day, 0]));
 
   if (existing?.weekKey === period.weekKey) {
-    for (const key of [...WEEKDAY_KEYS, "TVTW"]) {
-      const value = existing[key];
-      if (Number.isInteger(value) && value >= 0) current[key] = value;
+    for (const day of WEEKDAY_KEYS) {
+      const value = existing[day];
+      if (Number.isInteger(value) && value >= 0) counters[day] = value;
     }
   }
 
-  current[period.dayKey] += 1;
-  current.TVTW += 1;
-  return current;
+  const previousTotal = existing?.totalViews;
+  counters[period.dayKey] += 1;
+  counters.totalViews = Number.isInteger(previousTotal) && previousTotal >= 0 ?
+    previousTotal + 1 : 1;
+  return counters;
 }
 
 module.exports = {
-  PROFILE_VIEW_SHARD_COUNT,
-  incrementWeeklyViewShard,
+  WEEKDAY_KEYS,
+  incrementProfessionViews,
   normalizeProfileViewProfession,
+  profileViewDocumentId,
   profileViewPeriod,
 };
