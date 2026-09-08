@@ -99,6 +99,7 @@ class _ProfileState extends State<Profile>
   int _viewsCount = 0;
   int _publicReviewCount = 0;
   double _publicAverageRating = 0;
+  Map<String, dynamic> _activeReviewStats = const <String, dynamic>{};
   bool _isFavorite = false;
 
   bool _isOwnProfile = false;
@@ -312,6 +313,30 @@ class _ProfileState extends State<Profile>
         .doc(userId)
         .collection('ReviewStats')
         .doc('overall')
+        .get();
+    return snapshot.data() ?? const <String, dynamic>{};
+  }
+
+  String _professionReviewStatsDocumentId(String profession) {
+    // Keep this aligned with functions/review_stats.js (encodeURIComponent).
+    final encoded = Uri.encodeComponent(profession.trim())
+        .replaceAll('%21', '!')
+        .replaceAll('%27', "'")
+        .replaceAll('%28', '(')
+        .replaceAll('%29', ')')
+        .replaceAll('%2A', '*');
+    return 'profession_$encoded';
+  }
+
+  Future<Map<String, dynamic>> _readActiveReviewStats(String userId) async {
+    final profession = widget.viewedProfession?.trim() ?? '';
+    if (profession.isEmpty) return _readOverallReviewStats(userId);
+
+    final snapshot = await _firestore
+        .collection('publicWorkerProfiles')
+        .doc(userId)
+        .collection('ReviewStats')
+        .doc(_professionReviewStatsDocumentId(profession))
         .get();
     return snapshot.data() ?? const <String, dynamic>{};
   }
@@ -561,6 +586,7 @@ class _ProfileState extends State<Profile>
         else
           _readPublicViewCount(targetUid),
         _readOverallReviewStats(targetUid),
+        _readActiveReviewStats(targetUid),
         if (currentUser != null && !currentUser.isAnonymous && !isOwnProfile)
           _firestore
               .collection('users')
@@ -579,8 +605,9 @@ class _ProfileState extends State<Profile>
         _publicReviewCount = (reviewStats['reviewCount'] as num?)?.toInt() ?? 0;
         _publicAverageRating =
             (reviewStats['avgOverallRating'] as num?)?.toDouble() ?? 0;
+        _activeReviewStats = results[4] as Map<String, dynamic>;
         if (currentUser != null && !currentUser.isAnonymous && !isOwnProfile) {
-          _isFavorite = (results[4] as DocumentSnapshot).exists;
+          _isFavorite = (results[5] as DocumentSnapshot).exists;
         }
       });
 
@@ -3296,6 +3323,11 @@ class _ProfileState extends State<Profile>
               ),
             ),
           ),
+        if (!_isOwnProfile)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 20),
+            child: _buildReviewRatingSummary(localeCode),
+          ),
         if (_userReviews.isEmpty)
           Center(
             child: Column(
@@ -3476,6 +3508,135 @@ class _ProfileState extends State<Profile>
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildReviewRatingSummary(String localeCode) {
+    final selectedProfession = widget.viewedProfession?.trim() ?? '';
+    final isProfessionRating = selectedProfession.isNotEmpty;
+    final stats = _activeReviewStats;
+    final overall = (stats['avgOverallRating'] as num?)?.toDouble() ?? 0;
+    final labels = switch (localeCode) {
+      'he' => const ['מחיר', 'שירות', 'זמן', 'איכות'],
+      'ar' => const ['السعر', 'الخدمة', 'الوقت', 'الجودة'],
+      'am' => const ['ዋጋ', 'አገልግሎት', 'ጊዜ', 'ጥራት'],
+      'ru' => const ['Цена', 'Сервис', 'Сроки', 'Качество'],
+      _ => const ['Price', 'Service', 'Timing', 'Quality'],
+    };
+    final title = isProfessionRating
+        ? _translateProfessionName(selectedProfession, localeCode)
+        : switch (localeCode) {
+            'he' => 'דירוג כולל',
+            'ar' => 'التقييم العام',
+            'am' => 'አጠቃላይ ደረጃ',
+            'ru' => 'Общий рейтинг',
+            _ => 'Overall rating',
+          };
+    final ratings = <({IconData icon, String label, double value})>[
+      (
+        icon: Icons.attach_money_rounded,
+        label: labels[0],
+        value: (stats['avgPriceRating'] as num?)?.toDouble() ?? 0,
+      ),
+      (
+        icon: Icons.support_agent_rounded,
+        label: labels[1],
+        value: (stats['avgServiceRating'] as num?)?.toDouble() ?? 0,
+      ),
+      (
+        icon: Icons.schedule_rounded,
+        label: labels[2],
+        value: (stats['avgTimingRating'] as num?)?.toDouble() ?? 0,
+      ),
+      (
+        icon: Icons.build_circle_outlined,
+        label: labels[3],
+        value: (stats['avgWorkQualityRating'] as num?)?.toDouble() ?? 0,
+      ),
+    ];
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.star_rounded,
+                size: 18,
+                color: Color(0xFFF59E0B),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF334155),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              Text(
+                '${overall.toStringAsFixed(1)} / 10',
+                style: const TextStyle(
+                  color: Color(0xFFB45309),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 10),
+            child: Divider(height: 1, color: Color(0xFFE2E8F0)),
+          ),
+          Row(
+            children: ratings
+                .map(
+                  (rating) => Expanded(
+                    child: Column(
+                      children: [
+                        Icon(
+                          rating.icon,
+                          size: 17,
+                          color: const Color(0xFF94A3B8),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          rating.value.toStringAsFixed(1),
+                          style: const TextStyle(
+                            color: Color(0xFF334155),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 1),
+                        Text(
+                          rating.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Color(0xFF64748B),
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+                .toList(),
+          ),
+        ],
+      ),
     );
   }
 
