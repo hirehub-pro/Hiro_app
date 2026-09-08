@@ -306,6 +306,16 @@ class _ProfileState extends State<Profile>
     return value is num ? value.toInt() : 0;
   }
 
+  Future<Map<String, dynamic>> _readOverallReviewStats(String userId) async {
+    final snapshot = await _firestore
+        .collection('publicWorkerProfiles')
+        .doc(userId)
+        .collection('ReviewStats')
+        .doc('overall')
+        .get();
+    return snapshot.data() ?? const <String, dynamic>{};
+  }
+
   void _checkInitialOwnership() {
     final currentUser = FirebaseAuth.instance.currentUser;
     final targetUid = widget.userId;
@@ -474,8 +484,8 @@ class _ProfileState extends State<Profile>
               : [];
           _socialLinks = _parseSocialLinks(data['socialLinks']);
           _viewsCount = 0;
-          _publicReviewCount = (data['reviewCount'] as num?)?.toInt() ?? 0;
-          _publicAverageRating = (data['avgRating'] as num?)?.toDouble() ?? 0;
+          _publicReviewCount = 0;
+          _publicAverageRating = 0;
           _userRole = data['role'] ?? 'customer';
           _hideSchedule = canonicalHideSchedule;
           _subscriptionStatus = isOwnProfile
@@ -550,6 +560,7 @@ class _ProfileState extends State<Profile>
           _readTotalViews(targetUid)
         else
           _readPublicViewCount(targetUid),
+        _readOverallReviewStats(targetUid),
         if (currentUser != null && !currentUser.isAnonymous && !isOwnProfile)
           _firestore
               .collection('users')
@@ -564,8 +575,12 @@ class _ProfileState extends State<Profile>
         _userReviews = results[0] as List<Map<String, dynamic>>;
         _projects = results[1] as List<Map<String, dynamic>>;
         _viewsCount = results[2] as int;
+        final reviewStats = results[3] as Map<String, dynamic>;
+        _publicReviewCount = (reviewStats['reviewCount'] as num?)?.toInt() ?? 0;
+        _publicAverageRating =
+            (reviewStats['avgOverallRating'] as num?)?.toDouble() ?? 0;
         if (currentUser != null && !currentUser.isAnonymous && !isOwnProfile) {
-          _isFavorite = (results[3] as DocumentSnapshot).exists;
+          _isFavorite = (results[4] as DocumentSnapshot).exists;
         }
       });
 
@@ -3386,8 +3401,9 @@ class _ProfileState extends State<Profile>
                   ),
                   const SizedBox(height: 8),
                   if (review['priceRating'] != null ||
-                      review['workRating'] != null ||
-                      review['professionalismRating'] != null)
+                      review['serviceRating'] != null ||
+                      review['timingRating'] != null ||
+                      review['workQualityRating'] != null)
                     Padding(
                       padding: const EdgeInsets.only(bottom: 8),
                       child: Wrap(
@@ -3398,15 +3414,20 @@ class _ProfileState extends State<Profile>
                               Icons.attach_money,
                               review['priceRating'].toString(),
                             ),
-                          if (review['workRating'] != null)
+                          if (review['serviceRating'] != null)
+                            _buildSmallRatingBadge(
+                              Icons.support_agent_rounded,
+                              review['serviceRating'].toString(),
+                            ),
+                          if (review['timingRating'] != null)
+                            _buildSmallRatingBadge(
+                              Icons.schedule_rounded,
+                              review['timingRating'].toString(),
+                            ),
+                          if (review['workQualityRating'] != null)
                             _buildSmallRatingBadge(
                               Icons.build_circle_outlined,
-                              review['workRating'].toString(),
-                            ),
-                          if (review['professionalismRating'] != null)
-                            _buildSmallRatingBadge(
-                              Icons.stars_outlined,
-                              review['professionalismRating'].toString(),
+                              review['workQualityRating'].toString(),
                             ),
                         ],
                       ),

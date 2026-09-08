@@ -174,8 +174,9 @@ test("exposes visible profiles while protecting server-managed fields", {
     profession: "Electrician",
     rating: 5,
     priceRating: 5,
-    workRating: 5,
-    professionalismRating: 5,
+    serviceRating: 5,
+    timingRating: 5,
+    workQualityRating: 5,
     comment: "Great",
     imageUrls: [],
     timestamp: new Date(),
@@ -189,6 +190,11 @@ test("exposes visible profiles while protecting server-managed fields", {
     likesCount: 0,
     commentsCount: 1,
     timestamp: new Date(),
+  });
+  await seed("publicWorkerProfiles/visible-worker/ReviewStats/overall", {
+    scope: "overall",
+    reviewCount: 1,
+    avgOverallRating: 5,
   });
   await seed(
       "publicWorkerProfiles/visible-worker/projects/project-1/comments/comment-1",
@@ -263,10 +269,12 @@ test("exposes visible profiles while protecting server-managed fields", {
       customer,
       "publicWorkerProfiles/visible-worker/reviews/reviewer-1",
   )));
-  await assertFails(updateDoc(
-      doc(customer, "publicWorkerProfiles/visible-worker"),
-      {avgRating: 5},
-  ));
+  const overallStatsPath =
+      "publicWorkerProfiles/visible-worker/ReviewStats/overall";
+  await assertSucceeds(getDoc(doc(customer, overallStatsPath)));
+  await assertFails(updateDoc(doc(customer, overallStatsPath), {
+    reviewCount: 5,
+  }));
   await assertSucceeds(setDoc(doc(
       customer,
       "publicWorkerProfiles/visible-worker/projects/project-1/comments/customer-comment",
@@ -1064,8 +1072,9 @@ test("allows chat presence fields and the app review payload", {
         profession: "Electrician",
         rating: 4.5,
         priceRating: 4,
-        workRating: 5,
-        professionalismRating: 4.5,
+        serviceRating: 4.5,
+        timingRating: 4.5,
+        workQualityRating: 5,
         comment: "Excellent work",
         imageUrls: [],
         timestamp: serverTimestamp(),
@@ -1079,8 +1088,9 @@ test("allows chat presence fields and the app review payload", {
         profession: "Electrician",
         rating: 5,
         priceRating: 5,
-        workRating: 5,
-        professionalismRating: 5,
+        serviceRating: 5,
+        timingRating: 5,
+        workQualityRating: 5,
         comment: "Forged duplicate",
         imageUrls: [],
         timestamp: serverTimestamp(),

@@ -42,21 +42,15 @@ class _AddReviewPageState extends State<AddReviewPage> {
     if (widget.existingReview != null) {
       _commentController.text = widget.existingReview!['comment'] ?? '';
       _priceRating = (widget.existingReview!['priceRating'] ?? 5.0).toDouble();
-      _serviceRating =
-          (widget.existingReview!['serviceRating'] ??
-                  widget.existingReview!['professionalismRating'] ??
-                  5.0)
-              .toDouble();
+      _serviceRating = (widget.existingReview!['serviceRating'] ?? 5.0)
+          .toDouble();
       _timingRating =
           (widget.existingReview!['timingRating'] ??
                   widget.existingReview!['rating'] ??
                   5.0)
               .toDouble();
-      _workQualityRating =
-          (widget.existingReview!['workQualityRating'] ??
-                  widget.existingReview!['workRating'] ??
-                  5.0)
-              .toDouble();
+      _workQualityRating = (widget.existingReview!['workQualityRating'] ?? 5.0)
+          .toDouble();
       _selectedProfession = widget.existingReview!['profession'];
       _existingImageUrls = List<String>.from(
         widget.existingReview!['imageUrls'] ?? [],
@@ -133,9 +127,6 @@ class _AddReviewPageState extends State<AddReviewPage> {
         'serviceRating': _serviceRating,
         'timingRating': _timingRating,
         'workQualityRating': _workQualityRating,
-        // Keep legacy aliases while older app versions still read them.
-        'workRating': _workQualityRating,
-        'professionalismRating': _serviceRating,
         'comment': _commentController.text.trim(),
         'imageUrls': finalImageUrls,
         'timestamp': FieldValue.serverTimestamp(),

@@ -597,8 +597,8 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
         _viewsCount = 0;
         _totalEarnings = _asDouble(data['totalEarnings']);
         _hasTotalEarnedValue = _totalEarnings > 0;
-        _overallAvgRating = _asDouble(data['avgRating']);
-        _avgRating = _overallAvgRating;
+        _overallAvgRating = 0;
+        _avgRating = 0;
         if (publicData['professions'] is List) {
           _userProfessions = List<String>.from(
             (publicData['professions'] as List)
@@ -624,18 +624,23 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
         _hasTotalEarnedValue = false;
       }
 
-      final reviewsSnapshot = await firestore
-          .collection('publicWorkerProfiles')
-          .doc(widget.userId)
-          .collection('reviews')
+      final reviewStatsSnapshot = await publicWorkerRef
+          .collection('ReviewStats')
           .get();
       final viewsSnapshot = await publicWorkerRef.collection('Views').get();
 
-      if (_totalJobs == 0) {
-        _totalJobs = reviewsSnapshot.docs.length;
+      for (final statsDoc in reviewStatsSnapshot.docs) {
+        if (statsDoc.id != 'overall') continue;
+        final overallStats = statsDoc.data();
+        _overallAvgRating = _asDouble(overallStats['avgOverallRating']);
+        _avgRating = _overallAvgRating;
+        if (_totalJobs == 0) {
+          _totalJobs = _asInt(overallStats['reviewCount']);
+        }
+        break;
       }
 
-      _professionRatingStats = _buildProfessionStats(reviewsSnapshot);
+      _professionRatingStats = _buildProfessionStats(reviewStatsSnapshot);
       _allTimeViewsAcrossProfessions = 0;
       for (final viewDoc in viewsSnapshot.docs) {
         final data = viewDoc.data();
@@ -704,66 +709,25 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   }
 
   Map<String, Map<String, dynamic>> _buildProfessionStats(
-    QuerySnapshot<Map<String, dynamic>> reviewsSnapshot,
+    QuerySnapshot<Map<String, dynamic>> reviewStatsSnapshot,
   ) {
     final result = <String, Map<String, dynamic>>{};
 
-    final grouped = <String, List<Map<String, dynamic>>>{};
-    for (final doc in reviewsSnapshot.docs) {
+    for (final doc in reviewStatsSnapshot.docs) {
       final data = doc.data();
+      if (doc.id == 'overall' || data['scope'] != 'profession') continue;
       final profession = (data['profession'] ?? '').toString().trim();
       if (profession.isEmpty) continue;
-      grouped.putIfAbsent(profession, () => []).add(data);
-    }
-
-    grouped.forEach((profession, reviews) {
-      double overallSum = 0;
-      double priceSum = 0;
-      double serviceSum = 0;
-      double timingSum = 0;
-      double workQualitySum = 0;
-
-      for (final review in reviews) {
-        final overall = _asDouble(review['rating']);
-        final price = _asDouble(
-          review['priceRating'] ?? review['starsPrice'],
-          fallback: overall,
-        );
-        final service = _asDouble(
-          review['serviceRating'] ??
-              review['professionalismRating'] ??
-              review['starsService'],
-          fallback: overall,
-        );
-        final timing = _asDouble(
-          review['timingRating'] ?? review['starsTiming'],
-          fallback: overall,
-        );
-        final workQuality = _asDouble(
-          review['workQualityRating'] ?? review['workRating'],
-          fallback: overall,
-        );
-
-        overallSum += overall;
-        priceSum += price;
-        serviceSum += service;
-        timingSum += timing;
-        workQualitySum += workQuality;
-      }
-
-      final count = reviews.length;
-      if (count == 0) return;
-
       result[profession] = {
         'totalViews': 0,
-        'reviewCount': count,
-        'avgOverallRating': overallSum / count,
-        'avgPriceRating': priceSum / count,
-        'avgServiceRating': serviceSum / count,
-        'avgTimingRating': timingSum / count,
-        'avgWorkQualityRating': workQualitySum / count,
+        'reviewCount': _asInt(data['reviewCount']),
+        'avgOverallRating': _asDouble(data['avgOverallRating']),
+        'avgPriceRating': _asDouble(data['avgPriceRating']),
+        'avgServiceRating': _asDouble(data['avgServiceRating']),
+        'avgTimingRating': _asDouble(data['avgTimingRating']),
+        'avgWorkQualityRating': _asDouble(data['avgWorkQualityRating']),
       };
-    });
+    }
 
     return result;
   }

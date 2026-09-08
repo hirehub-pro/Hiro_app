@@ -20,7 +20,6 @@ test("builds a bounded public worker profile with public contact fields", () => 
     professions: ["Electrician"],
     lat: 32.0852999,
     lng: 34.7817676,
-    avgRating: 4.8,
   }, new Date("2026-08-20T00:00:00.000Z"));
 
   assert.equal(PUBLIC_WORKER_PROFILE_COLLECTION, "publicWorkerProfiles");
@@ -34,6 +33,9 @@ test("builds a bounded public worker profile with public contact fields", () => 
   assert.equal("isInsured" in profile, false);
   assert.equal("subscriptionStatus" in profile, false);
   assert.equal("subscriptionPurchaseToken" in profile, false);
+  assert.equal("avgRating" in profile, false);
+  assert.equal("reviewCount" in profile, false);
+  assert.equal("professionStats" in profile, false);
 });
 
 test("only active workers or VIP workers are visible", () => {

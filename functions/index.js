@@ -67,6 +67,11 @@ const {
 const {buildPublicSchedule} = require("./public_schedule");
 const {sumPublicProfileViews} = require("./public_profile_stats");
 const {
+  buildReviewStats,
+  emptyReviewStats,
+  reviewStatsDocumentId,
+} = require("./review_stats");
+const {
   WEEKDAY_KEYS,
   incrementProfessionViews,
   normalizeProfileViewProfession,
@@ -6106,14 +6111,25 @@ exports.syncWorkerViewProfessions = onDocumentWritten(
       const profile = event.data?.after?.data() || null;
       if (!profileRef) return;
 
-      const existingViews = await profileRef.collection("Views").get();
-      const batch = db.batch();
       if (!profile) {
-        for (const viewDoc of existingViews.docs) batch.delete(viewDoc.ref);
-        await batch.commit();
+        const [existingViews, existingReviewStats] = await Promise.all([
+          profileRef.collection("Views").get(),
+          profileRef.collection("ReviewStats").get(),
+        ]);
+        const writer = db.bulkWriter();
+        for (const viewDoc of existingViews.docs) writer.delete(viewDoc.ref);
+        for (const statsDoc of existingReviewStats.docs) {
+          writer.delete(statsDoc.ref);
+        }
+        await writer.close();
         return;
       }
 
+      const [existingViews, existingReviewStats] = await Promise.all([
+        profileRef.collection("Views").get(),
+        profileRef.collection("ReviewStats").get(),
+      ]);
+      const batch = db.batch();
       const professions = [...new Set(
           (Array.isArray(profile.professions) ? profile.professions : [])
               .map((profession) => normalizeString(profession).trim())
@@ -6127,6 +6143,17 @@ exports.syncWorkerViewProfessions = onDocumentWritten(
           WEEKDAY_KEYS.map((day) => [day, 0]),
       );
       const existingIds = new Set(existingViews.docs.map((doc) => doc.id));
+      const existingReviewStatsIds = new Set(
+          existingReviewStats.docs.map((doc) => doc.id),
+      );
+
+      if (!existingReviewStatsIds.has("overall")) {
+        batch.set(profileRef.collection("ReviewStats").doc("overall"), {
+          scope: "overall",
+          ...emptyReviewStats(),
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+      }
 
       for (const profession of professions) {
         const documentId = profileViewDocumentId(profession);
@@ -6144,6 +6171,15 @@ exports.syncWorkerViewProfessions = onDocumentWritten(
           });
         }
         batch.set(viewRef, data, {merge: true});
+
+        const statsId = reviewStatsDocumentId(profession);
+        if (!existingReviewStatsIds.has(statsId)) {
+          batch.set(profileRef.collection("ReviewStats").doc(statsId), {
+            scope: "profession",
+            ...emptyReviewStats(profession),
+            updatedAt: FieldValue.serverTimestamp(),
+          });
+        }
       }
       for (const viewDoc of existingViews.docs) {
         if (!activeIds.has(viewDoc.id) && viewDoc.data().active !== false) {
@@ -6294,60 +6330,48 @@ exports.syncWorkerReviewRatings = onDocumentWritten(
     },
     async (event) => {
       const targetUserId = event.params.targetUserId;
-      const reviewsSnap = await db.collection("publicWorkerProfiles")
-          .doc(targetUserId)
-          .collection("reviews")
-          .get();
+      const profileRef = db.collection(PUBLIC_WORKER_PROFILE_COLLECTION)
+          .doc(targetUserId);
+      const [reviewsSnap, profileSnap] = await Promise.all([
+        profileRef.collection("reviews").get(),
+        profileRef.get(),
+      ]);
 
-      let totalStars = 0;
-      const professionTotals = new Map();
-      for (const reviewDoc of reviewsSnap.docs) {
-        const review = reviewDoc.data() || {};
-        const rating = Number(review.rating);
-        const profession = normalizeString(review.profession).trim().slice(0, 120);
-        if (!Number.isFinite(rating) || rating < 1 || rating > 5 || !profession) {
-          continue;
+      const stats = buildReviewStats(
+          reviewsSnap.docs.map((reviewDoc) => reviewDoc.data()),
+      );
+      const profileProfessions = profileSnap.data()?.professions;
+      const professions = Array.isArray(profileProfessions) ?
+        profileProfessions : [];
+      for (const professionValue of professions) {
+        const profession = normalizeString(professionValue).trim();
+        if (profession && !stats.professions.has(profession)) {
+          stats.professions.set(profession, emptyReviewStats(profession));
         }
-        totalStars += rating;
-        const totals = professionTotals.get(profession) || {
-          count: 0,
-          overall: 0,
-          price: 0,
-          service: 0,
-          timing: 0,
-          workQuality: 0,
-        };
-        totals.count += 1;
-        totals.overall += rating;
-        totals.price += Number(review.priceRating) || rating;
-        totals.service += Number(review.serviceRating ??
-          review.professionalismRating) || rating;
-        totals.timing += Number(review.timingRating) || rating;
-        totals.workQuality += Number(review.workQualityRating ??
-          review.workRating) || rating;
-        professionTotals.set(profession, totals);
       }
+      const statsCollection = profileRef.collection("ReviewStats");
+      const existingStats = await statsCollection.get();
+      const desiredIds = new Set(["overall"]);
+      const writer = db.bulkWriter();
 
-      const workerRef = db.collection("users").doc(targetUserId);
-
-      const professionStats = {};
-      for (const [profession, totals] of professionTotals.entries()) {
-        const divisor = totals.count;
-        professionStats[profession] = {
-          avg: totals.overall / divisor,
-          count: totals.count,
-        };
+      writer.set(statsCollection.doc("overall"), {
+        scope: "overall",
+        ...stats.overall,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      for (const [profession, professionStats] of stats.professions) {
+        const documentId = reviewStatsDocumentId(profession);
+        desiredIds.add(documentId);
+        writer.set(statsCollection.doc(documentId), {
+          scope: "profession",
+          ...professionStats,
+          updatedAt: FieldValue.serverTimestamp(),
+        });
       }
-
-      const reviewCount = [...professionTotals.values()]
-          .reduce((sum, totals) => sum + totals.count, 0);
-      await workerRef.set({
-        professionStats,
-        totalStars,
-        avgRating: reviewCount === 0 ? 0 : totalStars / reviewCount,
-        reviewCount,
-        ratingsUpdatedAt: FieldValue.serverTimestamp(),
-      }, {merge: true});
+      for (const existingDoc of existingStats.docs) {
+        if (!desiredIds.has(existingDoc.id)) writer.delete(existingDoc.ref);
+      }
+      await writer.close();
     },
 );
 

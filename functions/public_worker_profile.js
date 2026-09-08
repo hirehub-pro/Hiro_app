@@ -52,21 +52,6 @@ function safeSocialLinks(value) {
       .slice(0, 20);
 }
 
-function safeProfessionStats(value) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-  const result = {};
-  for (const [profession, rawStats] of Object.entries(value).slice(0, 50)) {
-    if (!rawStats || typeof rawStats !== "object") continue;
-    const key = boundedString(profession, 120);
-    if (!key) continue;
-    result[key] = {
-      avg: Math.max(0, Math.min(5, finiteNumber(rawStats.avg))),
-      count: Math.max(0, Math.trunc(finiteNumber(rawStats.count))),
-    };
-  }
-  return result;
-}
-
 function hasSearchEntitlement(userData, now = new Date()) {
   if (userData?.isVIP === true) return true;
   const status = boundedString(userData?.subscriptionStatus, 40).toLowerCase();
@@ -98,9 +83,6 @@ function buildPublicWorkerProfile(userId, userData, now = new Date()) {
     professions: stringList(userData.professions, 50, 120),
     spokenLanguages: stringList(userData.spokenLanguages, 30, 80),
     socialLinks: safeSocialLinks(userData.socialLinks),
-    avgRating: Math.max(0, Math.min(5, finiteNumber(userData.avgRating))),
-    reviewCount: Math.max(0, Math.trunc(finiteNumber(userData.reviewCount))),
-    professionStats: safeProfessionStats(userData.professionStats),
     workRadius: Math.max(0, finiteNumber(userData.workRadius)),
     lat,
     lng,

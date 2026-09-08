@@ -545,21 +545,16 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
         );
       }
 
-      // The public projection always contains both fields, so Firestore can
-      // paginate rating and name sorts globally instead of sorting one page.
-      if (_sortBy == 'rating') {
-        query = query.orderBy('avgRating', descending: true).orderBy('name');
-      } else {
-        query = query.orderBy('name');
-      }
+      query = query.orderBy('name');
 
       const pageSize = 20;
-      final fetchAllForDistance =
-          _sortBy == 'distance' && _currentPosition != null;
-      if (!fetchAllForDistance) {
+      final fetchAllForClientSort =
+          _sortBy == 'rating' ||
+          (_sortBy == 'distance' && _currentPosition != null);
+      if (!fetchAllForClientSort) {
         query = query.limit(pageSize);
       }
-      if (!fetchAllForDistance && _lastDocument != null) {
+      if (!fetchAllForClientSort && _lastDocument != null) {
         query = query.startAfterDocument(_lastDocument!);
       }
 
@@ -567,20 +562,23 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
 
       if (currentId != _fetchSessionId) return;
 
-      if (fetchAllForDistance || snapshot.docs.length < pageSize) {
+      if (fetchAllForClientSort || snapshot.docs.length < pageSize) {
         _hasMore = false;
       }
 
       if (snapshot.docs.isNotEmpty) {
         _lastDocument = snapshot.docs.last;
 
-        final newWorkers = snapshot.docs.map((doc) {
-          final data = doc.data() as Map<String, dynamic>;
-          data['uid'] = doc.id;
-          data['avgRating'] = (data['avgRating'] ?? 0.0).toDouble();
-          data['reviewCount'] = data['reviewCount'] ?? 0;
-          return _withCachedScheduleData(data);
-        }).toList();
+        final newWorkers = await Future.wait(
+          snapshot.docs.map((doc) async {
+            final data = Map<String, dynamic>.from(
+              doc.data() as Map<String, dynamic>,
+            );
+            data['uid'] = doc.id;
+            final enriched = await _withReviewStats(data);
+            return _withCachedScheduleData(enriched);
+          }),
+        );
 
         if (mounted && currentId == _fetchSessionId) {
           setState(() {
@@ -650,6 +648,45 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
       );
     }
 
+    return enriched;
+  }
+
+  Future<Map<String, dynamic>> _withReviewStats(
+    Map<String, dynamic> worker,
+  ) async {
+    final enriched = Map<String, dynamic>.from(worker);
+    enriched['overallReviewRating'] = 0.0;
+    enriched['overallReviewCount'] = 0;
+    enriched['professionReviewStats'] = <String, Map<String, dynamic>>{};
+
+    final uid = (worker['uid'] ?? '').toString();
+    if (uid.isEmpty) return enriched;
+
+    try {
+      final snapshot = await _firestore
+          .collection('publicWorkerProfiles')
+          .doc(uid)
+          .collection('ReviewStats')
+          .get();
+      final professionStats = <String, Map<String, dynamic>>{};
+      for (final doc in snapshot.docs) {
+        final data = doc.data();
+        if (doc.id == 'overall') {
+          enriched['overallReviewRating'] =
+              (data['avgOverallRating'] as num?)?.toDouble() ?? 0.0;
+          enriched['overallReviewCount'] =
+              (data['reviewCount'] as num?)?.toInt() ?? 0;
+          continue;
+        }
+        final profession = (data['profession'] ?? '').toString().trim();
+        if (profession.isEmpty) continue;
+        professionStats[profession] = {
+          'average': (data['avgOverallRating'] as num?)?.toDouble() ?? 0.0,
+          'count': (data['reviewCount'] as num?)?.toInt() ?? 0,
+        };
+      }
+      enriched['professionReviewStats'] = professionStats;
+    } catch (_) {}
     return enriched;
   }
 
@@ -1104,8 +1141,10 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
 
         if (_sortBy == 'rating') {
           _filteredWorkers.sort((a, b) {
-            final aRating = (a['avgRating'] as num?)?.toDouble() ?? 0.0;
-            final bRating = (b['avgRating'] as num?)?.toDouble() ?? 0.0;
+            final aRating =
+                (a['overallReviewRating'] as num?)?.toDouble() ?? 0.0;
+            final bRating =
+                (b['overallReviewRating'] as num?)?.toDouble() ?? 0.0;
             return bRating.compareTo(aRating);
           });
         } else if (_sortBy == 'distance' && _currentPosition != null) {
@@ -2163,18 +2202,22 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
 
           if (_selectedProfession != null) {
             String profKey = _selectedProfession!['en'];
-            if (w['professionStats']?[profKey] != null) {
-              displayRating = (w['professionStats'][profKey]['avg'] ?? 0.0)
-                  .toDouble();
-              displayReviewCount = w['professionStats'][profKey]['count'] ?? 0;
+            if (w['professionReviewStats']?[profKey] != null) {
+              displayRating =
+                  (w['professionReviewStats'][profKey]['average'] ?? 0.0)
+                      .toDouble();
+              displayReviewCount =
+                  w['professionReviewStats'][profKey]['count'] ?? 0;
               isServiceSpecific = true;
             } else {
-              displayRating = (w['avgRating'] as num).toDouble();
-              displayReviewCount = w['reviewCount'] ?? 0;
+              displayRating =
+                  (w['overallReviewRating'] as num?)?.toDouble() ?? 0.0;
+              displayReviewCount = w['overallReviewCount'] ?? 0;
             }
           } else {
-            displayRating = (w['avgRating'] as num).toDouble();
-            displayReviewCount = w['reviewCount'] ?? 0;
+            displayRating =
+                (w['overallReviewRating'] as num?)?.toDouble() ?? 0.0;
+            displayReviewCount = w['overallReviewCount'] ?? 0;
           }
 
           final createdAt = w['createdAt'] as Timestamp?;

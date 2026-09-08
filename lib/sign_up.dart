@@ -2302,8 +2302,6 @@ class _SignUpPageState extends State<SignUpPage>
         'from': _formatStoredTime(_workingHoursFrom),
         'to': _formatStoredTime(_workingHoursTo),
       },
-      'avgRating': 0.0,
-      'reviewCount': 0,
     };
   }
 

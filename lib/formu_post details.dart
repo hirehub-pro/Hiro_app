@@ -87,14 +87,22 @@ class _PostDetailPageState extends State<PostDetailPage> {
           .collection('publicWorkerProfiles')
           .doc(uid)
           .get();
+      final reviewStats = await _firestore
+          .collection('publicWorkerProfiles')
+          .doc(uid)
+          .collection('ReviewStats')
+          .doc('overall')
+          .get();
       if (!doc.exists || !mounted) return;
       final data = doc.data() ?? <String, dynamic>{};
+      final stats = reviewStats.data() ?? <String, dynamic>{};
       setState(() {
         _workerPreviewCache[uid] = {
           'name': (data['name'] ?? '').toString(),
           'profileImageUrl': (data['profileImageUrl'] ?? '').toString(),
-          'avgRating': (data['avgRating'] as num?)?.toDouble() ?? 0.0,
-          'reviewCount': (data['reviewCount'] as num?)?.toInt() ?? 0,
+          'averageRating':
+              (stats['avgOverallRating'] as num?)?.toDouble() ?? 0.0,
+          'reviewCount': (stats['reviewCount'] as num?)?.toInt() ?? 0,
         };
       });
     } catch (_) {}
@@ -1617,7 +1625,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
                                                           width: 4,
                                                         ),
                                                         Text(
-                                                          (workerPreview['avgRating']
+                                                          (workerPreview['averageRating']
                                                                   as double)
                                                               .toStringAsFixed(
                                                                 1,

@@ -1070,14 +1070,19 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
     final publicWorkerRef = firestore
         .collection('publicWorkerProfiles')
         .doc(uid);
-    while (true) {
-      final snap = await publicWorkerRef.collection('Views').limit(100).get();
-      if (snap.docs.isEmpty) break;
-      final batch = firestore.batch();
-      for (final doc in snap.docs) {
-        batch.delete(doc.reference);
+    for (final collection in const ['Views', 'ReviewStats']) {
+      while (true) {
+        final snap = await publicWorkerRef
+            .collection(collection)
+            .limit(100)
+            .get();
+        if (snap.docs.isEmpty) break;
+        final batch = firestore.batch();
+        for (final doc in snap.docs) {
+          batch.delete(doc.reference);
+        }
+        await batch.commit();
       }
-      await batch.commit();
     }
     await userRef.delete();
   }
