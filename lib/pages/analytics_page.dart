@@ -25,6 +25,8 @@ class AnalyticsPage extends StatefulWidget {
 
 class _AnalyticsPageState extends State<AnalyticsPage> {
   static const String _allProfessionsKey = '__all_professions__';
+  static const String _analyticsPeriodTotal = '__total__';
+  static const String _analyticsPeriodCurrentYear = '__current_year__';
   static const List<String> _weekDayKeys = [
     'sunday',
     'monday',
@@ -68,6 +70,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   Map<String, Map<String, int>> _professionWeeklyViews = {};
   List<int> _weeklyViewCounts = List.filled(7, 0);
   int _weeklyViewsTotalValue = 0;
+  late String _selectedAnalyticsPeriod;
   late final Future<SubscriptionAccessState> _accessFuture;
 
   String _normalizeLocaleCode(String code) {
@@ -93,10 +96,13 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
         return {
           'analytics_title': 'לוח בקרה עסקי',
           'all_professions': 'כל המקצועות',
-          'total_earnings': 'הכנסות משוערות',
+          'total_earnings': 'תקבולים',
           'no_earning_yet': 'אין הכנסות עדיין',
           'rating': 'דירוג',
           'views': 'צפיות',
+          'total_views': 'סך הצפיות',
+          'total': 'כל הזמנים',
+          'current_year': 'השנה הנוכחית',
           'views_this_week': 'צפיות השבוע',
           'top_skill': 'מיומנות מובילה',
           'earnings_trend': 'מגמת הכנסות (7 ימים אחרונים)',
@@ -122,10 +128,13 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
         return {
           'analytics_title': 'لوحة تحكم الأعمال',
           'all_professions': 'كل المهن',
-          'total_earnings': 'الأرباح التقديرية',
+          'total_earnings': 'المدفوعات',
           'no_earning_yet': 'لا توجد أرباح حتى الآن',
           'rating': 'التقييم',
           'views': 'المشاهدات',
+          'total_views': 'إجمالي المشاهدات',
+          'total': 'كل الوقت',
+          'current_year': 'السنة الحالية',
           'views_this_week': 'مشاهدات هذا الأسبوع',
           'top_skill': 'المهارة الأقوى',
           'earnings_trend': 'اتجاه الأرباح (آخر 7 أيام)',
@@ -151,10 +160,13 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
         return {
           'analytics_title': 'Бизнес-аналитика',
           'all_professions': 'Все профессии',
-          'total_earnings': 'Оценочный доход',
+          'total_earnings': 'Платежи',
           'no_earning_yet': 'Пока нет дохода',
           'rating': 'Рейтинг',
           'views': 'Просмотры',
+          'total_views': 'Всего просмотров',
+          'total': 'За всё время',
+          'current_year': 'Текущий год',
           'views_this_week': 'Просмотры за неделю',
           'top_skill': 'Лучший навык',
           'earnings_trend': 'Динамика дохода (последние 7 дней)',
@@ -180,10 +192,13 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
         return {
           'analytics_title': 'የንግድ ትንታኔ',
           'all_professions': 'ሁሉም ሙያዎች',
-          'total_earnings': 'የተገመተ ገቢ',
+          'total_earnings': 'ክፍያዎች',
           'no_earning_yet': 'እስካሁን ምንም ገቢ የለም',
           'rating': 'ደረጃ',
           'views': 'እይታዎች',
+          'total_views': 'ጠቅላላ እይታዎች',
+          'total': 'ለሁሉም ጊዜ',
+          'current_year': 'የአሁኑ ዓመት',
           'views_this_week': 'የዚህ ሳምንት እይታዎች',
           'top_skill': 'ከፍተኛ ችሎታ',
           'earnings_trend': 'የገቢ አቅጣጫ (የመጨረሻ 7 ቀናት)',
@@ -209,10 +224,13 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
         return {
           'analytics_title': 'Business Dashboard',
           'all_professions': 'All professions',
-          'total_earnings': 'Estimated Earnings',
+          'total_earnings': 'Payments',
           'no_earning_yet': 'No earning yet',
           'rating': 'Rating',
           'views': 'Views',
+          'total_views': 'Total Views',
+          'total': 'All time',
+          'current_year': 'Current year',
           'views_this_week': 'Views This Week',
           'top_skill': 'Top Skill',
           'earnings_trend': 'Earnings Trend (Last 7 Days)',
@@ -251,6 +269,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   @override
   void initState() {
     super.initState();
+    _selectedAnalyticsPeriod = _monthPeriod(DateTime.now().month);
     _accessFuture = SubscriptionAccessService.getCurrentUserState();
     _fetchAnalyticsWhenAuthorized();
   }
@@ -923,40 +942,33 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
               letterSpacing: -1,
             ),
           ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              const Icon(
-                Icons.visibility_rounded,
-                color: Colors.white70,
-                size: 16,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                '${_t('views_this_week')}: $_weeklyViewsTotalValue',
-                style: const TextStyle(
-                  color: Colors.white70,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
+          const SizedBox(height: 16),
+          _buildAnalyticsMonthSelector(),
           const SizedBox(height: 24),
           const Divider(color: Colors.white10),
           const SizedBox(height: 24),
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              _buildQuickStat(
-                _t('rating'),
-                _avgRating.toStringAsFixed(1),
-                Icons.star_border_rounded,
+              Expanded(
+                child: _buildQuickStat(
+                  _t('total_views'),
+                  _viewsCount.toString(),
+                  Icons.bar_chart_rounded,
+                ),
               ),
-              _buildQuickStat(
-                _t('views'),
-                _viewsCount.toString(),
-                Icons.bar_chart_rounded,
+              Expanded(
+                child: _buildQuickStat(
+                  _t('views_this_week'),
+                  _weeklyViewsTotalValue.toString(),
+                  Icons.visibility_rounded,
+                ),
+              ),
+              Expanded(
+                child: _buildQuickStat(
+                  _t('rating'),
+                  _avgRating.toStringAsFixed(1),
+                  Icons.star_border_rounded,
+                ),
               ),
             ],
           ),
@@ -973,9 +985,13 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           children: [
             Icon(icon, color: Colors.blueAccent, size: 14),
             const SizedBox(width: 4),
-            Text(
-              label,
-              style: const TextStyle(color: Colors.white54, fontSize: 12),
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Colors.white54, fontSize: 11),
+              ),
             ),
           ],
         ),
@@ -990,6 +1006,141 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
         ),
       ],
     );
+  }
+
+  Widget _buildAnalyticsMonthSelector() {
+    final now = DateTime.now();
+    final months = List<int>.generate(now.month, (index) => index + 1);
+    final periods = <DropdownMenuItem<String>>[
+      DropdownMenuItem(value: _analyticsPeriodTotal, child: Text(_t('total'))),
+      DropdownMenuItem(
+        value: _analyticsPeriodCurrentYear,
+        child: Text(_t('current_year')),
+      ),
+      ...months.map(
+        (month) => DropdownMenuItem<String>(
+          value: _monthPeriod(month),
+          child: Text(_monthName(month)),
+        ),
+      ),
+    ];
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.08),
+        border: Border.all(color: Colors.white24),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.calendar_month_outlined,
+            color: Colors.white70,
+            size: 18,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                value: _selectedAnalyticsPeriod,
+                isExpanded: true,
+                dropdownColor: const Color(0xFF1E293B),
+                iconEnabledColor: Colors.white70,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+                items: periods,
+                onChanged: (period) {
+                  if (period == null) return;
+                  setState(() => _selectedAnalyticsPeriod = period);
+                },
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _monthPeriod(int month) => 'month_$month';
+
+  String _monthName(int month) {
+    const monthNames = {
+      'he': [
+        'ינואר',
+        'פברואר',
+        'מרץ',
+        'אפריל',
+        'מאי',
+        'יוני',
+        'יולי',
+        'אוגוסט',
+        'ספטמבר',
+        'אוקטובר',
+        'נובמבר',
+        'דצמבר',
+      ],
+      'ar': [
+        'يناير',
+        'فبراير',
+        'مارس',
+        'أبريل',
+        'مايو',
+        'يونيو',
+        'يوليو',
+        'أغسطس',
+        'سبتمبر',
+        'أكتوبر',
+        'نوفمبر',
+        'ديسمبر',
+      ],
+      'ru': [
+        'Январь',
+        'Февраль',
+        'Март',
+        'Апрель',
+        'Май',
+        'Июнь',
+        'Июль',
+        'Август',
+        'Сентябрь',
+        'Октябрь',
+        'Ноябрь',
+        'Декабрь',
+      ],
+      'am': [
+        'ጃንዩወሪ',
+        'ፌብሩወሪ',
+        'ማርች',
+        'ኤፕሪል',
+        'ሜይ',
+        'ጁን',
+        'ጁላይ',
+        'ኦገስት',
+        'ሴፕቴምበር',
+        'ኦክቶበር',
+        'ኖቬምበር',
+        'ዲሴምበር',
+      ],
+      'en': [
+        'January',
+        'February',
+        'March',
+        'April',
+        'May',
+        'June',
+        'July',
+        'August',
+        'September',
+        'October',
+        'November',
+        'December',
+      ],
+    };
+    return (monthNames[_localeCode] ?? monthNames['en']!)[month - 1];
   }
 
   Widget _buildMetricsGrid() {
