@@ -61,23 +61,12 @@ class _ProfileState extends State<Profile>
   static const Color _kPageTint = Color(0xFFF7FBFF);
   static const Color _kTextMain = Color(0xFF070B18);
   static const Color _kTextMuted = Color(0xFF6B7280);
-  static const String _vpdDocId = 'currentWeek';
-  static const int _counterShardCount = 20;
   static const List<String> _spokenLanguageOptions = [
     'Hebrew',
     'Arabic',
     'English',
     'Russian',
     'Amharic',
-  ];
-  static const List<String> _weekDayKeys = [
-    'sunday',
-    'monday',
-    'tuesday',
-    'wednesday',
-    'thursday',
-    'friday',
-    'saturday',
   ];
 
   TabController? _tabController;
@@ -292,16 +281,9 @@ class _ProfileState extends State<Profile>
     return bookingModeProviderTravels;
   }
 
-  String _weekKey(DateTime date) {
-    final start = _startOfWeek(date);
-    return '${start.year.toString().padLeft(4, '0')}-${start.month.toString().padLeft(2, '0')}-${start.day.toString().padLeft(2, '0')}';
-  }
-
-  int _randomShard() => Random().nextInt(_counterShardCount);
-
   Future<int> _readTotalViewsFromProRatings(String userId) async {
     final proRatingSnapshot = await _firestore
-        .collection('users')
+        .collection('publicWorkerProfiles')
         .doc(userId)
         .collection('ProRating')
         .get();
@@ -331,115 +313,17 @@ class _ProfileState extends State<Profile>
         : (currentUser != null && targetUid == currentUser.uid);
   }
 
-  DateTime _startOfWeek(DateTime date) {
-    final dayStart = DateTime(date.year, date.month, date.day);
-    final offsetToSunday = dayStart.weekday % 7;
-    return dayStart.subtract(Duration(days: offsetToSunday));
-  }
-
-  String _dayKeyForDate(DateTime date) {
-    switch (date.weekday) {
-      case DateTime.monday:
-        return 'monday';
-      case DateTime.tuesday:
-        return 'tuesday';
-      case DateTime.wednesday:
-        return 'wednesday';
-      case DateTime.thursday:
-        return 'thursday';
-      case DateTime.friday:
-        return 'friday';
-      case DateTime.saturday:
-        return 'saturday';
-      case DateTime.sunday:
-      default:
-        return 'sunday';
-    }
-  }
-
-  bool _isCurrentWeek(dynamic rawWeekStart) {
-    DateTime? saved;
-    if (rawWeekStart is Timestamp) {
-      saved = rawWeekStart.toDate();
-    } else if (rawWeekStart is String) {
-      saved = DateTime.tryParse(rawWeekStart);
-    }
-
-    if (saved == null) return false;
-    return _startOfWeek(saved).isAtSameMomentAs(_startOfWeek(DateTime.now()));
-  }
-
-  Map<String, int> _emptyWeekMap() {
-    return {
-      'sunday': 0,
-      'monday': 0,
-      'tuesday': 0,
-      'wednesday': 0,
-      'thursday': 0,
-      'friday': 0,
-      'saturday': 0,
-      'TVTW': 0,
-    };
-  }
-
-  String _docIdForProfession(String profession) {
-    return profession.trim().replaceAll('/', '_');
-  }
-
-  Future<void> _incrementProfessionWeeklyViews({
+  Future<bool> _recordProfessionView({
     required String workerId,
     required String profession,
   }) async {
-    final normalizedProfession = profession.trim();
-    if (normalizedProfession.isEmpty) return;
-    final professionDocId = _docIdForProfession(normalizedProfession);
-
-    final workerRef = _firestore.collection('users').doc(workerId);
-    final proRatingRef = workerRef.collection('ProRating').doc(professionDocId);
-    final shardRef = proRatingRef
-        .collection('VPD')
-        .doc(_vpdDocId)
-        .collection('shards')
-        .doc(_randomShard().toString());
-
-    await _firestore.runTransaction((tx) async {
-      final now = DateTime.now();
-      final dayKey = _dayKeyForDate(now);
-      final weekStart = _startOfWeek(now);
-      final currentWeekKey = _weekKey(now);
-
-      final snapshot = await tx.get(shardRef);
-      final current = _emptyWeekMap();
-
-      if (snapshot.exists) {
-        final data = snapshot.data() as Map<String, dynamic>;
-        if (data['weekKey'] == currentWeekKey ||
-            _isCurrentWeek(data['weekStart'])) {
-          for (final day in _weekDayKeys) {
-            final value = data[day];
-            if (value is num) current[day] = value.toInt();
-          }
-          final total = data['TVTW'];
-          if (total is num) current['TVTW'] = total.toInt();
-        }
-      }
-
-      current[dayKey] = (current[dayKey] ?? 0) + 1;
-      current['TVTW'] = (current['TVTW'] ?? 0) + 1;
-
-      tx.set(proRatingRef, {
-        'profession': normalizedProfession,
-        'totalViews': FieldValue.increment(1),
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-
-      tx.set(shardRef, {
-        ...current,
-        'weekKey': currentWeekKey,
-        'weekStart': Timestamp.fromDate(weekStart),
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-    });
+    final result = await _functions
+        .httpsCallable('recordPublicWorkerProfileView')
+        .call<Map<String, dynamic>>({
+          'workerId': workerId,
+          'profession': profession.trim(),
+        });
+    return result.data['counted'] == true;
   }
 
   void _initTabController() {
@@ -694,11 +578,11 @@ class _ProfileState extends State<Profile>
             ? viewedProfession
             : (fallbackProfession.isNotEmpty ? fallbackProfession : 'General');
 
-        await _incrementProfessionWeeklyViews(
+        final counted = await _recordProfessionView(
           workerId: targetUid,
           profession: professionForViewCount,
         );
-        if (mounted && loadGeneration == _profileLoadGeneration) {
+        if (counted && mounted && loadGeneration == _profileLoadGeneration) {
           setState(() => _viewsCount += 1);
         }
       }

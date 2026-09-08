@@ -1049,7 +1049,6 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
     final userRef = firestore.collection('users').doc(uid);
     for (final collection in const [
       'Schedule',
-      'ProRating',
       'deviceTokens',
       'favorites',
       'likedBy',
@@ -1066,6 +1065,22 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
         }
         await batch.commit();
       }
+    }
+
+    final publicWorkerRef = firestore
+        .collection('publicWorkerProfiles')
+        .doc(uid);
+    while (true) {
+      final snap = await publicWorkerRef
+          .collection('ProRating')
+          .limit(100)
+          .get();
+      if (snap.docs.isEmpty) break;
+      final batch = firestore.batch();
+      for (final doc in snap.docs) {
+        batch.delete(doc.reference);
+      }
+      await batch.commit();
     }
     await userRef.delete();
   }

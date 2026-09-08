@@ -299,6 +299,53 @@ test("exposes visible profiles while protecting server-managed fields", {
   }));
 });
 
+test("keeps profile analytics server-written and owner-readable", {
+  skip: !emulatorAvailable,
+}, async () => {
+  const workerId = "analytics-worker-id-0001";
+  await seedActiveWorker(workerId);
+  await seed(`publicWorkerProfiles/${workerId}/ProRating/Electrician`, {
+    profession: "Electrician",
+    totalViews: 4,
+    updatedAt: new Date(),
+  });
+  await seed(
+      `publicWorkerProfiles/${workerId}/ProRating/Electrician/` +
+      "VPD/currentWeek/shards/0",
+      {
+        sunday: 1,
+        monday: 1,
+        tuesday: 1,
+        wednesday: 1,
+        thursday: 0,
+        friday: 0,
+        saturday: 0,
+        TVTW: 4,
+        weekKey: "2026-09-06",
+        weekStart: new Date("2026-09-06T00:00:00.000Z"),
+        updatedAt: new Date(),
+      },
+  );
+
+  const owner = testEnv.authenticatedContext(workerId).firestore();
+  const visitor = testEnv.authenticatedContext(
+      "analytics-visitor-id-001",
+  ).firestore();
+  const ratingPath =
+      `publicWorkerProfiles/${workerId}/ProRating/Electrician`;
+  const shardPath = `${ratingPath}/VPD/currentWeek/shards/0`;
+
+  await assertSucceeds(getDoc(doc(owner, ratingPath)));
+  await assertSucceeds(getDoc(doc(owner, shardPath)));
+  await assertFails(updateDoc(doc(owner, ratingPath), {totalViews: 5}));
+  await assertFails(updateDoc(doc(owner, shardPath), {TVTW: 5}));
+  await assertFails(getDoc(doc(visitor, ratingPath)));
+  await assertFails(setDoc(doc(visitor, ratingPath), {
+    profession: "Electrician",
+    totalViews: 100,
+  }));
+});
+
 test("allows guests to read blogs and profession catalogs only", {
   skip: !emulatorAvailable,
 }, async () => {

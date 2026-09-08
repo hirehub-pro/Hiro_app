@@ -663,7 +663,9 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           .doc(widget.userId)
           .collection('reviews')
           .get();
-      final proRatingSnapshot = await workerRef.collection('ProRating').get();
+      final proRatingSnapshot = await publicWorkerRef
+          .collection('ProRating')
+          .get();
 
       if (_totalJobs == 0) {
         _totalJobs = reviewsSnapshot.docs.length;

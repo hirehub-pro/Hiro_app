@@ -67,6 +67,12 @@ const {
 const {buildPublicSchedule} = require("./public_schedule");
 const {sumPublicProfileViews} = require("./public_profile_stats");
 const {
+  PROFILE_VIEW_SHARD_COUNT,
+  incrementWeeklyViewShard,
+  normalizeProfileViewProfession,
+  profileViewPeriod,
+} = require("./public_profile_views");
+const {
   normalizeServerDocumentRequest,
   serverDocumentPdfPayload,
 } = require("./server_document");
@@ -6013,7 +6019,7 @@ exports.getPublicWorkerViewCount = onCall(
       }
 
       const ratingsSnap = await db
-          .collection("users")
+          .collection(PUBLIC_WORKER_PROFILE_COLLECTION)
           .doc(workerId)
           .collection("ProRating")
           .get();
@@ -6023,6 +6029,83 @@ exports.getPublicWorkerViewCount = onCall(
             ratingsSnap.docs.map((document) => document.data()),
         ),
       };
+    },
+);
+
+exports.recordPublicWorkerProfileView = onCall(
+    {
+      region: "me-west1",
+    },
+    async (request) => {
+      const requesterId = request.auth?.uid;
+      if (!requesterId) {
+        throw new HttpsError("unauthenticated", "Authentication required.");
+      }
+
+      const workerId = normalizeString(request.data?.workerId).trim();
+      if (!workerId || workerId.length > 128) {
+        throw new HttpsError(
+            "invalid-argument",
+            "A valid worker ID is required.",
+        );
+      }
+      if (workerId === requesterId) {
+        return {counted: false, reason: "own-profile"};
+      }
+
+      const requestedProfession = normalizeString(
+          request.data?.profession,
+      ).trim();
+      if (requestedProfession.length > 120) {
+        throw new HttpsError("invalid-argument", "Invalid profession.");
+      }
+
+      const profileRef = db
+          .collection(PUBLIC_WORKER_PROFILE_COLLECTION)
+          .doc(workerId);
+      const period = profileViewPeriod(new Date());
+      const shardId = Math.floor(Math.random() * PROFILE_VIEW_SHARD_COUNT);
+
+      return db.runTransaction(async (transaction) => {
+        const profileSnap = await transaction.get(profileRef);
+        const profile = profileSnap.data() || {};
+        if (!profileSnap.exists || profile.isSearchVisible !== true) {
+          return {counted: false, reason: "profile-not-visible"};
+        }
+
+        const profession = normalizeProfileViewProfession(
+            requestedProfession,
+            profile.professions,
+        );
+        const professionDocId = profession.replaceAll("/", "_");
+        const proRatingRef = profileRef
+            .collection("ProRating")
+            .doc(professionDocId);
+        const shardRef = proRatingRef
+            .collection("VPD")
+            .doc("currentWeek")
+            .collection("shards")
+            .doc(String(shardId));
+        const shardSnap = await transaction.get(shardRef);
+        const counters = incrementWeeklyViewShard(
+            shardSnap.data(),
+            period,
+        );
+
+        transaction.set(proRatingRef, {
+          profession,
+          totalViews: FieldValue.increment(1),
+          updatedAt: FieldValue.serverTimestamp(),
+        }, {merge: true});
+        transaction.set(shardRef, {
+          ...counters,
+          weekKey: period.weekKey,
+          weekStart: Timestamp.fromDate(period.weekStart),
+          updatedAt: FieldValue.serverTimestamp(),
+        }, {merge: true});
+
+        return {counted: true};
+      });
     },
 );
 
@@ -6198,7 +6281,10 @@ exports.syncWorkerReviewRatings = onDocumentWritten(
       }
 
       const workerRef = db.collection("users").doc(targetUserId);
-      const ratingCollection = workerRef.collection("ProRating");
+      const publicWorkerRef = db
+          .collection(PUBLIC_WORKER_PROFILE_COLLECTION)
+          .doc(targetUserId);
+      const ratingCollection = publicWorkerRef.collection("ProRating");
       const oldRatings = await ratingCollection.get();
       const batch = db.batch();
       for (const oldRating of oldRatings.docs) batch.delete(oldRating.ref);

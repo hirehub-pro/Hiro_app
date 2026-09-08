@@ -13,6 +13,9 @@ service cloud.firestore {
     // publicWorkerProfiles/{uid}: authenticated worker discovery profile.
     // Schedule privacy lives only in Schedule/info.hideSchedule; insurance is
     // not part of the public worker profile schema.
+    // publicWorkerProfiles/{uid}/ProRating/{profession}: server-written,
+    // owner-readable analytics. VPD/currentWeek and its shards contain bounded
+    // weekly counters.
     // users/{uid}/invoices/{id}: owner documents. Tax allocation, numbering,
     // finalization, signing and email-delivery fields are server controlled.
     // users/{uid}/counters/{id}: owner-readable sequence state. Initialization
@@ -943,6 +946,52 @@ service cloud.firestore {
         ]);
     }
 
+    function validProRating(data) {
+      return data.keys().hasOnly([
+        'profession', 'totalViews', 'reviewCount', 'totalStars',
+        'totalPriceStars', 'totalServiceStars', 'totalTimingStars',
+        'totalWorkQualityStars', 'avgOverallRating', 'avgPriceRating',
+        'avgServiceRating', 'avgTimingRating', 'avgWorkQualityRating',
+        'updatedAt'
+      ]) && data.keys().hasAll(['profession']) &&
+        data.profession is string && data.profession.size() >= 1 &&
+        data.profession.size() <= 120 &&
+        optionalNumber(data, 'totalViews', 0, 1000000000) &&
+        optionalNumber(data, 'reviewCount', 0, 100000000) &&
+        optionalNumber(data, 'totalStars', 0, 500000000) &&
+        optionalNumber(data, 'totalPriceStars', 0, 500000000) &&
+        optionalNumber(data, 'totalServiceStars', 0, 500000000) &&
+        optionalNumber(data, 'totalTimingStars', 0, 500000000) &&
+        optionalNumber(data, 'totalWorkQualityStars', 0, 500000000) &&
+        optionalNumber(data, 'avgOverallRating', 0, 5) &&
+        optionalNumber(data, 'avgPriceRating', 0, 5) &&
+        optionalNumber(data, 'avgServiceRating', 0, 5) &&
+        optionalNumber(data, 'avgTimingRating', 0, 5) &&
+        optionalNumber(data, 'avgWorkQualityRating', 0, 5) &&
+        optionalTimestamp(data, 'updatedAt');
+    }
+
+    function validWeeklyProfileViews(data) {
+      return data.keys().hasOnly([
+        'sunday', 'monday', 'tuesday', 'wednesday', 'thursday',
+        'friday', 'saturday', 'TVTW', 'weekKey', 'weekStart', 'updatedAt'
+      ]) && data.keys().hasAll([
+        'sunday', 'monday', 'tuesday', 'wednesday', 'thursday',
+        'friday', 'saturday', 'TVTW', 'weekKey', 'weekStart'
+      ]) &&
+        data.sunday is int && data.sunday >= 0 && data.sunday <= 1000000000 &&
+        data.monday is int && data.monday >= 0 && data.monday <= 1000000000 &&
+        data.tuesday is int && data.tuesday >= 0 && data.tuesday <= 1000000000 &&
+        data.wednesday is int && data.wednesday >= 0 && data.wednesday <= 1000000000 &&
+        data.thursday is int && data.thursday >= 0 && data.thursday <= 1000000000 &&
+        data.friday is int && data.friday >= 0 && data.friday <= 1000000000 &&
+        data.saturday is int && data.saturday >= 0 && data.saturday <= 1000000000 &&
+        data.TVTW is int && data.TVTW >= 0 && data.TVTW <= 1000000000 &&
+        data.weekKey is string && data.weekKey.size() == 10 &&
+        data.weekKey.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$') &&
+        data.weekStart is timestamp && optionalTimestamp(data, 'updatedAt');
+    }
+
     // ===============================================================
     // Public worker discovery projection
     // ===============================================================
@@ -982,6 +1031,24 @@ service cloud.firestore {
           (isAuthenticated() &&
             resource.data.get('reviewerId', resource.data.get('userId', '')) ==
               request.auth.uid);
+      }
+
+      // Per-profession rating aggregates and profile-view counters. Only the
+      // backend writes them; Admin SDK writes bypass these client rules.
+      match /ProRating/{professionId} {
+        allow read: if hasActiveProAccess(userId);
+        allow write: if false;
+
+        match /VPD/{vpdId} {
+          allow read: if hasActiveProAccess(userId);
+          allow write: if false;
+
+          match /shards/{shardId} {
+            allow read: if vpdId == 'currentWeek' &&
+              hasActiveProAccess(userId);
+            allow write: if false;
+          }
+        }
       }
 
       match /projects/{projectId} {
@@ -1281,10 +1348,6 @@ service cloud.firestore {
       match /metadata/financial_summary {
         allow read: if hasActiveProAccess(userId);
         allow write: if false;
-      }
-
-      match /ProRating/{document=**} {
-        allow read, write: if hasActiveProAccess(userId);
       }
 
       match /VPD/{document=**} {
