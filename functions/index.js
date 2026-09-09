@@ -40,6 +40,11 @@ const {
   hashDocumentDownloadToken,
 } = require("./document_download");
 const {
+  signingClaimIsCurrent,
+  signingDocumentCanAcceptRequest,
+  signingRequestIsActive,
+} = require("./document_signing_state");
+const {
   taxAuthorityFailureState,
   taxInvoiceDraftSignature,
   taxInvoiceFinalizationMode,
@@ -731,27 +736,77 @@ exports.createDocumentSigningRequest = onCall(
           now.getTime() +
           SIGNING_REQUEST_LIFETIME_DAYS * 24 * 60 * 60 * 1000,
       );
-      await db.collection("documentSigningRequests").doc(requestId).set({
-        workerId,
-        invoiceDocId,
-        receiverId: receiverId || null,
-        docType,
-        documentName: normalizeString(invoice.name || invoice.fileName),
-        documentNumber: normalizeString(invoice.invoiceNumber),
-        documentDate: normalizeString(invoice.date),
-        amount: Number(invoice.amount) || 0,
-        fileName: normalizeString(invoice.fileName) || "document.pdf",
-        storagePath,
-        status: "pending",
-        createdAt: FieldValue.serverTimestamp(),
-        expiresAt: Timestamp.fromDate(expiresAt),
-        signedAt: null,
-      });
+      const requestRef = db.collection("documentSigningRequests").doc(requestId);
+      await db.runTransaction(async (transaction) => {
+        const latestInvoiceSnap = await transaction.get(invoiceRef);
+        if (!latestInvoiceSnap.exists) {
+          throw new HttpsError("not-found", "Saved document not found.");
+        }
+        const latestInvoice = latestInvoiceSnap.data() || {};
+        const latestDocType = normalizeString(
+            latestInvoice.docType || latestInvoice.type,
+        );
+        const latestStoragePath = assertOwnedInvoicePdfPath(
+            normalizeString(latestInvoice.storagePath).trim(),
+            workerId,
+        );
+        if (!(["quote", "work_order"].includes(latestDocType)) ||
+            latestStoragePath !== storagePath) {
+          throw new HttpsError(
+              "failed-precondition",
+              "The saved document changed before the signing link was created.",
+          );
+        }
+        if (!signingDocumentCanAcceptRequest(latestInvoice)) {
+          throw new HttpsError(
+              "failed-precondition",
+              latestInvoice.signatureStatus === "signed" ?
+                "This document has already been signed." :
+                "This document is currently being signed.",
+          );
+        }
 
-      await invoiceRef.set({
-        signatureStatus: "pending",
-        signingRequestedAt: FieldValue.serverTimestamp(),
-      }, {merge: true});
+        const previousRequestId = normalizeString(
+            latestInvoice.signingRequestId,
+        ).trim();
+        const previousRequestRef = previousRequestId &&
+          previousRequestId !== requestId ?
+          db.collection("documentSigningRequests").doc(previousRequestId) : null;
+        const previousRequestSnap = previousRequestRef ?
+          await transaction.get(previousRequestRef) : null;
+
+        if (previousRequestSnap?.exists &&
+            previousRequestSnap.data()?.status === "pending") {
+          transaction.update(previousRequestRef, {
+            status: "revoked",
+            revokedAt: FieldValue.serverTimestamp(),
+            revokedReason: "replaced_by_new_request",
+          });
+        }
+        transaction.create(requestRef, {
+          workerId,
+          invoiceDocId,
+          receiverId: receiverId || null,
+          docType: latestDocType,
+          documentName: normalizeString(
+              latestInvoice.name || latestInvoice.fileName,
+          ),
+          documentNumber: normalizeString(latestInvoice.invoiceNumber),
+          documentDate: normalizeString(latestInvoice.date),
+          amount: Number(latestInvoice.amount) || 0,
+          fileName: normalizeString(latestInvoice.fileName) || "document.pdf",
+          storagePath: latestStoragePath,
+          status: "pending",
+          createdAt: FieldValue.serverTimestamp(),
+          expiresAt: Timestamp.fromDate(expiresAt),
+          signedAt: null,
+        });
+        transaction.set(invoiceRef, {
+          signatureStatus: "pending",
+          signingRequestId: requestId,
+          signingRequestedAt: FieldValue.serverTimestamp(),
+        }, {merge: true});
+      });
 
       return {
         url: `${PUBLIC_APP_ORIGIN}/sign/${token}`,
@@ -786,6 +841,12 @@ exports.publicDocumentSigning = onRequest(
         }
 
         const signingRequest = requestSnap.data() || {};
+        const invoiceRef = db
+            .collection("users")
+            .doc(normalizeString(signingRequest.workerId).trim())
+            .collection("invoices")
+            .doc(normalizeString(signingRequest.invoiceDocId).trim());
+        const invoiceSnap = await invoiceRef.get();
         const expiresAt = toDate(signingRequest.expiresAt);
         if (!expiresAt || expiresAt.getTime() <= Date.now()) {
           res.status(410).send(renderSigningMessage(
@@ -798,6 +859,17 @@ exports.publicDocumentSigning = onRequest(
           res.status(410).send(renderSigningMessage(
               "המסמך כבר נחתם",
               "קישור החתימה אינו פעיל עוד.",
+          ));
+          return;
+        }
+        if (!invoiceSnap.exists || !signingRequestIsActive({
+          invoice: invoiceSnap.data(),
+          requestId: requestRef.id,
+          signingRequest,
+        })) {
+          res.status(410).send(renderSigningMessage(
+              "הקישור אינו פעיל",
+              "נוצר קישור חדש או שהמסמך כבר אינו זמין לחתימה.",
           ));
           return;
         }
@@ -844,10 +916,14 @@ exports.publicDocumentSigning = onRequest(
 
         const signingAttemptId = crypto.randomUUID();
         const claim = await db.runTransaction(async (transaction) => {
-          const latestSnap = await transaction.get(requestRef);
-          if (!latestSnap.exists) return null;
+          const [latestSnap, latestInvoiceSnap] = await Promise.all([
+            transaction.get(requestRef),
+            transaction.get(invoiceRef),
+          ]);
+          if (!latestSnap.exists || !latestInvoiceSnap.exists) return null;
 
           const latest = latestSnap.data() || {};
+          const latestInvoice = latestInvoiceSnap.data() || {};
           const status = normalizeString(latest.status).trim();
           const latestExpiresAt = toDate(latest.expiresAt);
           if (!latestExpiresAt || latestExpiresAt.getTime() <= Date.now()) {
@@ -859,15 +935,26 @@ exports.publicDocumentSigning = onRequest(
           if (status === "signed" || (status !== "pending" && !staleClaim)) {
             return null;
           }
+          if (!signingRequestIsActive({
+            invoice: latestInvoice,
+            requestId: requestRef.id,
+            signingRequest: latest,
+          })) {
+            return null;
+          }
 
           transaction.update(requestRef, {
             status: "signing",
             signingAttemptId,
             signingStartedAt: FieldValue.serverTimestamp(),
             signingClaimExpiresAt: Timestamp.fromMillis(
-                Date.now() + SIGNING_CLAIM_LIFETIME_MS,
+              Date.now() + SIGNING_CLAIM_LIFETIME_MS,
             ),
           });
+          transaction.set(invoiceRef, {
+            signatureStatus: "signing",
+            signingRequestId: requestRef.id,
+          }, {merge: true});
           return latest;
         });
         if (!claim) {
@@ -878,11 +965,6 @@ exports.publicDocumentSigning = onRequest(
         }
 
         const claimedSigningRequest = claim;
-        const invoiceRef = db
-            .collection("users")
-            .doc(claimedSigningRequest.workerId)
-            .collection("invoices")
-            .doc(claimedSigningRequest.invoiceDocId);
         let signedResult;
         let signedAt;
         try {
@@ -893,10 +975,19 @@ exports.publicDocumentSigning = onRequest(
           );
           signedAt = Timestamp.now();
           await db.runTransaction(async (transaction) => {
-            const latestSnap = await transaction.get(requestRef);
+            const [latestSnap, latestInvoiceSnap] = await Promise.all([
+              transaction.get(requestRef),
+              transaction.get(invoiceRef),
+            ]);
             const latest = latestSnap.data() || {};
-            if (latest.status !== "signing" ||
-                latest.signingAttemptId !== signingAttemptId) {
+            const latestInvoice = latestInvoiceSnap.data() || {};
+            if (!latestSnap.exists || !latestInvoiceSnap.exists ||
+                !signingClaimIsCurrent({
+                  invoice: latestInvoice,
+                  requestId: requestRef.id,
+                  signingRequest: latest,
+                  signingAttemptId,
+                })) {
               throw new HttpsError(
                   "aborted",
                   "The document signing claim was lost.",
@@ -922,16 +1013,28 @@ exports.publicDocumentSigning = onRequest(
           // Only the invocation that owns this lease can release it. A later
           // attempt must never undo another signer's completed state.
           await db.runTransaction(async (transaction) => {
-            const latestSnap = await transaction.get(requestRef);
+            const [latestSnap, latestInvoiceSnap] = await Promise.all([
+              transaction.get(requestRef),
+              transaction.get(invoiceRef),
+            ]);
             const latest = latestSnap.data() || {};
-            if (latest.status === "signing" &&
-                latest.signingAttemptId === signingAttemptId) {
+            const latestInvoice = latestInvoiceSnap.data() || {};
+            if (latestSnap.exists && latestInvoiceSnap.exists &&
+                signingClaimIsCurrent({
+                  invoice: latestInvoice,
+                  requestId: requestRef.id,
+                  signingRequest: latest,
+                  signingAttemptId,
+                })) {
               transaction.update(requestRef, {
                 status: "pending",
                 signingAttemptId: FieldValue.delete(),
                 signingStartedAt: FieldValue.delete(),
                 signingClaimExpiresAt: FieldValue.delete(),
               });
+              transaction.set(invoiceRef, {
+                signatureStatus: "pending",
+              }, {merge: true});
             }
           }).catch((releaseError) => {
             logger.error("Could not release document signing claim", {

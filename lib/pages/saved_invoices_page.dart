@@ -410,6 +410,8 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
         return isRtl ? 'נחתם' : 'Signed';
       case 'pending':
         return isRtl ? 'ממתין לחתימה' : 'Awaiting Signature';
+      case 'signing':
+        return isRtl ? 'בתהליך חתימה' : 'Signing in Progress';
       default:
         return isRtl ? 'טרם נחתם' : 'Not Signed';
     }
@@ -421,6 +423,8 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
         return const Color(0xFF15803D);
       case 'pending':
         return const Color(0xFFD97706);
+      case 'signing':
+        return const Color(0xFF2563EB);
       default:
         return const Color(0xFF64748B);
     }
@@ -2113,6 +2117,7 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                     .trim()
                                     .toLowerCase();
                             final isSigned = signatureStatus == 'signed';
+                            final isSigning = signatureStatus == 'signing';
                             final isGeneratingSigningLink =
                                 _generatingSigningLinks.contains(invoiceDoc.id);
                             final paidAmount =
@@ -2919,7 +2924,8 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
                                     ],
                                     if (createActionsExpanded &&
                                         canBeSigned &&
-                                        !isSigned) ...[
+                                        !isSigned &&
+                                        !isSigning) ...[
                                       const SizedBox(height: 8),
                                       TextButton.icon(
                                         onPressed: isGeneratingSigningLink
