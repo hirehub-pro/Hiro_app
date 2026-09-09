@@ -22,7 +22,7 @@ import 'package:untitled1/widgets/growth_recommendation_card.dart';
   @override
   State<AnalyticsPage> createState() => _AnalyticsPageState();
 }
-
+ 
 class _AnalyticsPageState extends State<AnalyticsPage> {
   static const String _allProfessionsKey = '__all_professions__';
   static const String _analyticsPeriodTotal = '__total__';

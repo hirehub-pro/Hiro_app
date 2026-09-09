@@ -83,6 +83,7 @@ const {
   serverDocumentPdfPayload,
 } = require("./server_document");
 const {cancellationProgress} = require("./cancellation_progress");
+const {receiptCancellationPayment} = require("./receipt_cancellation_payment");
 const {buildClientLedgerPosting} = require("./client_ledger");
 const {
   PAYMENT_ANALYTICS_ALL_TIME_ID,
@@ -2640,6 +2641,12 @@ exports.createServerDocument = onCall(
           const logBucketSnap = logBucketRef ?
             await transaction.get(logBucketRef) : null;
           const sourceSnap = sourceRef ? await transaction.get(sourceRef) : null;
+          const cancellationInvoiceId = document.isNegativeReceipt ?
+            String(sourceSnap?.data()?.sourceInvoiceDocId || "").trim() : "";
+          const cancellationInvoiceRef = cancellationInvoiceId ?
+            userRef.collection("invoices").doc(cancellationInvoiceId) : null;
+          const cancellationInvoiceSnap = cancellationInvoiceRef ?
+            await transaction.get(cancellationInvoiceRef) : null;
           const paymentYearSnap = paymentYearRef ?
             await transaction.get(paymentYearRef) : null;
           const latest = latestSnap.data() || {};
@@ -2751,6 +2758,20 @@ exports.createServerDocument = onCall(
                 linkLockUpdatedAt:
                   FieldValue.serverTimestamp(),
               } : {}),
+            });
+          }
+          if (document.isNegativeReceipt && cancellationInvoiceRef &&
+              cancellationInvoiceSnap?.exists) {
+            const invoice = cancellationInvoiceSnap.data() || {};
+            const payment = receiptCancellationPayment({
+              invoiceAmount: invoice.amount,
+              previousPaidAmount: invoice.paidAmount,
+              cancellationAmount: document.finalTotal,
+            });
+            transaction.update(cancellationInvoiceRef, {
+              paidAmount: payment.paidAmount,
+              paymentStatus: payment.paymentStatus,
+              updatedAt: FieldValue.serverTimestamp(),
             });
           }
         });
