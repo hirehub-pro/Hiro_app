@@ -43,3 +43,17 @@ The debug APK is written to `build/app/outputs/flutter-apk/app-debug.apk`.
 Before building a release APK, create a private upload keystore and configure
 `android/key.properties`; release builds intentionally fail instead of signing
 with a debug key when that file is missing.
+
+## Chat write migration
+
+Chat reads remain direct Firestore streams, but message, room-summary, unread,
+and chat-notification writes now use the `sendChatMessage` callable function.
+Deploy in this order to avoid breaking installed clients:
+
+1. Deploy `sendChatMessage` and `deleteChatMessages`.
+2. Release the updated main and admin apps, with App Check enabled.
+3. After the supported clients have migrated, deploy Firestore and Storage rules.
+
+Debug builds that call the deployed function must use
+`--dart-define=ENABLE_FIREBASE_APP_CHECK=true`, and their debug token must be
+registered in the Firebase console.

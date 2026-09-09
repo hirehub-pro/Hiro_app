@@ -26,6 +26,7 @@ import 'package:untitled1/services/app_navigation_service.dart';
 import 'package:untitled1/services/profile_document_service.dart';
 import 'package:untitled1/services/document_signing_service.dart';
 import 'package:untitled1/services/document_chat_access_service.dart';
+import 'package:untitled1/services/chat_write_service.dart';
 import 'package:untitled1/pages/chat_page.dart';
 import 'package:untitled1/utils/payment_installment_dates.dart';
 import 'package:untitled1/utils/invoice_preview_cache.dart';
@@ -6537,8 +6538,6 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       final currentUser = FirebaseAuth.instance.currentUser;
       if (currentUser == null) return false;
 
-      final ids = [currentUser.uid, receiverId]..sort();
-      final roomId = ids.join('_');
       final documentLabel = saved.documentNumber?.isNotEmpty == true
           ? saved.documentNumber!
           : (_invoiceNumber.isNotEmpty
@@ -6550,34 +6549,14 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
         receiverId: receiverId,
       );
 
-      await FirebaseFirestore.instance
-          .collection('chat_rooms')
-          .doc(roomId)
-          .collection('messages')
-          .add({
-            'senderId': currentUser.uid,
-            'receiverId': receiverId,
-            'message': messageText,
-            'text': messageText,
-            'type': 'file',
-            'fileName': saved.fileName,
-            'invoiceDocId': saved.invoiceDocId,
-            'documentAccessId': documentAccessId,
-            'timestamp': FieldValue.serverTimestamp(),
-            'isRead': false,
-          });
-
-      await FirebaseFirestore.instance.collection('chat_rooms').doc(roomId).set(
-        {
-          'lastMessage': messageText,
-          'lastMessageTime': FieldValue.serverTimestamp(),
-          'users': [currentUser.uid, receiverId],
-          'user_names': {
-            currentUser.uid: widget.workerName,
-            receiverId: receiverName,
-          },
-        },
-        SetOptions(merge: true),
+      await ChatWriteService.send(
+        receiverId: receiverId,
+        type: 'file',
+        message: messageText,
+        fileName: saved.fileName,
+        invoiceDocId: saved.invoiceDocId,
+        documentAccessId: documentAccessId,
+        idempotencyKey: 'invoice:${saved.invoiceDocId}:$receiverId',
       );
 
       if (mounted) {
@@ -6630,75 +6609,30 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
 
     final signingLink = await _createSigningLink(saved, receiverId: receiverId);
     if (signingLink == null) return false;
-    final ids = [currentUser.uid, receiverId]..sort();
-    final roomId = ids.join('_');
     final label = _labelForDocType(saved.docType);
     final messageText = 'מסמך לחתימה: $label';
 
-    await FirebaseFirestore.instance
-        .collection('chat_rooms')
-        .doc(roomId)
-        .collection('messages')
-        .add({
-          'senderId': currentUser.uid,
-          'receiverId': receiverId,
-          'message': messageText,
-          'text': messageText,
-          'type': 'file',
-          'url': signingLink.url,
-          'fileUrl': signingLink.url,
-          'fileName': '$label - לחתימה',
-          'signingRequest': true,
-          'invoiceDocId': saved.invoiceDocId,
-          'timestamp': FieldValue.serverTimestamp(),
-          'isRead': false,
-        });
+    await ChatWriteService.send(
+      receiverId: receiverId,
+      type: 'file',
+      message: messageText,
+      url: signingLink.url,
+      fileUrl: signingLink.url,
+      fileName: '$label - לחתימה',
+      signingRequest: true,
+      invoiceDocId: saved.invoiceDocId,
+      idempotencyKey: 'signing:${saved.invoiceDocId}:$receiverId',
+    );
 
     if (signingLink.isProtected) {
       final codeMessage = 'קוד הגישה למסמך: ${signingLink.accessCode}';
-      await FirebaseFirestore.instance
-          .collection('chat_rooms')
-          .doc(roomId)
-          .collection('messages')
-          .add({
-            'senderId': currentUser.uid,
-            'receiverId': receiverId,
-            'message': codeMessage,
-            'text': codeMessage,
-            'type': 'text',
-            'timestamp': FieldValue.serverTimestamp(),
-            'isRead': false,
-          });
+      await ChatWriteService.send(
+        receiverId: receiverId,
+        type: 'text',
+        message: codeMessage,
+        idempotencyKey: 'signing_code:${saved.invoiceDocId}:$receiverId',
+      );
     }
-
-    await FirebaseFirestore.instance.collection('chat_rooms').doc(roomId).set({
-      'lastMessage': messageText,
-      'lastMessageTime': FieldValue.serverTimestamp(),
-      'lastTimestamp': FieldValue.serverTimestamp(),
-      'users': [currentUser.uid, receiverId],
-      'user_names': {
-        currentUser.uid: widget.workerName,
-        receiverId: receiverName,
-      },
-      'unreadCount.$receiverId': FieldValue.increment(1),
-    }, SetOptions(merge: true));
-
-    await FirebaseFirestore.instance
-        .collection('users')
-        .doc(receiverId)
-        .collection('notifications')
-        .add({
-          'type': 'chat_message',
-          'title': widget.workerName,
-          'body': messageText,
-          'message': messageText,
-          'fromId': currentUser.uid,
-          'fromName': widget.workerName,
-          'chatPartnerId': currentUser.uid,
-          'chatPartnerName': widget.workerName,
-          'isRead': false,
-          'timestamp': FieldValue.serverTimestamp(),
-        });
     return true;
   }
 
@@ -6904,47 +6838,21 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       final currentUser = FirebaseAuth.instance.currentUser;
       if (currentUser == null) return false;
 
-      final ids = [currentUser.uid, receiverId]..sort();
-      final roomId = ids.join('_');
       final documentAccessId = await DocumentChatAccessService.create(
         invoiceDocId: saved.invoiceDocId,
         receiverId: receiverId,
       );
-
-      await FirebaseFirestore.instance
-          .collection('chat_rooms')
-          .doc(roomId)
-          .collection('messages')
-          .add({
-            'senderId': currentUser.uid,
-            'receiverId': receiverId,
-            'message': _invoiceNumber.isNotEmpty
-                ? 'Sent a document: $_invoiceNumber'
-                : 'Sent a document: ${_labelForDocType(_selectedDocType)}',
-            'text': _invoiceNumber.isNotEmpty
-                ? 'Sent a document: $_invoiceNumber'
-                : 'Sent a document: ${_labelForDocType(_selectedDocType)}',
-            'type': 'file',
-            'fileName': saved.fileName,
-            'invoiceDocId': saved.invoiceDocId,
-            'documentAccessId': documentAccessId,
-            'timestamp': FieldValue.serverTimestamp(),
-            'isRead': false,
-          });
-
-      await FirebaseFirestore.instance.collection('chat_rooms').doc(roomId).set(
-        {
-          'lastMessage': _invoiceNumber.isNotEmpty
-              ? 'Sent a document: $_invoiceNumber'
-              : 'Sent a document: ${_labelForDocType(_selectedDocType)}',
-          'lastMessageTime': FieldValue.serverTimestamp(),
-          'users': [currentUser.uid, receiverId],
-          'user_names': {
-            currentUser.uid: widget.workerName,
-            receiverId: receiverName,
-          },
-        },
-        SetOptions(merge: true),
+      final messageText = _invoiceNumber.isNotEmpty
+          ? 'Sent a document: $_invoiceNumber'
+          : 'Sent a document: ${_labelForDocType(_selectedDocType)}';
+      await ChatWriteService.send(
+        receiverId: receiverId,
+        type: 'file',
+        message: messageText,
+        fileName: saved.fileName,
+        invoiceDocId: saved.invoiceDocId,
+        documentAccessId: documentAccessId,
+        idempotencyKey: 'invoice:${saved.invoiceDocId}:$receiverId',
       );
 
       if (mounted) {

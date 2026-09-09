@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:hiro_admin/services/chat_write_service.dart';
 
 class AdminChatPage extends StatefulWidget {
   final String receiverId;
@@ -22,11 +23,28 @@ class _AdminChatPageState extends State<AdminChatPage> {
   final _controller = TextEditingController();
   final _db = FirebaseFirestore.instance;
   bool _sending = false;
+  bool _roomReady = false;
+  Object? _roomError;
 
   String get _senderId => FirebaseAuth.instance.currentUser!.uid;
   String get _roomId {
     final ids = [_senderId, widget.receiverId]..sort();
     return '${ids[0]}_${ids[1]}';
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    ChatWriteService.ensureRoom(
+          receiverId: widget.receiverId,
+          receiverName: widget.receiverName,
+        )
+        .then((_) {
+          if (mounted) setState(() => _roomReady = true);
+        })
+        .catchError((Object error) {
+          if (mounted) setState(() => _roomError = error);
+        });
   }
 
   @override
@@ -40,24 +58,11 @@ class _AdminChatPageState extends State<AdminChatPage> {
     if (text.isEmpty || _sending) return;
     setState(() => _sending = true);
     try {
-      final room = _db.collection('chat_rooms').doc(_roomId);
-      // Message rules require the parent room to exist first.
-      await room.set({
-        'users': [_senderId, widget.receiverId],
-      }, SetOptions(merge: true));
-      await room.collection('messages').add({
-        'senderId': _senderId,
-        'receiverId': widget.receiverId,
-        'text': text,
-        'message': text,
-        'type': 'text',
-        'isRead': false,
-        'timestamp': FieldValue.serverTimestamp(),
-      });
-      await room.set({
-        'lastMessage': text,
-        'lastTimestamp': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      await ChatWriteService.send(
+        receiverId: widget.receiverId,
+        type: 'text',
+        message: text,
+      );
       _controller.clear();
     } finally {
       if (mounted) setState(() => _sending = false);
@@ -77,14 +82,19 @@ class _AdminChatPageState extends State<AdminChatPage> {
             ),
           Expanded(
             child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-              stream: _db
-                  .collection('chat_rooms')
-                  .doc(_roomId)
-                  .collection('messages')
-                  .orderBy('timestamp', descending: true)
-                  .limit(100)
-                  .snapshots(),
+              stream: _roomReady
+                  ? _db
+                        .collection('chat_rooms')
+                        .doc(_roomId)
+                        .collection('messages')
+                        .orderBy('timestamp', descending: true)
+                        .limit(100)
+                        .snapshots()
+                  : null,
               builder: (context, snapshot) {
+                if (_roomError != null) {
+                  return Center(child: Text('Chat error: $_roomError'));
+                }
                 if (snapshot.hasError) {
                   return Center(child: Text('Chat error: ${snapshot.error}'));
                 }

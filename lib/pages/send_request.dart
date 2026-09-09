@@ -15,6 +15,7 @@ import 'package:untitled1/services/ai_description_service.dart';
 import 'package:untitled1/services/language_provider.dart';
 import 'package:untitled1/services/notification_service.dart';
 import 'package:untitled1/services/profile_document_service.dart';
+import 'package:untitled1/services/chat_write_service.dart';
 import 'package:untitled1/utils/booking_mode.dart';
 import 'package:untitled1/utils/profession_localization.dart';
 
@@ -621,11 +622,6 @@ class _SendRequestPageState extends State<SendRequestPage> {
     }
   }
 
-  String _getChatRoomId(String user1, String user2) {
-    final ids = [user1, user2]..sort();
-    return ids.join('_');
-  }
-
   bool _hasValidTimeRange() {
     if (_customerTravels || _onlineOnly) return true;
     if (_fromTime == null || _toTime == null) return true;
@@ -1183,39 +1179,19 @@ class _SendRequestPageState extends State<SendRequestPage> {
       );
       await batch.commit();
 
-      final chatRoomId = _getChatRoomId(user.uid, widget.workerId);
-      final roomRef = firestore.collection('chat_rooms').doc(chatRoomId);
-      final roomSnapshot = await roomRef.get();
-      if (!roomSnapshot.exists) {
-        final roomUsers = [user.uid, widget.workerId]..sort();
-        await roomRef.set({
-          'users': roomUsers,
-          'userNames': {user.uid: userName, widget.workerId: widget.workerName},
-          'unreadCount': {user.uid: 0, widget.workerId: 0},
-          'lastMessage': '',
-          'lastTimestamp': FieldValue.serverTimestamp(),
-        });
-      }
       final chatMsg =
           '${strings['chat_request_msg']}$dStr\n${_descriptionController.text.trim()}';
 
-      await roomRef.collection('messages').add({
-        'senderId': user.uid,
-        'receiverId': widget.workerId,
-        'message': chatMsg,
-        'type': 'request_link',
-        'requestId': requestId,
-        'requestOwnerId': user.uid,
-        'workerNotificationId': workerNotificationRef.id,
-        'timestamp': FieldValue.serverTimestamp(),
-        'isSystem': true,
-      });
-
-      await roomRef.set({
-        'lastMessage': chatMsg,
-        'lastTimestamp': FieldValue.serverTimestamp(),
-        'userNames': {user.uid: userName, widget.workerId: widget.workerName},
-      }, SetOptions(merge: true));
+      await ChatWriteService.send(
+        receiverId: widget.workerId,
+        type: 'request_link',
+        message: chatMsg,
+        requestId: requestId,
+        requestOwnerId: user.uid,
+        workerNotificationId: workerNotificationRef.id,
+        isSystem: true,
+        idempotencyKey: 'request_link:$requestId',
+      );
 
       await NotificationService.sendPushNotification(
         targetUserId: widget.workerId,

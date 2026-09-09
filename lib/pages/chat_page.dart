@@ -27,6 +27,7 @@ import 'package:untitled1/services/client_service.dart';
 import 'package:untitled1/services/subscription_access_service.dart';
 import 'package:untitled1/services/profile_document_service.dart';
 import 'package:untitled1/services/document_chat_access_service.dart';
+import 'package:untitled1/services/chat_write_service.dart';
 import 'package:untitled1/pages/my_request_details_page.dart';
 import 'package:untitled1/pages/request_details.dart';
 
@@ -568,97 +569,6 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
-  Future<void> _notifyReceiverIfNotInChat({
-    required String senderId,
-    required String preview,
-  }) async {
-    try {
-      final senderName = await _resolveSenderDisplayName(senderId);
-      await _firestore
-          .collection('users')
-          .doc(widget.receiverId)
-          .collection('notifications')
-          .add({
-            'type': 'chat_message',
-            'title': senderName,
-            'body': preview,
-            'message': preview,
-            'fromId': senderId,
-            'fromName': senderName,
-            'chatPartnerId': senderId,
-            'chatPartnerName': senderName,
-            'isRead': false,
-            'timestamp': FieldValue.serverTimestamp(),
-          });
-    } catch (e) {
-      debugPrint("Error creating receiver notification: $e");
-    }
-  }
-
-  Future<String> _resolveSenderDisplayName(String senderId) async {
-    final cachedName = _currentUserName?.trim();
-    if (cachedName != null && cachedName.isNotEmpty) {
-      return cachedName;
-    }
-
-    try {
-      final senderData = await ProfileDocumentService.load(senderId);
-      final firestoreName = senderData['name']?.toString().trim() ?? '';
-      if (firestoreName.isNotEmpty) {
-        _currentUserName = firestoreName;
-        return firestoreName;
-      }
-    } catch (e) {
-      debugPrint("Error resolving sender display name: $e");
-    }
-
-    final authName = _auth.currentUser?.displayName?.trim() ?? '';
-    if (authName.isNotEmpty) {
-      _currentUserName = authName;
-      return authName;
-    }
-
-    return 'New message';
-  }
-
-  Future<void> _notifyReportAnsweredIfNeeded({
-    required String senderId,
-    required String receiverId,
-  }) async {
-    final reportId = widget.reportContextId?.trim() ?? '';
-    if (reportId.isEmpty) return;
-
-    try {
-      final existing = await _firestore
-          .collection('users')
-          .doc(receiverId)
-          .collection('notifications')
-          .where('type', isEqualTo: 'report_answered')
-          .where('reportId', isEqualTo: reportId)
-          .where('fromId', isEqualTo: senderId)
-          .limit(1)
-          .get();
-
-      if (existing.docs.isNotEmpty) return;
-
-      await _firestore
-          .collection('users')
-          .doc(receiverId)
-          .collection('notifications')
-          .add({
-            'type': 'report_answered',
-            'title': 'עדכון על הדיווח שלך',
-            'body': 'ענינו על הדיווח שלך. לחץ כדי לראות את הפרטים.',
-            'reportId': reportId,
-            'fromId': senderId,
-            'isRead': false,
-            'timestamp': FieldValue.serverTimestamp(),
-          });
-    } catch (e) {
-      debugPrint("Error creating report_answered notification: $e");
-    }
-  }
-
   String _getChatRoomId(String user1, String user2) {
     List<String> ids = [user1, user2];
     ids.sort();
@@ -675,68 +585,17 @@ class _ChatPageState extends State<ChatPage> {
   }) async {
     if (type == 'text' && (text == null || text.trim().isEmpty)) return;
 
-    final String currentUserId = _auth.currentUser!.uid;
-    final String chatRoomId = _getChatRoomId(currentUserId, widget.receiverId);
-
-    final messageData = {
-      'senderId': currentUserId,
-      'receiverId': widget.receiverId,
-      'message': text ?? '',
-      'type': type,
-      if (url != null && url.isNotEmpty) 'url': url,
-      if (fileName != null && fileName.isNotEmpty) 'fileName': fileName,
-      'durationSeconds': ?durationSeconds,
-      'mediaItems': ?mediaItems,
-      'timestamp': FieldValue.serverTimestamp(),
-    };
-
     try {
       await _ensureChatRoomOnce();
-
-      String lastMsgDisplay = "";
-      switch (type) {
-        case 'image':
-          final caption = text?.trim() ?? '';
-          lastMsgDisplay = caption.isEmpty ? "📷 Photo" : "📷 $caption";
-          break;
-        case 'video':
-          lastMsgDisplay = "🎥 Video";
-          break;
-        case 'file':
-          lastMsgDisplay = "📄 File: $fileName";
-          break;
-        case 'audio':
-          lastMsgDisplay = "🎤 Voice message";
-          break;
-        case 'media_group':
-          lastMsgDisplay = "🖼️ ${mediaItems?.length ?? 0} media items";
-          break;
-        default:
-          lastMsgDisplay = text ?? "";
-      }
-
-      final roomRef = _firestore.collection('chat_rooms').doc(chatRoomId);
-      final messageRef = roomRef.collection('messages').doc();
-      final batch = _firestore.batch();
-      batch.set(messageRef, messageData);
-      batch.update(roomRef, {
-        'lastMessage': lastMsgDisplay,
-        'lastTimestamp': FieldValue.serverTimestamp(),
-        'user_names.$currentUserId': _currentUserName ?? 'User',
-        'user_names.${widget.receiverId}': widget.receiverName,
-        'unreadCount.${widget.receiverId}': FieldValue.increment(1),
-      });
-      await batch.commit();
-
-      await _notifyReceiverIfNotInChat(
-        senderId: currentUserId,
-        preview: lastMsgDisplay,
-      );
-      await _notifyReportAnsweredIfNeeded(
-        senderId: currentUserId,
+      await ChatWriteService.send(
         receiverId: widget.receiverId,
+        type: type,
+        message: text,
+        url: url,
+        fileName: fileName,
+        durationSeconds: durationSeconds,
+        mediaItems: mediaItems,
       );
-
       _messageController.clear();
       _scrollController.animateTo(
         0,
@@ -3289,9 +3148,12 @@ class _ChatPageState extends State<ChatPage> {
     }
 
     try {
+      await _ensureChatRoomOnce();
       final ref = _storage
           .ref()
           .child('chats')
+          .child(_getChatRoomId(_auth.currentUser!.uid, widget.receiverId))
+          .child(_auth.currentUser!.uid)
           .child(DateTime.now().millisecondsSinceEpoch.toString());
       final uploadTask = ref.putFile(file);
 
@@ -3407,7 +3269,13 @@ class _ChatPageState extends State<ChatPage> {
     }
 
     try {
-      final ref = _storage.ref().child('chats').child(uploadId);
+      await _ensureChatRoomOnce();
+      final ref = _storage
+          .ref()
+          .child('chats')
+          .child(_getChatRoomId(_auth.currentUser!.uid, widget.receiverId))
+          .child(_auth.currentUser!.uid)
+          .child(uploadId);
       final uploadTask = ref.putFile(file);
 
       uploadTask.snapshotEvents.listen((snapshot) {
@@ -4124,18 +3992,12 @@ class _ChatPageState extends State<ChatPage> {
 
     setState(() => _isDeletingMessages = true);
     final selectedIds = _selectedMessageIds.toList(growable: false);
-    final chatRoomId = _getChatRoomId(currentUser.uid, widget.receiverId);
 
     try {
-      final batch = _firestore.batch();
-      final messages = _firestore
-          .collection('chat_rooms')
-          .doc(chatRoomId)
-          .collection('messages');
-      for (final id in selectedIds) {
-        batch.delete(messages.doc(id));
-      }
-      await batch.commit();
+      await ChatWriteService.deleteMessages(
+        receiverId: widget.receiverId,
+        messageIds: selectedIds,
+      );
       if (!mounted) return;
 
       unawaited(HapticFeedback.mediumImpact());

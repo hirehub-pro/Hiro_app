@@ -37,14 +37,34 @@ service firebase.storage {
       allow write: if false;
     }
 
+    function isChatParticipant(roomId) {
+      return isAuthenticated() && request.auth.uid in
+        firestore.get(/databases/(default)/documents/chat_rooms/$(roomId)).data.users;
+    }
+
+    match /chats/{roomId}/{senderId}/{fileName} {
+      allow read: if isChatParticipant(roomId);
+      allow create, update: if isOwner(senderId) && isChatParticipant(roomId) &&
+        request.resource != null && request.resource.size > 0 &&
+        request.resource.size <= 25 * 1024 * 1024;
+      allow delete: if isOwner(senderId) && isChatParticipant(roomId);
+    }
+
+    // Existing flat-path chat objects remain readable during migration.
+    match /chats/{legacyFile} {
+      allow read: if isAuthenticated();
+      allow write: if false;
+    }
+
     // Preserve the current behavior of unrelated Storage features. These
     // paths should be tightened separately once their ownership model is
     // inventoried; this fallback deliberately excludes all invoice objects.
     match /{topLevel}/{allPaths=**} {
-      allow read: if topLevel != 'invoices' &&
+      allow read: if topLevel != 'invoices' && topLevel != 'chats' &&
         !(topLevel == 'users' &&
           allPaths.matches('^[^/]+/uniform_exports/.*$'));
-      allow write: if topLevel != 'invoices' && isAuthenticated() &&
+      allow write: if topLevel != 'invoices' && topLevel != 'chats' &&
+        isAuthenticated() &&
         !(topLevel == 'users' &&
           allPaths.matches('^[^/]+/uniform_exports/.*$'));
     }

@@ -7,6 +7,7 @@ import 'package:hiro_admin/pages/admin_reported_post_page.dart';
 import 'package:hiro_admin/pages/admin_user_detail_page.dart';
 import 'package:hiro_admin/pages/fullscreen_media_viewer.dart';
 import 'package:hiro_admin/services/profile_document_service.dart';
+import 'package:hiro_admin/services/chat_write_service.dart';
 import 'package:hiro_admin/widgets/cached_video_player.dart';
 
 class AdminReportsPage extends StatefulWidget {
@@ -238,11 +239,6 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
     }
   }
 
-  String _getChatRoomId(String user1, String user2) {
-    final ids = [user1, user2]..sort();
-    return ids.join('_');
-  }
-
   Future<void> _sendResolvedMessageToReporter({
     required String reportId,
     required String reporterId,
@@ -251,42 +247,13 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
     final adminId = FirebaseAuth.instance.currentUser?.uid;
     if (adminId == null || reporterId.isEmpty || reporterId == 'app') return;
 
-    final chatRoomId = _getChatRoomId(adminId, reporterId);
-    final chatRoom = _firestore.collection('chat_rooms').doc(chatRoomId);
-
-    // Message rules require the parent room to exist before a message is added.
-    await chatRoom.set({
-      'users': [adminId, reporterId],
-    }, SetOptions(merge: true));
-
-    final existingResolved = await chatRoom
-        .collection('messages')
-        .where('requestId', isEqualTo: reportId)
-        .limit(10)
-        .get();
-
-    if (existingResolved.docs.any(
-      (doc) => doc.data()['type'] == 'report_resolved',
-    )) {
-      return;
-    }
-
-    await chatRoom.collection('messages').add({
-      'senderId': adminId,
-      'receiverId': reporterId,
-      'message':
-          'הדיווח שלך סומן כטופל: ${subject.isEmpty ? 'דיווח' : subject}',
-      'type': 'report_resolved',
-      'requestId': reportId,
-      'timestamp': FieldValue.serverTimestamp(),
-    });
-
-    await chatRoom.set({
-      'lastMessage': '✅ הדיווח טופל',
-      'lastTimestamp': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
-
-    await chatRoom.update({'unreadCount.$reporterId': FieldValue.increment(1)});
+    await ChatWriteService.send(
+      receiverId: reporterId,
+      type: 'report_resolved',
+      message: 'הדיווח שלך סומן כטופל: ${subject.isEmpty ? 'דיווח' : subject}',
+      requestId: reportId,
+      idempotencyKey: 'report_resolved:$reportId',
+    );
   }
 
   Future<void> _deleteReport(String reportId) async {
@@ -1069,11 +1036,6 @@ class _AdminReportDetailsPageState extends State<AdminReportDetailsPage> {
     }
   }
 
-  String _getChatRoomId(String user1, String user2) {
-    final ids = [user1, user2]..sort();
-    return ids.join('_');
-  }
-
   Future<void> _sendResolvedMessageToReporter({
     required String reportId,
     required String reporterId,
@@ -1082,42 +1044,13 @@ class _AdminReportDetailsPageState extends State<AdminReportDetailsPage> {
     final adminId = FirebaseAuth.instance.currentUser?.uid;
     if (adminId == null || reporterId.isEmpty || reporterId == 'app') return;
 
-    final chatRoomId = _getChatRoomId(adminId, reporterId);
-    final chatRoom = _firestore.collection('chat_rooms').doc(chatRoomId);
-
-    // Message rules require the parent room to exist before a message is added.
-    await chatRoom.set({
-      'users': [adminId, reporterId],
-    }, SetOptions(merge: true));
-
-    final existingResolved = await chatRoom
-        .collection('messages')
-        .where('requestId', isEqualTo: reportId)
-        .limit(10)
-        .get();
-
-    if (existingResolved.docs.any(
-      (doc) => doc.data()['type'] == 'report_resolved',
-    )) {
-      return;
-    }
-
-    await chatRoom.collection('messages').add({
-      'senderId': adminId,
-      'receiverId': reporterId,
-      'message':
-          'הדיווח שלך סומן כטופל: ${subject.isEmpty ? 'דיווח' : subject}',
-      'type': 'report_resolved',
-      'requestId': reportId,
-      'timestamp': FieldValue.serverTimestamp(),
-    });
-
-    await chatRoom.set({
-      'lastMessage': '✅ הדיווח טופל',
-      'lastTimestamp': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
-
-    await chatRoom.update({'unreadCount.$reporterId': FieldValue.increment(1)});
+    await ChatWriteService.send(
+      receiverId: reporterId,
+      type: 'report_resolved',
+      message: 'הדיווח שלך סומן כטופל: ${subject.isEmpty ? 'דיווח' : subject}',
+      requestId: reportId,
+      idempotencyKey: 'report_resolved:$reportId',
+    );
   }
 
   Future<void> _answerReporter(String reporterId) async {
@@ -1127,47 +1060,18 @@ class _AdminReportDetailsPageState extends State<AdminReportDetailsPage> {
     }
 
     final messenger = ScaffoldMessenger.of(context);
-    final chatRoomId = _getChatRoomId(currentUserId, reporterId);
     final subject = (_data['subject'] ?? _data['reason'] ?? 'Report')
         .toString()
         .trim();
 
     try {
-      final chatRoom = _firestore.collection('chat_rooms').doc(chatRoomId);
-
-      // Message rules require the parent room to exist before a message is added.
-      await chatRoom.set({
-        'users': [currentUserId, reporterId],
-      }, SetOptions(merge: true));
-
-      final existingReference = await chatRoom
-          .collection('messages')
-          .where('requestId', isEqualTo: widget.reportId)
-          .limit(10)
-          .get();
-
-      final hasReference = existingReference.docs.any(
-        (doc) => doc.data()['type'] == 'report_reference',
+      await ChatWriteService.send(
+        receiverId: reporterId,
+        type: 'report_reference',
+        message: 'Admin replied to your report: $subject',
+        requestId: widget.reportId,
+        idempotencyKey: 'report_reference:${widget.reportId}',
       );
-      if (!hasReference) {
-        await chatRoom.collection('messages').add({
-          'senderId': currentUserId,
-          'receiverId': reporterId,
-          'message': 'Admin replied to your report: $subject',
-          'type': 'report_reference',
-          'requestId': widget.reportId,
-          'timestamp': FieldValue.serverTimestamp(),
-        });
-
-        await chatRoom.set({
-          'lastMessage': '📌 Report update',
-          'lastTimestamp': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-
-        await chatRoom.update({
-          'unreadCount.$reporterId': FieldValue.increment(1),
-        });
-      }
 
       if (!mounted) return;
       Navigator.push(

@@ -6797,9 +6797,341 @@ exports.ensureChatRoom = onCall(
         lastMessage: normalizeString(roomData.lastMessage).slice(0, 4000),
         lastTimestamp: roomData.lastTimestamp ||
           FieldValue.serverTimestamp(),
-      });
+      }, {merge: true});
 
       return {roomId};
+    },
+);
+
+function chatMessagePreview({type, message, fileName, mediaItems}) {
+  if (type === "image") return message ? `📷 ${message}` : "📷 Photo";
+  if (type === "video") return "🎥 Video";
+  if (type === "audio") return "🎤 Voice message";
+  if (type === "media_group") {
+    return `🖼️ ${mediaItems?.length || 0} media items`;
+  }
+  if (type === "file" && !message) return `📄 File: ${fileName}`;
+  if (type === "report_resolved") return "✅ הדיווח טופל";
+  if (type === "report_reference") return "📌 Report update";
+  return message;
+}
+
+exports.sendChatMessage = onCall(
+    {region: "me-west1", enforceAppCheck: true},
+    async (request) => {
+      const senderId = request.auth?.uid;
+      if (!senderId) {
+        throw new HttpsError("unauthenticated", "Authentication required.");
+      }
+
+      const input = request.data || {};
+      const receiverId = normalizeString(input.receiverId).trim();
+      const type = normalizeString(input.type).trim() || "text";
+      const message = normalizeString(input.message).trim();
+      const clientMessageId = normalizeString(input.clientMessageId).trim();
+      const allowedTypes = new Set([
+        "text", "image", "video", "file", "audio", "media_group",
+        "request_link", "report_resolved", "report_reference",
+      ]);
+      if (!receiverId || receiverId === senderId || receiverId.length > 128) {
+        throw new HttpsError(
+            "invalid-argument", "A valid receiver is required.");
+      }
+      if (!allowedTypes.has(type)) {
+        throw new HttpsError("invalid-argument", "Unsupported message type.");
+      }
+      if (!clientMessageId || clientMessageId.length > 240) {
+        throw new HttpsError("invalid-argument", "A message ID is required.");
+      }
+      if (message.length > 10000 || (type === "text" && !message)) {
+        throw new HttpsError("invalid-argument", "Invalid message text.");
+      }
+
+      const optionalString = (key, limit) => {
+        const value = normalizeString(input[key]).trim();
+        if (value.length > limit) {
+          throw new HttpsError("invalid-argument", `Invalid ${key}.`);
+        }
+        return value;
+      };
+      const url = optionalString("url", 4096);
+      const fileUrl = optionalString("fileUrl", 4096);
+      if ((url && !url.startsWith("https://")) ||
+          (fileUrl && !fileUrl.startsWith("https://"))) {
+        throw new HttpsError(
+            "invalid-argument", "Attachment URLs must use HTTPS.");
+      }
+      const fileName = optionalString("fileName", 240);
+      const invoiceDocId = optionalString("invoiceDocId", 180);
+      const documentAccessId = optionalString("documentAccessId", 80);
+      const requestId = optionalString("requestId", 180);
+      const requestOwnerId = optionalString("requestOwnerId", 128);
+      const workerNotificationId = optionalString("workerNotificationId", 180);
+      const durationSeconds = input.durationSeconds;
+      if (durationSeconds !== undefined &&
+          (!Number.isInteger(durationSeconds) || durationSeconds < 0 ||
+           durationSeconds > 86400)) {
+        throw new HttpsError("invalid-argument", "Invalid audio duration.");
+      }
+      const mediaItems = input.mediaItems;
+      if (mediaItems !== undefined &&
+          (!Array.isArray(mediaItems) || mediaItems.length > 20 ||
+           mediaItems.some((item) => !item || typeof item !== "object" ||
+             !["image", "video"].includes(item.type) ||
+             typeof item.url !== "string" || item.url.length > 4096 ||
+             !item.url.startsWith("https://") ||
+             typeof item.fileName !== "string" ||
+             item.fileName.length > 240))) {
+        throw new HttpsError("invalid-argument", "Invalid media items.");
+      }
+      if (type === "media_group" && (!mediaItems || mediaItems.length === 0)) {
+        throw new HttpsError("invalid-argument", "Media items are required.");
+      }
+      if (["image", "video", "audio"].includes(type) && !url && !fileUrl) {
+        throw new HttpsError(
+            "invalid-argument", "An attachment URL is required.");
+      }
+      if (type === "file" && !url && !fileUrl && !documentAccessId) {
+        throw new HttpsError("invalid-argument", "A document is required.");
+      }
+      if (input.signingRequest === true &&
+          (type !== "file" || !invoiceDocId || (!url && !fileUrl))) {
+        throw new HttpsError("invalid-argument", "Invalid signing message.");
+      }
+      if (input.isSystem === true && type !== "request_link") {
+        throw new HttpsError("invalid-argument", "Invalid system message.");
+      }
+      if (type === "request_link" &&
+          (!requestId || requestOwnerId !== senderId ||
+           !workerNotificationId)) {
+        throw new HttpsError("invalid-argument", "Invalid request message.");
+      }
+
+      const [
+        senderSnap,
+        receiverSnap,
+        senderBlockedReceiverSnap,
+        receiverBlockedSenderSnap,
+        linkedRequestSnap,
+      ] = await Promise.all([
+        db.collection("users").doc(senderId).get(),
+        db.collection("users").doc(receiverId).get(),
+        db.collection("users").doc(senderId)
+            .collection("blocked_users").doc(receiverId).get(),
+        db.collection("users").doc(receiverId)
+            .collection("blocked_users").doc(senderId).get(),
+        type === "request_link" ?
+          db.collection("users").doc(receiverId)
+              .collection("notifications").doc(workerNotificationId).get() :
+          Promise.resolve(null),
+      ]);
+      if (!senderSnap.exists || !receiverSnap.exists) {
+        throw new HttpsError("not-found", "A chat participant was not found.");
+      }
+      if (type === "request_link") {
+        const linkedRequest = linkedRequestSnap?.data() || {};
+        if (!linkedRequestSnap?.exists ||
+            linkedRequest.requestId !== requestId ||
+            linkedRequest.fromId !== senderId ||
+            linkedRequest.workerId !== receiverId) {
+          throw new HttpsError(
+              "permission-denied", "The linked request is not valid.");
+        }
+      }
+
+      const senderData = senderSnap.data() || {};
+      const receiverData = receiverSnap.data() || {};
+      const senderName = normalizeString(senderData.name)
+          .trim().slice(0, 100) || "User";
+      const receiverName = normalizeString(receiverData.name)
+          .trim().slice(0, 100) || "User";
+
+      if (["report_resolved", "report_reference"].includes(type)) {
+        const isAdmin = request.auth.token?.admin === true ||
+          senderData.role === "admin";
+        if (!isAdmin) {
+          throw new HttpsError("permission-denied", "Admin access required.");
+        }
+      }
+      const senderIsAdmin = request.auth.token?.admin === true ||
+        senderData.role === "admin";
+      if (!senderIsAdmin &&
+          (senderBlockedReceiverSnap.exists ||
+           receiverBlockedSenderSnap.exists)) {
+        throw new HttpsError(
+            "permission-denied", "Messaging is unavailable for this user.");
+      }
+
+      const roomId = [senderId, receiverId].sort().join("_");
+      const messageId = crypto.createHash("sha256")
+          .update(`${senderId}:${clientMessageId}`).digest("hex");
+      const roomRef = db.collection("chat_rooms").doc(roomId);
+      const messageRef = roomRef.collection("messages").doc(messageId);
+      const notificationRef = db.collection("users").doc(receiverId)
+          .collection("notifications").doc(`chat_${messageId}`);
+      const timestamp = FieldValue.serverTimestamp();
+      const preview = chatMessagePreview({
+        type, message, fileName, mediaItems,
+      });
+
+      await db.runTransaction(async (transaction) => {
+        const [roomSnap, existingMessage] = await Promise.all([
+          transaction.get(roomRef),
+          transaction.get(messageRef),
+        ]);
+        if (existingMessage.exists) return;
+
+        const roomData = roomSnap.data() || {};
+        const windowStartedAt =
+          roomData.sendWindowStartedAt instanceof Timestamp ?
+            roomData.sendWindowStartedAt.toMillis() : 0;
+        const sameWindow = roomData.sendWindowSenderId === senderId &&
+          Date.now() - windowStartedAt < 10000;
+        const sendWindowCount = sameWindow ?
+          Number(roomData.sendWindowCount) || 0 : 0;
+        if (sendWindowCount >= 10) {
+          throw new HttpsError(
+              "resource-exhausted", "Too many messages. Try again shortly.");
+        }
+        const unreadCount = roomData.unreadCount &&
+          typeof roomData.unreadCount === "object" ? roomData.unreadCount : {};
+        const messageData = {
+          senderId, receiverId, message, type, timestamp, isRead: false,
+        };
+        if (message) messageData.text = message;
+        if (url) messageData.url = url;
+        if (fileUrl) messageData.fileUrl = fileUrl;
+        if (fileName) messageData.fileName = fileName;
+        if (durationSeconds !== undefined) {
+          messageData.durationSeconds = durationSeconds;
+        }
+        if (mediaItems !== undefined) messageData.mediaItems = mediaItems;
+        if (invoiceDocId) messageData.invoiceDocId = invoiceDocId;
+        if (documentAccessId) messageData.documentAccessId = documentAccessId;
+        if (requestId) messageData.requestId = requestId;
+        if (requestOwnerId) messageData.requestOwnerId = requestOwnerId;
+        if (workerNotificationId) {
+          messageData.workerNotificationId = workerNotificationId;
+        }
+        if (input.isSystem === true) messageData.isSystem = true;
+        if (input.signingRequest === true) messageData.signingRequest = true;
+
+        transaction.set(messageRef, messageData);
+        transaction.set(roomRef, {
+          users: [senderId, receiverId].sort(),
+          user_names: {[senderId]: senderName, [receiverId]: receiverName},
+          unreadCount: {
+            ...unreadCount,
+            [senderId]: Number.isFinite(unreadCount[senderId]) ?
+              unreadCount[senderId] : 0,
+            [receiverId]: (Number.isFinite(unreadCount[receiverId]) ?
+              unreadCount[receiverId] : 0) + 1,
+          },
+          lastMessage: preview.slice(0, 4000),
+          lastMessageId: messageId,
+          lastMessageTime: timestamp,
+          lastTimestamp: timestamp,
+          sendWindowSenderId: senderId,
+          sendWindowStartedAt: sameWindow ?
+            roomData.sendWindowStartedAt : Timestamp.now(),
+          sendWindowCount: sendWindowCount + 1,
+        }, {merge: true});
+        if (type !== "request_link") {
+          transaction.set(notificationRef, {
+            type: "chat_message",
+            title: senderName,
+            body: preview.slice(0, 4000),
+            message: preview.slice(0, 4000),
+            fromId: senderId,
+            fromName: senderName,
+            chatPartnerId: senderId,
+            chatPartnerName: senderName,
+            messageId,
+            roomId,
+            isRead: false,
+            timestamp,
+          });
+        }
+      });
+
+      return {roomId, messageId};
+    },
+);
+
+exports.deleteChatMessages = onCall(
+    {region: "me-west1", enforceAppCheck: true},
+    async (request) => {
+      const senderId = request.auth?.uid;
+      if (!senderId) {
+        throw new HttpsError("unauthenticated", "Authentication required.");
+      }
+      const receiverId = normalizeString(request.data?.receiverId).trim();
+      const messageIds = request.data?.messageIds;
+      if (!receiverId || receiverId === senderId || receiverId.length > 128 ||
+          !Array.isArray(messageIds) || messageIds.length === 0 ||
+          messageIds.length > 50 || messageIds.some((id) =>
+            typeof id !== "string" || !id || id.length > 240 ||
+            id.includes("/"))) {
+        throw new HttpsError("invalid-argument", "Invalid messages.");
+      }
+
+      const roomId = [senderId, receiverId].sort().join("_");
+      const roomRef = db.collection("chat_rooms").doc(roomId);
+      const roomSnap = await roomRef.get();
+      const users = roomSnap.data()?.users;
+      if (!roomSnap.exists || !Array.isArray(users) ||
+          !users.includes(senderId) || !users.includes(receiverId)) {
+        throw new HttpsError("permission-denied", "Chat access denied.");
+      }
+
+      const uniqueMessageIds = [...new Set(messageIds)];
+      const messageRefs = uniqueMessageIds.map((messageId) =>
+        roomRef.collection("messages").doc(messageId));
+      const messageSnaps = await db.getAll(...messageRefs);
+      if (messageSnaps.some((snap) =>
+        !snap.exists || snap.data()?.senderId !== senderId)) {
+        throw new HttpsError(
+            "permission-denied", "Only sent messages can be deleted.");
+      }
+
+      const batch = db.batch();
+      messageRefs.forEach((ref) => batch.delete(ref));
+      await batch.commit();
+
+      const latestMessages = await roomRef.collection("messages")
+          .orderBy("timestamp", "desc").limit(1).get();
+      const latestMessage = latestMessages.docs[0];
+      await db.runTransaction(async (transaction) => {
+        const latestRoom = await transaction.get(roomRef);
+        if (!uniqueMessageIds.includes(latestRoom.data()?.lastMessageId)) {
+          return;
+        }
+
+        if (!latestMessage) {
+          transaction.update(roomRef, {
+            lastMessage: "",
+            lastMessageId: FieldValue.delete(),
+            lastMessageTime: FieldValue.delete(),
+            lastTimestamp: FieldValue.delete(),
+          });
+          return;
+        }
+        const latestData = latestMessage.data();
+        const latestTimestamp = latestData.timestamp ||
+          FieldValue.serverTimestamp();
+        transaction.update(roomRef, {
+          lastMessage: chatMessagePreview({
+            type: normalizeString(latestData.type),
+            message: normalizeString(latestData.message || latestData.text),
+            fileName: normalizeString(latestData.fileName),
+            mediaItems: latestData.mediaItems,
+          }).slice(0, 4000),
+          lastMessageId: latestMessage.id,
+          lastMessageTime: latestTimestamp,
+          lastTimestamp: latestTimestamp,
+        });
+      });
+      return {deleted: messageRefs.length};
     },
 );
 

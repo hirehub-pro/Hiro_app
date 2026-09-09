@@ -1075,7 +1075,7 @@ test("enforces invoice-builder lock ownership and expiry", {
   }));
 });
 
-test("allows chat participants and denies outsiders", {
+test("keeps chat writes server-only and reads participant-only", {
   skip: !emulatorAvailable,
 }, async () => {
   const alice = "chat-alice-id-0000001";
@@ -1083,13 +1083,35 @@ test("allows chat participants and denies outsiders", {
   const eve = "chat-eve-id-000000003";
   const roomId = "room-alice-bob";
   const aliceDb = testEnv.authenticatedContext(alice).firestore();
-  await assertSucceeds(setDoc(doc(aliceDb, `chat_rooms/${roomId}`), {
+  await assertFails(setDoc(doc(aliceDb, `chat_rooms/${roomId}`), {
     users: [alice, bob],
     lastMessage: "",
   }));
-  await assertSucceeds(setDoc(
-      doc(aliceDb, `chat_rooms/${roomId}/messages/message-1`),
-      {senderId: alice, receiverId: bob, text: "Hello", timestamp: serverTimestamp()},
+  await seed(`chat_rooms/${roomId}`, {users: [alice, bob], lastMessage: ""});
+  await seed(`chat_rooms/${roomId}/messages/message-1`, {
+    senderId: alice,
+    receiverId: bob,
+    text: "Hello",
+    timestamp: new Date(),
+  });
+  await assertSucceeds(getDoc(doc(aliceDb, `chat_rooms/${roomId}`)));
+  await assertFails(setDoc(
+      doc(aliceDb, `chat_rooms/${roomId}/messages/message-2`),
+      {
+        senderId: alice,
+        receiverId: bob,
+        text: "Hello",
+        timestamp: serverTimestamp(),
+      },
+  ));
+  await assertFails(setDoc(
+      doc(aliceDb, `users/${bob}/notifications/chat-message-1`),
+      {
+        type: "chat_message",
+        fromId: alice,
+        message: "Hello",
+        timestamp: serverTimestamp(),
+      },
   ));
   const eveDb = testEnv.authenticatedContext(eve).firestore();
   await assertFails(getDoc(doc(eveDb, `chat_rooms/${roomId}`)));
