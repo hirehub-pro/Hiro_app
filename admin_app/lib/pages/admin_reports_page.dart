@@ -2,12 +2,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:untitled1/formu.dart';
-import 'package:untitled1/pages/chat_page.dart';
-import 'package:untitled1/pages/fullscreen_media_viewer.dart';
-import 'package:untitled1/ptofile.dart';
-import 'package:untitled1/services/profile_document_service.dart';
-import 'package:untitled1/widgets/cached_video_player.dart';
+import 'package:hiro_admin/pages/admin_chat_page.dart';
+import 'package:hiro_admin/pages/admin_reported_post_page.dart';
+import 'package:hiro_admin/pages/admin_user_detail_page.dart';
+import 'package:hiro_admin/pages/fullscreen_media_viewer.dart';
+import 'package:hiro_admin/services/profile_document_service.dart';
+import 'package:hiro_admin/widgets/cached_video_player.dart';
 
 class AdminReportsPage extends StatefulWidget {
   const AdminReportsPage({super.key});
@@ -252,41 +252,41 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
     if (adminId == null || reporterId.isEmpty || reporterId == 'app') return;
 
     final chatRoomId = _getChatRoomId(adminId, reporterId);
+    final chatRoom = _firestore.collection('chat_rooms').doc(chatRoomId);
 
-    final existingResolved = await _firestore
-        .collection('chat_rooms')
-        .doc(chatRoomId)
-        .collection('messages')
-        .where('type', isEqualTo: 'report_resolved')
-        .where('reportId', isEqualTo: reportId)
-        .limit(1)
-        .get();
-
-    if (existingResolved.docs.isNotEmpty) return;
-
-    await _firestore
-        .collection('chat_rooms')
-        .doc(chatRoomId)
-        .collection('messages')
-        .add({
-          'senderId': adminId,
-          'receiverId': reporterId,
-          'message':
-              'הדיווח שלך סומן כטופל: ${subject.isEmpty ? 'דיווח' : subject}',
-          'type': 'report_resolved',
-          'reportId': reportId,
-          'timestamp': FieldValue.serverTimestamp(),
-        });
-
-    await _firestore.collection('chat_rooms').doc(chatRoomId).set({
-      'lastMessage': '✅ הדיווח טופל',
-      'lastTimestamp': FieldValue.serverTimestamp(),
+    // Message rules require the parent room to exist before a message is added.
+    await chatRoom.set({
       'users': [adminId, reporterId],
     }, SetOptions(merge: true));
 
-    await _firestore.collection('chat_rooms').doc(chatRoomId).update({
-      'unreadCount.$reporterId': FieldValue.increment(1),
+    final existingResolved = await chatRoom
+        .collection('messages')
+        .where('requestId', isEqualTo: reportId)
+        .limit(10)
+        .get();
+
+    if (existingResolved.docs.any(
+      (doc) => doc.data()['type'] == 'report_resolved',
+    )) {
+      return;
+    }
+
+    await chatRoom.collection('messages').add({
+      'senderId': adminId,
+      'receiverId': reporterId,
+      'message':
+          'הדיווח שלך סומן כטופל: ${subject.isEmpty ? 'דיווח' : subject}',
+      'type': 'report_resolved',
+      'requestId': reportId,
+      'timestamp': FieldValue.serverTimestamp(),
     });
+
+    await chatRoom.set({
+      'lastMessage': '✅ הדיווח טופל',
+      'lastTimestamp': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+
+    await chatRoom.update({'unreadCount.$reporterId': FieldValue.increment(1)});
   }
 
   Future<void> _deleteReport(String reportId) async {
@@ -836,40 +836,6 @@ class _AdminReportDetailsPageState extends State<AdminReportDetailsPage> {
   late Map<String, dynamic> _data;
   final Map<String, Map<String, String>> _userDetailsCache = {};
 
-  Map<String, dynamic> get _postDetailStrings => {
-    'anonymous': 'Anonymous',
-    'post_actions': 'Post actions',
-    'edit': 'Edit',
-    'delete': 'Delete',
-    'report': 'Report',
-    'block_user': 'Block user',
-    'confirm_choose_worker_title': 'Choose this worker?',
-    'confirm_choose_worker_body':
-        'This will mark the worker as the selected offer for this job request.',
-    'cancel': 'Cancel',
-    'choose_worker': 'Choose Worker',
-    'author': 'Author',
-    'posted': 'Posted',
-    'profession': 'Profession',
-    'location': 'Location',
-    'date_from': 'Date',
-    'time_from': 'Time',
-    'workers_can_offer':
-        'Workers can place bids here, and you can choose the one you want.',
-    'selected_worker': 'Selected Worker',
-    'job_request_comment_restriction':
-        'Only workers with an active subscription can comment on job requests.',
-    'comments': 'Comments / Offers',
-    'login': 'Login',
-    'guest_msg': 'You need to sign in to do this.',
-    'add_comment': 'Add a comment or offer...',
-    'bid_price': 'Bid Price',
-    'bid_price_hint': 'For example 350',
-    'send_bid': 'Send Bid',
-    'update_bid': 'Update Bid',
-    'edit_your_bid': 'You can update your existing bid.',
-  };
-
   @override
   void initState() {
     super.initState();
@@ -953,18 +919,7 @@ class _AdminReportDetailsPageState extends State<AdminReportDetailsPage> {
       if (!mounted) return;
       Navigator.push(
         context,
-        MaterialPageRoute(
-          builder: (_) => PostDetailPage(
-            post: post,
-            onLike: () {},
-            onEdit: () {},
-            onDelete: () {},
-            onReport: () {},
-            onBlockUser: () {},
-            localizedStrings: _postDetailStrings,
-            onGuestDialog: () {},
-          ),
-        ),
+        MaterialPageRoute(builder: (_) => AdminReportedPostPage(post: post)),
       );
     } catch (_) {
       if (!mounted) return;
@@ -1128,41 +1083,41 @@ class _AdminReportDetailsPageState extends State<AdminReportDetailsPage> {
     if (adminId == null || reporterId.isEmpty || reporterId == 'app') return;
 
     final chatRoomId = _getChatRoomId(adminId, reporterId);
+    final chatRoom = _firestore.collection('chat_rooms').doc(chatRoomId);
 
-    final existingResolved = await _firestore
-        .collection('chat_rooms')
-        .doc(chatRoomId)
-        .collection('messages')
-        .where('type', isEqualTo: 'report_resolved')
-        .where('reportId', isEqualTo: reportId)
-        .limit(1)
-        .get();
-
-    if (existingResolved.docs.isNotEmpty) return;
-
-    await _firestore
-        .collection('chat_rooms')
-        .doc(chatRoomId)
-        .collection('messages')
-        .add({
-          'senderId': adminId,
-          'receiverId': reporterId,
-          'message':
-              'הדיווח שלך סומן כטופל: ${subject.isEmpty ? 'דיווח' : subject}',
-          'type': 'report_resolved',
-          'reportId': reportId,
-          'timestamp': FieldValue.serverTimestamp(),
-        });
-
-    await _firestore.collection('chat_rooms').doc(chatRoomId).set({
-      'lastMessage': '✅ הדיווח טופל',
-      'lastTimestamp': FieldValue.serverTimestamp(),
+    // Message rules require the parent room to exist before a message is added.
+    await chatRoom.set({
       'users': [adminId, reporterId],
     }, SetOptions(merge: true));
 
-    await _firestore.collection('chat_rooms').doc(chatRoomId).update({
-      'unreadCount.$reporterId': FieldValue.increment(1),
+    final existingResolved = await chatRoom
+        .collection('messages')
+        .where('requestId', isEqualTo: reportId)
+        .limit(10)
+        .get();
+
+    if (existingResolved.docs.any(
+      (doc) => doc.data()['type'] == 'report_resolved',
+    )) {
+      return;
+    }
+
+    await chatRoom.collection('messages').add({
+      'senderId': adminId,
+      'receiverId': reporterId,
+      'message':
+          'הדיווח שלך סומן כטופל: ${subject.isEmpty ? 'דיווח' : subject}',
+      'type': 'report_resolved',
+      'requestId': reportId,
+      'timestamp': FieldValue.serverTimestamp(),
     });
+
+    await chatRoom.set({
+      'lastMessage': '✅ הדיווח טופל',
+      'lastTimestamp': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+
+    await chatRoom.update({'unreadCount.$reporterId': FieldValue.increment(1)});
   }
 
   Future<void> _answerReporter(String reporterId) async {
@@ -1178,36 +1133,38 @@ class _AdminReportDetailsPageState extends State<AdminReportDetailsPage> {
         .trim();
 
     try {
-      final existingReference = await _firestore
-          .collection('chat_rooms')
-          .doc(chatRoomId)
+      final chatRoom = _firestore.collection('chat_rooms').doc(chatRoomId);
+
+      // Message rules require the parent room to exist before a message is added.
+      await chatRoom.set({
+        'users': [currentUserId, reporterId],
+      }, SetOptions(merge: true));
+
+      final existingReference = await chatRoom
           .collection('messages')
-          .where('type', isEqualTo: 'report_reference')
-          .where('reportId', isEqualTo: widget.reportId)
-          .limit(1)
+          .where('requestId', isEqualTo: widget.reportId)
+          .limit(10)
           .get();
 
-      if (existingReference.docs.isEmpty) {
-        await _firestore
-            .collection('chat_rooms')
-            .doc(chatRoomId)
-            .collection('messages')
-            .add({
-              'senderId': currentUserId,
-              'receiverId': reporterId,
-              'message': 'Admin replied to your report: $subject',
-              'type': 'report_reference',
-              'reportId': widget.reportId,
-              'timestamp': FieldValue.serverTimestamp(),
-            });
+      final hasReference = existingReference.docs.any(
+        (doc) => doc.data()['type'] == 'report_reference',
+      );
+      if (!hasReference) {
+        await chatRoom.collection('messages').add({
+          'senderId': currentUserId,
+          'receiverId': reporterId,
+          'message': 'Admin replied to your report: $subject',
+          'type': 'report_reference',
+          'requestId': widget.reportId,
+          'timestamp': FieldValue.serverTimestamp(),
+        });
 
-        await _firestore.collection('chat_rooms').doc(chatRoomId).set({
+        await chatRoom.set({
           'lastMessage': '📌 Report update',
           'lastTimestamp': FieldValue.serverTimestamp(),
-          'users': [currentUserId, reporterId],
         }, SetOptions(merge: true));
 
-        await _firestore.collection('chat_rooms').doc(chatRoomId).update({
+        await chatRoom.update({
           'unreadCount.$reporterId': FieldValue.increment(1),
         });
       }
@@ -1216,7 +1173,7 @@ class _AdminReportDetailsPageState extends State<AdminReportDetailsPage> {
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => ChatPage(
+          builder: (_) => AdminChatPage(
             receiverId: reporterId,
             receiverName: reporterId,
             reportContextId: widget.reportId,
@@ -1390,7 +1347,8 @@ class _AdminReportDetailsPageState extends State<AdminReportDetailsPage> {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) => Profile(userId: userId),
+                              builder: (_) =>
+                                  AdminUserDetailPage(userId: userId),
                             ),
                           );
                         }
@@ -1693,7 +1651,8 @@ class _AdminReportDetailsPageState extends State<AdminReportDetailsPage> {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) => Profile(userId: reportedId),
+                            builder: (_) =>
+                                AdminUserDetailPage(userId: reportedId),
                           ),
                         );
                       },

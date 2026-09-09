@@ -48,14 +48,12 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
   bool _showHeartAnimation = false;
   bool _isSubmittingComment = false;
   int _currentMediaIndex = 0;
-  String? _currentUserRole;
 
   @override
   void initState() {
     super.initState();
     _checkIfLiked();
     _likesCount = widget.project['likesCount'] ?? 0;
-    _loadCurrentUserRole();
   }
 
   @override
@@ -81,20 +79,6 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
     setState(() {
       _isLiked = likeDoc.exists;
     });
-  }
-
-  Future<void> _loadCurrentUserRole() async {
-    if (_currentUser == null) return;
-    try {
-      final userDoc = await _firestore
-          .collection('users')
-          .doc(_currentUser.uid)
-          .get();
-      if (!mounted) return;
-      setState(() {
-        _currentUserRole = userDoc.data()?['role']?.toString();
-      });
-    } catch (_) {}
   }
 
   Future<void> _toggleLike() async {
@@ -177,8 +161,6 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
   bool get _isSignedIn => _currentUser?.isAnonymous == false;
 
   bool get _isOwner => _currentUser?.uid == widget.workerId;
-
-  bool get _isAdmin => _currentUserRole == 'admin';
 
   DocumentReference<Map<String, dynamic>> get _projectRef => _firestore
       .collection('publicWorkerProfiles')
@@ -617,27 +599,6 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
   }
 
   List<PopupMenuEntry<String>> _buildMoreActions() {
-    if (_isAdmin) {
-      return const [
-        PopupMenuItem<String>(
-          value: 'report',
-          child: ListTile(
-            leading: Icon(Icons.flag_outlined),
-            title: Text('Report'),
-            contentPadding: EdgeInsets.zero,
-          ),
-        ),
-        PopupMenuItem<String>(
-          value: 'delete',
-          child: ListTile(
-            leading: Icon(Icons.delete_outline, color: Colors.red),
-            title: Text('Delete', style: TextStyle(color: Colors.red)),
-            contentPadding: EdgeInsets.zero,
-          ),
-        ),
-      ];
-    }
-
     if (_isOwner) {
       return const [
         PopupMenuItem<String>(

@@ -1,0 +1,38 @@
+name: hiro_admin
+description: "Private Android administration app for Hiro."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+
+environment:
+  sdk: ^3.11.0
+
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cached_network_image: ^3.4.1
+  cloud_firestore: ^6.1.3
+  cloud_functions: ^6.0.2
+  file_picker: ^10.3.10
+  firebase_app_check: ^0.4.1+5
+  firebase_auth: ^6.1.4
+  firebase_core: ^4.4.0
+  firebase_storage: ^13.1.0
+  flutter_cache_manager: ^3.4.1
+  image_picker: ^1.2.1
+  provider: ^6.1.5+1
+  shared_preferences: ^2.5.4
+  video_player: ^2.11.1
+
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/icon/ProIcon/

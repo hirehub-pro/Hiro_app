@@ -13,7 +13,6 @@ import 'package:untitled1/home.dart';
 import 'package:untitled1/search.dart';
 import 'package:untitled1/formu.dart';
 import 'package:untitled1/ptofile.dart';
-import 'package:untitled1/pages/admin_profile.dart';
 import 'package:untitled1/pages/inbox_page.dart';
 import 'package:untitled1/pages/chat_page.dart';
 import 'package:untitled1/pages/saved_invoices_page.dart';
@@ -515,8 +514,6 @@ class _MyHomePageState extends State<MyHomePage> {
   static const Color _shellBackground = Color(0xFFF6F8FB);
 
   int pagenumber = 0;
-  bool _isAdminProfile = false;
-
   final List<Widget> _basePages = [
     const HomePage(),
     const SearchPage(),
@@ -528,7 +525,6 @@ class _MyHomePageState extends State<MyHomePage> {
   void initState() {
     super.initState();
     AppNavigationService.homeRequests.addListener(_handleHomeRequest);
-    _checkAdminStatus();
     _logCurrentTab();
     NotificationService.selectNotificationStream.stream.listen((
       String? payload,
@@ -556,35 +552,9 @@ class _MyHomePageState extends State<MyHomePage> {
     super.dispose();
   }
 
-  Future<void> _checkAdminStatus() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user != null) {
-      try {
-        final doc = await FirebaseFirestore.instance
-            .collection('users')
-            .doc(user.uid)
-            .get();
-        if (mounted && doc.exists) {
-          final data = doc.data() as Map<String, dynamic>;
-          if (data['role'] == 'admin') {
-            setState(() {
-              _isAdminProfile = true;
-            });
-          }
-        }
-      } catch (e) {
-        debugPrint("Admin check error: $e");
-      }
-    }
-  }
-
   Widget _buildCurrentPage() {
     if (pagenumber < 4) {
       return _basePages[pagenumber];
-    }
-
-    if (_isAdminProfile) {
-      return const AdminProfile();
     }
 
     return const Profile();

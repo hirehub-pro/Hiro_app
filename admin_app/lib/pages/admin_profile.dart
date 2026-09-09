@@ -4,10 +4,10 @@ import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
-import 'package:untitled1/services/language_provider.dart';
-import 'package:untitled1/pages/admin_panel.dart';
-import 'package:untitled1/pages/settings.dart';
-import 'package:untitled1/pages/admin_analytics_page.dart';
+import 'package:hiro_admin/services/language_provider.dart';
+import 'package:hiro_admin/pages/admin_panel.dart';
+import 'package:hiro_admin/pages/admin_settings_page.dart';
+import 'package:hiro_admin/pages/admin_analytics_page.dart';
 
 class AdminProfile extends StatefulWidget {
   const AdminProfile({super.key});
@@ -162,35 +162,6 @@ class _AdminProfileState extends State<AdminProfile>
     super.dispose();
   }
 
-  Map<String, String> _getLocalizedStrings(BuildContext context) {
-    final locale = Provider.of<LanguageProvider>(
-      context,
-      listen: false,
-    ).locale.languageCode;
-    switch (locale) {
-      case 'he':
-        return {
-          'analytics_title': 'לוח בקרה עסקי',
-          'total_earnings': 'הכנסות משוערות',
-          'total_jobs': 'עבודות',
-          'price': 'מחיר',
-          'service': 'שירות',
-          'timing': 'עמידה בזמנים',
-          'no_reviews': 'אין נתונים',
-        };
-      default:
-        return {
-          'analytics_title': 'Business Dashboard',
-          'total_earnings': 'Estimated Earnings',
-          'total_jobs': 'Jobs',
-          'price': 'Price',
-          'service': 'Service',
-          'timing': 'Timing',
-          'no_reviews': 'No data',
-        };
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
@@ -217,7 +188,9 @@ class _AdminProfileState extends State<AdminProfile>
                   icon: const Icon(Icons.settings_outlined),
                   onPressed: () => Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (_) => const SettingsPage()),
+                    MaterialPageRoute(
+                      builder: (_) => const AdminSettingsPage(),
+                    ),
                   ).then((_) => _fetchAdminData()),
                 ),
               ],
@@ -804,17 +777,16 @@ class _AdminProfileState extends State<AdminProfile>
       ),
     );
 
-    if (confirmed == true && mounted) {
-      final messenger = ScaffoldMessenger.of(context);
-      Navigator.pop(context); // Close the security sheet
-      await _firestore.collection('metadata').doc('system').set({
-        'forceLogoutAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-      await _logActivity("Forced Global Logout");
-      messenger.showSnackBar(
-        const SnackBar(content: Text("Global logout triggered")),
-      );
-    }
+    if (confirmed != true || !context.mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    Navigator.pop(context); // Close the security sheet
+    await _firestore.collection('metadata').doc('system').set({
+      'forceLogoutAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+    await _logActivity("Forced Global Logout");
+    messenger.showSnackBar(
+      const SnackBar(content: Text("Global logout triggered")),
+    );
   }
 
   void _showSystemConfig() {

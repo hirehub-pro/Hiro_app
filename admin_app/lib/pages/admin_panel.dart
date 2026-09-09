@@ -6,10 +6,10 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import 'package:untitled1/ptofile.dart';
-import 'package:untitled1/pages/admin_reports_page.dart';
-import 'package:untitled1/utils/booking_mode.dart';
-import 'package:untitled1/utils/profession_icons.dart';
+import 'package:hiro_admin/pages/admin_user_detail_page.dart';
+import 'package:hiro_admin/pages/admin_reports_page.dart';
+import 'package:hiro_admin/utils/booking_mode.dart';
+import 'package:hiro_admin/utils/profession_icons.dart';
 
 class AdminPanel extends StatefulWidget {
   final bool showAppBar;
@@ -306,7 +306,7 @@ class _AdminPanelState extends State<AdminPanel> {
         child: InkWell(
           onTap: () => Navigator.push(
             context,
-            MaterialPageRoute(builder: (_) => Profile(userId: uid)),
+            MaterialPageRoute(builder: (_) => AdminUserDetailPage(userId: uid)),
           ),
           child: Padding(
             padding: const EdgeInsets.all(18),
@@ -1330,24 +1330,6 @@ class _AdminPanelState extends State<AdminPanel> {
     );
   }
 
-  void _removeCategory(String cat) async {
-    final metadataRef = _firestore.collection('metadata').doc('professions');
-    final snapshot = await metadataRef.get();
-    final data = snapshot.data() ?? <String, dynamic>{};
-    final items = ((data['items'] as List?) ?? const [])
-        .whereType<Map>()
-        .map((item) => Map<String, dynamic>.from(item))
-        .toList();
-
-    items.removeWhere((item) => item['en']?.toString() == cat);
-
-    await metadataRef.set({
-      'list': items.map((item) => item['en'].toString()).toList(),
-      'items': items,
-      'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
-  }
-
   void _addCategoryDialog(BuildContext context) {
     final enController = TextEditingController();
     final heController = TextEditingController();
@@ -1783,7 +1765,8 @@ class _UserManagementSheetState extends State<_UserManagementSheet> {
                             onPressed: () => Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (_) => Profile(userId: uid),
+                                builder: (_) =>
+                                    AdminUserDetailPage(userId: uid),
                               ),
                             ),
                           ),
@@ -2207,7 +2190,7 @@ class _ProfessionCategoriesSheetState
                 if (index == -1) return;
                 items[index] = updated;
                 await _saveProfessionItems(items);
-                if (!mounted) return;
+                if (!dialogContext.mounted) return;
                 Navigator.pop(dialogContext);
               },
               child: const Text('Save'),

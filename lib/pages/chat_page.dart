@@ -1612,7 +1612,9 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   Future<void> _openReportFromMessage(Map<String, dynamic> message) async {
-    final reportId = (message['reportId'] ?? '').toString().trim();
+    final reportId = (message['reportId'] ?? message['requestId'] ?? '')
+        .toString()
+        .trim();
     if (reportId.isEmpty) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1848,7 +1850,9 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   Widget _buildReportReferenceBubble(Map<String, dynamic> message, bool isMe) {
-    final reportId = (message['reportId'] ?? '').toString().trim();
+    final reportId = (message['reportId'] ?? message['requestId'] ?? '')
+        .toString()
+        .trim();
     final text = _resolveMessageText(message);
 
     return Container(
@@ -1930,7 +1934,9 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   Widget _buildReportResolvedBubble(Map<String, dynamic> message, bool isMe) {
-    final reportId = (message['reportId'] ?? '').toString().trim();
+    final reportId = (message['reportId'] ?? message['requestId'] ?? '')
+        .toString()
+        .trim();
     final text = _resolveMessageText(message);
     final content = text.isNotEmpty
         ? text

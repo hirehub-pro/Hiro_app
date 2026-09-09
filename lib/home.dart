@@ -7,7 +7,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:untitled1/ptofile.dart';
-import 'package:untitled1/pages/admin_profile.dart';
 import 'package:untitled1/pages/analytics_page.dart';
 import 'package:untitled1/pages/clients_page.dart';
 import 'package:untitled1/pages/invoice_builder.dart';
@@ -3492,23 +3491,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                     Row(
                       children: [
                         GestureDetector(
-                          onTap: () {
-                            if (_userRole == 'admin') {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => const AdminProfile(),
-                                ),
-                              );
-                            } else {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => const Profile(),
-                                ),
-                              );
-                            }
-                          },
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const Profile()),
+                          ),
                           child: CircleAvatar(
                             radius: 22,
                             backgroundColor: Colors.white.withValues(

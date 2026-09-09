@@ -641,10 +641,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
     );
   }
 
-  Future<void> _showPostActionsSheet({
-    required bool isAuthor,
-    required bool isAdmin,
-  }) async {
+  Future<void> _showPostActionsSheet({required bool isAuthor}) async {
     final textTheme = Theme.of(context).textTheme;
 
     Widget actionTile({
@@ -702,22 +699,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
     }
 
     final List<Widget> actions;
-    if (isAdmin) {
-      actions = [
-        actionTile(
-          icon: Icons.delete_outline_rounded,
-          title: widget.localizedStrings['delete'] ?? 'Delete',
-          onTap: widget.onDelete,
-          isDestructive: true,
-        ),
-        actionTile(
-          icon: Icons.flag_outlined,
-          title: widget.localizedStrings['report'] ?? 'Report',
-          onTap: widget.onReport,
-          isDestructive: true,
-        ),
-      ];
-    } else if (isAuthor) {
+    if (isAuthor) {
       actions = [
         actionTile(
           icon: Icons.edit_outlined,
@@ -825,7 +807,6 @@ class _PostDetailPageState extends State<PostDetailPage> {
         widget.post['isJobRequest'] == true ||
         _isJobRequestCategoryValue((widget.post['category'] ?? '').toString());
     final isAuthor = user != null && widget.post['authorUid'] == user.uid;
-    final isAdmin = _currentUserRole == 'admin';
     final canCommentOnJobRequest =
         isJobRequest &&
         !isAuthor &&
@@ -1010,8 +991,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
         foregroundColor: _uiTitle,
         actions: [
           IconButton(
-            onPressed: () =>
-                _showPostActionsSheet(isAuthor: isAuthor, isAdmin: isAdmin),
+            onPressed: () => _showPostActionsSheet(isAuthor: isAuthor),
             icon: const Icon(Icons.more_vert_rounded),
             tooltip: widget.localizedStrings['post_actions'] ?? 'Post actions',
           ),
