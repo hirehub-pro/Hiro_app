@@ -40,6 +40,11 @@ const {
   hashDocumentDownloadToken,
 } = require("./document_download");
 const {
+  createDocumentChatAccessId,
+  documentChatAccessAllows,
+  isDocumentChatAccessId,
+} = require("./document_chat_access");
+const {
   signingClaimIsCurrent,
   signingDocumentCanAcceptRequest,
   signingRequestIsActive,
@@ -558,6 +563,8 @@ async function loadCanonicalUserProfile(db, userId, accountSnap = null) {
 }
 const PUBLIC_APP_ORIGIN = "https://hiro-services.com";
 const DOCUMENT_DOWNLOAD_COLLECTION = "documentDownloadTokens";
+const DOCUMENT_CHAT_ACCESS_COLLECTION = "documentChatAccessGrants";
+const DOCUMENT_DOWNLOAD_SESSION_MS = 10 * 60 * 1000;
 const SIGNING_REQUEST_LIFETIME_DAYS = 30;
 const SIGNING_ACCESS_MAX_ATTEMPTS = 5;
 const SIGNING_ACCESS_LOCK_MS = 15 * 60 * 1000;
@@ -1183,10 +1190,12 @@ exports.publicDocumentDownload = onRequest(
         }
 
         const access = tokenSnap.data() || {};
+        const expiresAt = toDate(access.expiresAt);
         const userId = normalizeString(access.userId).trim();
         const invoiceId = normalizeString(access.invoiceId).trim();
         const storagePath = ownedInvoicePdfPath(access.storagePath, userId);
-        if (access.revokedAt || !userId || !invoiceId || !storagePath) {
+        if (access.revokedAt || (expiresAt && expiresAt <= new Date()) ||
+            !userId || !invoiceId || !storagePath) {
           res.status(410).send("This document link is no longer available.");
           return;
         }
@@ -1238,6 +1247,106 @@ exports.publicDocumentDownload = onRequest(
           res.end();
         }
       }
+    },
+);
+
+exports.createDocumentChatAccess = onCall(
+    {region: "us-central1"},
+    async (request) => {
+      const ownerId = request.auth?.uid;
+      if (!ownerId) {
+        throw new HttpsError("unauthenticated", "Authentication required.");
+      }
+
+      const invoiceId = normalizeString(request.data?.invoiceDocId).trim();
+      const recipientId = normalizeString(request.data?.receiverId).trim();
+      if (!/^[A-Za-z0-9_-]{1,180}$/.test(invoiceId) ||
+          !/^[A-Za-z0-9_-]{1,128}$/.test(recipientId) ||
+          recipientId === ownerId) {
+        throw new HttpsError("invalid-argument", "Invalid document share.");
+      }
+
+      const invoiceRef = db.collection("users").doc(ownerId)
+          .collection("invoices").doc(invoiceId);
+      const invoiceSnap = await invoiceRef.get();
+      const invoice = invoiceSnap.data() || {};
+      const storagePath = invoiceSnap.exists ?
+        ownedInvoicePdfPath(invoice.storagePath, ownerId) : null;
+      if (!storagePath) {
+        throw new HttpsError("not-found", "Document not found.");
+      }
+
+      const accessId = createDocumentChatAccessId();
+      await db.collection(DOCUMENT_CHAT_ACCESS_COLLECTION).doc(accessId).create({
+        ownerId,
+        recipientId,
+        invoiceId,
+        storagePath,
+        fileName: normalizeString(invoice.fileName).trim() || "document.pdf",
+        createdAt: FieldValue.serverTimestamp(),
+        revokedAt: null,
+      });
+      return {accessId};
+    },
+);
+
+exports.createDocumentDownloadSession = onCall(
+    {region: "us-central1"},
+    async (request) => {
+      const userId = request.auth?.uid;
+      if (!userId) {
+        throw new HttpsError("unauthenticated", "Authentication required.");
+      }
+
+      const accessId = normalizeString(request.data?.accessId).trim();
+      if (!isDocumentChatAccessId(accessId)) {
+        throw new HttpsError("invalid-argument", "Invalid document access.");
+      }
+
+      const accessSnap = await db.collection(DOCUMENT_CHAT_ACCESS_COLLECTION)
+          .doc(accessId).get();
+      const access = accessSnap.data() || {};
+      if (!accessSnap.exists || access.revokedAt ||
+          !documentChatAccessAllows(access, userId)) {
+        throw new HttpsError("permission-denied", "Document access denied.");
+      }
+
+      const ownerId = normalizeString(access.ownerId).trim();
+      const invoiceId = normalizeString(access.invoiceId).trim();
+      const grantedStoragePath = ownedInvoicePdfPath(
+          access.storagePath,
+          ownerId,
+      );
+      const invoiceSnap = await db.collection("users").doc(ownerId)
+          .collection("invoices").doc(invoiceId).get();
+      const currentStoragePath = invoiceSnap.exists ?
+        ownedInvoicePdfPath(invoiceSnap.get("storagePath"), ownerId) : null;
+      if (!grantedStoragePath || currentStoragePath !== grantedStoragePath) {
+        throw new HttpsError("not-found", "Document is no longer available.");
+      }
+
+      const token = createDocumentDownloadToken();
+      const expiresAt = Timestamp.fromMillis(
+          Date.now() + DOCUMENT_DOWNLOAD_SESSION_MS,
+      );
+      await db.collection(DOCUMENT_DOWNLOAD_COLLECTION)
+          .doc(hashDocumentDownloadToken(token)).create({
+            userId: ownerId,
+            invoiceId,
+            invoicePath: invoiceSnap.ref.path,
+            storagePath: currentStoragePath,
+            fileName: normalizeString(access.fileName).trim() || "document.pdf",
+            accessId,
+            authorizedUserId: userId,
+            createdAt: FieldValue.serverTimestamp(),
+            expiresAt,
+            revokedAt: null,
+          });
+
+      return {
+        url: documentDownloadUrl(PUBLIC_APP_ORIGIN, token),
+        expiresAt: expiresAt.toDate().toISOString(),
+      };
     },
 );
 
@@ -2889,18 +2998,6 @@ exports.createServerDocument = onCall(
           if (!["quote", "work_order"].includes(document.docType)) {
             transaction.set(db.collection("metadata").doc("invoice_counts"), {
               [document.docType]: FieldValue.increment(1),
-              updatedAt: FieldValue.serverTimestamp(),
-            }, {merge: true});
-          }
-          if (!["quote", "work_order", "transaction_account"].includes(
-            document.docType,
-          )) {
-            const financialDelta = document.docType === "credit_note" ||
-                document.isNegativeReceipt ?
-              -document.finalTotal : document.finalTotal;
-            transaction.set(userRef.collection("metadata")
-                .doc("financial_summary"), {
-              totalEarned: FieldValue.increment(financialDelta),
               updatedAt: FieldValue.serverTimestamp(),
             }, {merge: true});
           }
@@ -5007,10 +5104,6 @@ async function createAutomaticCancellationCreditNote({
         credit_note: FieldValue.increment(1),
         updatedAt: FieldValue.serverTimestamp(),
       }, {merge: true});
-      transaction.set(userRef.collection("metadata").doc("financial_summary"), {
-        totalEarned: FieldValue.increment(-document.finalTotal),
-        updatedAt: FieldValue.serverTimestamp(),
-      }, {merge: true});
       writePaymentAnalytics(
           transaction,
           userRef,
@@ -5581,11 +5674,6 @@ async function finalizeAllocatedTaxInvoiceAttempt({
     );
     transaction.set(db.collection("metadata").doc("invoice_counts"), {
       [reservation.docType]: FieldValue.increment(1),
-      updatedAt: FieldValue.serverTimestamp(),
-    }, {merge: true});
-    transaction.set(db.collection("users").doc(userId)
-        .collection("metadata").doc("financial_summary"), {
-      totalEarned: FieldValue.increment(fields.total),
       updatedAt: FieldValue.serverTimestamp(),
     }, {merge: true});
     writePaymentAnalytics(

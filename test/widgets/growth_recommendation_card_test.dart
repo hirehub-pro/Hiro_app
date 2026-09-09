@@ -18,7 +18,7 @@ void main() {
         overallRatings: {'reviewCount': 20, 'avgOverallRating': 9.6},
         weeklyViews: 42,
         totalViews: 100,
-        totalEarnings: null,
+        totalPayments: null,
         projects: [],
         requests: [],
       );
@@ -64,7 +64,7 @@ void main() {
       overallRatings: {'reviewCount': 2},
       weeklyViews: 4,
       totalViews: 4,
-      totalEarnings: null,
+      totalPayments: null,
     );
     await tester.pumpWidget(
       MaterialApp(

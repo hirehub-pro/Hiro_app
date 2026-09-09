@@ -47,7 +47,7 @@ GrowthRecommendation insight({
   overallRatings: overall ?? ratings(),
   weeklyViews: views,
   totalViews: total,
-  totalEarnings: earnings,
+  totalPayments: earnings,
   professionRatings: perProfession,
   professionWeeklyViews: professionViews,
   profile: profile,

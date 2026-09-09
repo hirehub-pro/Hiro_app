@@ -830,6 +830,7 @@ service cloud.firestore {
       return data.keys().hasOnly([
         'senderId', 'receiverId', 'text', 'message', 'type', 'url', 'fileUrl',
         'fileName', 'timestamp', 'isRead', 'isSystem', 'invoiceDocId',
+        'documentAccessId',
         'requestId', 'requestOwnerId', 'requestUrl', 'workerNotificationId',
         'signedDocument', 'signingRequest', 'durationSeconds', 'mediaItems'
       ]) && data.keys().hasAll(['senderId', 'timestamp']) &&
@@ -843,6 +844,7 @@ service cloud.firestore {
       optionalNumber(data, 'durationSeconds', 0, 86400) &&
       optionalList(data, 'mediaItems', 20) &&
       optionalString(data, 'invoiceDocId', 180) &&
+      optionalString(data, 'documentAccessId', 43) &&
       optionalString(data, 'requestId', 180) &&
       optionalString(data, 'requestOwnerId', 128) &&
       optionalUrl(data, 'requestUrl', 4096) &&
@@ -1294,12 +1296,6 @@ service cloud.firestore {
         allow create, update, delete: if false;
       }
 
-      // Server-derived business analytics for the account dashboard.
-      match /metadata/financial_summary {
-        allow read: if hasActiveProAccess(userId);
-        allow write: if false;
-      }
-
       match /paymentAnalytics/{periodId} {
         allow read: if hasActiveProAccess(userId);
         allow create, update, delete: if false;
@@ -1432,6 +1428,12 @@ service cloud.firestore {
       allow read, write: if false;
     }
     match /documentSigningRequests/{document=**} {
+      allow read, write: if false;
+    }
+    match /documentDownloadTokens/{document=**} {
+      allow read, write: if false;
+    }
+    match /documentChatAccessGrants/{document=**} {
       allow read, write: if false;
     }
 

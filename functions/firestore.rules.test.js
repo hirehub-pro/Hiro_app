@@ -111,6 +111,15 @@ test("keeps document download capabilities server-only", {
     createdAt: new Date(),
     revokedAt: null,
   });
+  const accessId = "c".repeat(43);
+  await seed(`documentChatAccessGrants/${accessId}`, {
+    ownerId: "owner-user-id-0000001",
+    recipientId: "recipient-user-id-0001",
+    invoiceId: "invoice-1",
+    storagePath: "invoices/owner-user-id-0000001/invoice-1.pdf",
+    createdAt: new Date(),
+    revokedAt: null,
+  });
 
   const guest = testEnv.unauthenticatedContext().firestore();
   const owner = testEnv.authenticatedContext(
@@ -131,6 +140,18 @@ test("keeps document download capabilities server-only", {
     userId: "owner-user-id-0000001",
     invoiceId: "invoice-2",
     storagePath: "invoices/owner-user-id-0000001/invoice-2.pdf",
+  }));
+  await assertFails(getDoc(doc(
+      owner,
+      `documentChatAccessGrants/${accessId}`,
+  )));
+  await assertFails(setDoc(doc(
+      owner,
+      `documentChatAccessGrants/${"d".repeat(43)}`,
+  ), {
+    ownerId: "owner-user-id-0000001",
+    recipientId: "recipient-user-id-0001",
+    invoiceId: "invoice-2",
   }));
 });
 
@@ -841,44 +862,6 @@ test("allows owners to read but not forge server uniform exports", {
     userId: uid,
     status: "ready",
   }));
-});
-
-test("allows only the owner to read the server financial summary", {
-  skip: !emulatorAvailable,
-}, async () => {
-  const uid = "analytics-owner-id-0001";
-  const otherUid = "analytics-other-id-0001";
-  const pathValue = `users/${uid}/metadata/financial_summary`;
-  await seed(pathValue, {
-    totalEarned: 1250,
-    updatedAt: new Date(),
-  });
-  await seedActiveWorker(uid);
-
-  const ownerDb = testEnv.authenticatedContext(uid).firestore();
-  const otherDb = testEnv.authenticatedContext(otherUid).firestore();
-  const guestDb = testEnv.unauthenticatedContext().firestore();
-
-  await assertSucceeds(getDoc(doc(ownerDb, pathValue)));
-  await assertFails(getDoc(doc(otherDb, pathValue)));
-  await assertFails(getDoc(doc(guestDb, pathValue)));
-  await assertFails(updateDoc(doc(ownerDb, pathValue), {
-    totalEarned: 999999,
-  }));
-  await assertFails(setDoc(doc(ownerDb, pathValue), {
-    totalEarned: 999999,
-  }));
-  await assertFails(deleteDoc(doc(ownerDb, pathValue)));
-
-  await seed(`users/${uid}`, {
-    uid,
-    role: "worker",
-    isSubscribed: false,
-    subscriptionStatus: "inactive",
-    subscriptionExpiresAt: new Date(Date.now() - 1000),
-    createdAt: new Date(),
-  });
-  await assertFails(getDoc(doc(ownerDb, pathValue)));
 });
 
 test("keeps payment analytics server-written and Pro-owner-readable", {

@@ -13,16 +13,17 @@ import 'package:untitled1/pages/edit_profile.dart';
 import 'package:untitled1/pages/my_requests_page.dart';
 import 'package:untitled1/pages/schedule.dart';
 import 'package:untitled1/widgets/growth_recommendation_card.dart';
- class AnalyticsPage extends StatefulWidget {
+
+class AnalyticsPage extends StatefulWidget {
   final String userId;
   final Map<String, String> strings;
 
   const AnalyticsPage({super.key, required this.userId, required this.strings});
- 
+
   @override
   State<AnalyticsPage> createState() => _AnalyticsPageState();
 }
- 
+
 class _AnalyticsPageState extends State<AnalyticsPage> {
   static const String _allProfessionsKey = '__all_professions__';
   static const String _analyticsPeriodTotal = '__total__';
@@ -40,8 +41,8 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   bool _isLoading = true;
   int _viewsCount = 0;
   int _allTimeViewsAcrossProfessions = 0;
-  double _totalEarnings = 0.0;
-  bool _hasTotalEarnedValue = false;
+  double _totalPayments = 0.0;
+  bool _hasPaymentTotalValue = false;
   double _allTimePayments = 0.0;
   bool _hasPaymentAnalytics = false;
   final Map<String, double> _paymentTotals = {};
@@ -421,9 +422,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
         (total, week) => total + _weekTotalFromMap(week),
       ),
       totalViews: _allTimeViewsAcrossProfessions,
-      totalEarnings: _hasPaymentAnalytics
-          ? _allTimePayments
-          : (_hasTotalEarnedValue ? _totalEarnings : null),
+      totalPayments: _hasPaymentAnalytics ? _allTimePayments : null,
     );
   }
 
@@ -484,11 +483,10 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
       _accountCreatedAt = _asDateTime(_workerData['createdAt']);
       _growthProfile = publicWorkerDoc.data();
       if (userDoc.exists) {
-        final data = userDoc.data()!;
         final publicData = publicWorkerDoc.data() ?? <String, dynamic>{};
         _viewsCount = 0;
-        _totalEarnings = _asDouble(data['totalEarnings']);
-        _hasTotalEarnedValue = _totalEarnings > 0;
+        _totalPayments = 0;
+        _hasPaymentTotalValue = false;
         _overallAvgRating = 0;
         _avgRating = 0;
         if (publicData['professions'] is List) {
@@ -508,14 +506,6 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
       );
       // Independent reads share the existing authorized fetch, without new indexes.
       await Future.wait<void>([
-        () async {
-          final financial = await _readGrowthDocument(
-            workerRef.collection('metadata').doc('financial_summary'),
-          );
-          final value = financial?['totalEarned'];
-          _hasTotalEarnedValue = value is num && value.isFinite;
-          _totalEarnings = _hasTotalEarnedValue ? (value as num).toDouble() : 0;
-        }(),
         () async {
           var snapshot = await workerRef.collection('paymentAnalytics').get();
           final currentYear = DateTime.now().year;
@@ -806,7 +796,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   }
 
   void _generateChartData() {
-    final chartTotal = _totalEarnings.abs();
+    final chartTotal = _totalPayments.abs();
     final base = chartTotal / 7;
     final maxY = chartTotal <= 0 ? 1.0 : chartTotal * 1.5;
     _earningsSpots = List.generate(7, (i) {
@@ -1007,12 +997,12 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           ),
           const SizedBox(height: 12),
           Text(
-            _hasTotalEarnedValue
-                ? '₪${intl.NumberFormat('#,###').format(_totalEarnings)}'
+            _hasPaymentTotalValue
+                ? '₪${intl.NumberFormat('#,###').format(_totalPayments)}'
                 : _t('no_earning_yet'),
             style: TextStyle(
               color: Colors.white,
-              fontSize: _hasTotalEarnedValue ? 38 : 24,
+              fontSize: _hasPaymentTotalValue ? 38 : 24,
               fontWeight: FontWeight.w900,
               letterSpacing: -1,
             ),
@@ -1197,8 +1187,8 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     _selectedVatAmount = _vatTotals[documentId] ?? 0;
     _hasVatAnalytics = _vatTotals.containsKey(documentId);
     if (!_hasPaymentAnalytics) return;
-    _totalEarnings = _paymentTotals[documentId] ?? 0;
-    _hasTotalEarnedValue = _paymentTotals.containsKey(documentId);
+    _totalPayments = _paymentTotals[documentId] ?? 0;
+    _hasPaymentTotalValue = _paymentTotals.containsKey(documentId);
   }
 
   String _monthName(int month) {

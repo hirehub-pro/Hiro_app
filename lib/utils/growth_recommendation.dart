@@ -48,7 +48,7 @@ GrowthRecommendation buildGrowthRecommendation({
   required Map<String, dynamic> overallRatings,
   required int weeklyViews,
   required int totalViews,
-  required double? totalEarnings,
+  required double? totalPayments,
   Map<String, Map<String, dynamic>> professionRatings = const {},
   Map<String, int> professionWeeklyViews = const {},
   Map<String, dynamic>? profile,
@@ -439,14 +439,14 @@ GrowthRecommendation buildGrowthRecommendation({
     }
   }
 
-  // Financial-summary totals cannot establish current revenue or job volume.
-  // Use recorded revenue only as context for building customer feedback.
-  if (totalEarnings != null &&
-      totalEarnings.isFinite &&
-      totalEarnings > 0 &&
+  // Payment totals cannot establish current revenue or job volume.
+  // Use recorded payments only as context for building customer feedback.
+  if (totalPayments != null &&
+      totalPayments.isFinite &&
+      totalPayments > 0 &&
       count < 5) {
     add('earnings_feedback', 60, {
-      'amount': numeric(totalEarnings),
+      'amount': numeric(totalPayments),
       'count': numeric(count),
     }, 'feedback_action');
   }

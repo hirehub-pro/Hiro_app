@@ -26,6 +26,7 @@ import 'package:untitled1/services/app_permission_service.dart';
 import 'package:untitled1/services/client_service.dart';
 import 'package:untitled1/services/subscription_access_service.dart';
 import 'package:untitled1/services/profile_document_service.dart';
+import 'package:untitled1/services/document_chat_access_service.dart';
 import 'package:untitled1/pages/my_request_details_page.dart';
 import 'package:untitled1/pages/request_details.dart';
 
@@ -1176,6 +1177,9 @@ class _ChatPageState extends State<ChatPage> {
     final bool isSelected = _selectedMessageIds.contains(messageId);
     final String type = _resolveMessageType(message);
     final String url = _resolveMessageUrl(message);
+    final documentAccessId = (message['documentAccessId'] ?? '')
+        .toString()
+        .trim();
     final String? fileName = message['fileName']?.toString();
     final mediaGroupItems = _resolveMediaGroupItems(message);
     final timestamp = message['timestamp'] as Timestamp?;
@@ -1209,7 +1213,11 @@ class _ChatPageState extends State<ChatPage> {
                 launchUrl(uri, mode: LaunchMode.externalApplication);
               }
             } else {
-              _openFile(url, fileName);
+              if (documentAccessId.isNotEmpty) {
+                _openProtectedDocument(documentAccessId, fileName);
+              } else {
+                _openFile(url, fileName);
+              }
             }
           } else if (type == 'image') {
             _openImageFullscreen(url, fileName: fileName);
@@ -1303,7 +1311,12 @@ class _ChatPageState extends State<ChatPage> {
                         else if (type == 'media_group')
                           _buildMediaGroupAttachment(mediaGroupItems, isMe)
                         else if (type == 'file')
-                          _buildFileAttachment(url, fileName, isMe)
+                          _buildFileAttachment(
+                            url,
+                            fileName,
+                            isMe,
+                            protected: documentAccessId.isNotEmpty,
+                          )
                         else if (type == 'audio')
                           _buildAudioPlayer(
                             url,
@@ -2543,7 +2556,38 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
-  Widget _buildFileAttachment(String url, String? fileName, bool isMe) {
+  Widget _buildFileAttachment(
+    String url,
+    String? fileName,
+    bool isMe, {
+    bool protected = false,
+  }) {
+    if (protected) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.lock_outline_rounded,
+            color: isMe ? Colors.white70 : Colors.grey,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              fileName ??
+                  _t(
+                    en: 'Protected document',
+                    he: 'מסמך מוגן',
+                    ar: 'مستند محمي',
+                    am: 'የተጠበቀ ሰነድ',
+                    ru: 'Защищённый документ',
+                  ),
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: isMe ? Colors.white : Colors.black87),
+            ),
+          ),
+        ],
+      );
+    }
     return FutureBuilder<String?>(
       future: _resolveLocalAttachmentCached(
         url: url,
@@ -3847,7 +3891,7 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
-  void _openFile(String url, String? fileName) async {
+  Future<void> _openFile(String url, String? fileName) async {
     if (url.isEmpty) return;
     try {
       final localPath = await _resolveLocalAttachmentCached(
@@ -3876,6 +3920,32 @@ class _ChatPageState extends State<ChatPage> {
       await OpenFilex.open(localPath);
     } catch (e) {
       debugPrint("Open file error: $e");
+    }
+  }
+
+  Future<void> _openProtectedDocument(String accessId, String? fileName) async {
+    try {
+      final temporaryUrl = await DocumentChatAccessService.createDownloadUrl(
+        accessId,
+      );
+      if (!mounted) return;
+      await _openFile(temporaryUrl, fileName);
+    } catch (error) {
+      debugPrint('Protected document open error: $error');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _t(
+              en: 'You do not have access to this document.',
+              he: 'אין לך הרשאה לגשת למסמך הזה.',
+              ar: 'ليس لديك إذن للوصول إلى هذا المستند.',
+              am: 'ይህን ሰነድ ለመድረስ ፈቃድ የለዎትም።',
+              ru: 'У вас нет доступа к этому документу.',
+            ),
+          ),
+        ),
+      );
     }
   }
 

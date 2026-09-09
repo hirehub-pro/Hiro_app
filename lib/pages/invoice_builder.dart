@@ -25,6 +25,7 @@ import 'package:untitled1/services/client_service.dart';
 import 'package:untitled1/services/app_navigation_service.dart';
 import 'package:untitled1/services/profile_document_service.dart';
 import 'package:untitled1/services/document_signing_service.dart';
+import 'package:untitled1/services/document_chat_access_service.dart';
 import 'package:untitled1/pages/chat_page.dart';
 import 'package:untitled1/utils/payment_installment_dates.dart';
 import 'package:untitled1/utils/invoice_preview_cache.dart';
@@ -173,8 +174,13 @@ Map<String, List<_BankBranch>> _parseBankBranches(String xmlText) {
 class _SavedInvoiceResult {
   final String url;
   final String fileName;
+  final String invoiceDocId;
 
-  const _SavedInvoiceResult({required this.url, required this.fileName});
+  const _SavedInvoiceResult({
+    required this.url,
+    required this.fileName,
+    required this.invoiceDocId,
+  });
 }
 
 class InvoiceBuilderDraftResult {
@@ -6374,7 +6380,11 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
       _markDocumentSaved();
       _showInvoiceEmailDeliveryToast(saved);
 
-      return _SavedInvoiceResult(url: saved.url, fileName: saved.fileName);
+      return _SavedInvoiceResult(
+        url: saved.url,
+        fileName: saved.fileName,
+        invoiceDocId: saved.invoiceDocId,
+      );
     } catch (e) {
       dev.log('Save invoice error: $e');
       if (!mounted) return null;
@@ -6535,6 +6545,10 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                 ? _invoiceNumber
                 : _labelForDocType(saved.docType));
       final messageText = 'Sent a document: $documentLabel';
+      final documentAccessId = await DocumentChatAccessService.create(
+        invoiceDocId: saved.invoiceDocId,
+        receiverId: receiverId,
+      );
 
       await FirebaseFirestore.instance
           .collection('chat_rooms')
@@ -6546,9 +6560,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
             'message': messageText,
             'text': messageText,
             'type': 'file',
-            'url': saved.url,
-            'fileUrl': saved.url,
             'fileName': saved.fileName,
+            'invoiceDocId': saved.invoiceDocId,
+            'documentAccessId': documentAccessId,
             'timestamp': FieldValue.serverTimestamp(),
             'isRead': false,
           });
@@ -6892,6 +6906,10 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
 
       final ids = [currentUser.uid, receiverId]..sort();
       final roomId = ids.join('_');
+      final documentAccessId = await DocumentChatAccessService.create(
+        invoiceDocId: saved.invoiceDocId,
+        receiverId: receiverId,
+      );
 
       await FirebaseFirestore.instance
           .collection('chat_rooms')
@@ -6907,9 +6925,9 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                 ? 'Sent a document: $_invoiceNumber'
                 : 'Sent a document: ${_labelForDocType(_selectedDocType)}',
             'type': 'file',
-            'url': saved.url,
-            'fileUrl': saved.url,
             'fileName': saved.fileName,
+            'invoiceDocId': saved.invoiceDocId,
+            'documentAccessId': documentAccessId,
             'timestamp': FieldValue.serverTimestamp(),
             'isRead': false,
           });

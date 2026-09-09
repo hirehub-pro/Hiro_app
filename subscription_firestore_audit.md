@@ -44,8 +44,8 @@
   must require Pro, while customer edits remain available.
 - Client records stay owner-readable after cancellation so user data is not
   held hostage, but creating or editing clients requires Pro.
-- Analytics reads from `metadata/financial_summary`, `ProRating`, and `VPD`.
-  These paths require Pro. Server maintenance continues through Admin SDK.
+- Analytics reads from `paymentAnalytics`, `ProRating`, and `VPD`. These paths
+  require Pro. Server maintenance continues through Admin SDK.
 - New document previews, documents, tax drafts, counter initialization,
   exports, signature requests, Tax Authority connection starts, and invoice
   email-code starts require provider-backed Pro authorization in Cloud

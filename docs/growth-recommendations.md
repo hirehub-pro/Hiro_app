@@ -11,7 +11,7 @@ The analytics card selects one opportunity using evidence thresholds and a deter
 | Ratings and samples | `ReviewStats/overall` and profession documents | Overall is authoritative. Only when absent, use review-weighted profession stats, never add both scopes. Missing category scores do not become low scores. |
 | Review recency | `reviews`, timestamp and rating | Compare current dated 30-day and preceding 30-day cohorts only with at least five reviews each. These are current review records, not historical overall-rating snapshots; users may edit reviews. No automated claim about sentiment in comment text. |
 | Strongest profession | Existing `calculateTopSkillScore` | Review-weighted ranking across listed professions, checked against current profession views. |
-| Earnings | `users/{uid}/metadata/financial_summary.totalEarned` | Context for gathering feedback. Not a job count, cash-flow forecast, or current-period revenue trend. |
+| Payments | `users/{uid}/paymentAnalytics/all_time.totalPayments` | Context for gathering feedback. Represents finalized receipts and invoice-receipts, not a job count or invoiced-revenue forecast. |
 | Profession earnings / completed jobs | No dependable attribution or completion lifecycle found | Not inferred from invoices, accepted quotes or accepted requests. |
 | In-app inquiries | `users/{uid}/RequestToMe` | Work and quote requests are separate types. Uses timestamps, profession and statuses. Not all phone/chat leads. No view-to-request conversion percentage is calculated. |
 | Bookings | Accepted work requests | Remain labelled accepted work requests. An accepted quote request may only mean a quote was sent. |
