@@ -13,7 +13,10 @@ import 'package:share_plus/share_plus.dart';
 import 'package:untitled1/pages/invoice_builder.dart';
 import 'package:untitled1/services/language_provider.dart';
 import 'package:untitled1/services/profile_document_service.dart';
+import 'package:untitled1/services/document_signing_service.dart';
 import 'package:untitled1/utils/tax_authority_error_localizer.dart';
+import 'package:untitled1/widgets/signing_access_code_dialog.dart';
+import 'package:untitled1/widgets/signing_link_protection_dialog.dart';
 
 class SavedInvoicesPage extends StatefulWidget {
   const SavedInvoicesPage({super.key, this.initialSearchQuery = ''});
@@ -842,29 +845,47 @@ class _SavedInvoicesPageState extends State<SavedInvoicesPage> {
     );
   }
 
+  Future<bool?> _chooseSigningLinkProtection(bool isRtl) {
+    return SigningLinkProtectionDialog.show(context, isRtl: isRtl);
+  }
+
   Future<void> _generateSigningLink(String invoiceDocId, bool isRtl) async {
     if (_generatingSigningLinks.contains(invoiceDocId)) return;
 
+    final secureWithCode = await _chooseSigningLinkProtection(isRtl);
+    if (secureWithCode == null || !mounted) return;
+
     setState(() => _generatingSigningLinks.add(invoiceDocId));
     try {
-      final callable = FirebaseFunctions.instanceFor(
-        region: 'us-central1',
-      ).httpsCallable('createDocumentSigningRequest');
-      final result = await callable.call(<String, dynamic>{
-        'invoiceDocId': invoiceDocId,
-      });
-      final link = (result.data as Map<Object?, Object?>?)?['url']?.toString();
-      if (link == null || link.isEmpty) {
-        throw StateError('The signing link could not be created.');
-      }
+      final signingLink = await DocumentSigningService.create(
+        invoiceDocId: invoiceDocId,
+        secureWithCode: secureWithCode,
+      );
 
       await SharePlus.instance.share(
         ShareParams(
           text: isRtl
-              ? 'נא לפתוח את המסמך ולחתום עליו:\n$link'
-              : 'Please open and sign the document:\n$link',
+              ? 'נא לפתוח את המסמך ולחתום עליו:\n${signingLink.url}'
+              : 'Please open and sign the document:\n${signingLink.url}',
         ),
       );
+      if (!mounted) return;
+      if (signingLink.isProtected) {
+        final shouldSendCode = await SigningAccessCodeDialog.show(
+          context,
+          accessCode: signingLink.accessCode!,
+          isRtl: isRtl,
+        );
+        if (shouldSendCode) {
+          await SharePlus.instance.share(
+            ShareParams(
+              text: isRtl
+                  ? 'קוד הגישה למסמך: ${signingLink.accessCode}\nאין להעביר את הקוד לאחרים.'
+                  : 'Document access code: ${signingLink.accessCode}\nDo not forward this code.',
+            ),
+          );
+        }
+      }
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

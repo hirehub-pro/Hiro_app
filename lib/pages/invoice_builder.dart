@@ -24,9 +24,12 @@ import 'package:untitled1/services/invoice_builder_verification_session.dart';
 import 'package:untitled1/services/client_service.dart';
 import 'package:untitled1/services/app_navigation_service.dart';
 import 'package:untitled1/services/profile_document_service.dart';
+import 'package:untitled1/services/document_signing_service.dart';
 import 'package:untitled1/pages/chat_page.dart';
 import 'package:untitled1/utils/payment_installment_dates.dart';
 import 'package:untitled1/utils/invoice_preview_cache.dart';
+import 'package:untitled1/widgets/signing_access_code_dialog.dart';
+import 'package:untitled1/widgets/signing_link_protection_dialog.dart';
 import 'package:xml/xml.dart';
 import 'package:internet_connection_checker_plus/internet_connection_checker_plus.dart';
 
@@ -6581,33 +6584,38 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     }
   }
 
-  Future<String> _createSigningLink(
+  Future<bool?> _chooseSigningLinkProtection() {
+    final locale = Provider.of<LanguageProvider>(
+      context,
+      listen: false,
+    ).locale.languageCode;
+    final isRtl = locale == 'he' || locale == 'ar';
+    return SigningLinkProtectionDialog.show(context, isRtl: isRtl);
+  }
+
+  Future<DocumentSigningLink?> _createSigningLink(
     InvoiceBuilderDraftResult saved, {
     String? receiverId,
   }) async {
-    final callable = FirebaseFunctions.instanceFor(
-      region: 'us-central1',
-    ).httpsCallable('createDocumentSigningRequest');
-    final result = await callable.call(<String, dynamic>{
-      'invoiceDocId': saved.invoiceDocId,
-      if (receiverId != null && receiverId.isNotEmpty) 'receiverId': receiverId,
-    });
-    final link = (result.data as Map<Object?, Object?>?)?['url']?.toString();
-    if (link == null || link.isEmpty) {
-      throw StateError('The signing link could not be created.');
-    }
-    return link;
+    final secureWithCode = await _chooseSigningLinkProtection();
+    if (secureWithCode == null || !mounted) return null;
+    return DocumentSigningService.create(
+      invoiceDocId: saved.invoiceDocId,
+      receiverId: receiverId,
+      secureWithCode: secureWithCode,
+    );
   }
 
-  Future<void> _sendSigningLinkToContact(
+  Future<bool> _sendSigningLinkToContact(
     InvoiceBuilderDraftResult saved,
     String receiverId,
     String receiverName,
   ) async {
     final currentUser = FirebaseAuth.instance.currentUser;
-    if (currentUser == null) return;
+    if (currentUser == null) return false;
 
-    final link = await _createSigningLink(saved, receiverId: receiverId);
+    final signingLink = await _createSigningLink(saved, receiverId: receiverId);
+    if (signingLink == null) return false;
     final ids = [currentUser.uid, receiverId]..sort();
     final roomId = ids.join('_');
     final label = _labelForDocType(saved.docType);
@@ -6623,14 +6631,31 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'message': messageText,
           'text': messageText,
           'type': 'file',
-          'url': link,
-          'fileUrl': link,
+          'url': signingLink.url,
+          'fileUrl': signingLink.url,
           'fileName': '$label - לחתימה',
           'signingRequest': true,
           'invoiceDocId': saved.invoiceDocId,
           'timestamp': FieldValue.serverTimestamp(),
           'isRead': false,
         });
+
+    if (signingLink.isProtected) {
+      final codeMessage = 'קוד הגישה למסמך: ${signingLink.accessCode}';
+      await FirebaseFirestore.instance
+          .collection('chat_rooms')
+          .doc(roomId)
+          .collection('messages')
+          .add({
+            'senderId': currentUser.uid,
+            'receiverId': receiverId,
+            'message': codeMessage,
+            'text': codeMessage,
+            'type': 'text',
+            'timestamp': FieldValue.serverTimestamp(),
+            'isRead': false,
+          });
+    }
 
     await FirebaseFirestore.instance.collection('chat_rooms').doc(roomId).set({
       'lastMessage': messageText,
@@ -6660,16 +6685,17 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
           'isRead': false,
           'timestamp': FieldValue.serverTimestamp(),
         });
+    return true;
   }
 
   Future<void> _sendForSignature(InvoiceBuilderDraftResult saved) async {
     if (widget.receiverId != null) {
-      await _sendSigningLinkToContact(
+      final sent = await _sendSigningLinkToContact(
         saved,
         widget.receiverId!,
         widget.receiverName ?? 'User',
       );
-      if (mounted) {
+      if (sent && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('הקישור לחתימה נשלח בצ׳אט')),
         );
@@ -6713,10 +6739,34 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
     if (!mounted || choice == null) return;
 
     if (choice == 'external') {
-      final link = await _createSigningLink(saved);
+      final languageCode = Localizations.localeOf(context).languageCode;
+      final isRtl = languageCode == 'he' || languageCode == 'ar';
+      final signingLink = await _createSigningLink(saved);
+      if (signingLink == null) return;
       await SharePlus.instance.share(
-        ShareParams(text: 'נא לפתוח את המסמך, לחתום ולשלוח אותו מחדש:\n$link'),
+        ShareParams(
+          text: isRtl
+              ? 'נא לפתוח את המסמך, לחתום ולשלוח אותו מחדש:\n${signingLink.url}'
+              : 'Please open, sign, and return the document:\n${signingLink.url}',
+        ),
       );
+      if (!mounted) return;
+      if (signingLink.isProtected) {
+        final shouldSendCode = await SigningAccessCodeDialog.show(
+          context,
+          accessCode: signingLink.accessCode!,
+          isRtl: isRtl,
+        );
+        if (shouldSendCode) {
+          await SharePlus.instance.share(
+            ShareParams(
+              text: isRtl
+                  ? 'קוד הגישה למסמך: ${signingLink.accessCode}\nאין להעביר את הקוד לאחרים.'
+                  : 'Document access code: ${signingLink.accessCode}\nDo not forward this code.',
+            ),
+          );
+        }
+      }
       return;
     }
 
@@ -6783,12 +6833,12 @@ class _InvoiceBuilderPageState extends State<InvoiceBuilderPage> {
                             title: Text(otherName),
                             onTap: () async {
                               Navigator.pop(sheetContext);
-                              await _sendSigningLinkToContact(
+                              final sent = await _sendSigningLinkToContact(
                                 saved,
                                 otherId,
                                 otherName,
                               );
-                              if (!mounted) return;
+                              if (!sent || !mounted) return;
                               ScaffoldMessenger.of(this.context).showSnackBar(
                                 const SnackBar(
                                   content: Text('הקישור לחתימה נשלח בצ׳אט'),

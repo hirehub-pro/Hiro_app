@@ -365,7 +365,8 @@ service cloud.firestore {
         'fallbackPreview',
         'authoritativeServerDocument', 'serverDocument', 'signatureStatus',
         'signingRequestId', 'signingRequestedAt', 'signingUrl', 'signedAt',
-        'signerName', 'invoiceEmailStatus', 'invoiceEmailAttemptedAt',
+        'signerName', 'signerVerification', 'invoiceEmailStatus',
+        'invoiceEmailAttemptedAt',
         'invoiceEmailSentAt', 'invoiceEmailId', 'invoiceEmailIds',
         'invoiceEmailError', 'isLinkingLocked', 'linkLockUpdatedAt'
       ]) &&
@@ -402,6 +403,7 @@ service cloud.firestore {
       optionalList(data, 'paymentMethods', 100) &&
       optionalMap(data, 'creditNoteLegal', 40) &&
       optionalMap(data, 'fallbackPreview', 20) &&
+      optionalMap(data, 'signerVerification', 10) &&
       optionalBool(data, 'hasDiscount') &&
       optionalBool(data, 'roundTotalEnabled') &&
       optionalBool(data, 'isCancellationDocument') &&
@@ -419,7 +421,8 @@ service cloud.firestore {
         'authoritativeServerDocument', 'serverDocument', 'finalizedAt',
         'finalPdf', 'fallbackPreview',
         'signatureStatus', 'signingRequestId', 'signingRequestedAt',
-        'signingUrl', 'signedAt', 'signerName', 'invoiceEmailStatus',
+        'signingUrl', 'signedAt', 'signerName', 'signerVerification',
+        'invoiceEmailStatus',
         'invoiceEmailAttemptedAt', 'invoiceEmailSentAt', 'invoiceEmailId',
         'invoiceEmailIds', 'invoiceEmailError'
       ];

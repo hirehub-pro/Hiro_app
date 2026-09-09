@@ -45,6 +45,12 @@ const {
   signingRequestIsActive,
 } = require("./document_signing_state");
 const {
+  createSigningAccessCode,
+  signingAccessCodeMatches,
+  signingAccessSessionHash,
+  signingAccessSessionMatches,
+} = require("./document_signing_access");
+const {
   taxAuthorityFailureState,
   taxInvoiceDraftSignature,
   taxInvoiceFinalizationMode,
@@ -553,6 +559,8 @@ async function loadCanonicalUserProfile(db, userId, accountSnap = null) {
 const PUBLIC_APP_ORIGIN = "https://hiro-services.com";
 const DOCUMENT_DOWNLOAD_COLLECTION = "documentDownloadTokens";
 const SIGNING_REQUEST_LIFETIME_DAYS = 30;
+const SIGNING_ACCESS_MAX_ATTEMPTS = 5;
+const SIGNING_ACCESS_LOCK_MS = 15 * 60 * 1000;
 // A signing link is a bearer capability, so only one submitted signature may
 // own it at a time. This lease is deliberately longer than the HTTP function
 // timeout to allow a crashed invocation to be retried without allowing a
@@ -683,6 +691,7 @@ exports.createDocumentSigningRequest = onCall(
       const invoiceDocId =
         normalizeString(request.data?.invoiceDocId).trim();
       const receiverId = normalizeString(request.data?.receiverId).trim();
+      const secureWithCode = request.data?.secureWithCode === true;
       if (!invoiceDocId) {
         throw new HttpsError(
             "invalid-argument",
@@ -731,6 +740,7 @@ exports.createDocumentSigningRequest = onCall(
 
       const token = crypto.randomBytes(32).toString("base64url");
       const requestId = hashSigningToken(token);
+      const signingAccess = secureWithCode ? createSigningAccessCode() : null;
       const now = new Date();
       const expiresAt = new Date(
           now.getTime() +
@@ -797,6 +807,14 @@ exports.createDocumentSigningRequest = onCall(
           fileName: normalizeString(latestInvoice.fileName) || "document.pdf",
           storagePath: latestStoragePath,
           status: "pending",
+          accessProtected: secureWithCode,
+          verificationMethod: secureWithCode ?
+            "shared_access_code" : "link_only",
+          ...(signingAccess ? {
+            accessCodeSalt: signingAccess.salt,
+            accessCodeHash: signingAccess.hash,
+            accessFailedAttempts: 0,
+          } : {}),
           createdAt: FieldValue.serverTimestamp(),
           expiresAt: Timestamp.fromDate(expiresAt),
           signedAt: null,
@@ -810,6 +828,7 @@ exports.createDocumentSigningRequest = onCall(
 
       return {
         url: `${PUBLIC_APP_ORIGIN}/sign/${token}`,
+        ...(signingAccess ? {accessCode: signingAccess.code} : {}),
         expiresAt: expiresAt.toISOString(),
       };
     },
@@ -818,6 +837,11 @@ exports.createDocumentSigningRequest = onCall(
 exports.publicDocumentSigning = onRequest(
     {region: "us-central1", cors: false, timeoutSeconds: 60},
     async (req, res) => {
+      res.set({
+        "Cache-Control": "private, no-store",
+        "Referrer-Policy": "no-referrer",
+        "X-Content-Type-Options": "nosniff",
+      });
       try {
         const token = signingTokenFromRequest(req);
         if (!token) {
@@ -873,11 +897,60 @@ exports.publicDocumentSigning = onRequest(
           ));
           return;
         }
+        const accessProtected = signingRequest.accessProtected === true;
+        const accessSessionToken = signingAccessSessionTokenFromRequest(req);
+        const hasSigningAccess = !accessProtected ||
+          signingAccessSessionMatches(
+              accessSessionToken,
+              signingRequest.accessSessionHash,
+          );
         if (signingRequest.status === "signing" && req.method === "GET") {
           res.status(409).send(renderSigningMessage(
               "המסמך בתהליך חתימה",
               "נא להמתין לסיום תהליך החתימה.",
           ));
+          return;
+        }
+
+        if (req.method === "POST" &&
+            req.body?.action === "verify_access_code") {
+          const verification = await verifySigningAccessCode({
+            requestRef,
+            invoiceRef,
+            code: req.body?.accessCode,
+          });
+          if (!verification.ok) {
+            res.status(verification.locked ? 429 : 403).json({
+              error: verification.locked ?
+                "ניסיונות רבים מדי. יש להמתין 15 דקות ולנסות שוב." :
+                "קוד הגישה אינו נכון.",
+              locked: verification.locked,
+            });
+            return;
+          }
+          const maxAgeSeconds = Math.max(
+              60,
+              Math.floor((expiresAt.getTime() - Date.now()) / 1000),
+          );
+          res.setHeader(
+              "Set-Cookie",
+              `hiro_signing_access=${verification.sessionToken}; ` +
+              `Max-Age=${maxAgeSeconds}; Path=/sign/; HttpOnly; Secure; ` +
+              "SameSite=Strict",
+          );
+          res.status(200).json({ok: true});
+          return;
+        }
+
+        if (!hasSigningAccess) {
+          if (req.method === "GET" && req.query.pdf !== "1") {
+            res.set("Cache-Control", "no-store");
+            res.status(200).send(renderSigningAccessPage(signingRequest));
+          } else if (req.method === "GET") {
+            res.status(401).send("Access code required.");
+          } else {
+            res.status(403).json({error: "יש לאמת את קוד הגישה תחילה."});
+          }
           return;
         }
 
@@ -1007,6 +1080,16 @@ exports.publicDocumentSigning = onRequest(
               signatureStatus: "signed",
               signerName,
               signedAt,
+              signerVerification: {
+                method: claimedSigningRequest.accessProtected === true ?
+                  "shared_access_code" : "link_only",
+                accessVerified:
+                  claimedSigningRequest.accessProtected === true,
+                identityVerified: false,
+                ...(claimedSigningRequest.accessVerifiedAt ? {
+                  verifiedAt: claimedSigningRequest.accessVerifiedAt,
+                } : {}),
+              },
             }, {merge: true});
           });
         } catch (error) {
@@ -10213,6 +10296,80 @@ function signingTokenFromRequest(req) {
   return /^[A-Za-z0-9_-]{40,60}$/.test(token) ? token : "";
 }
 
+function signingAccessSessionTokenFromRequest(req) {
+  const cookies = normalizeString(req.headers?.cookie).split(";");
+  for (const cookie of cookies) {
+    const separator = cookie.indexOf("=");
+    if (separator < 0) continue;
+    const name = cookie.slice(0, separator).trim();
+    const value = cookie.slice(separator + 1).trim();
+    if (name === "hiro_signing_access" &&
+        /^[A-Za-z0-9_-]{43}$/.test(value)) {
+      return value;
+    }
+  }
+  return "";
+}
+
+async function verifySigningAccessCode({requestRef, invoiceRef, code}) {
+  const sessionToken = crypto.randomBytes(32).toString("base64url");
+  const sessionHash = signingAccessSessionHash(sessionToken);
+  const nowMillis = Date.now();
+  const result = await db.runTransaction(async (transaction) => {
+    const [requestSnap, invoiceSnap] = await Promise.all([
+      transaction.get(requestRef),
+      transaction.get(invoiceRef),
+    ]);
+    if (!requestSnap.exists || !invoiceSnap.exists) {
+      return {ok: false, locked: false};
+    }
+    const signingRequest = requestSnap.data() || {};
+    if (signingRequest.accessProtected !== true ||
+        !signingRequestIsActive({
+          invoice: invoiceSnap.data(),
+          requestId: requestRef.id,
+          signingRequest,
+        })) {
+      return {ok: false, locked: false};
+    }
+
+    const lockedUntil = toDate(signingRequest.accessLockedUntil);
+    if (lockedUntil && lockedUntil.getTime() > nowMillis) {
+      return {ok: false, locked: true};
+    }
+    const attempts = lockedUntil ? 0 :
+      Math.max(0, Number(signingRequest.accessFailedAttempts) || 0);
+    if (!signingAccessCodeMatches(
+        code,
+        signingRequest.accessCodeSalt,
+        signingRequest.accessCodeHash,
+    )) {
+      const nextAttempts = attempts + 1;
+      const locked = nextAttempts >= SIGNING_ACCESS_MAX_ATTEMPTS;
+      transaction.update(requestRef, {
+        accessFailedAttempts: nextAttempts,
+        accessLastFailedAt: FieldValue.serverTimestamp(),
+        ...(locked ? {
+          accessLockedUntil: Timestamp.fromMillis(
+              nowMillis + SIGNING_ACCESS_LOCK_MS,
+          ),
+        } : {}),
+      });
+      return {ok: false, locked};
+    }
+
+    transaction.update(requestRef, {
+      accessSessionHash: sessionHash,
+      accessVerifiedAt: FieldValue.serverTimestamp(),
+      accessFailedAttempts: 0,
+      accessLockedUntil: FieldValue.delete(),
+      accessLastFailedAt: FieldValue.delete(),
+    });
+    return {ok: true, locked: false};
+  });
+  return result.ok ? {...result, sessionToken} : result;
+}
+
 async function streamSigningPdf(res, signingRequest) {
   const storagePath = assertOwnedInvoicePdfPath(
       signingRequest.storagePath,
@@ -10357,6 +10514,51 @@ async function publishSignedDocument(signingRequest, signed) {
   }
 
   await batch.commit();
+}
+
+function renderSigningAccessPage(signingRequest) {
+  const documentName = normalizeString(signingRequest.documentName)
+      .replace(/^Quote\b/i, "הצעת מחיר");
+  const title = escapeHtml(documentName || "מסמך לחתימה");
+  return `<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>${title}</title>
+  <style>
+    *{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;
+    padding:20px;background:#f4f7fb;color:#0f172a;font-family:Arial,sans-serif}
+    main{width:min(430px,100%);padding:28px;background:#fff;border:1px solid #dbe3ee;
+    border-radius:20px;box-shadow:0 12px 32px #0f172a18}h1{margin:0 0 8px;font-size:24px}
+    p{color:#475569;line-height:1.5}label{display:block;margin:22px 0 7px;font-weight:700}
+    input{width:100%;padding:13px;border:1px solid #cbd5e1;border-radius:10px;font-size:19px;
+    direction:ltr;text-align:center;text-transform:uppercase;letter-spacing:2px}
+    button{width:100%;margin-top:14px;padding:13px;border:0;border-radius:10px;background:#2563eb;
+    color:#fff;font-size:16px;font-weight:800;cursor:pointer}.message{margin-top:12px;color:#991b1b}
+  </style>
+</head>
+<body><main>
+  <h1>מסמך מאובטח</h1>
+  <p>כדי לפתוח את ${title}, יש להזין את קוד הגישה שנשלח בהודעה נפרדת.</p>
+  <label for="code">קוד גישה</label>
+  <input id="code" maxlength="9" autocomplete="one-time-code" placeholder="XXXX-XXXX">
+  <button id="submit">פתח את המסמך</button>
+  <div id="message" class="message" role="alert"></div>
+</main><script>
+  document.getElementById('submit').onclick=async()=>{
+    const button=document.getElementById('submit');const message=document.getElementById('message');
+    button.disabled=true;message.textContent='';
+    try{const response=await fetch(location.pathname,{method:'POST',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify({
+        action:'verify_access_code',accessCode:document.getElementById('code').value})});
+      const result=await response.json();if(!response.ok)throw new Error(result.error);
+      location.reload();
+    }catch(error){message.textContent=error.message||'לא ניתן לאמת את הקוד.';
+      button.disabled=false}}
+  document.getElementById('code').addEventListener('keydown',event=>{
+    if(event.key==='Enter')document.getElementById('submit').click()});
+</script></body></html>`;
 }
 
 function renderSigningPage(token, signingRequest) {
