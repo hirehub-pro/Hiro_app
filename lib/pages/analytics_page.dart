@@ -13,13 +13,12 @@ import 'package:untitled1/pages/edit_profile.dart';
 import 'package:untitled1/pages/my_requests_page.dart';
 import 'package:untitled1/pages/schedule.dart';
 import 'package:untitled1/widgets/growth_recommendation_card.dart';
-
-class AnalyticsPage extends StatefulWidget {
+ class AnalyticsPage extends StatefulWidget {
   final String userId;
   final Map<String, String> strings;
 
   const AnalyticsPage({super.key, required this.userId, required this.strings});
-
+ 
   @override
   State<AnalyticsPage> createState() => _AnalyticsPageState();
 }
