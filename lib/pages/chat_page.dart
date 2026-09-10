@@ -1334,21 +1334,57 @@ class _ChatPageState extends State<ChatPage> {
                                 color: isMe ? Colors.white70 : Colors.grey[500],
                               ),
                             ),
-                            if (isPending) ...[
+                            if (isMe) ...[
                               const SizedBox(width: 5),
                               if (hasFailed)
-                                const Icon(
-                                  Icons.error_outline_rounded,
-                                  size: 14,
-                                  color: Colors.white,
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(
+                                      Icons.error_outline_rounded,
+                                      size: 14,
+                                      color: Colors.redAccent,
+                                    ),
+                                    const SizedBox(width: 3),
+                                    Semantics(
+                                      button: true,
+                                      label: _t(
+                                        en: 'Retry sending message',
+                                        he: 'נסה לשלוח את ההודעה שוב',
+                                        ar: 'إعادة محاولة إرسال الرسالة',
+                                        am: 'መልዕክቱን እንደገና ላክ',
+                                        ru: 'Повторить отправку сообщения',
+                                      ),
+                                      child: GestureDetector(
+                                        behavior: HitTestBehavior.opaque,
+                                        onTap: () => _retryPendingMessage(
+                                          pendingMessage!,
+                                        ),
+                                        child: const Padding(
+                                          padding: EdgeInsets.all(2),
+                                          child: Icon(
+                                            Icons.refresh_rounded,
+                                            size: 16,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 )
-                              else
+                              else if (isPending)
                                 const SizedBox.square(
                                   dimension: 11,
                                   child: CircularProgressIndicator(
                                     strokeWidth: 1.5,
                                     color: Colors.white70,
                                   ),
+                                )
+                              else
+                                const Icon(
+                                  Icons.done_all_rounded,
+                                  size: 16,
+                                  color: Colors.white70,
                                 ),
                             ],
                           ],
@@ -1387,6 +1423,7 @@ class _ChatPageState extends State<ChatPage> {
   Widget _buildPendingUploadBubble(_PendingMediaUpload upload) {
     final bool isImage = upload.type == 'image';
     final bool isVideo = upload.type == 'video';
+    final bool isAudio = upload.type == 'audio';
     final bool isFailed = upload.isFailed;
     final progress = upload.progress.clamp(0.0, 1.0);
     final statusText = isFailed
@@ -1478,6 +1515,80 @@ class _ChatPageState extends State<ChatPage> {
                   ],
                 ),
               ),
+            if (isAudio)
+              Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: isFailed ? () => _retryPendingUpload(upload) : null,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: SizedBox(
+                      width: 220,
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 42,
+                            height: 42,
+                            decoration: const BoxDecoration(
+                              color: Colors.white24,
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              isFailed
+                                  ? Icons.refresh_rounded
+                                  : Icons.mic_rounded,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  isFailed ? 'Tap to retry' : 'Voice message',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(height: 7),
+                                LinearProgressIndicator(
+                                  value: isFailed ? 0 : progress,
+                                  minHeight: 3,
+                                  backgroundColor: Colors.white24,
+                                  valueColor:
+                                      const AlwaysStoppedAnimation<Color>(
+                                        Colors.white,
+                                      ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Text(
+                            _formatAudioSeconds(
+                              Duration(seconds: upload.durationSeconds ?? 0),
+                            ),
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            if (isImage && upload.caption?.trim().isNotEmpty == true) ...[
+              const SizedBox(height: 8),
+              Text(
+                upload.caption!.trim(),
+                style: const TextStyle(color: Colors.white),
+              ),
+            ],
             const SizedBox(height: 8),
             Row(
               mainAxisSize: MainAxisSize.min,
@@ -3260,7 +3371,8 @@ class _ChatPageState extends State<ChatPage> {
     int? durationSeconds,
     String? caption,
   }) async {
-    final shouldTrackInChat = type == 'image' || type == 'video';
+    final shouldTrackInChat =
+        type == 'image' || type == 'video' || type == 'audio';
     final pendingId = DateTime.now().microsecondsSinceEpoch.toString();
 
     if (shouldTrackInChat && mounted) {
@@ -3274,6 +3386,8 @@ class _ChatPageState extends State<ChatPage> {
             fileName: fileName,
             localPath: file.path,
             progress: 0,
+            durationSeconds: durationSeconds,
+            caption: caption,
           ),
         );
       });
@@ -3481,7 +3595,13 @@ class _ChatPageState extends State<ChatPage> {
       });
     }
 
-    await _uploadAndSend(file, upload.type, upload.fileName);
+    await _uploadAndSend(
+      file,
+      upload.type,
+      upload.fileName,
+      durationSeconds: upload.durationSeconds,
+      caption: upload.caption,
+    );
   }
 
   Future<void> _cacheSentFileLocally({
@@ -4998,6 +5118,8 @@ class _PendingMediaUpload {
   final String fileName;
   final String localPath;
   final double progress;
+  final int? durationSeconds;
+  final String? caption;
   final bool isFailed;
 
   const _PendingMediaUpload({
@@ -5007,6 +5129,8 @@ class _PendingMediaUpload {
     required this.fileName,
     required this.localPath,
     required this.progress,
+    this.durationSeconds,
+    this.caption,
     this.isFailed = false,
   });
 
@@ -5018,6 +5142,8 @@ class _PendingMediaUpload {
       fileName: fileName,
       localPath: localPath,
       progress: progress ?? this.progress,
+      durationSeconds: durationSeconds,
+      caption: caption,
       isFailed: isFailed ?? this.isFailed,
     );
   }
