@@ -128,8 +128,6 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
   bool _showWorkerList = false;
   String _sortBy = 'rating';
   AppLocation? _currentPosition;
-  bool _isLoadingLocation = false;
-  int _locationRequestId = 0;
   bool _filterByRadius = true;
   final bool _filterByVerified = false;
   DateTime? _filterByDate;
@@ -400,7 +398,10 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
 
     _scrollController.addListener(() {
       if (_scrollController.position.extentAfter < 300) {
-        if (_hasMore && !_isFetchingMore && _showWorkerList) {
+        if (_hasMore &&
+            !_isFetchingMore &&
+            !_isLoadingWorkers &&
+            _showWorkerList) {
           _fetchWorkers();
         }
       }
@@ -512,7 +513,7 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
 
   Future<void> _fetchWorkers({bool isRefresh = false}) async {
     if (!mounted) return;
-    if (_isFetchingMore && !isRefresh) return;
+    if (!isRefresh && (_isFetchingMore || _isLoadingWorkers)) return;
 
     if (isRefresh) {
       _fetchSessionId++;
@@ -526,6 +527,7 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
         _lastDocument = null;
         _hasMore = true;
         _isLoadingWorkers = true;
+        _isFetchingMore = false;
       } else {
         _isFetchingMore = true;
       }
@@ -764,11 +766,6 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
   }
 
   Future<void> _getCurrentLocation({bool silent = false}) async {
-    final requestId = ++_locationRequestId;
-    if (mounted) {
-      setState(() => _isLoadingLocation = true);
-    }
-
     try {
       final position = await LocationContextService.getActiveLocation();
       if (!mounted) return;
@@ -787,10 +784,6 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
       }
     } catch (e) {
       debugPrint("Error getting location: $e");
-    } finally {
-      if (mounted && requestId == _locationRequestId) {
-        setState(() => _isLoadingLocation = false);
-      }
     }
   }
 
@@ -2181,18 +2174,6 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
 
           final w = _filteredWorkers[index];
 
-          String distanceStr = "";
-          if (_currentPosition != null) {
-            final distance = _localDistanceToWorker(w);
-            if (distance.isFinite) {
-              if (distance < 1000) {
-                distanceStr = "${distance.toStringAsFixed(0)}m";
-              } else {
-                distanceStr = "${(distance / 1000).toStringAsFixed(1)}km";
-              }
-            }
-          }
-
           final bool isIdVerified = w['isIdVerified'] ?? false;
           final bool isBusinessVerified = w['isBusinessVerified'] ?? false;
 
@@ -2309,30 +2290,6 @@ class _SearchPageState extends State<SearchPage> with TickerProviderStateMixin {
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
-                          if (distanceStr.isNotEmpty) ...[
-                            const SizedBox(width: 8),
-                            Text(
-                              distanceStr,
-                              style: TextStyle(
-                                color: themeColor,
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ] else if (_isLoadingLocation) ...[
-                            const SizedBox(width: 8),
-                            Semantics(
-                              label: 'Loading distance',
-                              child: SizedBox(
-                                width: 14,
-                                height: 14,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Color(0xFF1976D2),
-                                ),
-                              ),
-                            ),
-                          ],
                         ],
                       ),
                       if (hasWorkingHours) ...[

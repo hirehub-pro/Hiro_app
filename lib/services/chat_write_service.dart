@@ -1,6 +1,8 @@
+import 'dart:convert';
 import 'dart:math';
 
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:crypto/crypto.dart';
 
 class ChatWriteService {
   ChatWriteService._();
@@ -9,6 +11,17 @@ class ChatWriteService {
     region: 'me-west1',
   );
   static final Random _random = Random.secure();
+
+  static String createIdempotencyKey() {
+    return '${DateTime.now().microsecondsSinceEpoch}_${_random.nextInt(1 << 32)}';
+  }
+
+  static String messageIdFor({
+    required String senderId,
+    required String idempotencyKey,
+  }) {
+    return sha256.convert(utf8.encode('$senderId:$idempotencyKey')).toString();
+  }
 
   static Future<String> send({
     required String receiverId,
@@ -28,12 +41,11 @@ class ChatWriteService {
     bool? signingRequest,
     String? idempotencyKey,
   }) async {
-    final generatedKey =
-        '${DateTime.now().microsecondsSinceEpoch}_${_random.nextInt(1 << 32)}';
+    final generatedKey = idempotencyKey ?? createIdempotencyKey();
     final response = await _functions.httpsCallable('sendChatMessage').call({
       'receiverId': receiverId,
       'type': type,
-      'clientMessageId': idempotencyKey ?? generatedKey,
+      'clientMessageId': generatedKey,
       'message': ?message,
       'url': ?url,
       'fileUrl': ?fileUrl,

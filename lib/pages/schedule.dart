@@ -319,6 +319,23 @@ class _SchedulePageState extends State<SchedulePage> {
 
   String _dateKey(DateTime date) => "${date.year}-${date.month}-${date.day}";
 
+  bool _isPastDay(DateTime date) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final selectedDate = DateTime(date.year, date.month, date.day);
+    return selectedDate.isBefore(today);
+  }
+
+  bool _blockPastDayEdit(DateTime date) {
+    if (!_isPastDay(date)) return false;
+
+    final strings = _getLocalizedStrings(context);
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(strings['past_day_read_only']!)));
+    return true;
+  }
+
   Future<void> _updateScheduleWidget() async {
     if (!_isOwnSchedule) return;
     if (!mounted) return;
@@ -432,6 +449,7 @@ class _SchedulePageState extends State<SchedulePage> {
           'add_reminder': 'הוסף תזכורת',
           'reminder_hint': 'כתוב כאן את התזכורת...',
           'no_reminders': 'אין תזכורות ליום זה',
+          'past_day_read_only': 'לא ניתן לערוך ימים שכבר עברו.',
           'set_working': 'סמן כיום עבודה',
           'remove_working': 'בטל יום עבודה',
           'set_partial': 'שעות עבודה חלקיות',
@@ -494,6 +512,7 @@ class _SchedulePageState extends State<SchedulePage> {
           'add_reminder': 'إضافة تذكير',
           'reminder_hint': 'اكتب التذكير هنا...',
           'no_reminders': 'لا توجد تذكيرات لهذا اليوم',
+          'past_day_read_only': 'لا يمكن تعديل الأيام الماضية.',
           'set_working': 'تحديد كيوم عمل',
           'remove_working': 'إلغاء يوم العمل',
           'set_partial': 'ساعات عمل جزئية',
@@ -556,6 +575,7 @@ class _SchedulePageState extends State<SchedulePage> {
           'add_reminder': 'ማስታወሻ ጨምር',
           'reminder_hint': 'እዚህ ማስታወሻ ይጻፉ...',
           'no_reminders': 'ለዚህ ቀን ማስታወሻ የለም',
+          'past_day_read_only': 'ያለፉ ቀናትን ማስተካከል አይቻልም።',
           'set_working': 'እንደ የስራ ቀን ምልክት አድርግ',
           'remove_working': 'የስራ ቀን ሰርዝ',
           'set_partial': 'ከፊል የስራ ሰዓታት',
@@ -615,6 +635,7 @@ class _SchedulePageState extends State<SchedulePage> {
           'add_reminder': 'Добавить напоминание',
           'reminder_hint': 'Введите напоминание...',
           'no_reminders': 'Нет напоминаний на этот день',
+          'past_day_read_only': 'Прошедшие дни нельзя редактировать.',
           'set_working': 'Отметить рабочим днем',
           'remove_working': 'Убрать рабочий день',
           'set_partial': 'Частичные рабочие часы',
@@ -683,6 +704,7 @@ class _SchedulePageState extends State<SchedulePage> {
           'add_reminder': 'Add Reminder',
           'reminder_hint': 'Write reminder here...',
           'no_reminders': 'No reminders for this day',
+          'past_day_read_only': 'Past days cannot be edited.',
           'set_working': 'Set as Working Day',
           'remove_working': 'Remove Working Day',
           'set_partial': 'Partial Working Hours',
@@ -982,6 +1004,8 @@ class _SchedulePageState extends State<SchedulePage> {
   }
 
   Future<void> _cancelVacation(DateTime date) async {
+    if (_blockPastDayEdit(date)) return;
+
     final strings = _getLocalizedStrings(context);
     final bool? confirm = await showDialog<bool>(
       context: context,
@@ -1034,6 +1058,8 @@ class _SchedulePageState extends State<SchedulePage> {
   }
 
   Future<void> _setVacationForDay(DateTime date) async {
+    if (_blockPastDayEdit(date)) return;
+
     final strings = _getLocalizedStrings(context);
     final dateStr = "${date.year}-${date.month}-${date.day}";
 
@@ -1058,6 +1084,8 @@ class _SchedulePageState extends State<SchedulePage> {
 
   Future<void> _addReminder(String text) async {
     if (text.isEmpty) return;
+    if (_blockPastDayEdit(_selectedDay)) return;
+
     final dateStr =
         "${_selectedDay.year}-${_selectedDay.month}-${_selectedDay.day}";
 
@@ -1090,6 +1118,8 @@ class _SchedulePageState extends State<SchedulePage> {
   }
 
   Future<void> _deleteReminder(String id) async {
+    if (_blockPastDayEdit(_selectedDay)) return;
+
     final dateStr =
         "${_selectedDay.year}-${_selectedDay.month}-${_selectedDay.day}";
     setState(() {
@@ -1115,6 +1145,8 @@ class _SchedulePageState extends State<SchedulePage> {
   }
 
   Future<void> _toggleWorkingDay() async {
+    if (_blockPastDayEdit(_selectedDay)) return;
+
     final strings = _getLocalizedStrings(context);
     final dateStr =
         "${_selectedDay.year}-${_selectedDay.month}-${_selectedDay.day}";
@@ -1181,6 +1213,8 @@ class _SchedulePageState extends State<SchedulePage> {
   }
 
   Future<void> _setPartialHours() async {
+    if (_blockPastDayEdit(_selectedDay)) return;
+
     final strings = _getLocalizedStrings(context);
     final dateStr =
         "${_selectedDay.year}-${_selectedDay.month}-${_selectedDay.day}";
@@ -1451,6 +1485,8 @@ class _SchedulePageState extends State<SchedulePage> {
                       Expanded(
                         child: ElevatedButton(
                           onPressed: () async {
+                            if (_blockPastDayEdit(_selectedDay)) return;
+
                             final normalizedRanges =
                                 editableRanges
                                     .map(
@@ -1600,9 +1636,7 @@ class _SchedulePageState extends State<SchedulePage> {
     final isWorkingDay = _availableDates.contains(dateStr);
     final isPermanentOff = _isPermanentlyDisabled(_selectedDay);
     final onVacation = _isVacation(_selectedDay);
-    final isPast = _selectedDay.isBefore(
-      DateTime.now().subtract(const Duration(days: 1)),
-    );
+    final isPast = _isPastDay(_selectedDay);
 
     return Directionality(
       textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
@@ -1721,7 +1755,7 @@ class _SchedulePageState extends State<SchedulePage> {
                         ),
                       )
                     : _isOwnSchedule
-                    ? _buildOwnerView(strings)
+                    ? _buildOwnerView(strings, isPast)
                     : _buildUserView(
                         strings,
                         isWorkingDay,
@@ -1776,7 +1810,7 @@ class _SchedulePageState extends State<SchedulePage> {
     );
   }
 
-  Widget _buildOwnerView(Map<String, String> strings) {
+  Widget _buildOwnerView(Map<String, String> strings, bool isPast) {
     final dateStr =
         "${_selectedDay.year}-${_selectedDay.month}-${_selectedDay.day}";
     final isWorkingDay = _availableDates.contains(dateStr);
@@ -1785,6 +1819,32 @@ class _SchedulePageState extends State<SchedulePage> {
 
     return Column(
       children: [
+        if (isPast)
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(bottom: 16),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF7ED),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: const Color(0xFFFED7AA)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.lock_clock_rounded, color: Color(0xFFC2410C)),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    strings['past_day_read_only']!,
+                    style: const TextStyle(
+                      color: Color(0xFF9A3412),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         if (isPermanentOff)
           Container(
             width: double.infinity,
@@ -1828,6 +1888,7 @@ class _SchedulePageState extends State<SchedulePage> {
           onVacation,
           dateStr,
           isPermanentOff,
+          isPast,
         ),
         const SizedBox(height: 20),
         if (_getPartialRanges(dateStr).isNotEmpty) ...[
@@ -1835,8 +1896,8 @@ class _SchedulePageState extends State<SchedulePage> {
           const SizedBox(height: 20),
         ],
         const SizedBox(height: 20),
-        _buildRemindersList(strings),
-        _buildAddReminderInput(strings),
+        _buildRemindersList(strings, isPast),
+        _buildAddReminderInput(strings, isPast),
       ],
     );
   }
@@ -1847,6 +1908,7 @@ class _SchedulePageState extends State<SchedulePage> {
     bool onVac,
     String dateStr,
     bool isPermanentOff,
+    bool isPast,
   ) {
     return Container(
       padding: const EdgeInsets.all(20),
@@ -1868,7 +1930,7 @@ class _SchedulePageState extends State<SchedulePage> {
             isWorking,
             Colors.green,
             _toggleWorkingDay,
-            disabled: isPermanentOff,
+            disabled: isPermanentOff || isPast,
           ),
           _controlBtn(
             Icons.more_time_rounded,
@@ -1876,7 +1938,7 @@ class _SchedulePageState extends State<SchedulePage> {
             _partialWorkDays.containsKey(dateStr),
             Colors.orange,
             _setPartialHours,
-            disabled: isPermanentOff,
+            disabled: isPermanentOff || isPast,
           ),
           _controlBtn(
             Icons.beach_access_rounded,
@@ -1886,6 +1948,7 @@ class _SchedulePageState extends State<SchedulePage> {
             onVac
                 ? () => _cancelVacation(_selectedDay)
                 : () => _setVacationForDay(_selectedDay),
+            disabled: isPast,
           ),
         ],
       ),
@@ -2035,7 +2098,7 @@ class _SchedulePageState extends State<SchedulePage> {
     );
   }
 
-  Widget _buildRemindersList(Map<String, String> strings) {
+  Widget _buildRemindersList(Map<String, String> strings, bool isPast) {
     if (_reminders.isEmpty) {
       return Padding(
         padding: const EdgeInsets.all(20),
@@ -2056,12 +2119,12 @@ class _SchedulePageState extends State<SchedulePage> {
               child: ListTile(
                 title: Text(r['text'], style: const TextStyle(fontSize: 14)),
                 trailing: IconButton(
-                  icon: const Icon(
+                  icon: Icon(
                     Icons.delete_outline,
-                    color: Colors.red,
+                    color: isPast ? Colors.grey : Colors.red,
                     size: 20,
                   ),
-                  onPressed: () => _deleteReminder(r['id']),
+                  onPressed: isPast ? null : () => _deleteReminder(r['id']),
                 ),
               ),
             ),
@@ -2070,12 +2133,13 @@ class _SchedulePageState extends State<SchedulePage> {
     );
   }
 
-  Widget _buildAddReminderInput(Map<String, String> strings) {
+  Widget _buildAddReminderInput(Map<String, String> strings, bool isPast) {
     final controller = TextEditingController();
     return Padding(
       padding: const EdgeInsets.only(top: 12),
       child: TextField(
         controller: controller,
+        enabled: !isPast,
         onSubmitted: (v) {
           _addReminder(v);
           controller.clear();
@@ -2089,11 +2153,16 @@ class _SchedulePageState extends State<SchedulePage> {
             borderSide: BorderSide.none,
           ),
           suffixIcon: IconButton(
-            icon: const Icon(Icons.add_circle, color: Color(0xFF1976D2)),
-            onPressed: () {
-              _addReminder(controller.text);
-              controller.clear();
-            },
+            icon: Icon(
+              Icons.add_circle,
+              color: isPast ? Colors.grey : const Color(0xFF1976D2),
+            ),
+            onPressed: isPast
+                ? null
+                : () {
+                    _addReminder(controller.text);
+                    controller.clear();
+                  },
           ),
         ),
       ),

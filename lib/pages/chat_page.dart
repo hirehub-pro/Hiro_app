@@ -92,6 +92,8 @@ class _ChatPageState extends State<ChatPage> {
   final Set<String> _failedDownloads = {};
   final Map<String, Future<String?>> _localResolveFutures = {};
   final List<_PendingMediaUpload> _pendingMediaUploads = [];
+  final List<_PendingChatMessage> _pendingMessages = [];
+  bool _pendingMessageCleanupScheduled = false;
   Stream<QuerySnapshot<Map<String, dynamic>>>? _messageStream;
   Future<void>? _chatRoomInitialization;
   bool _isChatRoomReady = false;
@@ -575,7 +577,7 @@ class _ChatPageState extends State<ChatPage> {
     return ids.join('_');
   }
 
-  void _sendMessage({
+  Future<void> _sendMessage({
     String? text,
     String type = 'text',
     String? url,
@@ -583,28 +585,110 @@ class _ChatPageState extends State<ChatPage> {
     int? durationSeconds,
     List<Map<String, dynamic>>? mediaItems,
   }) async {
-    if (type == 'text' && (text == null || text.trim().isEmpty)) return;
+    final normalizedText = text?.trim();
+    if (type == 'text' && (normalizedText == null || normalizedText.isEmpty)) {
+      return;
+    }
 
+    final senderId = _auth.currentUser?.uid;
+    if (senderId == null) return;
+
+    final idempotencyKey = ChatWriteService.createIdempotencyKey();
+    final pending = _PendingChatMessage(
+      id: ChatWriteService.messageIdFor(
+        senderId: senderId,
+        idempotencyKey: idempotencyKey,
+      ),
+      idempotencyKey: idempotencyKey,
+      senderId: senderId,
+      receiverId: widget.receiverId,
+      type: type,
+      message: normalizedText,
+      url: url,
+      fileName: fileName,
+      durationSeconds: durationSeconds,
+      mediaItems: mediaItems,
+    );
+
+    if (mounted) {
+      setState(() {
+        _pendingMessages.insert(0, pending);
+        if (type == 'text') _messageController.clear();
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!_scrollController.hasClients) return;
+        _scrollController.animateTo(
+          0,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      });
+    }
+
+    await _submitPendingMessage(pending);
+  }
+
+  Future<void> _submitPendingMessage(_PendingChatMessage pending) async {
     try {
       await _ensureChatRoomOnce();
       await ChatWriteService.send(
-        receiverId: widget.receiverId,
-        type: type,
-        message: text,
-        url: url,
-        fileName: fileName,
-        durationSeconds: durationSeconds,
-        mediaItems: mediaItems,
-      );
-      _messageController.clear();
-      _scrollController.animateTo(
-        0,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOut,
+        receiverId: pending.receiverId,
+        type: pending.type,
+        message: pending.message,
+        url: pending.url,
+        fileName: pending.fileName,
+        durationSeconds: pending.durationSeconds,
+        mediaItems: pending.mediaItems,
+        idempotencyKey: pending.idempotencyKey,
       );
     } catch (e) {
+      if (mounted) {
+        setState(() {
+          final index = _pendingMessages.indexWhere(
+            (message) => message.id == pending.id,
+          );
+          if (index != -1) {
+            _pendingMessages[index] = _pendingMessages[index].copyWith(
+              isFailed: true,
+            );
+          }
+        });
+      }
       debugPrint("Error sending message: $e");
     }
+  }
+
+  void _retryPendingMessage(_PendingChatMessage pending) {
+    final index = _pendingMessages.indexWhere(
+      (message) => message.id == pending.id,
+    );
+    if (index == -1) return;
+
+    setState(() {
+      _pendingMessages[index] = _pendingMessages[index].copyWith(
+        isFailed: false,
+      );
+    });
+    unawaited(_submitPendingMessage(_pendingMessages[index]));
+  }
+
+  void _scheduleConfirmedPendingCleanup(Set<String> confirmedMessageIds) {
+    if (_pendingMessageCleanupScheduled) return;
+    final hasConfirmedPending = _pendingMessages.any(
+      (message) => confirmedMessageIds.contains(message.id),
+    );
+    if (!hasConfirmedPending) return;
+
+    _pendingMessageCleanupScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _pendingMessageCleanupScheduled = false;
+      if (!mounted) return;
+      setState(() {
+        _pendingMessages.removeWhere(
+          (message) => confirmedMessageIds.contains(message.id),
+        );
+      });
+    });
   }
 
   void _openReceiverProfile() {
@@ -804,10 +888,34 @@ class _ChatPageState extends State<ChatPage> {
                   );
                 }
                 if (snapshot.connectionState == ConnectionState.waiting &&
-                    !snapshot.hasData) {
+                    !snapshot.hasData &&
+                    !_pendingMessages.any(
+                      (message) => message.receiverId == widget.receiverId,
+                    ) &&
+                    !_pendingMediaUploads.any(
+                      (upload) => upload.receiverId == widget.receiverId,
+                    )) {
                   return const Center(child: CircularProgressIndicator());
                 }
-                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                final allMessages = snapshot.data?.docs ?? const [];
+                final pendingUploads = _pendingMediaUploads
+                    .where((upload) => upload.receiverId == widget.receiverId)
+                    .toList();
+                final confirmedMessageIds = allMessages
+                    .map((message) => message.id)
+                    .toSet();
+                final pendingMessages = _pendingMessages
+                    .where(
+                      (message) =>
+                          message.receiverId == widget.receiverId &&
+                          !confirmedMessageIds.contains(message.id),
+                    )
+                    .toList();
+                _scheduleConfirmedPendingCleanup(confirmedMessageIds);
+
+                if (allMessages.isEmpty &&
+                    pendingUploads.isEmpty &&
+                    pendingMessages.isEmpty) {
                   return Center(
                     child: Text(
                       _t(
@@ -822,27 +930,36 @@ class _ChatPageState extends State<ChatPage> {
                   );
                 }
 
-                final allMessages = snapshot.data!.docs;
                 final hasOlderMessages = allMessages.length > _messageLimit;
                 final messages = hasOlderMessages
                     ? allMessages.take(_messageLimit).toList(growable: false)
                     : allMessages;
-                final pendingUploads = _pendingMediaUploads
-                    .where((upload) => upload.receiverId == widget.receiverId)
-                    .toList();
                 return ListView.builder(
                   controller: _scrollController,
                   reverse: true,
                   padding: const EdgeInsets.all(16),
                   itemCount:
+                      pendingMessages.length +
                       pendingUploads.length +
                       messages.length +
                       (hasOlderMessages ? 1 : 0),
                   itemBuilder: (context, index) {
-                    if (index < pendingUploads.length) {
-                      return _buildPendingUploadBubble(pendingUploads[index]);
+                    if (index < pendingMessages.length) {
+                      final pending = pendingMessages[index];
+                      return _buildMessageBubble(
+                        pending.asMessageData(),
+                        true,
+                        pending.id,
+                        pendingMessage: pending,
+                      );
                     }
-                    final messageIndex = index - pendingUploads.length;
+                    final uploadIndex = index - pendingMessages.length;
+                    if (uploadIndex < pendingUploads.length) {
+                      return _buildPendingUploadBubble(
+                        pendingUploads[uploadIndex],
+                      );
+                    }
+                    final messageIndex = uploadIndex - pendingUploads.length;
                     if (messageIndex >= messages.length) {
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 12),
@@ -1031,8 +1148,11 @@ class _ChatPageState extends State<ChatPage> {
   Widget _buildMessageBubble(
     Map<String, dynamic> message,
     bool isMe,
-    String messageId,
-  ) {
+    String messageId, {
+    _PendingChatMessage? pendingMessage,
+  }) {
+    final isPending = pendingMessage != null;
+    final hasFailed = pendingMessage?.isFailed ?? false;
     final bool isSelected = _selectedMessageIds.contains(messageId);
     final String type = _resolveMessageType(message);
     final String url = _resolveMessageUrl(message);
@@ -1060,10 +1180,19 @@ class _ChatPageState extends State<ChatPage> {
           : null,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onLongPress: () =>
-            _toggleMessageSelection(messageId, message, fromLongPress: true),
+        onLongPress: isPending
+            ? null
+            : () => _toggleMessageSelection(
+                messageId,
+                message,
+                fromLongPress: true,
+              ),
         onTap: () {
-          if (_isSelectionMode) {
+          if (hasFailed) {
+            _retryPendingMessage(pendingMessage!);
+          } else if (isPending) {
+            return;
+          } else if (_isSelectionMode) {
             _toggleMessageSelection(messageId, message);
           } else if (type == 'file') {
             if (message['signingRequest'] == true) {
@@ -1195,12 +1324,34 @@ class _ChatPageState extends State<ChatPage> {
                           ),
                         ],
                         const SizedBox(height: 4),
-                        Text(
-                          timeStr,
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: isMe ? Colors.white70 : Colors.grey[500],
-                          ),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              timeStr,
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: isMe ? Colors.white70 : Colors.grey[500],
+                              ),
+                            ),
+                            if (isPending) ...[
+                              const SizedBox(width: 5),
+                              if (hasFailed)
+                                const Icon(
+                                  Icons.error_outline_rounded,
+                                  size: 14,
+                                  color: Colors.white,
+                                )
+                              else
+                                const SizedBox.square(
+                                  dimension: 11,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 1.5,
+                                    color: Colors.white70,
+                                  ),
+                                ),
+                            ],
+                          ],
                         ),
                       ],
                     ),
@@ -2646,25 +2797,6 @@ class _ChatPageState extends State<ChatPage> {
                           prefixIconConstraints: const BoxConstraints(
                             minWidth: 52,
                             minHeight: 48,
-                          ),
-                          suffixIcon: IconButton(
-                            tooltip: _pasteImageLabel(),
-                            icon: _isReadingClipboardImage
-                                ? const SizedBox.square(
-                                    dimension: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : const Icon(
-                                    Icons.content_paste_go_rounded,
-                                    size: 20,
-                                  ),
-                            onPressed:
-                                _isReadingClipboardImage ||
-                                    _isSendingPastedImage
-                                ? null
-                                : _pasteImageFromClipboard,
                           ),
                         ),
                       ),
@@ -4886,6 +5018,68 @@ class _PendingMediaUpload {
       fileName: fileName,
       localPath: localPath,
       progress: progress ?? this.progress,
+      isFailed: isFailed ?? this.isFailed,
+    );
+  }
+}
+
+class _PendingChatMessage {
+  final String id;
+  final String idempotencyKey;
+  final String senderId;
+  final String receiverId;
+  final String type;
+  final String? message;
+  final String? url;
+  final String? fileName;
+  final int? durationSeconds;
+  final List<Map<String, dynamic>>? mediaItems;
+  final DateTime createdAt;
+  final bool isFailed;
+
+  _PendingChatMessage({
+    required this.id,
+    required this.idempotencyKey,
+    required this.senderId,
+    required this.receiverId,
+    required this.type,
+    this.message,
+    this.url,
+    this.fileName,
+    this.durationSeconds,
+    this.mediaItems,
+    DateTime? createdAt,
+    this.isFailed = false,
+  }) : createdAt = createdAt ?? DateTime.now();
+
+  Map<String, dynamic> asMessageData() {
+    return {
+      'senderId': senderId,
+      'receiverId': receiverId,
+      'type': type,
+      'message': ?message,
+      'text': ?message,
+      'url': ?url,
+      'fileName': ?fileName,
+      'durationSeconds': ?durationSeconds,
+      'mediaItems': ?mediaItems,
+      'timestamp': Timestamp.fromDate(createdAt),
+    };
+  }
+
+  _PendingChatMessage copyWith({bool? isFailed}) {
+    return _PendingChatMessage(
+      id: id,
+      idempotencyKey: idempotencyKey,
+      senderId: senderId,
+      receiverId: receiverId,
+      type: type,
+      message: message,
+      url: url,
+      fileName: fileName,
+      durationSeconds: durationSeconds,
+      mediaItems: mediaItems,
+      createdAt: createdAt,
       isFailed: isFailed ?? this.isFailed,
     );
   }

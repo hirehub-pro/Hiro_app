@@ -6,6 +6,7 @@ import 'package:intl/intl.dart' as intl;
 import 'package:provider/provider.dart';
 import 'package:untitled1/services/language_provider.dart';
 import 'package:untitled1/services/subscription_access_service.dart';
+import 'package:untitled1/utils/profession_localization.dart';
 import 'package:untitled1/utils/top_skill_score.dart';
 import 'package:untitled1/utils/growth_recommendation.dart';
 import 'package:untitled1/pages/add_project.dart';
@@ -73,6 +74,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   String _topServices = '';
 
   List<String> _professionOptions = [];
+  List<Map<String, dynamic>> _professionItems = [];
   List<String> _userProfessions = [];
   String _selectedProfession = _allProfessionsKey;
   Map<String, Map<String, dynamic>> _professionRatingStats = {};
@@ -472,11 +474,13 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
       final publicWorkerRef = firestore
           .collection('publicWorkerProfiles')
           .doc(widget.userId);
+      final professionMetadataFuture = _loadProfessionItems();
 
       final results = await Future.wait([
         workerRef.get(),
         publicWorkerRef.get(),
       ]);
+      await professionMetadataFuture;
       final userDoc = results[0];
       final publicWorkerDoc = results[1];
       _workerData = userDoc.data() ?? {};
@@ -654,6 +658,47 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  Future<void> _loadProfessionItems() async {
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('metadata')
+          .doc('professions')
+          .get();
+      final rawItems = snapshot.data()?['items'];
+      if (rawItems is! List) return;
+
+      _professionItems = rawItems
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList(growable: false);
+    } catch (error) {
+      debugPrint('Failed to load profession translations: $error');
+    }
+  }
+
+  String _localizedProfessionName(String profession) {
+    final normalized = profession.trim().toLowerCase();
+    if (normalized.isEmpty) return profession;
+
+    for (final item in _professionItems) {
+      final matchesStoredName = const ['en', 'he', 'ar', 'ru', 'am'].any((
+        languageCode,
+      ) {
+        return item[languageCode]?.toString().trim().toLowerCase() ==
+            normalized;
+      });
+      if (!matchesStoredName) continue;
+
+      final localized = item[_localeCode]?.toString().trim();
+      if (localized != null && localized.isNotEmpty) return localized;
+
+      final english = item['en']?.toString().trim();
+      if (english != null && english.isNotEmpty) return english;
+    }
+
+    return ProfessionLocalization.toLocalized(profession, _localeCode);
   }
 
   Map<String, Map<String, dynamic>> _buildProfessionStats(
@@ -1270,7 +1315,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   Widget _buildMetricsGrid() {
     return _buildInfoTile(
       _t('top_skill'),
-      _topServices,
+      _localizedProfessionName(_topServices),
       Icons.auto_graph_rounded,
       Colors.indigo,
     );
