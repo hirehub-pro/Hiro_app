@@ -797,11 +797,25 @@ service cloud.firestore {
             request.resource.data.likedBy.size() == resource.data.likedBy.size() - 1));
     }
 
-    function validBlogComment(data) {
+    function validBlogQuoteAccess(data, postId) {
+      let accessId = data.get('quoteDocumentAccessId', 'missing');
+      let postPath = /databases/$(database)/documents/blog_posts/$(postId);
+      return !('quoteDocumentAccessId' in data) ||
+        (accessId is string && accessId.size() == 43 &&
+          accessId.matches('^[A-Za-z0-9_-]{43}$') &&
+          exists(/databases/$(database)/documents/documentChatAccessGrants/$(accessId)) &&
+          exists(postPath) &&
+          get(/databases/$(database)/documents/documentChatAccessGrants/$(accessId))
+              .data.ownerId == request.auth.uid &&
+          get(/databases/$(database)/documents/documentChatAccessGrants/$(accessId))
+              .data.recipientId == get(postPath).data.authorUid);
+    }
+
+    function validBlogComment(data, postId) {
       return data.keys().hasOnly([
         'authorUid', 'authorName', 'authorRole', 'text', 'timestamp', 'isBid',
         'bidPrice', 'quoteDocType', 'quoteDocumentNumber', 'quoteFileName',
-        'quoteItems', 'quoteUrl', 'updatedAt'
+        'quoteItems', 'quoteDocumentAccessId', 'updatedAt'
       ]) && data.keys().hasAll(['authorUid', 'text', 'timestamp']) &&
       data.authorUid is string && data.authorUid.size() >= 20 &&
       data.authorUid.size() <= 128 &&
@@ -809,8 +823,8 @@ service cloud.firestore {
       data.timestamp is timestamp && optionalString(data, 'authorName', 100) &&
       optionalString(data, 'authorRole', 40) && optionalBool(data, 'isBid') &&
       optionalNumber(data, 'bidPrice', 0, 1000000000000) &&
-      optionalList(data, 'quoteItems', 500) && optionalUrl(data, 'quoteUrl', 4096) &&
-      optionalTimestamp(data, 'updatedAt');
+      optionalList(data, 'quoteItems', 500) &&
+      validBlogQuoteAccess(data, postId) && optionalTimestamp(data, 'updatedAt');
     }
 
     function validChatRoom(data) {
@@ -1329,7 +1343,8 @@ service cloud.firestore {
 
       match /blog_comments/{commentId} {
         allow read: if true;
-        allow create: if isAuthenticated() && validBlogComment(request.resource.data) &&
+        allow create: if isAuthenticated() &&
+          validBlogComment(request.resource.data, postId) &&
           !('updatedAt' in request.resource.data) &&
           request.resource.data.authorUid == request.auth.uid &&
           (!isPaidJobComment(postId, request.resource.data) ||
@@ -1337,7 +1352,7 @@ service cloud.firestore {
           recentTimestamp(request.resource.data, 'timestamp');
         allow update: if isAuthenticated() &&
           request.auth.uid == resource.data.authorUid &&
-          validBlogComment(request.resource.data) &&
+          validBlogComment(request.resource.data, postId) &&
           request.resource.data.authorUid == resource.data.authorUid &&
           recentTimestamp(request.resource.data, 'updatedAt');
         allow delete: if isAuthenticated() &&

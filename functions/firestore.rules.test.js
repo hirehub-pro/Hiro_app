@@ -1539,6 +1539,91 @@ test("validates community author identity and content size", {
   ));
 });
 
+test("binds job-post quote access to its issuer and publisher", {
+  skip: !emulatorAvailable,
+}, async () => {
+  const publisherUid = "quote-publisher-id-0001";
+  const issuerUid = "quote-issuer-id-0000001";
+  const otherUid = "quote-other-user-id-001";
+  const validAccessId = "q".repeat(43);
+  const wrongRecipientAccessId = "r".repeat(43);
+  const wrongOwnerAccessId = "s".repeat(43);
+
+  await seed("blog_posts/quote-job-post", {
+    authorUid: publisherUid,
+    title: "A job requiring a quote",
+    content: "Repair the sink",
+    isJobRequest: true,
+    timestamp: new Date(),
+  });
+  await seedActiveWorker(issuerUid);
+  await seed(`documentChatAccessGrants/${validAccessId}`, {
+    ownerId: issuerUid,
+    recipientId: publisherUid,
+    invoiceId: "quote-invoice-1",
+    storagePath: `invoices/${issuerUid}/quote-invoice-1.pdf`,
+    fileName: "quote-1.pdf",
+    createdAt: new Date(),
+    revokedAt: null,
+  });
+  await seed(`documentChatAccessGrants/${wrongRecipientAccessId}`, {
+    ownerId: issuerUid,
+    recipientId: otherUid,
+    invoiceId: "quote-invoice-2",
+    storagePath: `invoices/${issuerUid}/quote-invoice-2.pdf`,
+    fileName: "quote-2.pdf",
+    createdAt: new Date(),
+    revokedAt: null,
+  });
+  await seed(`documentChatAccessGrants/${wrongOwnerAccessId}`, {
+    ownerId: otherUid,
+    recipientId: publisherUid,
+    invoiceId: "quote-invoice-3",
+    storagePath: `invoices/${otherUid}/quote-invoice-3.pdf`,
+    fileName: "quote-3.pdf",
+    createdAt: new Date(),
+    revokedAt: null,
+  });
+
+  const issuerDb = testEnv.authenticatedContext(issuerUid).firestore();
+  const comments = collection(
+      issuerDb,
+      "blog_posts/quote-job-post/blog_comments",
+  );
+  await assertSucceeds(setDoc(doc(comments, "protected-quote"), {
+    authorUid: issuerUid,
+    text: "My quote",
+    isBid: true,
+    bidPrice: 500,
+    quoteDocumentAccessId: validAccessId,
+    timestamp: serverTimestamp(),
+  }));
+  await assertFails(setDoc(doc(comments, "wrong-recipient"), {
+    authorUid: issuerUid,
+    text: "Wrong recipient",
+    isBid: true,
+    bidPrice: 500,
+    quoteDocumentAccessId: wrongRecipientAccessId,
+    timestamp: serverTimestamp(),
+  }));
+  await assertFails(setDoc(doc(comments, "wrong-owner"), {
+    authorUid: issuerUid,
+    text: "Wrong owner",
+    isBid: true,
+    bidPrice: 500,
+    quoteDocumentAccessId: wrongOwnerAccessId,
+    timestamp: serverTimestamp(),
+  }));
+  await assertFails(setDoc(doc(comments, "public-url"), {
+    authorUid: issuerUid,
+    text: "Public URL",
+    isBid: true,
+    bidPrice: 500,
+    quoteUrl: "https://example.com/quote.pdf",
+    timestamp: serverTimestamp(),
+  }));
+});
+
 test("permits custom-claim admins without trusting a user role field", {
   skip: !emulatorAvailable,
 }, async () => {

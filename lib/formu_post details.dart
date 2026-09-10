@@ -38,7 +38,8 @@ class _PostDetailPageState extends State<PostDetailPage> {
   String? _currentUserRole;
   bool _currentUserHasActiveWorkerSubscription = false;
   String? _loadedBidDraftId;
-  String? _pendingBidQuoteUrl;
+  String? _pendingBidQuoteInvoiceDocId;
+  String? _pendingBidQuoteDocumentAccessId;
   String? _pendingBidQuoteFileName;
   String? _pendingBidQuoteDocType;
   String? _pendingBidQuoteDocumentNumber;
@@ -190,7 +191,9 @@ class _PostDetailPageState extends State<PostDetailPage> {
     _loadedBidDraftId = bidId;
     _bidPriceController.text = existingBid['bidPrice']?.toString() ?? '';
     _commentController.text = existingBid['text']?.toString() ?? '';
-    _pendingBidQuoteUrl = existingBid['quoteUrl']?.toString();
+    _pendingBidQuoteInvoiceDocId = null;
+    _pendingBidQuoteDocumentAccessId = existingBid['quoteDocumentAccessId']
+        ?.toString();
     _pendingBidQuoteFileName = existingBid['quoteFileName']?.toString();
     _pendingBidQuoteDocType = existingBid['quoteDocType']?.toString();
     _pendingBidQuoteDocumentNumber = existingBid['quoteDocumentNumber']
@@ -263,7 +266,8 @@ class _PostDetailPageState extends State<PostDetailPage> {
 
     setState(() {
       _bidPriceController.text = _formatBidAmount(result.amount);
-      _pendingBidQuoteUrl = result.url;
+      _pendingBidQuoteInvoiceDocId = result.invoiceDocId;
+      _pendingBidQuoteDocumentAccessId = null;
       _pendingBidQuoteFileName = result.fileName;
       _pendingBidQuoteDocType = result.docType;
       _pendingBidQuoteDocumentNumber = result.documentNumber;
@@ -350,9 +354,6 @@ class _PostDetailPageState extends State<PostDetailPage> {
     }
     if (isWorkerBid) {
       commentData['bidPrice'] = bidAmount;
-      if (_pendingBidQuoteUrl != null) {
-        commentData['quoteUrl'] = _pendingBidQuoteUrl;
-      }
       if (_pendingBidQuoteFileName != null) {
         commentData['quoteFileName'] = _pendingBidQuoteFileName;
       }
@@ -367,6 +368,19 @@ class _PostDetailPageState extends State<PostDetailPage> {
       }
     }
     try {
+      if (isWorkerBid &&
+          (_pendingBidQuoteDocumentAccessId ?? '').isEmpty &&
+          (_pendingBidQuoteInvoiceDocId ?? '').isNotEmpty) {
+        _pendingBidQuoteDocumentAccessId =
+            await DocumentChatAccessService.create(
+              invoiceDocId: _pendingBidQuoteInvoiceDocId!,
+              receiverId: widget.post['authorUid'].toString(),
+            );
+      }
+      if (isWorkerBid && (_pendingBidQuoteDocumentAccessId ?? '').isNotEmpty) {
+        commentData['quoteDocumentAccessId'] = _pendingBidQuoteDocumentAccessId;
+      }
+
       final commentsRef = _firestore
           .collection('blog_posts')
           .doc(widget.post['id'])
@@ -382,7 +396,8 @@ class _PostDetailPageState extends State<PostDetailPage> {
       }
       _commentController.clear();
       _bidPriceController.clear();
-      _pendingBidQuoteUrl = null;
+      _pendingBidQuoteInvoiceDocId = null;
+      _pendingBidQuoteDocumentAccessId = null;
       _pendingBidQuoteFileName = null;
       _pendingBidQuoteDocType = null;
       _pendingBidQuoteDocumentNumber = null;
@@ -610,16 +625,100 @@ class _PostDetailPageState extends State<PostDetailPage> {
     );
   }
 
-  Future<void> _openBidQuoteFile(String rawUrl) async {
-    final url = rawUrl.trim();
-    if (url.isEmpty) return;
+  Future<void> _showBidQuotePreview(String rawAccessId) async {
+    final accessId = rawAccessId.trim();
+    if (accessId.length != 43) return;
 
-    final uri = Uri.tryParse(url);
-    if (uri == null) return;
+    final quoteBytes = () async {
+      final temporaryUrl = await DocumentChatAccessService.createDownloadUrl(
+        accessId,
+      );
+      final uri = Uri.parse(temporaryUrl);
+      final response = await http.get(uri);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw StateError('Unable to load quote.');
+      }
+      return response.bodyBytes;
+    }();
 
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 760),
+          child: SizedBox(
+            width: double.infinity,
+            height: MediaQuery.sizeOf(dialogContext).height * 0.82,
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsetsDirectional.fromSTEB(18, 10, 8, 10),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          widget.localizedStrings['view_quote'] ?? 'View quote',
+                          style: Theme.of(dialogContext).textTheme.titleMedium
+                              ?.copyWith(
+                                color: _uiTitle,
+                                fontWeight: FontWeight.w800,
+                              ),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.of(dialogContext).pop(),
+                        tooltip: widget.localizedStrings['close'] ?? 'Close',
+                        icon: const Icon(Icons.close_rounded),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1),
+                Expanded(
+                  child: PdfPreview(
+                    canDebug: false,
+                    canChangePageFormat: false,
+                    canChangeOrientation: false,
+                    allowPrinting: false,
+                    allowSharing: false,
+                    useActions: false,
+                    build: (_) => quoteBytes,
+                    onError: (context, error) => Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.error_outline_rounded,
+                              size: 44,
+                              color: Color(0xFFB91C1C),
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              widget.localizedStrings['quote_preview_error'] ??
+                                  'The quote could not be displayed.',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: _uiBody,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   void _openPublisherSchedule({
@@ -824,10 +923,18 @@ class _PostDetailPageState extends State<PostDetailPage> {
             orElse: () => null,
           );
     final selectedBidId = widget.post['selectedBidId']?.toString();
+    final selectedWorkerUid = widget.post['selectedWorkerUid']
+        ?.toString()
+        .trim();
     final selectedWorkerName =
         widget.post['selectedWorkerName']?.toString().trim() ?? '';
     final selectedBidPrice =
         widget.post['selectedBidPrice']?.toString().trim() ?? '';
+    final canSeeSelectedBidPrice =
+        user != null &&
+        (isAuthor ||
+            (selectedWorkerUid?.isNotEmpty == true &&
+                user.uid == selectedWorkerUid));
     final location = widget.post['location']?.toString().trim() ?? '';
     final locationDistanceLabel = _distanceLabelToPostLocation();
     final locationDisplayLabel = locationDistanceLabel == null
@@ -1399,7 +1506,8 @@ class _PostDetailPageState extends State<PostDetailPage> {
                                             const SizedBox(width: 8),
                                             Expanded(
                                               child: Text(
-                                                selectedBidPrice.isEmpty
+                                                selectedBidPrice.isEmpty ||
+                                                        !canSeeSelectedBidPrice
                                                     ? "${widget.localizedStrings['selected_worker']}: $selectedWorkerName"
                                                     : "${widget.localizedStrings['selected_worker']}: $selectedWorkerName • $selectedBidPrice ₪",
                                                 style: const TextStyle(
@@ -1501,10 +1609,23 @@ class _PostDetailPageState extends State<PostDetailPage> {
                                   _workerPreviewCache[workerUid];
                               final bidPrice =
                                   comment['bidPrice']?.toString().trim() ?? '';
-                              final quoteUrl =
-                                  comment['quoteUrl']?.toString().trim() ?? '';
+                              final quoteDocumentAccessId =
+                                  comment['quoteDocumentAccessId']
+                                      ?.toString()
+                                      .trim() ??
+                                  '';
                               final hasBid = bidPrice.isNotEmpty;
-                              final hasQuoteFile = quoteUrl.isNotEmpty;
+                              final canSeeBidPrice =
+                                  hasBid &&
+                                  user != null &&
+                                  (isAuthor || user.uid == workerUid);
+                              final hasQuoteFile =
+                                  quoteDocumentAccessId.isNotEmpty;
+                              final canOpenQuote =
+                                  hasQuoteFile &&
+                                  user != null &&
+                                  (user.uid == authorUid ||
+                                      user.uid == workerUid);
 
                               return InkWell(
                                 onTap: workerUid.isEmpty
@@ -1639,7 +1760,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
                                               ],
                                             ),
                                           ),
-                                          if (hasBid)
+                                          if (canSeeBidPrice)
                                             Container(
                                               padding:
                                                   const EdgeInsets.symmetric(
@@ -1674,14 +1795,16 @@ class _PostDetailPageState extends State<PostDetailPage> {
                                           ),
                                         ),
                                       ],
-                                      if (hasQuoteFile) ...[
+                                      if (canOpenQuote) ...[
                                         const SizedBox(height: 8),
                                         Align(
                                           alignment:
                                               AlignmentDirectional.centerStart,
                                           child: TextButton.icon(
                                             onPressed: () =>
-                                                _openBidQuoteFile(quoteUrl),
+                                                _showBidQuotePreview(
+                                                  quoteDocumentAccessId,
+                                                ),
                                             icon: const Icon(
                                               Icons.visibility_outlined,
                                               size: 16,
