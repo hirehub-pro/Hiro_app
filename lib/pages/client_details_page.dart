@@ -1741,46 +1741,20 @@ class _ClientContactDetailsTabState extends State<_ClientContactDetailsTab> {
                 ),
                 const SizedBox(height: 16),
                 _ContactFormSection(
-                  icon: Icons.account_balance_wallet_outlined,
-                  title: widget.strings.accountingContact,
-                  child: Column(
-                    children: [
-                      _ContactTextField(
-                        controller: _controllers['accountingContactName']!,
-                        label: widget.strings.accountingContactName,
-                        icon: Icons.person_outline_rounded,
-                      ),
-                      const SizedBox(height: 12),
-                      _ContactTextField(
-                        controller: _controllers['accountingContactEmail']!,
-                        label: widget.strings.accountingContactEmail,
-                        icon: Icons.alternate_email_rounded,
-                        keyboardType: TextInputType.emailAddress,
-                        validator: _validateEmail,
-                      ),
-                      const SizedBox(height: 12),
-                      _ContactTextField(
-                        controller: _controllers['accountingContactPhone']!,
-                        label: widget.strings.accountingContactPhone,
-                        icon: Icons.phone_outlined,
-                        keyboardType: TextInputType.phone,
-                      ),
-                      const SizedBox(height: 12),
-                      _ContactTextField(
-                        controller: _controllers['customerContent']!,
-                        label: widget.strings.customerContent,
-                        icon: Icons.notes_outlined,
-                        maxLines: 5,
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
-                _ContactFormSection(
                   icon: Icons.account_balance_outlined,
                   title: widget.strings.bankDetails,
                   child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      Text(
+                        widget.strings.bankDetailsExplanation,
+                        style: const TextStyle(
+                          color: Color(0xFF64748B),
+                          fontSize: 13,
+                          height: 1.4,
+                        ),
+                      ),
+                      const SizedBox(height: 14),
                       _buildBankAutocomplete(),
                       const SizedBox(height: 12),
                       _buildBranchAutocomplete(),
@@ -1912,7 +1886,6 @@ class _ContactTextField extends StatelessWidget {
     this.keyboardType,
     this.inputFormatters,
     this.validator,
-    this.maxLines = 1,
   });
 
   final TextEditingController controller;
@@ -1921,7 +1894,6 @@ class _ContactTextField extends StatelessWidget {
   final TextInputType? keyboardType;
   final List<TextInputFormatter>? inputFormatters;
   final FormFieldValidator<String>? validator;
-  final int maxLines;
 
   @override
   Widget build(BuildContext context) {
@@ -1930,10 +1902,7 @@ class _ContactTextField extends StatelessWidget {
       keyboardType: keyboardType,
       inputFormatters: inputFormatters,
       validator: validator,
-      maxLines: maxLines,
-      textInputAction: maxLines > 1
-          ? TextInputAction.newline
-          : TextInputAction.next,
+      textInputAction: TextInputAction.next,
       decoration: InputDecoration(
         labelText: label,
         prefixIcon: Icon(icon, size: 20),
@@ -2249,10 +2218,7 @@ class _ClientDetails {
       emails: _contactValues(data['emails'], fallbackEmail),
       address: (data['address'] ?? '').toString().trim(),
       notes: (data['notes'] ?? '').toString().trim(),
-      contactDetails: _ClientContactDetails.fromData(
-        data['contactDetails'],
-        legacyAddress: (data['address'] ?? '').toString().trim(),
-      ),
+      contactDetails: _ClientContactDetails.fromData(data['contactDetails']),
     );
   }
 
@@ -2301,17 +2267,14 @@ class _ClientContactDetails {
     required this.bankAccountNumber,
   });
 
-  factory _ClientContactDetails.fromData(
-    dynamic rawData, {
-    required String legacyAddress,
-  }) {
+  factory _ClientContactDetails.fromData(dynamic rawData) {
     final data = rawData is Map
         ? Map<String, dynamic>.from(rawData)
         : const <String, dynamic>{};
     String value(String key) => (data[key] ?? '').toString().trim();
 
     return _ClientContactDetails(
-      street: value('street').isEmpty ? legacyAddress : value('street'),
+      street: value('street'),
       city: value('city'),
       zipCode: value('zipCode'),
       country: value('country'),
@@ -2408,6 +2371,7 @@ class _ClientDetailsStrings {
   String get accountingContactPhone => _value('accountingContactPhone');
   String get customerContent => _value('customerContent');
   String get bankDetails => _value('bankDetails');
+  String get bankDetailsExplanation => _value('bankDetailsExplanation');
   String get bank => _value('bank');
   String get branch => _value('branch');
   String get bankAccountNumber => _value('bankAccountNumber');
@@ -2461,7 +2425,7 @@ class _ClientDetailsStrings {
       'externalNumber': 'Client number in external accountancy',
       'contactDetails': 'Contact details',
       'primary': 'Primary • used in documents',
-      'businessDetails': 'Business details',
+      'businessDetails': 'Client details',
       'taxId': 'Business No. / ID / Tax ID',
       'address': 'Address',
       'notes': 'Notes',
@@ -2487,6 +2451,8 @@ class _ClientDetailsStrings {
       'accountingContactPhone': 'Accounting contact phone',
       'customerContent': 'Content for the customer',
       'bankDetails': 'Bank details',
+      'bankDetailsExplanation':
+          'These bank details will be filled automatically in payment receipt documents.',
       'bank': 'Bank',
       'branch': 'Branch',
       'bankAccountNumber': 'Account number',
@@ -2541,7 +2507,7 @@ class _ClientDetailsStrings {
       'externalNumber': 'מס׳ לקוח בהנה״ח חיצונית',
       'contactDetails': 'פרטי קשר',
       'primary': 'ראשי • משמש במסמכים',
-      'businessDetails': 'פרטי העסק',
+      'businessDetails': 'פרטי לקוח',
       'taxId': 'מס׳ עוסק / ת.ז. / ח.פ.',
       'address': 'כתובת',
       'notes': 'הערות',
@@ -2567,6 +2533,7 @@ class _ClientDetailsStrings {
       'accountingContactPhone': 'טלפון איש הקשר בהנה״ח',
       'customerContent': 'תוכן עבור הלקוח',
       'bankDetails': 'פרטי חשבון בנק',
+      'bankDetailsExplanation': 'פרטי הבנק האלה ימולאו אוטומטית במסמכי תקבול.',
       'bank': 'בנק',
       'branch': 'סניף',
       'bankAccountNumber': 'מספר חשבון',
@@ -2619,7 +2586,7 @@ class _ClientDetailsStrings {
       'externalNumber': 'رقم العميل في المحاسبة الخارجية',
       'contactDetails': 'بيانات الاتصال',
       'primary': 'رئيسي • يُستخدم في المستندات',
-      'businessDetails': 'بيانات العمل',
+      'businessDetails': 'تفاصيل العميل',
       'taxId': 'رقم النشاط / الهوية / الضريبة',
       'address': 'العنوان',
       'notes': 'ملاحظات',
@@ -2645,6 +2612,8 @@ class _ClientDetailsStrings {
       'accountingContactPhone': 'هاتف جهة اتصال المحاسبة',
       'customerContent': 'محتوى للعميل',
       'bankDetails': 'تفاصيل الحساب البنكي',
+      'bankDetailsExplanation':
+          'سيتم ملء تفاصيل البنك هذه تلقائيًا في مستندات القبض.',
       'bank': 'البنك',
       'branch': 'الفرع',
       'bankAccountNumber': 'رقم الحساب',
@@ -2698,7 +2667,7 @@ class _ClientDetailsStrings {
       'externalNumber': 'Номер клиента во внешней бухгалтерии',
       'contactDetails': 'Контактные данные',
       'primary': 'Основной • используется в документах',
-      'businessDetails': 'Деловые данные',
+      'businessDetails': 'Данные клиента',
       'taxId': 'Рег. номер / ID / налоговый номер',
       'address': 'Адрес',
       'notes': 'Заметки',
@@ -2724,6 +2693,8 @@ class _ClientDetailsStrings {
       'accountingContactPhone': 'Телефон контакта бухгалтерии',
       'customerContent': 'Содержание для клиента',
       'bankDetails': 'Банковские реквизиты',
+      'bankDetailsExplanation':
+          'Эти банковские реквизиты будут автоматически заполняться в документах о поступлении платежа.',
       'bank': 'Банк',
       'branch': 'Отделение',
       'bankAccountNumber': 'Номер счета',
@@ -2778,7 +2749,7 @@ class _ClientDetailsStrings {
       'externalNumber': 'የውጭ ሂሳብ የደንበኛ ቁጥር',
       'contactDetails': 'የመገናኛ መረጃ',
       'primary': 'ዋና • በሰነዶች ውስጥ ይጠቀማል',
-      'businessDetails': 'የንግድ ዝርዝሮች',
+      'businessDetails': 'የደንበኛ ዝርዝሮች',
       'taxId': 'የንግድ / መታወቂያ / ግብር ቁጥር',
       'address': 'አድራሻ',
       'notes': 'ማስታወሻዎች',
@@ -2804,6 +2775,7 @@ class _ClientDetailsStrings {
       'accountingContactPhone': 'የሂሳብ እውቂያ ስልክ',
       'customerContent': 'ለደንበኛው ይዘት',
       'bankDetails': 'የባንክ ዝርዝሮች',
+      'bankDetailsExplanation': 'እነዚህ የባንክ ዝርዝሮች በገቢ ክፍያ ሰነዶች ውስጥ በራስ-ሰር ይሞላሉ።',
       'bank': 'ባንክ',
       'branch': 'ቅርንጫፍ',
       'bankAccountNumber': 'የሂሳብ ቁጥር',
