@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'package:untitled1/ptofile.dart';
 import 'package:untitled1/search.dart';
 import 'package:untitled1/services/language_provider.dart';
+import 'package:untitled1/utils/profession_localization.dart';
 
 const _pageBackground = Color(0xFFF6F8FB);
 const _surfaceColor = Color(0xFFFFFFFF);
@@ -27,13 +28,64 @@ class _LikedProsPageState extends State<LikedProsPage> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final TextEditingController _searchController = TextEditingController();
   final Set<String> _pendingFavoriteIds = <String>{};
+  final Map<String, _LikedProEntry> _locallyUnfavoritedEntries = {};
+  Map<String, Map<String, String>> _professionTranslations = {};
 
   String _searchQuery = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProfessionTranslations();
+  }
 
   @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadProfessionTranslations() async {
+    try {
+      final snapshot = await _firestore
+          .collection('metadata')
+          .doc('professions')
+          .get();
+      final items = (snapshot.data()?['items'] as List?) ?? const [];
+      final translations = <String, Map<String, String>>{};
+
+      for (final raw in items.whereType<Map>()) {
+        final item = Map<String, dynamic>.from(raw);
+        final labels = <String, String>{};
+        for (final localeCode in const ['en', 'he', 'ar', 'am', 'ru']) {
+          final label = item[localeCode]?.toString().trim() ?? '';
+          if (label.isNotEmpty) labels[localeCode] = label;
+        }
+        if (labels.isEmpty) continue;
+
+        for (final label in labels.values) {
+          translations[label.toLowerCase()] = labels;
+        }
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _professionTranslations = translations;
+      });
+    } catch (_) {
+      // ProfessionLocalization remains available as an offline fallback.
+    }
+  }
+
+  String _localizedProfession(String profession, String localeCode) {
+    final normalized = profession.trim().toLowerCase();
+    final translations = _professionTranslations[normalized];
+    final localized = translations?[localeCode]?.trim();
+    if (localized != null && localized.isNotEmpty) return localized;
+
+    final english = translations?['en']?.trim();
+    if (english != null && english.isNotEmpty) return english;
+    return ProfessionLocalization.toLocalized(profession, localeCode);
   }
 
   Map<String, String> _strings(String localeCode) {
@@ -180,6 +232,7 @@ class _LikedProsPageState extends State<LikedProsPage> {
   }
 
   Future<void> _setFavorite({
+    required _LikedProEntry entry,
     required String targetUid,
     required Map<String, dynamic> previewData,
     required bool shouldFavorite,
@@ -191,6 +244,9 @@ class _LikedProsPageState extends State<LikedProsPage> {
 
     setState(() {
       _pendingFavoriteIds.add(targetUid);
+      if (!shouldFavorite) {
+        _locallyUnfavoritedEntries[targetUid] = entry;
+      }
     });
 
     final favRef = _firestore
@@ -219,6 +275,11 @@ class _LikedProsPageState extends State<LikedProsPage> {
       }
 
       if (!mounted) return;
+      setState(() {
+        if (shouldFavorite) {
+          _locallyUnfavoritedEntries.remove(targetUid);
+        }
+      });
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
         ..showSnackBar(
@@ -231,6 +292,11 @@ class _LikedProsPageState extends State<LikedProsPage> {
         );
     } catch (e) {
       if (!mounted) return;
+      if (!shouldFavorite) {
+        setState(() {
+          _locallyUnfavoritedEntries.remove(targetUid);
+        });
+      }
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
         ..showSnackBar(
@@ -317,7 +383,10 @@ class _LikedProsPageState extends State<LikedProsPage> {
     return Future.wait(futures);
   }
 
-  List<_LikedProEntry> _filterEntries(List<_LikedProEntry> entries) {
+  List<_LikedProEntry> _filterEntries(
+    List<_LikedProEntry> entries,
+    String localeCode,
+  ) {
     final query = _searchQuery.trim().toLowerCase();
     if (query.isEmpty) return entries;
 
@@ -325,9 +394,13 @@ class _LikedProsPageState extends State<LikedProsPage> {
       final data = entry.previewData;
       final name = (data['name'] ?? '').toString().toLowerCase();
       final professions =
-          (data['professions'] as List?)
-              ?.map((profession) => profession.toString().toLowerCase())
-              .toList() ??
+          (data['professions'] as List?)?.expand((profession) {
+            final raw = profession.toString();
+            return [
+              raw.toLowerCase(),
+              _localizedProfession(raw, localeCode).toLowerCase(),
+            ];
+          }).toList() ??
           const <String>[];
       return name.contains(query) ||
           professions.any((profession) => profession.contains(query));
@@ -368,6 +441,7 @@ class _LikedProsPageState extends State<LikedProsPage> {
                             emptyText: strings['empty_favorites']!,
                             fallbackName: strings['no_name']!,
                             strings: strings,
+                            localeCode: localeCode,
                           ),
                         ),
                       ],
@@ -456,6 +530,7 @@ class _LikedProsPageState extends State<LikedProsPage> {
     required String emptyText,
     required String fallbackName,
     required Map<String, String> strings,
+    required String localeCode,
   }) {
     final uid = _currentUser?.uid;
     if (uid == null) {
@@ -492,7 +567,16 @@ class _LikedProsPageState extends State<LikedProsPage> {
               return const _LikedProsLoadingList();
             }
 
-            final entries = _filterEntries(resolvedSnapshot.data ?? const []);
+            final entriesById = <String, _LikedProEntry>{
+              for (final entry
+                  in resolvedSnapshot.data ?? const <_LikedProEntry>[])
+                entry.targetUid: entry,
+              ..._locallyUnfavoritedEntries,
+            };
+            final entries = _filterEntries(
+              entriesById.values.toList(),
+              localeCode,
+            );
             if (entries.isEmpty) {
               return _LikedProsEmptyState(
                 title: _searchQuery.isEmpty
@@ -527,7 +611,12 @@ class _LikedProsPageState extends State<LikedProsPage> {
                           .toString();
                       final professions =
                           (previewData['professions'] as List?)
-                              ?.map((e) => e.toString())
+                              ?.map(
+                                (profession) => _localizedProfession(
+                                  profession.toString(),
+                                  localeCode,
+                                ),
+                              )
                               .where((e) => e.trim().isNotEmpty)
                               .toList() ??
                           const <String>[];
@@ -541,7 +630,6 @@ class _LikedProsPageState extends State<LikedProsPage> {
                         professions: professions,
                         addedLabel: addedLabel,
                         memberSinceLabel: strings['member_since']!,
-                        openProfileLabel: strings['open_profile']!,
                         onOpenProfile: () {
                           Navigator.push(
                             context,
@@ -550,12 +638,16 @@ class _LikedProsPageState extends State<LikedProsPage> {
                             ),
                           );
                         },
-                        actionButton: _FavoriteActionButton(
+                        favoriteButton: _FavoriteHeartButton(
                           strings: strings,
                           isPending: _pendingFavoriteIds.contains(
                             entry.targetUid,
                           ),
+                          isFavorite: !_locallyUnfavoritedEntries.containsKey(
+                            entry.targetUid,
+                          ),
                           onSetFavorite: (shouldFavorite) => _setFavorite(
+                            entry: entry,
                             targetUid: entry.targetUid,
                             previewData: previewData,
                             shouldFavorite: shouldFavorite,
@@ -589,35 +681,41 @@ class _LikedProEntry {
   });
 }
 
-class _FavoriteActionButton extends StatelessWidget {
+class _FavoriteHeartButton extends StatelessWidget {
   final Map<String, String> strings;
   final bool isPending;
+  final bool isFavorite;
   final ValueChanged<bool> onSetFavorite;
 
-  const _FavoriteActionButton({
+  const _FavoriteHeartButton({
     required this.strings,
     required this.isPending,
+    required this.isFavorite,
     required this.onSetFavorite,
   });
 
   @override
   Widget build(BuildContext context) {
-    return OutlinedButton(
-      onPressed: isPending ? null : () => onSetFavorite(false),
-      style: OutlinedButton.styleFrom(
-        foregroundColor: const Color(0xFFB42318),
-        backgroundColor: const Color(0xFFFFF5F4),
-        side: const BorderSide(color: Color(0xFFF3CAC5)),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+    return IconButton(
+      tooltip: isFavorite ? strings['remove'] : strings['like_back'],
+      onPressed: isPending ? null : () => onSetFavorite(!isFavorite),
+      style: IconButton.styleFrom(
+        foregroundColor: _primaryColor,
+        backgroundColor: const Color(0xFFE8F2FF),
+        disabledBackgroundColor: const Color(0xFFE8F2FF),
+        minimumSize: const Size(46, 46),
       ),
-      child: isPending
+      icon: isPending
           ? const SizedBox(
               width: 18,
               height: 18,
               child: CircularProgressIndicator(strokeWidth: 2),
             )
-          : Text(strings['remove']!),
+          : Icon(
+              isFavorite
+                  ? Icons.favorite_rounded
+                  : Icons.favorite_outline_rounded,
+            ),
     );
   }
 }
@@ -851,9 +949,8 @@ class _LikedProCard extends StatelessWidget {
   final List<String> professions;
   final String addedLabel;
   final String memberSinceLabel;
-  final String openProfileLabel;
   final VoidCallback onOpenProfile;
-  final Widget actionButton;
+  final Widget favoriteButton;
 
   const _LikedProCard({
     required this.title,
@@ -861,9 +958,8 @@ class _LikedProCard extends StatelessWidget {
     required this.professions,
     required this.addedLabel,
     required this.memberSinceLabel,
-    required this.openProfileLabel,
     required this.onOpenProfile,
-    required this.actionButton,
+    required this.favoriteButton,
   });
 
   @override
@@ -946,6 +1042,8 @@ class _LikedProCard extends StatelessWidget {
                       ],
                     ),
                   ),
+                  const SizedBox(width: 8),
+                  favoriteButton,
                 ],
               ),
               if (professions.isNotEmpty) ...[
@@ -978,42 +1076,6 @@ class _LikedProCard extends StatelessWidget {
                   }).toList(),
                 ),
               ],
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: onOpenProfile,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _primaryColor,
-                        foregroundColor: Colors.white,
-                        elevation: 0,
-                        padding: const EdgeInsets.symmetric(vertical: 15),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.person_outline_rounded, size: 18),
-                          const SizedBox(width: 7),
-                          Flexible(
-                            child: Text(
-                              openProfileLabel,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(child: actionButton),
-                ],
-              ),
             ],
           ),
         ),

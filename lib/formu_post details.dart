@@ -34,7 +34,6 @@ class _PostDetailPageState extends State<PostDetailPage> {
   StreamSubscription? _commentsSubscription;
   final Map<String, Map<String, dynamic>> _workerPreviewCache = {};
   Map<String, dynamic>? _authorPreview;
-  LatLng? _viewerLocation;
   String? _currentUserRole;
   bool _currentUserHasActiveWorkerSubscription = false;
   String? _loadedBidDraftId;
@@ -44,6 +43,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
   String? _pendingBidQuoteDocType;
   String? _pendingBidQuoteDocumentNumber;
   List<Map<String, dynamic>> _pendingBidQuoteItems = [];
+  bool _hasPreparedBidDraft = false;
   bool _isSubmittingComment = false;
   int _mediaPageIndex = 0;
 
@@ -52,7 +52,6 @@ class _PostDetailPageState extends State<PostDetailPage> {
     super.initState();
     _loadCurrentUserRole();
     _loadAuthorPreview();
-    _loadViewerLocation();
     _listenToComments();
   }
 
@@ -129,49 +128,6 @@ class _PostDetailPageState extends State<PostDetailPage> {
     } catch (_) {}
   }
 
-  Future<void> _loadViewerLocation() async {
-    try {
-      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) return;
-
-      var permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-      }
-
-      if (permission == LocationPermission.denied ||
-          permission == LocationPermission.deniedForever) {
-        return;
-      }
-
-      final position = await Geolocator.getCurrentPosition();
-      if (!mounted) return;
-      setState(() {
-        _viewerLocation = LatLng(position.latitude, position.longitude);
-      });
-    } catch (_) {}
-  }
-
-  String? _distanceLabelToPostLocation() {
-    if (_viewerLocation == null ||
-        widget.post['locationLat'] == null ||
-        widget.post['locationLng'] == null) {
-      return null;
-    }
-
-    final lat = (widget.post['locationLat'] as num).toDouble();
-    final lng = (widget.post['locationLng'] as num).toDouble();
-    final meters = Geolocator.distanceBetween(
-      _viewerLocation!.latitude,
-      _viewerLocation!.longitude,
-      lat,
-      lng,
-    );
-
-    if (meters < 1000) return '${meters.round()} m';
-    return '${(meters / 1000).toStringAsFixed(1)} km';
-  }
-
   void _syncExistingBidDraft() {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
@@ -190,7 +146,6 @@ class _PostDetailPageState extends State<PostDetailPage> {
 
     _loadedBidDraftId = bidId;
     _bidPriceController.text = existingBid['bidPrice']?.toString() ?? '';
-    _commentController.text = existingBid['text']?.toString() ?? '';
     _pendingBidQuoteInvoiceDocId = null;
     _pendingBidQuoteDocumentAccessId = existingBid['quoteDocumentAccessId']
         ?.toString();
@@ -207,6 +162,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
     } else {
       _pendingBidQuoteItems = [];
     }
+    _hasPreparedBidDraft = false;
   }
 
   String _formatBidAmount(double amount) {
@@ -272,6 +228,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
       _pendingBidQuoteDocType = result.docType;
       _pendingBidQuoteDocumentNumber = result.documentNumber;
       _pendingBidQuoteItems = result.items;
+      _hasPreparedBidDraft = true;
     });
   }
 
@@ -322,11 +279,13 @@ class _PostDetailPageState extends State<PostDetailPage> {
     if (!canCommentOnJobRequest) return;
 
     final bidPrice = _bidPriceController.text.trim();
-    final isWorkerBid =
+    final canSubmitBid =
         isJobRequest &&
         !isAuthor &&
         _currentUserRole == 'worker' &&
         _currentUserHasActiveWorkerSubscription;
+    final isWorkerBid =
+        canSubmitBid && _hasPreparedBidDraft && bidPrice.isNotEmpty;
     final existingBid = isWorkerBid
         ? _comments.cast<Map<String, dynamic>?>().firstWhere(
             (comment) =>
@@ -337,7 +296,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
           )
         : null;
 
-    if (text.isEmpty && (!isWorkerBid || bidPrice.isEmpty)) return;
+    if (text.isEmpty && !isWorkerBid) return;
     final bidAmount = isWorkerBid ? _bidAmountFromValue(bidPrice) : null;
     if (isWorkerBid && bidAmount == null) return;
 
@@ -395,14 +354,17 @@ class _PostDetailPageState extends State<PostDetailPage> {
         await commentsRef.add(commentData);
       }
       _commentController.clear();
-      _bidPriceController.clear();
-      _pendingBidQuoteInvoiceDocId = null;
-      _pendingBidQuoteDocumentAccessId = null;
-      _pendingBidQuoteFileName = null;
-      _pendingBidQuoteDocType = null;
-      _pendingBidQuoteDocumentNumber = null;
-      _pendingBidQuoteItems = [];
-      _loadedBidDraftId = null;
+      if (isWorkerBid) {
+        _bidPriceController.clear();
+        _pendingBidQuoteInvoiceDocId = null;
+        _pendingBidQuoteDocumentAccessId = null;
+        _pendingBidQuoteFileName = null;
+        _pendingBidQuoteDocType = null;
+        _pendingBidQuoteDocumentNumber = null;
+        _pendingBidQuoteItems = [];
+        _hasPreparedBidDraft = false;
+        _loadedBidDraftId = null;
+      }
     } catch (_) {
     } finally {
       if (mounted) {
@@ -913,6 +875,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
         _currentUserHasActiveWorkerSubscription;
     final canComment = !isJobRequest || canCommentOnJobRequest;
     final canBid = canCommentOnJobRequest;
+    final isPreparingBid = canBid && _hasPreparedBidDraft;
     final myExistingBid = user == null
         ? null
         : _comments.cast<Map<String, dynamic>?>().firstWhere(
@@ -936,10 +899,6 @@ class _PostDetailPageState extends State<PostDetailPage> {
             (selectedWorkerUid?.isNotEmpty == true &&
                 user.uid == selectedWorkerUid));
     final location = widget.post['location']?.toString().trim() ?? '';
-    final locationDistanceLabel = _distanceLabelToPostLocation();
-    final locationDisplayLabel = locationDistanceLabel == null
-        ? location
-        : '$location · $locationDistanceLabel';
     final professionRaw =
         (widget.post['professionLabel'] ?? widget.post['profession'] ?? '')
             .toString()
@@ -1315,7 +1274,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
                               _buildInfoCard(
                                 icon: Icons.location_on_outlined,
                                 label: widget.localizedStrings['location'],
-                                value: locationDisplayLabel,
+                                value: location,
                                 onTap:
                                     (widget.post['locationLat'] != null &&
                                         widget.post['locationLng'] != null)
@@ -1939,23 +1898,28 @@ class _PostDetailPageState extends State<PostDetailPage> {
                         fillColor: const Color(0xFFF8FAFC),
                       ),
                     ),
-                    if ((_pendingBidQuoteFileName ?? '').trim().isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      Align(
-                        alignment: AlignmentDirectional.centerStart,
-                        child: Text(
-                          _pendingBidQuoteDocumentNumber?.trim().isNotEmpty ==
-                                  true
-                              ? _pendingBidQuoteDocumentNumber!
-                              : _pendingBidQuoteFileName!,
-                          style: const TextStyle(
-                            color: _uiPrimaryBlue,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.lock_outline_rounded,
+                          size: 14,
+                          color: _uiMuted,
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            widget.localizedStrings['quote_privacy_notice'] ??
+                                'Only you and the requester can see your quote.',
+                            style: const TextStyle(
+                              color: _uiMuted,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                     const SizedBox(height: 10),
                   ],
                   Row(
@@ -2025,12 +1989,12 @@ class _PostDetailPageState extends State<PostDetailPage> {
                                   ),
                                 )
                               : Icon(
-                                  canBid
+                                  isPreparingBid
                                       ? Icons.local_offer_outlined
                                       : Icons.send_rounded,
                                   color: Colors.white,
                                 ),
-                          tooltip: canBid
+                          tooltip: isPreparingBid
                               ? (myExistingBid != null
                                     ? widget.localizedStrings['update_bid']
                                     : widget.localizedStrings['send_bid'])

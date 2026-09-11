@@ -186,17 +186,6 @@ class _BlogPageState extends State<BlogPage> {
     } catch (_) {}
   }
 
-  String? _distanceLabelForPost(Map<String, dynamic> post) {
-    final meters = _distanceMetersForPost(post);
-    if (meters == null) return null;
-
-    if (meters < 1000) {
-      return "${meters.round()} m";
-    }
-
-    return "${(meters / 1000).toStringAsFixed(1)} km";
-  }
-
   double? _distanceMetersForPost(Map<String, dynamic> post) {
     if (_viewerLocation == null ||
         post['locationLat'] == null ||
@@ -1170,6 +1159,10 @@ class _BlogPageState extends State<BlogPage> {
       'update': 'עדכן',
       'cancel': 'ביטול',
       'categories': ['הכל', 'שאלה', 'טיפ', 'דרוש בעל מקצוע', 'המלצה', 'אחר'],
+      'filter_posts': 'סינון פוסטים',
+      'filter_liked_posts': 'פוסטים שאהבתי',
+      'filter_my_posts': 'הפוסטים שלי',
+      'like_failed': 'לא ניתן לעדכן את הלייק. נסו שוב.',
       'upload_photo': 'הוסף תמונות',
       'no_posts': 'אין פוסטים עדיין',
       'delete': 'מחק',
@@ -1185,6 +1178,8 @@ class _BlogPageState extends State<BlogPage> {
       'send_bid': 'שלח הצעת מחיר',
       'update_bid': 'עדכן הצעת מחיר',
       'edit_your_bid': 'ניתן לעדכן את ההצעה הקיימת שלכם.',
+      'quote_privacy_notice':
+          'רק אתם ומפרסם הבקשה יכולים לראות את הצעת המחיר שלכם.',
       'choose_worker': 'בחר בעל מקצוע',
       'confirm_choose_worker_title': 'לבחור בעל מקצוע זה?',
       'confirm_choose_worker_body':
@@ -1302,6 +1297,10 @@ class _BlogPageState extends State<BlogPage> {
       'update': 'تحديث',
       'cancel': 'إلغاء',
       'categories': ['الكل', 'سؤال', 'نصيحة', 'طلب عامل', 'توصية', 'أخرى'],
+      'filter_posts': 'تصفية المنشورات',
+      'filter_liked_posts': 'المنشورات التي أعجبتني',
+      'filter_my_posts': 'منشوراتي',
+      'like_failed': 'تعذر تحديث الإعجاب. حاول مرة أخرى.',
       'upload_photo': 'إضافة صور',
       'no_posts': 'لا توجد منشورات بعد',
       'delete': 'حذف',
@@ -1315,6 +1314,8 @@ class _BlogPageState extends State<BlogPage> {
       'send_bid': 'إرسال عرض السعر',
       'update_bid': 'تحديث عرض السعر',
       'edit_your_bid': 'يمكنك تحديث عرض السعر الحالي.',
+      'quote_privacy_notice':
+          'يمكنك أنت وصاحب الطلب فقط رؤية عرض السعر الخاص بك.',
       'choose_worker': 'اختر عاملًا',
       'confirm_choose_worker_title': 'اختيار هذا العامل؟',
       'confirm_choose_worker_body':
@@ -1421,6 +1422,10 @@ class _BlogPageState extends State<BlogPage> {
       'update': 'አዘምን',
       'cancel': 'ሰርዝ',
       'categories': ['ሁሉም', 'ጥያቄ', 'ምክር', 'የስራ ጥያቄ', 'ምክር ሰጪ', 'ሌላ'],
+      'filter_posts': 'ፖስቶችን አጣራ',
+      'filter_liked_posts': 'የወደድኳቸው ፖስቶች',
+      'filter_my_posts': 'የእኔ ፖስቶች',
+      'like_failed': 'መውደዱን ማዘመን አልተቻለም። እንደገና ይሞክሩ።',
       'upload_photo': 'ፎቶ ጨምር',
       'no_posts': 'እስካሁን ፖስቶች የሉም',
       'delete': 'ሰርዝ',
@@ -1433,6 +1438,7 @@ class _BlogPageState extends State<BlogPage> {
       'send_bid': 'ቅናሽ ላክ',
       'update_bid': 'ቅናሽ አዘምን',
       'edit_your_bid': 'ያለዎትን ቅናሽ ማዘምን ይችላሉ።',
+      'quote_privacy_notice': 'የዋጋ ቅናሽዎን ማየት የምትችሉት እርስዎ እና ጠያቂው ብቻ ናችሁ።',
       'choose_worker': 'ሰራተኛ ምረጥ',
       'confirm_choose_worker_title': 'ይህን ሰራተኛ ይምረጡ?',
       'confirm_choose_worker_body':
@@ -1524,6 +1530,11 @@ class _BlogPageState extends State<BlogPage> {
         'Рекомендация',
         'Другое',
       ],
+      'filter_posts': 'Фильтр публикаций',
+      'filter_liked_posts': 'Понравившиеся публикации',
+      'filter_my_posts': 'Мои публикации',
+      'like_failed':
+          'Не удалось обновить отметку «Нравится». Попробуйте снова.',
       'upload_photo': 'Добавить фото',
       'no_posts': 'Публикаций пока нет',
       'delete': 'Удалить',
@@ -1536,6 +1547,8 @@ class _BlogPageState extends State<BlogPage> {
       'send_bid': 'Отправить предложение',
       'update_bid': 'Обновить предложение',
       'edit_your_bid': 'Вы можете обновить ваше текущее предложение.',
+      'quote_privacy_notice':
+          'Только вы и заказчик можете видеть ваше ценовое предложение.',
       'choose_worker': 'Выбрать специалиста',
       'confirm_choose_worker_title': 'Выбрать этого специалиста?',
       'confirm_choose_worker_body':
@@ -1628,6 +1641,10 @@ class _BlogPageState extends State<BlogPage> {
         'Recommendation',
         'Other',
       ],
+      'filter_posts': 'Filter posts',
+      'filter_liked_posts': 'Liked posts',
+      'filter_my_posts': 'My posts',
+      'like_failed': 'Could not update the like. Please try again.',
       'upload_photo': 'Add Photos',
       'no_posts': 'No posts yet',
       'delete': 'Delete',
@@ -1665,6 +1682,7 @@ class _BlogPageState extends State<BlogPage> {
       'send_bid': 'Send Bid',
       'update_bid': 'Update Bid',
       'edit_your_bid': 'You can update your existing bid.',
+      'quote_privacy_notice': 'Only you and the requester can see your quote.',
       'choose_worker': 'Choose Worker',
       'confirm_choose_worker_title': 'Choose this worker?',
       'confirm_choose_worker_body':
@@ -2821,35 +2839,42 @@ class _BlogPageState extends State<BlogPage> {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    final postId = post['id'];
-    final likedByData = post['likedBy'];
-    Map<String, dynamic> likedBy = {};
-
-    if (likedByData is Map) {
-      likedBy = Map<String, dynamic>.from(likedByData);
-    } else if (likedByData is List) {
-      for (var uid in likedByData) {
-        if (uid is String) likedBy[uid] = true;
-      }
-    }
-
-    int likes = post['likes'] ?? 0;
-
-    if (likedBy.containsKey(user.uid)) {
-      likedBy.remove(user.uid);
-      likes = likes > 0 ? likes - 1 : 0;
-    } else {
-      likedBy[user.uid] = true;
-      likes++;
-    }
+    final postId = (post['id'] ?? '').toString();
+    if (postId.isEmpty) return;
+    final postRef = _firestore.collection('blog_posts').doc(postId);
 
     try {
-      await _firestore.collection('blog_posts').doc(postId).update({
-        'likes': likes,
-        'likedBy': likedBy,
+      await _firestore.runTransaction((transaction) async {
+        final snapshot = await transaction.get(postRef);
+        final data = snapshot.data();
+        if (data == null) {
+          throw StateError('Post no longer exists');
+        }
+
+        final likedByData = data['likedBy'];
+        final likesData = data['likes'];
+        if (likedByData is! Map || likesData is! int) {
+          throw StateError('Post like data has an invalid format');
+        }
+
+        final likedBy = Map<String, dynamic>.from(likedByData);
+        var likes = likesData;
+        if (likedBy.containsKey(user.uid)) {
+          likedBy.remove(user.uid);
+          if (likes > 0) likes--;
+        } else {
+          likedBy[user.uid] = true;
+          likes++;
+        }
+
+        transaction.update(postRef, {'likes': likes, 'likedBy': likedBy});
       });
     } catch (e) {
       debugPrint("LIKE ERROR: $e");
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(strings['like_failed'])));
     }
   }
 
@@ -2912,8 +2937,6 @@ class _BlogPageState extends State<BlogPage> {
 
   Widget _buildFilterBar(Map<String, dynamic> strings) {
     final categories = strings['categories'] as List;
-    final likedLabel = strings['filter_liked_posts'] ?? 'Liked posts';
-    final myPostsLabel = strings['filter_my_posts'] ?? 'My posts';
     return SizedBox(
       height: 50,
       child: ListView(
@@ -2949,62 +2972,6 @@ class _BlogPageState extends State<BlogPage> {
               ),
             );
           }),
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: FilterChip(
-              selected: _showOnlyLikedPosts,
-              onSelected: (val) {
-                setState(() {
-                  _showOnlyLikedPosts = val;
-                  if (val) _showOnlyMyPosts = false;
-                });
-              },
-              label: Text(likedLabel),
-              selectedColor: _uiPrimaryBlue.withValues(alpha: 0.1),
-              backgroundColor: Colors.white,
-              checkmarkColor: _uiPrimaryBlue,
-              labelStyle: TextStyle(
-                color: _showOnlyLikedPosts ? _uiPrimaryBlue : _uiMuted,
-                fontWeight: _showOnlyLikedPosts
-                    ? FontWeight.bold
-                    : FontWeight.w500,
-              ),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-                side: BorderSide(
-                  color: _showOnlyLikedPosts ? _uiPrimaryBlue : _uiBorder,
-                ),
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: FilterChip(
-              selected: _showOnlyMyPosts,
-              onSelected: (val) {
-                setState(() {
-                  _showOnlyMyPosts = val;
-                  if (val) _showOnlyLikedPosts = false;
-                });
-              },
-              label: Text(myPostsLabel),
-              selectedColor: _uiPrimaryBlue.withValues(alpha: 0.1),
-              backgroundColor: Colors.white,
-              checkmarkColor: _uiPrimaryBlue,
-              labelStyle: TextStyle(
-                color: _showOnlyMyPosts ? _uiPrimaryBlue : _uiMuted,
-                fontWeight: _showOnlyMyPosts
-                    ? FontWeight.bold
-                    : FontWeight.w500,
-              ),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-                side: BorderSide(
-                  color: _showOnlyMyPosts ? _uiPrimaryBlue : _uiBorder,
-                ),
-              ),
-            ),
-          ),
         ],
       ),
     );
@@ -3088,9 +3055,37 @@ class _BlogPageState extends State<BlogPage> {
             ),
           ),
           actions: [
-            IconButton(
-              icon: const Icon(Icons.refresh, color: _uiPrimaryBlue),
-              onPressed: _onRefresh,
+            PopupMenuButton<String>(
+              tooltip: strings['filter_posts'],
+              icon: Icon(
+                _showOnlyLikedPosts || _showOnlyMyPosts
+                    ? Icons.filter_alt
+                    : Icons.filter_alt_outlined,
+                color: _uiPrimaryBlue,
+              ),
+              onSelected: (value) {
+                setState(() {
+                  if (value == 'liked') {
+                    _showOnlyLikedPosts = !_showOnlyLikedPosts;
+                    _showOnlyMyPosts = false;
+                  } else if (value == 'mine') {
+                    _showOnlyMyPosts = !_showOnlyMyPosts;
+                    _showOnlyLikedPosts = false;
+                  }
+                });
+              },
+              itemBuilder: (context) => [
+                CheckedPopupMenuItem<String>(
+                  value: 'liked',
+                  checked: _showOnlyLikedPosts,
+                  child: Text(strings['filter_liked_posts']),
+                ),
+                CheckedPopupMenuItem<String>(
+                  value: 'mine',
+                  checked: _showOnlyMyPosts,
+                  child: Text(strings['filter_my_posts']),
+                ),
+              ],
             ),
             PopupMenuButton<String>(
               icon: const Icon(Icons.sort, color: _uiPrimaryBlue),
@@ -3261,9 +3256,6 @@ class _BlogPageState extends State<BlogPage> {
                     if (postIndex < visiblePosts.length) {
                       return _BlogCard(
                         post: visiblePosts[postIndex],
-                        distanceLabel: _distanceLabelForPost(
-                          visiblePosts[postIndex],
-                        ),
                         onLike: () => _toggleLike(visiblePosts[postIndex]),
                         onDelete: () =>
                             _deletePost(visiblePosts[postIndex]['id']),
@@ -3308,7 +3300,6 @@ class _BlogPageState extends State<BlogPage> {
 
 class _BlogCard extends StatelessWidget {
   final Map<String, dynamic> post;
-  final String? distanceLabel;
   final VoidCallback onLike;
   final VoidCallback onDelete;
   final VoidCallback onEdit;
@@ -3321,7 +3312,6 @@ class _BlogCard extends StatelessWidget {
 
   const _BlogCard({
     required this.post,
-    required this.distanceLabel,
     required this.onLike,
     required this.onDelete,
     required this.onEdit,
@@ -3742,9 +3732,10 @@ class _BlogCard extends StatelessWidget {
                                 ),
                               ),
                             ),
-                            if (distanceLabel != null) ...[
+                            if (cityLabel != null) ...[
                               const SizedBox(width: 8),
                               Flexible(
+                                flex: 2,
                                 child: Container(
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 8,
@@ -3765,9 +3756,7 @@ class _BlogCard extends StatelessWidget {
                                       const SizedBox(width: 4),
                                       Flexible(
                                         child: Text(
-                                          cityLabel == null
-                                              ? distanceLabel!
-                                              : '${distanceLabel!} · $cityLabel',
+                                          cityLabel,
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
                                           style: const TextStyle(
