@@ -1452,6 +1452,38 @@ test("validates community author identity and content size", {
     likedBy: {[likerUid]: true},
   }));
 
+  await seed("blog_posts/legacy-null-post", {
+    title: "Existing post with null optional fields",
+    content: "Hello",
+    imageUrl: null,
+    locationLat: null,
+    likes: 0,
+    likedBy: {},
+    timestamp: new Date(),
+  });
+  await assertSucceeds(updateDoc(
+      doc(likerDb, "blog_posts/legacy-null-post"),
+      {
+        likes: 1,
+        likedBy: {[likerUid]: true},
+      },
+  ));
+  await assertFails(updateDoc(
+      doc(likerDb, "blog_posts/legacy-null-post"),
+      {
+        title: "A liker cannot alter malformed existing content",
+        likes: 2,
+        likedBy: {[likerUid]: true},
+      },
+  ));
+  await assertFails(updateDoc(
+      doc(likerDb, "blog_posts/legacy-null-post"),
+      {
+        likes: 99,
+        likedBy: {[likerUid]: true},
+      },
+  ));
+
   const commentRef = doc(db, "blog_posts/post-1/blog_comments/comment-1");
   await assertSucceeds(setDoc(commentRef, {
     authorUid: uid,

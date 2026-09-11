@@ -1335,9 +1335,10 @@ service cloud.firestore {
       allow create: if isAuthenticated() && validBlogPost(request.resource.data) &&
         request.resource.data.authorUid == request.auth.uid &&
         recentTimestamp(request.resource.data, 'timestamp');
-      allow update: if isAuthenticated() && validBlogPost(request.resource.data) &&
-        request.resource.data.authorUid == resource.data.authorUid &&
-        (request.auth.uid == resource.data.authorUid ||
+      allow update: if isAuthenticated() &&
+        ((request.auth.uid == resource.data.get('authorUid', '') &&
+            validBlogPost(request.resource.data) &&
+            request.resource.data.authorUid == resource.data.authorUid) ||
           validBlogLikeChange());
       allow delete: if isAuthenticated() && request.auth.uid == resource.data.authorUid;
 

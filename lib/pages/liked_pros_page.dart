@@ -29,7 +29,12 @@ class _LikedProsPageState extends State<LikedProsPage> {
   final TextEditingController _searchController = TextEditingController();
   final Set<String> _pendingFavoriteIds = <String>{};
   final Map<String, _LikedProEntry> _locallyUnfavoritedEntries = {};
+  final Map<String, bool> _favoriteStateOverrides = {};
   Map<String, Map<String, String>> _professionTranslations = {};
+  Future<List<_LikedProEntry>>? _favoritesResolutionFuture;
+  List<_LikedProEntry> _resolvedFavoriteEntries = const [];
+  String? _favoritesSnapshotKey;
+  bool _hasResolvedFavorites = false;
 
   String _searchQuery = '';
 
@@ -244,6 +249,7 @@ class _LikedProsPageState extends State<LikedProsPage> {
 
     setState(() {
       _pendingFavoriteIds.add(targetUid);
+      _favoriteStateOverrides[targetUid] = shouldFavorite;
       if (!shouldFavorite) {
         _locallyUnfavoritedEntries[targetUid] = entry;
       }
@@ -275,28 +281,14 @@ class _LikedProsPageState extends State<LikedProsPage> {
       }
 
       if (!mounted) return;
+    } catch (e) {
+      if (!mounted) return;
       setState(() {
-        if (shouldFavorite) {
+        _favoriteStateOverrides[targetUid] = !shouldFavorite;
+        if (!shouldFavorite) {
           _locallyUnfavoritedEntries.remove(targetUid);
         }
       });
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          SnackBar(
-            content: Text(
-              shouldFavorite ? strings['saved_now']! : strings['removed']!,
-            ),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-    } catch (e) {
-      if (!mounted) return;
-      if (!shouldFavorite) {
-        setState(() {
-          _locallyUnfavoritedEntries.remove(targetUid);
-        });
-      }
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
         ..showSnackBar(
@@ -381,6 +373,36 @@ class _LikedProsPageState extends State<LikedProsPage> {
     });
 
     return Future.wait(futures);
+  }
+
+  Future<List<_LikedProEntry>> _resolveFavoriteSnapshot(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) {
+    final snapshotKey = docs
+        .map((doc) {
+          final addedAt = doc.data()['addedAt'];
+          final version = addedAt is Timestamp
+              ? addedAt.microsecondsSinceEpoch
+              : addedAt.toString();
+          return '${doc.id}:$version';
+        })
+        .join('|');
+
+    if (_favoritesResolutionFuture == null ||
+        snapshotKey != _favoritesSnapshotKey) {
+      _favoritesSnapshotKey = snapshotKey;
+      _favoritesResolutionFuture = _resolveEntries(docs, (doc) => doc.id).then((
+        entries,
+      ) {
+        if (_favoritesSnapshotKey == snapshotKey) {
+          _resolvedFavoriteEntries = entries;
+          _hasResolvedFavorites = true;
+        }
+        return entries;
+      });
+    }
+
+    return _favoritesResolutionFuture!;
   }
 
   List<_LikedProEntry> _filterEntries(
@@ -558,12 +580,16 @@ class _LikedProsPageState extends State<LikedProsPage> {
           );
         }
 
-        final docs = snapshot.data?.docs ?? const [];
+        final docs =
+            snapshot.data?.docs ??
+            const <QueryDocumentSnapshot<Map<String, dynamic>>>[];
 
         return FutureBuilder<List<_LikedProEntry>>(
-          future: _resolveEntries(docs, (doc) => doc.id),
+          future: _resolveFavoriteSnapshot(docs),
+          initialData: _resolvedFavoriteEntries,
           builder: (context, resolvedSnapshot) {
-            if (resolvedSnapshot.connectionState == ConnectionState.waiting) {
+            if (!_hasResolvedFavorites &&
+                resolvedSnapshot.connectionState == ConnectionState.waiting) {
               return const _LikedProsLoadingList();
             }
 
@@ -643,9 +669,8 @@ class _LikedProsPageState extends State<LikedProsPage> {
                           isPending: _pendingFavoriteIds.contains(
                             entry.targetUid,
                           ),
-                          isFavorite: !_locallyUnfavoritedEntries.containsKey(
-                            entry.targetUid,
-                          ),
+                          isFavorite:
+                              _favoriteStateOverrides[entry.targetUid] ?? true,
                           onSetFavorite: (shouldFavorite) => _setFavorite(
                             entry: entry,
                             targetUid: entry.targetUid,
@@ -702,20 +727,19 @@ class _FavoriteHeartButton extends StatelessWidget {
       style: IconButton.styleFrom(
         foregroundColor: _primaryColor,
         backgroundColor: const Color(0xFFE8F2FF),
+        disabledForegroundColor: _primaryColor,
         disabledBackgroundColor: const Color(0xFFE8F2FF),
         minimumSize: const Size(46, 46),
       ),
-      icon: isPending
-          ? const SizedBox(
-              width: 18,
-              height: 18,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
-          : Icon(
-              isFavorite
-                  ? Icons.favorite_rounded
-                  : Icons.favorite_outline_rounded,
-            ),
+      icon: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 180),
+        transitionBuilder: (child, animation) =>
+            ScaleTransition(scale: animation, child: child),
+        child: Icon(
+          isFavorite ? Icons.favorite_rounded : Icons.favorite_outline_rounded,
+          key: ValueKey(isFavorite),
+        ),
+      ),
     );
   }
 }
